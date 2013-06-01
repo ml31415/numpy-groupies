@@ -14,10 +14,10 @@ from accumarray import accum_py, accum_np, accum, unpack, step_indices, _count_s
 
 class TestSequence(unittest.TestCase):
     def assertArrayEqual(self, x, y):
-        return np.all((x == y) | ((x != x) & (y != y)))
+        assert np.all((x == y) | ((x != x) & (y != y)))
 
     def assertArrayAlmostEqual(self, x, y, delta=0.000000001):
-        return np.all((np.abs(x - y) < delta) | ((x != x) & (y != y)))
+        assert np.all((np.abs(x - y) < delta) | ((x != x) & (y != y)))
 
 
 class TestAccumPy(TestSequence):
