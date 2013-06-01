@@ -14,14 +14,16 @@ nansum, nanmin, nanmax, nanmean, nanstd, nanprod
 
 
 Requirements
-============
+------------
 
+* python 2.7.x
 * numpy
 * scipy
+* gcc for using scipy.weave
 
 
 Usage
-=====
+-----
 
 ```python
 from accumarray import accum, accum_np, accum_py, unpack
@@ -68,7 +70,9 @@ unpack(accmap, accum(accmap, a, mode='contiguous'), mode='contiguous')
 >>> array([ 1,  1,  5,  5,  9,  9, 13, 13, 17, 17])
 ```
 
-Some timings:
+Speed comparison
+----------------
+
 ```python
 accmap = np.repeat(np.arange(10000), 10)
 a = np.arange(len(accmap))
