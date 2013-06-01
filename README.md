@@ -5,10 +5,11 @@ Replacement for matlabs accumarray in numpy. The package actually contains
 three independent implementations of accum. One _really_ slow pure python
 implementation, `accum_py`, one pure numpy implmentation, `accum_np`, and 
 for most common functions optimized implementations written in C, `accum`.
-If accum is called with an aggregation function, which doesn't have an
+If `accum` is called with an aggregation function, which doesn't have an
 optimized implementation, it falls back to the numpy implementation.
 
-The optimized aggregation functions are: 
+The optimized aggregation functions are:
+
 sum, min, max, mean, std, prod, all, any, allnan, anynan,
 nansum, nanmin, nanmax, nanmean, nanstd, nanprod
 
@@ -34,8 +35,13 @@ accmap = np.array([0,0,1,1,0,0,2,2,4,4])
 accum(accmap, a)
 >>> array([10,  5, 13,  0, 17])
 ```
-    
-Output dtype is generally taken from the input arguments and the
+
+The C functions are compiled on the fly by `scipy.weave` depending
+on the selected aggregation function and the data types of the inputs.
+The compiled functions are cached and reused, whenever possible. So 
+for the first runs, expect some delays for the compilation.
+
+The output dtype is generally taken from the input arguments and the
 aggregation function, but it can be overwritten:
 
 ```python
@@ -85,4 +91,22 @@ timeit accum_np(accmap, a)
 
 timeit accum(accmap, a)
 >>> 1000 loops, best of 3: 1.09 ms per loop
+
+timeit accum(accmap, a, func='mean')
+>>> 1000 loops, best of 3: 1.7 ms per loop
 ```
+
+*Octave*
+```matlab
+accmap = repmat(1:10000, 10, 1)(:);
+a = 1:numel(accmap);
+tic; accumarray(accmap, a); toc
+>>> Elapsed time is 0.0015161 seconds.
+
+tic; accumarray(accmap, a, [1, numel(accmap)], @mean); toc
+>>>Elapsed time is 1.733 seconds.
+```
+When running these commands with octave the first time, they run notably
+slower. The values above are the best of several consequent tries. I'm
+not sure what goes wrong with octaves mean function, but for me it's
+painfully slow. If I'm doing something wrong here, please let me know.
