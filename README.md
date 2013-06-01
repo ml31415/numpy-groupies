@@ -24,7 +24,7 @@ Usage
 =====
 
 ```python
-from accumarray import accum
+from accumarray import accum, accum_np, accum_py, unpack
 a = np.arange(10)
 # accmap must be of type integer and have the same length as a
 accmap = np.array([0,0,1,1,0,0,2,2,4,4])
@@ -66,4 +66,19 @@ accum(accmap, a, mode='contiguous')
 
 unpack(accmap, accum(accmap, a, mode='contiguous'), mode='contiguous')
 >>> array([ 1,  1,  5,  5,  9,  9, 13, 13, 17, 17])
+```
+
+Some timings:
+```python
+accmap = np.repeat(np.arange(10000), 10)
+a = np.arange(len(accmap))
+
+timeit accum_py(accmap, a)
+>>> 1 loops, best of 3: 1.35 s per loop
+
+timeit accum_np(accmap, a)
+>>> 1 loops, best of 3: 196 ms per loop
+
+timeit accum(accmap, a)
+>>> 1000 loops, best of 3: 1.09 ms per loop
 ```
