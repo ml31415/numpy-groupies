@@ -44,7 +44,7 @@ accum(accmap, a, func='std')
 >>> array([ 2.0616,  0.5   ,  0.5   ,  0.    ,  0.5   ])
 
 accum(accmap, a, func='std', fillvalue=np.nan)
-array([ 2.0616,  0.5   ,  0.5   ,     nan,  0.5   ])
+>>> array([ 2.0616,  0.5   ,  0.5   ,     nan,  0.5   ])
 ```
 
 The next call actually falls back to `accum_np`, but acts as expected:
@@ -62,8 +62,8 @@ inflating these kind of outputs to the full array size, the function
 
 ```python
 accum(accmap, a, mode='contiguous')
-array([ 1,  5,  9, 13, 17])
+>>> array([ 1,  5,  9, 13, 17])
 
 unpack(accmap, accum(accmap, a, mode='contiguous'), mode='contiguous')
-array([ 1,  1,  5,  5,  9,  9, 13, 13, 17, 17])
+>>> array([ 1,  1,  5,  5,  9,  9, 13, 13, 17, 17])
 ```
