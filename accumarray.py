@@ -63,8 +63,8 @@ __all__ = ['accum', 'accum_np', 'accum_py', 'unpack', 'step_indices', 'step_coun
 
 
 optimized_funcs = {'sum', 'min', 'max', 'amin', 'amax', 'mean', 'std', 'prod',
-             'nansum', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanprod',
-             'all', 'any', 'allnan', 'anynan'}
+                   'nansum', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanprod',
+                   'all', 'any', 'allnan', 'anynan'}
 
 dtype_by_func = {list: 'object',
                  tuple: 'object',
@@ -381,6 +381,71 @@ def accum_np(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontiguous
             indices_i = indices[i]
             vals[accmap_rev[indices_i]] = func(a_rev[indices_i:indices[i + 1]])
     return vals
+
+
+def _fill_untouched(accmap, vals, fillvalue):
+    # Probably there is something faster ...
+    erase = np.ones_like(vals, dtype=bool)
+    erase[accmap] = 0
+    vals[erase] = fillvalue
+    return vals
+
+
+def accum_ufunc(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontiguous'):
+    _check_accmap(accmap, a, check_min=False)
+    a = np.asanyarray(a)
+
+    func_str = func.lower() if isinstance(func, basestring) else func.__name__
+    vals_len = np.max(accmap) + 1
+    dtype = dtype or dtype_by_func.get(func, a.dtype)
+
+    if func_str in {'list', 'array', '<lambda>', 'sort', 'std', 'nanmax', 'nanmin'}:
+        return accum_np(accmap, a, func=func, dtype=dtype, fillvalue=fillvalue)
+
+    if func_str in ('sum', 'add'):
+        vals = np.bincount(accmap, weights=a, minlength=vals_len).astype(dtype)
+        if fillvalue != 0:
+            vals = _fill_untouched(accmap, vals, fillvalue)
+        return vals
+
+    else:
+        vals = np.zeros(vals_len, dtype=dtype)
+        if fillvalue != 0:
+            vals.fill(fillvalue)
+
+        if func_str == 'last':
+            vals[accmap] = a
+            # repeated indexing gives last value, see:
+            # the phrase "leaving behind the last value"  on this page:
+            # http://wiki.scipy.org/Tentative_NumPy_Tutorial
+        elif func_str == 'first':
+            vals[accmap[::-1]] = a[::-1]  # same trick as above, but in reverse
+
+        elif func_str == 'mean':
+            counts = np.bincount(accmap)
+            sums = np.bincount(accmap, weights=a)
+            with np.errstate(divide='ignore'):
+                vals[:len(sums)] = sums / counts
+            vals[counts == 0] = fillvalue
+        elif func_str in ('prod', 'multiply'):
+            if fillvalue != 1:
+                vals.fill(1)
+            np.multiply.at(vals, accmap, a)
+            if fillvalue != 1:
+                _fill_untouched(accmap, vals, fillvalue)
+        else:
+            func = {'max': np.maximum, 'amax': np.maximum, 'min': np.minimum, 'amin': np.minimum}.get(func_str, func)
+            # The general case
+            if isinstance(func, basestring):
+                raise NotImplementedError("Function %s not recognised" % func_str)
+            try:
+                func = getattr(func, 'at')
+            except AttributeError:
+                # No such ufunc available
+                raise NotImplementedError("ufunc %s does not provide broadcasting" % func)
+            else:
+                func(vals, accmap, a)
+        return vals
 
 
 def accum_py(accmap, a, func=np.sum, size=None, fillvalue=0, dtype=None, mode='incontiguous'):
