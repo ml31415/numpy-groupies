@@ -399,7 +399,7 @@ def accum_ufunc(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontigu
     vals_len = np.max(accmap) + 1
     dtype = dtype or dtype_by_func.get(func, a.dtype)
 
-    if func_str in ('list', 'array', '<lambda>'):
+    if func_str in {'list', 'array', '<lambda>', 'sort', 'std', 'nanmax', 'nanmin'}:
         return accum_np(accmap, a, func=func, dtype=dtype, fillvalue=fillvalue)
 
     if func_str in ('sum', 'add'):
@@ -434,15 +434,15 @@ def accum_ufunc(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontigu
             if fillvalue != 1:
                 _fill_untouched(accmap, vals, fillvalue)
         else:
-            func = {'max': np.maximum, 'min': np.minimum}.get(func_str, func)
+            func = {'max': np.maximum, 'amax': np.maximum, 'min': np.minimum, 'amin': np.minimum}.get(func_str, func)
             # The general case
             if isinstance(func, basestring):
-                raise Exception("Function %s not recognised" % func_str)
+                raise NotImplementedError("Function %s not recognised" % func_str)
             try:
                 func = getattr(func, 'at')
             except AttributeError:
                 # No such ufunc available
-                raise Exception("ufunc %s does not provide broadcasting" % func)
+                raise NotImplementedError("ufunc %s does not provide broadcasting" % func)
             else:
                 func(vals, accmap, a)
         return vals

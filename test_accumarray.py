@@ -99,16 +99,20 @@ def test_fortran_arrays(accmap_all):
         assert accmap_all(np.zeros(t, dtype=int), mat[0, :])[0] == sum(range(t))
 
 
-@pytest.fixture(params=['np/py', 'c/np', 'c/np_contiguous'], scope='module')
+@pytest.fixture(params=['np/py', 'c/np', 'c/np_contiguous', 'c/ufunc'], scope='module')
 def accmap_compare(request):
     if request.param == 'np/py':
         func = accum_np
         func_ref = accum_py
         group_cnt = 100
     else:
-        func = accum
-        func_ref = accum_np
         group_cnt = 3000
+        if 'ufunc' in request.param:
+            func = accum_ufunc
+            func_ref = accum_np
+        else:
+            func = accum
+            func_ref = accum_np
 
     if request.param.endswith('contiguous'):
         accmap = np.repeat(np.arange(group_cnt), 20)
@@ -145,19 +149,20 @@ def func_preserve_order(iterator):
 func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
              np.nansum, np.nanmin, np.nanmax, func_arbitrary, func_preserve_order)
 
-def compare(accmap_compare, func):
+def compare(accmap_compare, func, decimal=10):
     __tracebackhide__ = True
     mode = accmap_compare.mode
-    res = accmap_compare.func(accmap_compare.accmap, accmap_compare.a, mode=mode)
-    ref = accmap_compare.func_ref(accmap_compare.accmap, accmap_compare.a, mode=mode)
-    np.testing.assert_array_almost_equal(res, ref, decimal=14)
-    if 'nan' in func.func_name:
-        res = accmap_compare.func(accmap_compare.accmap, accmap_compare.nana, mode=mode)
-        ref = accmap_compare.func_ref(accmap_compare.accmap, accmap_compare.nana, mode=mode)
-        np.testing.assert_array_almost_equal(res, ref, decimal=14)
+    a = accmap_compare.nana if 'nan' in func.__name__ else accmap_compare.a
+    ref = accmap_compare.func_ref(accmap_compare.accmap, a, func=func, mode=mode)
+    try:
+        res = accmap_compare.func(accmap_compare.accmap, a, func=func, mode=mode)
+    except NotImplementedError:
+        pytest.xfail()
+    else:
+        np.testing.assert_array_almost_equal(res, ref, decimal=decimal)
 
 
-@pytest.mark.parametrize("func", func_list, ids=lambda x: x.func_name)
+@pytest.mark.parametrize("func", func_list, ids=lambda x: x.__name__)
 def test_compare(accmap_compare, func):
     compare(accmap_compare, func)
 
@@ -256,5 +261,17 @@ def test_unpack_downscaled():
     vals = accum(accmap, np.arange(accmap.size), mode='downscaled')
     unpacked = unpack(accmap, vals, mode='downscaled')
     np.testing.assert_array_equal(unpacked, np.array([3, 3, 3, 12, 12, 12, 21, 21, 21]))
+
+
+def main(group_cnt=1000):
+    accmap = np.repeat(np.arange(group_cnt), 2)
+    np.random.shuffle(accmap)
+    accmap = np.repeat(accmap, 10)
+    a = np.random.randn(accmap.size)
+    mode = 'incontiguous'
+
+    for func in func_list:
+        for accumfunc in (accum_np, accum, accum_ufunc):
+            print "%s/%s: %s" % (func.__name__, accumfunc.__name__, accumfunc(accmap, a, func=func))
 
 
