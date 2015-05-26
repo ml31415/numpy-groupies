@@ -59,7 +59,7 @@ from itertools import product
 import numpy as np
 from scipy.weave import inline
 
-__all__ = ['accum', 'accum_np', 'accum_py', 'unpack', 'step_indices']
+__all__ = ['accum', 'accum_np', 'accum_py', 'unpack', 'step_indices', 'step_count']
 
 
 optimized_funcs = {'sum', 'min', 'max', 'amin', 'amax', 'mean', 'std', 'prod',
@@ -92,6 +92,10 @@ c_funcs = dict()
 c_iter = dict()
 c_finish = dict()
 
+# Set this, to fail deprecated C-API calls
+# c_macros = [('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION')]
+c_macros = []
+
 def c_size(varname):
     return r"""
     long L%(varname)s = 1;
@@ -99,6 +103,7 @@ def c_size(varname):
 
 def c_init(varnames):
     return '    ' + ''.join(c_size(varname) for varname in varnames).lstrip() + """
+
     long write_idx = 0;
     long cmp_pos = 0;"""
 
@@ -106,6 +111,7 @@ def c_nan_iter(c_iter):
     return r"""
         if (a[i] == a[i]) {%s
         }""" % '\n'.join('    ' + line for line in c_iter.splitlines())
+
 
 c_minmax = r"""
     #define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
@@ -222,7 +228,7 @@ for mode in ('contiguous', ''):
 
 
 
-c_funcs['count_steps'] = c_size('accmap') + r"""
+c_funcs['step_count'] = c_size('accmap') + r"""
     long cmp_pos = 0;
     long steps = 1;
     if (Laccmap < 1) return_val = 0;
@@ -236,11 +242,11 @@ c_funcs['count_steps'] = c_size('accmap') + r"""
         return_val = steps;
     }"""
 
-def _count_steps(accmap):
+def step_count(accmap):
     """ Determine the size of the result array
         for contiguous data
     """
-    return inline(c_funcs['count_steps'], ['accmap'])
+    return inline(c_funcs['step_count'], ['accmap'], define_macros=c_macros)
 
 
 c_funcs['step_indices'] = c_size('accmap') + r"""
@@ -257,11 +263,11 @@ def step_indices(accmap):
     """ Get the edges of areas within accmap, which are filled 
         with the same value
     """
-    ilen = _count_steps(accmap) + 1
+    ilen = step_count(accmap) + 1
     indices = np.empty(ilen, int)
     indices[0] = 0
     indices[-1] = accmap.size
-    inline(c_funcs['step_indices'], ['accmap', 'indices'])
+    inline(c_funcs['step_indices'], ['accmap', 'indices'], define_macros=c_macros)
     return indices
 
 
@@ -313,7 +319,7 @@ def accum(accmap, a, func='sum', dtype=None, fillvalue=0, mode='incontiguous'):
 
     dtype = dtype or dtype_by_func.get(func, a.dtype)
     if mode == 'contiguous':
-        vals_len = _count_steps(accmap)
+        vals_len = step_count(accmap)
     else:
         vals_len = np.max(accmap) + 1
     vals = np.zeros(vals_len, dtype=dtype)
@@ -334,7 +340,7 @@ def accum(accmap, a, func='sum', dtype=None, fillvalue=0, mode='incontiguous'):
 
     if mode == 'contiguous':
         func += '_' + mode
-    inline(c_funcs[func], vals_dict.keys(), local_dict=vals_dict)
+    inline(c_funcs[func], vals_dict.keys(), local_dict=vals_dict, define_macros=c_macros)
     return vals
 
 
@@ -418,11 +424,6 @@ def accum_py(accmap, a, func=np.sum, size=None, fillvalue=0, dtype=None, mode='i
     return out
 
 
-c_funcs['unpack'] = c_size('accmap') + c_size('vals') + r"""
-    for (long i=0; i<Laccmap; i++) {
-        if (accmap[i] >= 0 && accmap[i] < Lvals) unpacked[i] = vals[accmap[i]];
-    }"""
-
 c_funcs['unpack_contiguous'] = c_minmax + c_size('accmap') + c_size('vals') + r"""
     long cmp_pos = 0;
     long val_cnt = 0;
@@ -435,6 +436,7 @@ c_funcs['unpack_contiguous'] = c_minmax + c_size('accmap') + c_size('vals') + r"
         unpacked[i] = vals[val_cnt];
     }"""
 
+
 def unpack(accmap, vals, mode='incontiguous'):
     """ Take an accum packed array and uncompress it to the size of accmap. 
         This is equivalent to vals[accmap], but gives a more than 
@@ -442,13 +444,14 @@ def unpack(accmap, vals, mode='incontiguous'):
     """
     if mode == 'downscaled':
         accmap = np.unique(accmap, return_inverse=True)[1]
+    if mode != 'contiguous':
+        # Numpy internal version got faster recently, so let's just use this if possible
+        return vals[accmap]
     _check_accmap(accmap)
     _check_mode(mode)
     unpacked = np.zeros_like(accmap, dtype=vals.dtype)
-    code = c_funcs['unpack_contiguous'] if mode == 'contiguous' else c_funcs['unpack']
-    inline(code, ['accmap', 'vals', 'unpacked'])
+    inline(c_funcs['unpack_contiguous'], ['accmap', 'vals', 'unpacked'], define_macros=c_macros)
     return unpacked
-
 
 if __name__ == '__main__':
     accmap = np.array([4, 4, 4, 1, 1, 1, 2, 2, 2])
@@ -457,3 +460,6 @@ if __name__ == '__main__':
     for fn in (np.mean, np.std, 'allnan', 'anynan'):
         vals = accum(accmap, a, mode=mode, func=fn)
         print vals
+
+def uaccum(accmap, a, func='sum', dtype=None, fillvalue=0, mode='incontiguous'):
+    return unpack(accmap, accum(accmap, a, func=func, dtype=dtype, fillvalue=fillvalue, mode=mode))

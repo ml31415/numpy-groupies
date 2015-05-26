@@ -21,6 +21,7 @@ Requirements
 * numpy
 * scipy
 * gcc for using scipy.weave
+* pytest for testing
 
 
 Usage
