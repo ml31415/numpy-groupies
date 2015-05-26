@@ -266,15 +266,22 @@ def test_unpack_downscaled():
     np.testing.assert_array_equal(unpacked, np.array([3, 3, 3, 12, 12, 12, 21, 21, 21]))
 
 
-def main(group_cnt=1000):
+def benchmark(group_cnt=10000):
     accmap = np.repeat(np.arange(group_cnt), 2)
     np.random.shuffle(accmap)
     accmap = np.repeat(accmap, 10)
     a = np.random.randn(accmap.size)
-    mode = 'incontiguous'
 
     for func in func_list:
-        for accumfunc in (accum_np, accum, accum_ufunc):
-            print "%s/%s: %s" % (func.__name__, accumfunc.__name__, accumfunc(accmap, a, func=func))
+        print func.__name__ + ' ' + '-' * 50
+        for accumfunc in (accum_np, accum_ufunc, accum):
+            try:
+                res = accumfunc(accmap, a, func=func)
+            except NotImplementedError:
+                continue
+            t0 = timeit.Timer(lambda: accumfunc(accmap, a, func=func)).timeit(number=10)
+            print "%s %s ... %s" % (accumfunc.__name__.ljust(13), ("%.3f" % (t0 * 1000)).rjust(8), res[:4])
 
 
+if __name__ == '__main__':
+    benchmark()
