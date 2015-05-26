@@ -460,6 +460,3 @@ if __name__ == '__main__':
     for fn in (np.mean, np.std, 'allnan', 'anynan'):
         vals = accum(accmap, a, mode=mode, func=fn)
         print vals
-
-def uaccum(accmap, a, func='sum', dtype=None, fillvalue=0, mode='incontiguous'):
-    return unpack(accmap, accum(accmap, a, func=func, dtype=dtype, fillvalue=fillvalue, mode=mode))
