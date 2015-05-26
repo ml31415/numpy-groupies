@@ -152,10 +152,10 @@ def allnan(x):
 def anynan(x):
     return np.any(np.isnan(x))
 
-
 func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
-             np.nansum, np.nanmin, np.nanmax, func_arbitrary, func_preserve_order,
-             anynan, allnan)
+             np.nansum, np.nanmin, np.nanmax, np.nanmean, np.nanstd,
+             anynan, allnan, func_arbitrary, func_preserve_order)
+
 
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
 def test_compare(accmap_compare, func, decimal=14):
