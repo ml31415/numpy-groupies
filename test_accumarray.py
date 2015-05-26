@@ -2,13 +2,13 @@ import timeit
 import numpy as np
 import pytest
 
-from accumarray import accum_py, accum_np, accum, unpack, step_indices, step_count
+from accumarray import accum_py, accum_np, accum, accum_ufunc, unpack, step_indices, step_count
 
 class AttrDict(dict):
     __getattr__ = dict.__getitem__
 
 
-@pytest.fixture(params=[accum_py, accum_np, accum], ids=lambda x: x.func_name)
+@pytest.fixture(params=[accum_py, accum_np, accum, accum_ufunc], ids=lambda x: x.func_name)
 def accmap_all(request):
     return request.param
 
@@ -146,6 +146,7 @@ func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
              np.nansum, np.nanmin, np.nanmax, func_arbitrary, func_preserve_order)
 
 def compare(accmap_compare, func):
+    __tracebackhide__ = True
     mode = accmap_compare.mode
     res = accmap_compare.func(accmap_compare.accmap, accmap_compare.a, mode=mode)
     ref = accmap_compare.func_ref(accmap_compare.accmap, accmap_compare.a, mode=mode)
