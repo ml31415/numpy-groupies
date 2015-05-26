@@ -399,7 +399,7 @@ def accum_ufunc(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontigu
     vals_len = np.max(accmap) + 1
     dtype = dtype or dtype_by_func.get(func, a.dtype)
 
-    if func_str in {'list', 'array', '<lambda>', 'sort', 'std', 'nanmax', 'nanmin'}:
+    if func_str in {'list', 'array', '<lambda>', 'sort'}:
         return accum_np(accmap, a, func=func, dtype=dtype, fillvalue=fillvalue)
 
     if func_str in ('sum', 'add'):
@@ -427,14 +427,35 @@ def accum_ufunc(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontigu
             with np.errstate(divide='ignore'):
                 vals[:len(sums)] = sums / counts
             vals[counts == 0] = fillvalue
+
+        elif func_str == 'std':
+            counts = np.bincount(accmap)
+            sums = np.bincount(accmap, weights=a)
+            sq_sums = np.bincount(accmap, weights=a * a)
+            with np.errstate(divide='ignore'):
+                E_x = sums / counts
+                E_x2 = E_x * E_x
+                vals[:len(sums)] = np.sqrt(sq_sums / counts - E_x2)
+            vals[counts == 0] = fillvalue
+
         elif func_str in ('prod', 'multiply'):
             if fillvalue != 1:
                 vals.fill(1)
             np.multiply.at(vals, accmap, a)
             if fillvalue != 1:
                 _fill_untouched(accmap, vals, fillvalue)
+
+        elif func_str == 'all':
+            if fillvalue != 1:
+                vals.fill(1)
+            np.logical_and.at(vals, accmap, a)
+            if fillvalue != 1:
+                _fill_untouched(accmap, vals, fillvalue)
+
         else:
-            func = {'max': np.maximum, 'amax': np.maximum, 'min': np.minimum, 'amin': np.minimum}.get(func_str, func)
+            func = {'max': np.maximum, 'amax': np.maximum,
+                    'min': np.minimum, 'amin': np.minimum,
+                    'any': np.logical_or}.get(func_str, func)
             # The general case
             if isinstance(func, basestring):
                 raise NotImplementedError("Function %s not recognised" % func_str)

@@ -99,7 +99,7 @@ def test_fortran_arrays(accmap_all):
         assert accmap_all(np.zeros(t, dtype=int), mat[0, :])[0] == sum(range(t))
 
 
-@pytest.fixture(params=['np/py', 'c/np', 'c/np_contiguous', 'c/ufunc'], scope='module')
+@pytest.fixture(params=['np/py', 'c/np', 'c/np_contiguous', 'ufunc/np'], scope='module')
 def accmap_compare(request):
     if request.param == 'np/py':
         func = accum_np
@@ -146,13 +146,21 @@ def func_preserve_order(iterator):
     return tmp
 
 
-func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
-             np.nansum, np.nanmin, np.nanmax, func_arbitrary, func_preserve_order)
+def allnan(x):
+    return np.all(np.isnan(x))
 
-@pytest.mark.parametrize("func", func_list, ids=lambda x: x.__name__)
-def test_compare(accmap_compare, func, decimal=10):
+def anynan(x):
+    return np.any(np.isnan(x))
+
+
+func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
+             np.nansum, np.nanmin, np.nanmax, func_arbitrary, func_preserve_order,
+             anynan, allnan)
+
+@pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
+def test_compare(accmap_compare, func, decimal=14):
     mode = accmap_compare.mode
-    a = accmap_compare.nana if 'nan' in func.__name__ else accmap_compare.a
+    a = accmap_compare.nana if 'nan' in getattr(func, '__name__', func) else accmap_compare.a
     ref = accmap_compare.func_ref(accmap_compare.accmap, a, func=func, mode=mode)
     try:
         res = accmap_compare.func(accmap_compare.accmap, a, func=func, mode=mode)
