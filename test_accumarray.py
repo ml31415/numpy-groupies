@@ -145,15 +145,17 @@ def func_preserve_order(iterator):
 func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
              np.nansum, np.nanmin, np.nanmax, func_arbitrary, func_preserve_order)
 
-def compare(accmap_compare, func):
+def compare(accmap_compare, func, decimal=14):
+    __tracebackhide__ = True
     mode = accmap_compare.mode
-    res = accmap_compare.func(accmap_compare.accmap, accmap_compare.a, mode=mode)
-    ref = accmap_compare.func_ref(accmap_compare.accmap, accmap_compare.a, mode=mode)
-    np.testing.assert_array_almost_equal(res, ref, decimal=14)
-    if 'nan' in func.func_name:
-        res = accmap_compare.func(accmap_compare.accmap, accmap_compare.nana, mode=mode)
-        ref = accmap_compare.func_ref(accmap_compare.accmap, accmap_compare.nana, mode=mode)
-        np.testing.assert_array_almost_equal(res, ref, decimal=14)
+    a = accmap_compare.nana if 'nan' in func.__name__ else accmap_compare.a
+    ref = accmap_compare.func_ref(accmap_compare.accmap, a, func=func, mode=mode)
+    try:
+        res = accmap_compare.func(accmap_compare.accmap, a, func=func, mode=mode)
+    except NotImplementedError:
+        pytest.xfail()
+    else:
+        np.testing.assert_array_almost_equal(res, ref, decimal=decimal)
 
 
 @pytest.mark.parametrize("func", func_list, ids=lambda x: x.func_name)
