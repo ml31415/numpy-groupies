@@ -424,9 +424,9 @@ def accum_ufunc(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontigu
         elif func_str == 'mean':
             counts = np.bincount(accmap)
             sums = np.bincount(accmap, weights=a)
-            vals[:len(sums)] = counts / sums
-            if not np.isnan(fillvalue):
-                vals[counts == 0] = fillvalue
+            with np.errstate(divide='ignore'):
+                vals[:len(sums)] = sums / counts
+            vals[counts == 0] = fillvalue
         elif func_str in ('prod', 'multiply'):
             if fillvalue != 1:
                 vals.fill(1)

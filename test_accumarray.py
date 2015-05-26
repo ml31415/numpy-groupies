@@ -149,22 +149,17 @@ def func_preserve_order(iterator):
 func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
              np.nansum, np.nanmin, np.nanmax, func_arbitrary, func_preserve_order)
 
-def compare(accmap_compare, func, decimal=10):
-    __tracebackhide__ = True
+@pytest.mark.parametrize("func", func_list, ids=lambda x: x.__name__)
+def test_compare(accmap_compare, func, decimal=10):
     mode = accmap_compare.mode
     a = accmap_compare.nana if 'nan' in func.__name__ else accmap_compare.a
     ref = accmap_compare.func_ref(accmap_compare.accmap, a, func=func, mode=mode)
     try:
         res = accmap_compare.func(accmap_compare.accmap, a, func=func, mode=mode)
     except NotImplementedError:
-        pytest.xfail()
+        pytest.xfail("Function not yet implemented")
     else:
         np.testing.assert_array_almost_equal(res, ref, decimal=decimal)
-
-
-@pytest.mark.parametrize("func", func_list, ids=lambda x: x.__name__)
-def test_compare(accmap_compare, func):
-    compare(accmap_compare, func)
 
 
 def test_timing_sum(accmap_compare):
