@@ -303,15 +303,19 @@ def benchmark(group_cnt=10000):
     a = np.random.randn(accmap.size)
 
     for func in func_list[:-2]:
-        print func.__name__ + ' ' + '-' * 80
+        print (func.__name__ + ' ').ljust(35, '-')
+        results = []
         for accumfunc in (accum_np, accum_ufunc, accum):
             try:
                 res = accumfunc(accmap, a, func=func)
             except NotImplementedError:
                 continue
+            else:
+                results.append(res)
             t0 = timeit.Timer(lambda: accumfunc(accmap, a, func=func)).timeit(number=10)
-            print "    %s %s     %s" % (accumfunc.__name__.ljust(13), ("%.3f" % (t0 * 1000)).rjust(8), res[:4])
-
+            print "         %s %s" % (accumfunc.__name__.ljust(13), ("%.3f" % (t0 * 1000)).rjust(8))
+        for res in results[1:]:
+            np.testing.assert_array_almost_equal(res, results[0])
 
 if __name__ == '__main__':
     benchmark()
