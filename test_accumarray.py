@@ -283,15 +283,15 @@ def benchmark(group_cnt=10000):
     accmap = np.repeat(accmap, 10)
     a = np.random.randn(accmap.size)
 
-    for func in func_list:
-        print func.__name__ + ' ' + '-' * 50
+    for func in func_list[:-2]:
+        print func.__name__ + ' ' + '-' * 80
         for accumfunc in (accum_np, accum_ufunc, accum):
             try:
                 res = accumfunc(accmap, a, func=func)
             except NotImplementedError:
                 continue
             t0 = timeit.Timer(lambda: accumfunc(accmap, a, func=func)).timeit(number=10)
-            print "%s %s ... %s" % (accumfunc.__name__.ljust(13), ("%.3f" % (t0 * 1000)).rjust(8), res[:4])
+            print "    %s %s     %s" % (accumfunc.__name__.ljust(13), ("%.3f" % (t0 * 1000)).rjust(8), res[:4])
 
 
 if __name__ == '__main__':

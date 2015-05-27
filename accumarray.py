@@ -430,6 +430,7 @@ def _fill_untouched(accmap, vals, fillvalue):
     # Probably there is something faster ...
     erase = np.ones_like(vals, dtype=bool)
     erase[accmap] = 0
+    # Anything never touched by accmap now marked with 1
     vals[erase] = fillvalue
     return vals
 
@@ -535,9 +536,9 @@ def _std(accmap, a, vals, fillvalue, dtype=None, nans=False):
     sums = np.bincount(accmap, weights=a)
     sq_sums = np.bincount(accmap, weights=a * a)
     with np.errstate(divide='ignore'):
-        E_x = sums / counts
-        E_x2 = E_x * E_x
-        vals[:len(sums)] = np.sqrt(sq_sums / counts - E_x2)
+        means = sums / counts
+        means2 = means * means
+        vals[:len(sums)] = np.sqrt(sq_sums / counts - means2)
     vals[counts == 0] = fillvalue
     return vals
 
@@ -557,18 +558,39 @@ def _anynan(accmap, a, vals, fillvalue, dtype=None, nans=False):
     return vals
 
 
-_accum_funcs = dict(min=_min, amin=_min, max=_max, amax=_max, sum=_sum, add=_sum, prod=_prod, multiply=_prod,
-                    last=_last, first=_first, all=_all, any=_any, mean=_mean, std=_std,
-                    anynan=_anynan, allnan=_allnan)
+def _sort(accmap, a, vals, fillvalue, dtype=None, nans=False):
+    # TODO: Hack something together with lexsort here
+    pass
 
-_accum_mask_vals = dict(prod=1, all=1)
+
+def _generic_ufunc(func, accmap, a, vals, fillvalue, dtype=None):
+    """ Generic ufunc.at execution """
+    try:
+        func = getattr(func, 'at')
+    except AttributeError:
+        # No such ufunc available
+        raise NotImplementedError("ufunc %s does not provide broadcasting" % func.__name__)
+    else:
+        func(vals, accmap, a)
+    if fillvalue != 0:
+        vals.fill(fillvalue)
+    return vals
+
+
+_accum_base_funcs = dict(min=_min, amin=_min, max=_max, amax=_max, sum=_sum, add=_sum, prod=_prod, multiply=_prod,
+                    last=_last, first=_first, all=_all, any=_any, mean=_mean, std=_std,
+                    anynan=_anynan, allnan=_allnan)  # , sort=_sort, sorted=_sort
+_accum_funcs = dict(('nan' + k, v) for k, v in _accum_base_funcs.iteritems())
+_accum_funcs.update(_accum_base_funcs)
+
 
 def accum_ufunc(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontiguous'):
     _check_accmap(accmap, a, check_min=False)
     a = np.asanyarray(a)
+    # TODO: Add preparations for contiguous mode
 
     func_str = func.lower() if isinstance(func, basestring) else func.__name__
-    if func_str in {'list', 'array', '<lambda>', 'sort'}:
+    if func_str not in _accum_funcs and not 'ufunc' in type(func).__name__:
         # Fallback solution for backwards compatibility
         return accum_np(accmap, a, func=func, fillvalue=fillvalue)
     else:
@@ -576,29 +598,15 @@ def accum_ufunc(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontigu
         vals_len = np.max(accmap) + 1
         vals = np.zeros(vals_len, dtype=dtype)
 
-        if not func_str.startswith('nan'):
-            nans = False
-            func = _accum_funcs.get(func_str)
-        else:
-            nans = True
-            func = _accum_funcs.get(func_str[3:])
-
-        if func:
-            return func(accmap, a, vals, fillvalue, dtype=dtype, nans=nans)
-        else:
-            # The general case for arbitrary ufuncs
+        try:
+            func = _accum_funcs[func_str]
+        except KeyError:
             if isinstance(func, basestring):
                 raise NotImplementedError("Function string '%s' not recognised" % func_str)
-            try:
-                func = getattr(func, 'at')
-            except AttributeError:
-                # No such ufunc available
-                raise NotImplementedError("ufunc %s does not provide broadcasting" % func)
             else:
-                func(vals, accmap, a)
-            if fillvalue != 0:
-                vals.fill(fillvalue)
-        return vals
+                return _generic_ufunc(func, accmap, a, vals, fillvalue, dtype=dtype)
+        else:
+            return func(accmap, a, vals, fillvalue, dtype=dtype, nans=func_str.startswith('nan'))
 
 
 c_funcs['unpack_contiguous'] = c_minmax + c_size('accmap') + c_size('vals') + r"""
