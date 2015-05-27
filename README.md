@@ -120,64 +120,21 @@ really competitive. Here is a recent benchmark print. accum_np marks
 the naive python for-loop approach for reference:
 
 ```
-sum -------------------------------
-         accum_np       362.167
-         accum_ufunc      5.969
-         accum            8.683
-amin ------------------------------
-         accum_np       326.713
-         accum_ufunc    158.091
-         accum            9.777
-amax ------------------------------
-         accum_np       335.089
-         accum_ufunc    157.735
-         accum            9.673
-prod ------------------------------
-         accum_np       337.212
-         accum_ufunc    149.197
-         accum            7.047
-all -------------------------------
-         accum_np       415.426
-         accum_ufunc    174.221
-         accum            7.240
-any -------------------------------
-         accum_np       412.707
-         accum_ufunc    169.546
-         accum            6.654
-mean ------------------------------
-         accum_np       674.523
-         accum_ufunc     10.295
-         accum            7.995
-std -------------------------------
-         accum_np      1723.885
-         accum_ufunc     19.235
-         accum           11.468
-nansum ----------------------------
-         accum_np       728.556
-         accum_ufunc     12.245
-         accum            8.035
-nanmin ----------------------------
-         accum_np       599.000
-         accum_ufunc    160.834
-         accum           10.952
-nanmax ----------------------------
-         accum_np       605.791
-         accum_ufunc    161.090
-         accum            9.983
-nanmean ---------------------------
-         accum_np      2510.927
-         accum_ufunc     23.382
-         accum            7.986
-nanstd ----------------------------
-         accum_np      5096.134
-         accum_ufunc     32.621
-         accum           10.594
-anynan ----------------------------
-         accum_np       465.890
-         accum_ufunc    145.399
-         accum            7.000
-allnan ----------------------------
-         accum_np       467.948
-         accum_ufunc    150.159
-         accum            6.500
+function       accum_np    accum_ufunc          accum
+-----------------------------------------------------
+sum             367.071          6.086          7.130
+amin            330.441        156.628          9.507
+amax            343.035        155.581          9.410
+prod            343.304        148.108          6.957
+all             516.369        174.532          7.473
+any             428.282        170.317          6.466
+mean            716.448          9.967          7.222
+std            1689.581         17.903         10.011
+nansum          757.071         10.611          7.254
+nanmin          617.014        160.916          9.793
+nanmax          616.106        161.215          9.689
+nanmean        2509.755         22.437          7.684
+nanstd         4901.624         32.452         10.643
+anynan          489.152        143.980          6.710
+allnan          493.877        148.592          6.511
 ```

@@ -302,10 +302,13 @@ def benchmark(group_cnt=10000):
     accmap = np.repeat(accmap, 10)
     a = np.random.randn(accmap.size)
 
+    accfuncs = accum_np, accum_ufunc, accum
+    print "function" + ''.join(f.__name__.rjust(15) for f in accfuncs)
+    print "-" * 53
     for func in func_list[:-2]:
-        print (func.__name__ + ' ').ljust(35, '-')
+        print func.__name__.ljust(8),
         results = []
-        for accumfunc in (accum_np, accum_ufunc, accum):
+        for accumfunc in accfuncs:
             try:
                 res = accumfunc(accmap, a, func=func)
             except NotImplementedError:
@@ -313,7 +316,8 @@ def benchmark(group_cnt=10000):
             else:
                 results.append(res)
             t0 = timeit.Timer(lambda: accumfunc(accmap, a, func=func)).timeit(number=10)
-            print "         %s %s" % (accumfunc.__name__.ljust(13), ("%.3f" % (t0 * 1000)).rjust(8))
+            print ("%.3f" % (t0 * 1000)).rjust(14),
+        print
         for res in results[1:]:
             np.testing.assert_array_almost_equal(res, results[0])
 
