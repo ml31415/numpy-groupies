@@ -450,19 +450,19 @@ def _sum(accmap, a, vals, fillvalue, dtype=None, nans=False):
 
 
 def _last(accmap, a, vals, fillvalue, dtype=None, nans=False):
+    if fillvalue != 0:
+        vals.fill(fillvalue)
     vals[accmap] = a
     # repeated indexing gives last value, see:
     # the phrase "leaving behind the last value"  on this page:
     # http://wiki.scipy.org/Tentative_NumPy_Tutorial
-    if fillvalue != 0:
-        vals.fill(fillvalue)
     return vals
 
 
 def _first(accmap, a, vals, fillvalue, dtype=None, nans=False):
-    vals[accmap[::-1]] = a[::-1]  # same trick as above, but in reverse
     if fillvalue != 0:
         vals.fill(fillvalue)
+    vals[accmap[::-1]] = a[::-1]  # same trick as above, but in reverse
     return vals
 
 

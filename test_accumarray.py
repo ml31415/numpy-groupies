@@ -266,6 +266,17 @@ def test_unpack_downscaled():
     np.testing.assert_array_equal(unpacked, np.array([3, 3, 3, 12, 12, 12, 21, 21, 21]))
 
 
+@pytest.mark.parametrize("first_last", ["first", "last"])
+def test_ufunc_indices(first_last):
+    accmap = np.arange(0, 100, 2, dtype=int).repeat(5)
+    a = np.arange(accmap.size)
+    res = accum_ufunc(accmap, a, func=first_last, fillvalue=-1)
+    ref = np.zeros(np.max(accmap) + 1)
+    ref.fill(-1)
+    ref[::2] = np.arange(0 if first_last == 'first' else 4, accmap.size, 5, dtype=int)
+    np.testing.assert_array_equal(res, ref)
+
+
 def benchmark(group_cnt=10000):
     accmap = np.repeat(np.arange(group_cnt), 2)
     np.random.shuffle(accmap)
