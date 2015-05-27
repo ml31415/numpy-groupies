@@ -97,7 +97,8 @@ timeit accum(accmap, a, func='mean')
 >>> 1000 loops, best of 3: 1.7 ms per loop
 ```
 
-*Octave*
+### Octave ###
+
 ```matlab
 accmap = repmat(1:10000, 10, 1)(:);
 a = 1:numel(accmap);
@@ -112,7 +113,8 @@ slower. The values above are the best of several consequent tries. I'm
 not sure what goes wrong with octaves mean function, but for me it's
 painfully slow. If I'm doing something wrong here, please let me know.
 
-*numpy ufuncs*
+### numpy ufuncs ###
+
 Numpy offers bincount and ufunc.at for broadcasting. I recently added
 a proof of concept implementation of accumarray based on these functions.
 While bincount offers decent speed, the ufunc based functions are not
