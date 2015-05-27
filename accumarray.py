@@ -59,40 +59,37 @@ from itertools import product
 import numpy as np
 from scipy.weave import inline
 
-__all__ = ['accum', 'accum_np', 'accum_py', 'unpack', 'step_indices', 'step_count']
+__all__ = ['accum', 'accum_np', 'accum_ufunc', 'accum_py', 'unpack', 'step_indices', 'step_count']
 
 
 optimized_funcs = {'sum', 'min', 'max', 'amin', 'amax', 'mean', 'std', 'prod',
                    'nansum', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanprod',
                    'all', 'any', 'allnan', 'anynan'}
 
-dtype_by_func = {list: 'object',
-                 tuple: 'object',
-                 sorted: 'object',
-                 np.array: 'object',
-                 np.sort: 'object',
-                 np.mean: 'float',
-                 np.std: 'float',
-                 np.all: 'bool',
-                 np.any: 'bool',
-                 all: 'bool',
-                 any: 'bool',
-                 'mean': 'float',
-                 'std': 'float',
-                 'nanmean': 'float',
-                 'nanstd': 'float',
-                 'all': 'bool',
-                 'any': 'bool',
-                 'allnan': 'bool',
-                 'anynan': 'bool',
-                 }
+_dtypes_by_func_base = {list: 'object', tuple: 'object', sorted: 'object',
+                        np.array: 'object',
+                        np.mean: 'float', np.std: 'float',
+                        np.all: 'bool', np.any: 'bool',
+                        all: 'bool', any: 'bool',
+                        np.nanmean: 'float', np.nanstd: 'float'}
+_dtypes_by_func = dict((k.__name__, v) for k, v in _dtypes_by_func_base.iteritems())
+_dtypes_by_func.update(_dtypes_by_func_base)
+_dtypes_by_func.update(allnan='bool', anynan='bool')
+
+def _dtype_by_func(func, a):
+    try:
+        return _dtypes_by_func[func]
+    except KeyError:
+        func_str = func.lower() if isinstance(func, basestring) else func.__name__
+        return _dtypes_by_func.get(func_str, a.dtype)
+
 
 # c_funcs will contain all generated c code, so it can be read easily for debugging
 c_funcs = dict()
 c_iter = dict()
 c_finish = dict()
 
-# Set this, to fail deprecated C-API calls
+# Set this for testing, to fail deprecated C-API calls
 # c_macros = [('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION')]
 c_macros = []
 
@@ -317,7 +314,7 @@ def accum(accmap, a, func='sum', dtype=None, fillvalue=0, mode='incontiguous'):
     _check_accmap(accmap, a)
     _check_mode(mode)
 
-    dtype = dtype or dtype_by_func.get(func, a.dtype)
+    dtype = dtype or _dtype_by_func(func, a)
     if mode == 'contiguous':
         vals_len = step_count(accmap)
     else:
@@ -354,7 +351,7 @@ def accum_np(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontiguous
     _check_accmap(accmap, a, check_min=False)
     _check_mode(mode)
 
-    dtype = dtype or dtype_by_func.get(func, a.dtype)
+    dtype = dtype or _dtype_by_func(func, a)
     if mode == 'contiguous':
         indices = np.where(np.ediff1d(accmap, to_begin=[1], to_end=[1]))[0]
         vals_len = len(indices) - 1
@@ -391,7 +388,7 @@ def accum_py(accmap, a, func=np.sum, size=None, fillvalue=0, dtype=None, mode='i
     _check_accmap(accmap, a)
     _check_mode(mode)
 
-    dtype = dtype or dtype_by_func.get(func, a.dtype)
+    dtype = dtype or _dtype_by_func(func, a)
     if accmap.shape == a.shape:
         accmap = np.expand_dims(accmap, -1)
 
@@ -587,7 +584,7 @@ def _generic_ufunc(func, accmap, a, vals, fillvalue, dtype=None):
 
 _accum_base_funcs = dict(min=_min, amin=_min, max=_max, amax=_max, sum=_sum, add=_sum, prod=_prod, multiply=_prod,
                     last=_last, first=_first, all=_all, any=_any, mean=_mean, std=_std,
-                    anynan=_anynan, allnan=_allnan)  # , sort=_sort, sorted=_sort
+                    anynan=_anynan, allnan=_allnan)  # sort=_sort
 _accum_funcs = dict(('nan' + k, v) for k, v in _accum_base_funcs.iteritems())
 _accum_funcs.update(_accum_base_funcs)
 
@@ -602,7 +599,7 @@ def accum_ufunc(accmap, a, func=np.sum, dtype=None, fillvalue=0, mode='incontigu
         # Fallback solution for backwards compatibility
         return accum_np(accmap, a, func=func, fillvalue=fillvalue)
     else:
-        dtype = dtype or dtype_by_func.get(func, a.dtype)
+        dtype = dtype or _dtype_by_func(func, a)
         vals_len = np.max(accmap) + 1
         vals = np.zeros(vals_len, dtype=dtype)
 
