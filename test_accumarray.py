@@ -1,4 +1,5 @@
 import timeit
+import itertools
 import numpy as np
 import pytest
 
@@ -274,6 +275,24 @@ def test_ufunc_indices(first_last):
     ref = np.zeros(np.max(accmap) + 1)
     ref.fill(-1)
     ref[::2] = np.arange(0 if first_last == 'first' else 4, accmap.size, 5, dtype=int)
+    np.testing.assert_array_equal(res, ref)
+
+
+@pytest.mark.parametrize(["first_last", "nanoffset"], itertools.product(["nanfirst", "nanlast"], [2, 0, 4]))
+def test_ufunc_nan_indices(first_last, nanoffset):
+    accmap = np.arange(0, 100, 2, dtype=int).repeat(5)
+    a = np.arange(accmap.size, dtype=float)
+
+    a[nanoffset::5] = np.nan
+    res = accum_ufunc(accmap, a, func=first_last, fillvalue=-1)
+    ref = np.zeros(np.max(accmap) + 1)
+    ref.fill(-1)
+
+    if first_last == "nanfirst":
+        ref_offset = 1 if nanoffset == 0 else 0
+    else:
+        ref_offset = 3 if nanoffset == 4 else 4
+    ref[::2] = np.arange(ref_offset, accmap.size, 5, dtype=int)
     np.testing.assert_array_equal(res, ref)
 
 
