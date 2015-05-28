@@ -47,13 +47,23 @@ def accumarray(idx, vals, func='sum', sz=None, fillvalue=0, order=None):
 
         This implementation is by DM, May 2015.
     """
+    # Check for 2d idx        
+    for x in idx:
+        try:
+            x[0]
+            raise NotImplementedError("pure python implementation doesn't accept 2d idx input.")
+        except IndexError:
+            continue # getting an error is good, it means this is scalar           
+            
     original_func = func
     func = _func_alias.get(func, func)
     if isinstance(func, basestring) and func.startswith('nan') and func in no_separate_nan_version:
         raise Exception(original_func[3:] + " does not have a nan- version.")
                 
+    # remove nans
     if isinstance(func, basestring) and func.startswith('nan'):
-        raise NotImplementedError("nan versions of functions not implemented.")
+        idx, vals = zip(*((ix, val) for ix, val in zip(idx, vals) if not math.isnan(val)))
+        func = func[3:]
         
     # find the function
     if isinstance(func, basestring):
@@ -65,14 +75,6 @@ def accumarray(idx, vals, func='sum', sz=None, fillvalue=0, order=None):
     else:
         raise Exception("func should be a callable function or recognised function name")
 
-    # Check for 2d idx        
-    for x in idx:
-        try:
-            x[0]
-            raise NotImplementedError("pure python implementation doesn't accept 2d idx input.")
-        except IndexError:
-            continue # getting an error is good, it means this is scalar
-            
     if sz is None:
         sz = 1 + max(idx)        
 

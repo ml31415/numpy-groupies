@@ -90,7 +90,6 @@ The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enoug
 
 Maybe at some point a version of `accumarray` will make its way into `numpy` itself (or at least `scipy`).
 
-The pure python implementation is from the [scipy cookbook](http://www.scipy.org/Co4/5bo4/5/AccumarrayLike). 
-The majority of the `numpy` code was written by @d1manson.  And the `scipy.weave` implementation is by @ml31415.
+This project was started by @ml31415 and the `scipy.weave` implementation is by him.  The pure python and `numpy` implementations were written by @d1manson. 
 
  
