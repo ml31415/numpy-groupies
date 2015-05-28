@@ -1,5 +1,9 @@
 import numpy as np
 
+import accumarray_utils as utils
+
+_func_alias, no_separate_nan_version = utils.get_alias_info(with_numpy=True)
+
 def _fill_untouched(idx, ret, fillvalue):
     """any elements of ret not indexed by idx are set to fillvalue."""
     untouched = np.ones_like(ret, dtype=bool)
@@ -218,27 +222,7 @@ _func_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_f
                     all=_all, any=_any, mean=_mean, std=_std, var=_var,
                     anynan=_anynan, allnan=_allnan, sort=_sort, rsort=_rsort, 
                     array=_array)
-_func_alias={
-'or': 'any', any: 'any', np.any: 'any',
-'and': 'all', all: 'all', np.all: 'all',
-'add': 'sum', 'plus': 'sum', np.add: 'sum', np.sum: 'sum',
-'multiply': 'prod', 'product': 'prod', 'times': 'prod', np.multiply: 'prod', np.prod: 'prod',
-'amax': 'max', 'maximum': 'max', np.amax: 'max', np.max: 'max', np.maximum: 'max',
-'amin': 'min', 'minimum': 'min', np.amin: 'min', np.min: 'min', np.minimum: 'min',
- np.mean: 'mean',
- np.std: 'std',
- np.var: 'var',
-'split': 'array', 'splice': 'array', np.array: 'array', np.asarray: 'array',
-'sorted': 'sort', 'asort': 'sort', 'asorted': 'sort', np.sort: 'sort',
-'rsorted': 'rsort', 'dsort': 'rsort', 'dsorted': 'rsort',
-np.nansum: 'nansum',
-np.nanmean: 'nanmean',
-np.nanvar: 'nanvar',
-np.nanmax: 'nanmax',
-np.nanmin: 'nanmin',
-np.nanstd: 'nanstd'
-}
-_func_wants_all_nans = ('sort','rsort','array','split','allnan','anynan') # these ones cannot have 'nan' prefix
+
 
 def accumarray(idx, vals, sz=None, func='sum', fillvalue=0, order='F'):
     '''
@@ -391,7 +375,7 @@ def accumarray(idx, vals, sz=None, func='sum', fillvalue=0, order='F'):
         if func.startswith('nan'):
             func = func[3:]
             func = _func_alias.get(func, func)
-            if func in _func_wants_all_nans:
+            if func in no_separate_nan_version:
                 raise Exception(original_func[3:] + " does not have a nan- version.")
             if np.ndim(vals) == 0:
                 raise Exception("nan- version not supported for scalar input.")
