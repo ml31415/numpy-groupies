@@ -16,7 +16,7 @@ Suppose that that you have a list of values, `vals`, and some labels for each of
 
 Here is a simple example with ten `vals` and their paired `idx` (this is the same as the code example above):
 
-![accumarray_diagram.png]
+![accumarray_diagram](/accumarray_diagram.png)
     
 The output is an array, with the ith element giving the `sum`  (or `mean` or whatever) of the relevant items from within `vals`.  By default, any gaps are filled with zero: in the above example, the label `2` does not appear in the `idx` list, so in the output, the element `2` is `0.0`.  If you would prefer to fill the gaps with `nan` (or some other value, e.g. `-1`) you can do this using `filvalue=nan`.
 
