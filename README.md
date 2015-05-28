@@ -35,25 +35,25 @@ a[accumarray(idx, vals, func='allnan')] = nan # here you set the all-nan groups 
 
 The prefered way of specifying a function is using a string, e.g. `func="sum"`, however in many cases actual function objects will be recognised too:
 
-name     | aliases       | nan- version?  | `numpy` performance  | `scipy.weave` performance | notes
-:-------- |:-------------| -------------- | ------------------ | ----------------------------| --------
-`"sum"`   | `"plus"`, `"add"`, `np.sum`, `np.add`, `sum` (inbuilt python) | yes | excellent | excellent | `numpy` uses `bincount`
-`"mean"` | `np.mean` | yes | excellent | excellent | `numpy` uses `bincount`
-`"var"` | `np.var` | yes | excellent | not implemented | `numpy` uses `bincount`, computed as `sum((vals-means)**2)`. 
-`"std"` | `np.std` | yes | excellent | execellent | see `"var"`.
-`"all"` | `"and"`, `np.all`, `all` (inbuilt python) | yes | excellent | excellent | `numpy` uses simple indexing operations
-`"any"` | `"or"`, `np.any`, `any` (inbuilt python) | yes | excellent | excellent | `numpy` uses simple indexing operations
-`"first"` | | excellent | not implemented | `numpy` uses simple indexing
-`"last"` | | excellent | not implemented | `numpy` uses simple indexing
-`"min"` | `"amin"`, `"minimum"`, `np.min`, `np.amin`, `np.minimum`, `min` (inbuilt python) | yes | poor | excellent | `numpy` uses `minimum.at` which is slow (as of `v1.9`)
-`"max"` | `"amax"`, `"maximum"`, `np.max`, `np.amax`, `np.maxmum`, `max` (inbuilt python) | yes | poor | excellent | `numpy` uses `maximum.at` which is slow (as of `v1.9`)
-`"prod"` | `"product"`, `"times"`, `"multiply"`, `np.prod`, `np.multiply` | yes | poor | excellent | `numpy` uses `prod.at` which is slow (as of `v1.9`)
-`"allnan"` | | no | excellent |  excellent | `numpy` uses `np.isnan` and then `accumarray`'s `"all"`.
-`"anynan"` | | no | excellent |  excellent | `numpy` uses `np.isnan` and then `accumarray`'s `"any"`.
-`"array"` |`"split"`, `"splice"`, `np.array`, `np.asarray` | no | ok | ?? | output is a `numpy` array with `dtype=object`, each element of which is a `numpy` array (or `fillvalue`). The order of values within each group matches the original order in the full `vals` array.
-`"sort"` | `"sorted"`, `"asort"`, `"fsort"`, `np.sort`, `sorted` (inbuilt python) | no | ok | ?? | similar to `"array"`, except here the values in each output array are sorted in ascending order.
-`"rsort"` | `"rsorted"`, `"dsort"` | no | ok | ?? | similar to `"sort"`, except in descending order.
-`<custom function>` | | | ok | ?? | similar to `"array"`, except the `<custom function>` is evaulated on each group and the return value is placed in the final output array.
+name     | aliases       | nan-?  |  performance| notes
+:-------- |:-------------| --------------  | ----------------------------| --------
+`"sum"`   | `"plus"`, `"add"`, `np.sum`, `np.add`, `sum` (inbuilt python) | yes | `numpy`: excellent, `weave`: excellent | `numpy` uses `bincount`
+`"mean"` | `np.mean` | yes | `numpy`: excellent, `weave`: excellent| `numpy` uses `bincount`
+`"var"` | `np.var` | yes | `numpy`: excellent, `weave`: no-impl | `numpy` uses `bincount`, computed as `sum((vals-means)**2)`. 
+`"std"` | `np.std` | yes | `numpy`: excellent, `weave`: excellent | see `"var"`.
+`"all"` | `"and"`, `np.all`, `all` (inbuilt python) | yes | `numpy`: excellent, `weave`: excellent | `numpy` uses simple indexing operations
+`"any"` | `"or"`, `np.any`, `any` (inbuilt python) | yes | `numpy`: excellent, `weave`: excellent | `numpy` uses simple indexing operations
+`"first"` | | yes |  `numpy`: excellent, `weave`: no-impl  | `numpy` uses simple indexing
+`"last"` | | yes |  `numpy`: excellent, `weave`: no-impl  | `numpy` uses simple indexing
+`"min"` | `"amin"`, `"minimum"`, `np.min`, `np.amin`, `np.minimum`, `min` (inbuilt python) | yes |  `numpy`: poor, `weave`: excellent  | `numpy` uses `minimum.at` which is slow (as of `v1.9`)
+`"max"` | `"amax"`, `"maximum"`, `np.max`, `np.amax`, `np.maxmum`, `max` (inbuilt python) | yes | `numpy`: poor, `weave`: excellent | `numpy` uses `maximum.at` which is slow (as of `v1.9`)
+`"prod"` | `"product"`, `"times"`, `"multiply"`, `np.prod`, `np.multiply` | yes | `numpy`: poor, `weave`: excellent| `numpy` uses `prod.at` which is slow (as of `v1.9`)
+`"allnan"` | | no | `numpy`: excellent, `weave`: excellent | `numpy` uses `np.isnan` and then `accumarray`'s `"all"`.
+`"anynan"` | | no | `numpy`: excellent, `weave`: excellent | `numpy` uses `np.isnan` and then `accumarray`'s `"any"`.
+`"array"` |`"split"`, `"splice"`, `np.array`, `np.asarray` | no | `numpy`: ok, `weave`: ?? | output is a `numpy` array with `dtype=object`, each element of which is a `numpy` array (or `fillvalue`). The order of values within each group matches the original order in the full `vals` array.
+`"sort"` | `"sorted"`, `"asort"`, `"fsort"`, `np.sort`, `sorted` (inbuilt python) | no |  `numpy`: ok, `weave`: ??  | similar to `"array"`, except here the values in each output array are sorted in ascending order.
+`"rsort"` | `"rsorted"`, `"dsort"` | no |  `numpy`: ok, `weave`: ??  | similar to `"sort"`, except in descending order.
+`<custom function>` | | |  `numpy`: ok, `weave`: ?? | similar to `"array"`, except the `<custom function>` is evaulated on each group and the return value is placed in the final output array.
 
 Note that the last few functions listed above do not return an array of scalars but an array with `dtype=object`.  
 Also, note that as of `numpy v1.9`, the `<custom function>` implementation is only slightly slower than the `ufunc.at` method, so if you want to use a `ufunc` not in the above list, it wont run that much slower when simple supplied as a `<custom function>`, e.g. `func=np.logaddexp`.  There is a [numpy issue](https://github.com/numpy/numpy/issues/5922) trying to get this performance bug fixed - please show interest there if you want to encourage the `numpy` devs to work on that! If, however, for a specific `ufunc`, you know of a fast algorithm which does signficantly better than `ufunc.at` please get in touch and we can incorporate it here.
