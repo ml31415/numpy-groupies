@@ -39,12 +39,12 @@ name     | aliases       | nan-?  |  performance| notes
 :-------- |:-------------| --------------  | ----------------------------| --------
 `"sum"`   | `"plus"`, `"add"`, `np.sum`, `np.add`, `sum` (inbuilt python) | yes | `numpy`: 5/5, `weave`: 5/5 | `numpy` uses `bincount`
 `"mean"` | `np.mean` | yes | `numpy`: 5/5, `weave`: 5/5| `numpy` uses `bincount`
-`"var"` | `np.var` | yes | `numpy`: 5/5, `weave`: no-impl | `numpy` uses `bincount`, computed as `sum((vals-means)**2)`. 
+`"var"` | `np.var` | yes | `numpy`: 5/5, `weave`: - | `numpy` uses `bincount`, computed as `sum((vals-means)**2)`. 
 `"std"` | `np.std` | yes | `numpy`: 5/5, `weave`: 5/5 | see `"var"`.
 `"all"` | `"and"`, `np.all`, `all` (inbuilt python) | yes | `numpy`: 4/5, `weave`: 5/5 | `numpy` uses simple indexing operations
 `"any"` | `"or"`, `np.any`, `any` (inbuilt python) | yes | `numpy`: 4/5, `weave`: 5/5 | `numpy` uses simple indexing operations
-`"first"` | | yes |  `numpy`: 5/5, `weave`: no-impl  | `numpy` uses simple indexing
-`"last"` | | yes |  `numpy`: 5/5, `weave`: no-impl  | `numpy` uses simple indexing
+`"first"` | | yes |  `numpy`: 5/5, `weave`: - | `numpy` uses simple indexing
+`"last"` | | yes |  `numpy`: 5/5, `weave`: -  | `numpy` uses simple indexing
 `"min"` | `"amin"`, `"minimum"`, `np.min`, `np.amin`, `np.minimum`, `min` (inbuilt python) | yes |  `numpy`: 2/5, `weave`: 5/5  | `numpy` uses `minimum.at` which is slow (as of `v1.9`)
 `"max"` | `"amax"`, `"maximum"`, `np.max`, `np.amax`, `np.maxmum`, `max` (inbuilt python) | yes | `numpy`: 2/5, `weave`: 5/5 | `numpy` uses `maximum.at` which is slow (as of `v1.9`)
 `"prod"` | `"product"`, `"times"`, `"multiply"`, `np.prod`, `np.multiply` | yes | `numpy`: 2/5, `weave`: 5/5| `numpy` uses `prod.at` which is slow (as of `v1.9`)
