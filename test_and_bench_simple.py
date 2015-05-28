@@ -37,10 +37,10 @@ for name, f in testable_funcs.items():
     numpy_simple = accumarray_np(test_idx, test_vals, func=lambda x: f(x)) # wrapping f in lambda forces group-and-loop
     purepy = accumarray_pure(test_idx, test_vals, func=name)
     if not np.allclose(numpy_optimized, numpy_simple.astype(numpy_optimized.dtype)):
-        print name, "numpy FAILED test, output: [optimised; correct]..."
+        print name, "np-optimised FAILED test, output: [optimised; correct]..."
         print np.vstack((numpy_optimized, numpy_simple))
     else:
-        print name, "numpy PASSED test"
+        print name, "np-optimised PASSED test"
     if not np.allclose(purepy, numpy_simple.astype(numpy_optimized.dtype)):
         print name, "purepy FAILED test, output: [purepy; correct]..."
         print np.vstack((purepy, numpy_simple))
@@ -54,12 +54,14 @@ print "Here we are using 100,000 indices uniformly picked from [0, 1000)."
 print "Specifically, about 25% of the values are 0 (for use with bool operations),"
 print "the remainder are uniformly distribuited on [-50,25)."
         
-print ''.join(f.rjust(15) for f in ['pure-py','np-simple','np-optimized']) + "(np-simple/np-optimized)".rjust(25)
+print ''.join(f.rjust(15) for f in ['function', 'pure-py','np-simple','np-optimized']) + "(np-simple/np-optimized)".rjust(25)
 for name, f in testable_funcs.items():
     t_np_optimized = timeit.Timer(lambda: accumarray_np(test_idx, test_vals, func=f)).timeit(number=5)
     t_np_simple = timeit.Timer(lambda: accumarray_np(test_idx, test_vals, func=lambda x: f(x))).timeit(number=5)
     t_purepy = timeit.Timer(lambda: accumarray_pure(test_idx, test_vals, func=name)).timeit(number=2)
+    print name.rjust(14),    
     print ("%.1fms" % (t_purepy * 1000)).rjust(14),
     print ("%.1fms" % (t_np_simple * 1000)).rjust(14),
     print ("%.1fms" % (t_np_optimized * 1000)).rjust(14),
-    print ("%.1fx" % (t_np_simple/t_np_optimized)).rjust(25)
+    print ("%.1fx" % (t_np_simple/t_np_optimized)).center(25),
+    print ""
