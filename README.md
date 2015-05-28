@@ -1,142 +1,96 @@
-accumarray
-==========
-
-Replacement for matlabs accumarray in numpy. The package actually contains 
-three independent implementations of accum. One _really_ slow pure python
-implementation, `accum_py`, one pure numpy implmentation, `accum_np`, and 
-for most common functions optimized implementations written in C, `accum`.
-If `accum` is called with an aggregation function, which doesn't have an
-optimized implementation, it falls back to the numpy implementation.
-
-The optimized aggregation functions are:
-
-sum, min, max, mean, std, prod, all, any, allnan, anynan,
-nansum, nanmin, nanmax, nanmean, nanstd, nanprod
-
-
-Requirements
-------------
-
-* python 2.7.x
-* numpy
-* scipy
-* gcc for using scipy.weave
-* pytest for testing
-
-
-Usage
------
+#accumarray
+*Accumulation function for python. It is named after, and very similar to, Matlab's `accumarray` function - [see Mathworks docs here](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true). If you are familiar with `pandas`, you could consider `accumarray` to be a light-weight version of the [`groupby` concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html).*
 
 ```python
-from accumarray import accum, accum_np, accum_py, unpack
-a = np.arange(10)
-# accmap must be of type integer and have the same length as a
-accmap = np.array([0,0,1,1,0,0,2,2,4,4])
+from accumarray_numpy import accumarray 
+import numpy as np
+idx = np.array([3,0,0,1,0,3,5,5,0,4])
+vals = np.array([13.2,3.5,3.5,-8.2,3.0,13.4,99.2,-7.1,0.0,53.7])
+result = accumarray(idx, vals, func='sum', fillvalue=np.nan)
+# result:  array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
+```
+*`accumarray` can be run with zero dependecies, i.e. using pure python, but a fast `numpy` implementation is also  available. If that's not enough, you can use the super-fast `scipy.weave` version.*
+
+###The main idea of accumarray
+Suppose that that you have a list of values, `vals`, and some labels for each of the values, `idx`. The purpose of the `accumarray` function is to aggregate over all the values with the same label, for example taking the `sum` or `mean` (using whatever aggregation function the user requests).  
+
+Here is a simple example with ten `vals` and their paired `idx` (this is the same as the code example above):
+
+![accumarray_diagram.png]
     
-accum(accmap, a)
->>> array([10,  5, 13,  0, 17])
-```
+The output is an array, with the ith element giving the `sum`  (or `mean` or whatever) of the relevant items from within `vals`.  By default, any gaps are filled with zero: in the above example, the label `2` does not appear in the `idx` list, so in the output, the element `2` is `0.0`.  If you would prefer to fill the gaps with `nan` (or some other value, e.g. `-1`) you can do this using `filvalue=nan`.
 
-The C functions are compiled on the fly by `scipy.weave` depending
-on the selected aggregation function and the data types of the inputs.
-The compiled functions are cached and reused, whenever possible. So 
-for the first runs, expect some delays for the compilation.
+###Multiple implementations of accumarray
+This repositorary contains three independant implementations of the same function.  Some of the implementations may throw `NotImplemented` exceptions for certain inputs, but whenever a result is produced it should be the same across all implementations (to within some small floating-point error).  The simplest implementation, provided in the file **`accumarray_purepy.py`** uses pure python, but is much slower than the other implementations.  **`accumarray_numpy.py`** makes use of a variety of `numpy` tricks to try and get as close to the hardware's optimal performance as possible, however if you really want the absolute best performance possible you will need the **`accumarray_weave.py`** version - see the notes on `scipy.weave` below. Note that if you know which implementation you want you only need that one file.
 
-The output dtype is generally taken from the input arguments and the
-aggregation function, but it can be overwritten:
+*TODO: create a meta-implementation which dynamically picks from available implementations based on which is available.*
+
+###Available aggregation functions
+Below is a list of the main functions.  Note that you can also provide your own custom function, but obviously it wont run as fast as most of these optimised ones. As shown below, most functions have a "nan- version", for example there is a `"nansum"` function as well as a `"sum"` function. The nan- verions simply drop all the nans before doing the aggregation. This means that any groups consisting only of `nan`s will be given `fillvalue` in the output (rather than `nan`). If you would like to set all-nan groups to have `nan` in the output, do the following:
 
 ```python
-accum(accmap, a, dtype=float)
->>> array([ 10.,   5.,  13.,   0.,  17.])
+a = accumarray(idx, vals, func='nanvar') # e.g. get variance ignoring nans
+a[accumarray(idx, vals, func='allnan')] = nan # here you set the all-nan groups to be nan
+```  
 
-accum(accmap, a, func='std')
->>> array([ 2.0616,  0.5   ,  0.5   ,  0.    ,  0.5   ])
+The prefered way of specifying a function is using a string, e.g. `func="sum"`, however in many cases actual function objects will be recognised too:
 
-accum(accmap, a, func='std', fillvalue=np.nan)
->>> array([ 2.0616,  0.5   ,  0.5   ,     nan,  0.5   ])
-```
+name     | aliases       | nan- version?  | `numpy` performance  | `scipy.weave` performance | notes
+:-------- |:-------------| -------------- | ------------------ | ----------------------------| --------
+`"sum"`   | `"plus"`, `"add"`, `np.sum`, `np.add`, `sum` (inbuilt python) | yes | excellent | excellent | `numpy` uses `bincount`
+`"mean"` | `np.mean` | yes | excellent | excellent | `numpy` uses `bincount`
+`"var"` | `np.var` | yes | excellent | not implemented | `numpy` uses `bincount`, computed as `sum((vals-means)**2)`. 
+`"std"` | `np.std` | yes | excellent | execellent | see `"var"`.
+`"all"` | `"and"`, `np.all`, `all` (inbuilt python) | yes | excellent | excellent | `numpy` uses simple indexing operations
+`"any"` | `"or"`, `np.any`, `any` (inbuilt python) | yes | excellent | excellent | `numpy` uses simple indexing operations
+`"first"` | | excellent | not implemented | `numpy` uses simple indexing
+`"last"` | | excellent | not implemented | `numpy` uses simple indexing
+`"min"` | `"amin"`, `"minimum"`, `np.min`, `np.amin`, `np.minimum`, `min` (inbuilt python) | yes | poor | excellent | `numpy` uses `minimum.at` which is slow (as of `v1.9`)
+`"max"` | `"amax"`, `"maximum"`, `np.max`, `np.amax`, `np.maxmum`, `max` (inbuilt python) | yes | poor | excellent | `numpy` uses `maximum.at` which is slow (as of `v1.9`)
+`"prod"` | `"product"`, `"times"`, `"multiply"`, `np.prod`, `np.multiply` | yes | poor | excellent | `numpy` uses `prod.at` which is slow (as of `v1.9`)
+`"allnan"` | | no | excellent |  excellent | `numpy` uses `np.isnan` and then `accumarray`'s `"all"`.
+`"anynan"` | | no | excellent |  excellent | `numpy` uses `np.isnan` and then `accumarray`'s `"any"`.
+`"array"` |`"split"`, `"splice"`, `np.array`, `np.asarray` | no | ok | ?? | output is a `numpy` array with `dtype=object`, each element of which is a `numpy` array (or `fillvalue`). The order of values within each group matches the original order in the full `vals` array.
+`"sort"` | `"sorted"`, `"asort"`, `"fsort"`, `np.sort`, `sorted` (inbuilt python) | no | ok | ?? | similar to `"array"`, except here the values in each output array are sorted in ascending order.
+`"rsort"` | `"rsorted"`, `"dsort"` | no | ok | ?? | similar to `"sort"`, except in descending order.
+`<custom function>` | | | ok | ?? | similar to `"array"`, except the `<custom function>` is evaulated on each group and the return value is placed in the final output array.
 
-The next call actually falls back to `accum_np`, but acts as expected:
+Note that the last few functions listed above do not return an array of scalars but an array with `dtype=object`.  
+Also, note that as of `numpy v1.9`, the `<custom function>` implementation is only slightly slower than the `ufunc.at` method, so if you want to use a `ufunc` not in the above list, it wont run that much slower when simple supplied as a `<custom function>`, e.g. `func=np.logaddexp`.  There is a [numpy issue](https://github.com/numpy/numpy/issues/5922) trying to get this performance bug fixed - please show interest there if you want to encourage the `numpy` devs to work on that! If, however, for a specific `ufunc`, you know of a fast algorithm which does signficantly better than `ufunc.at` please get in touch and we can incorporate it here.
 
-```python
-accum(accmap, a, func=list)
->>> array([[0, 1, 4, 5], [2, 3], [6, 7], 0, [8, 9]], dtype=object)
-```    
-
-There is an alternate mode of operation, contiguous, which creates
-a new output entry for every value change in accmap. The parameter
-fillvalue has no effect here, as all output fields are filled. For
-inflating these kind of outputs to the full array size, the function
-`unpack` is provided.
-
-```python
-accum(accmap, a, mode='contiguous')
->>> array([ 1,  5,  9, 13, 17])
-
-unpack(accmap, accum(accmap, a, mode='contiguous'), mode='contiguous')
->>> array([ 1,  1,  5,  5,  9,  9, 13, 13, 17, 17])
-```
-
-Speed comparison
-----------------
+### Scalar `vals`
+Although we have so far assumed that `vals` is a 1d array, it can in fact be a scalar. The most common example of this is using `accumarray` to simply count the number of occurances of each value in `idx`.
 
 ```python
-accmap = np.repeat(np.arange(10000), 10)
-a = np.arange(len(accmap))
-
-timeit accum_py(accmap, a)
->>> 1 loops, best of 3: 1.35 s per loop
-
-timeit accum_np(accmap, a)
->>> 1 loops, best of 3: 196 ms per loop
-
-timeit accum(accmap, a)
->>> 1000 loops, best of 3: 1.09 ms per loop
-
-timeit accum(accmap, a, func='mean')
->>> 1000 loops, best of 3: 1.7 ms per loop
+accumarray(idx, 1, func='sum') # equivalent to np.bincount(idx)
 ```
 
-### Octave ###
+Most other functions do accept a scalar, but the output may be rather meaningless in many cases (e.g. `max`  just returns an array repeating the given scalar and/or `fillvalue`.) .  Scalars are not accepted for "nan- versions" of the functions because either the single scalar value is `nan` or it's not!
 
-```matlab
-accmap = repmat(1:10000, 10, 1)(:);
-a = 1:numel(accmap);
-tic; accumarray(accmap, a); toc
->>> Elapsed time is 0.0015161 seconds.
+### 2D `idx` for multidimensional output
+Although we have so far assumed that `idx` is 1D, and the same length as `vals`, it can in fact be 2D (or some form of nested sequences that can be converted to 2D).  When `idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `idx[i,j]` gives the index into the ith dimension in the output for `val[j]`.  Note that `vals` should still be 1D (or scalar), with length matching `idx.shape[1]`.  When producing multidimensional output you can specify `C` or `Fortran` memory layout using `order='C'` or `order='F'` repsectively.
 
-tic; accumarray(accmap, a, [1, numel(accmap)], @mean); toc
->>>Elapsed time is 1.733 seconds.
-```
-When running these commands with octave the first time, they run notably
-slower. The values above are the best of several consequent tries. I'm
-not sure what goes wrong with octaves mean function, but for me it's
-painfully slow. If I'm doing something wrong here, please let me know.
+*TODO: show example*
 
-### numpy ufuncs ###
+### Specifying the size of the output array
+Sometimes you may want to force the output of `accumarray` to be of a particular length/shape.  You can use the `sz` keyword argument for this. The length of `sz` should match the number of dimesnions in the output. If left as `None`the maximumum values in `idx` will define the size of the output array.
 
-Numpy offers bincount and ufunc.at for broadcasting. I recently added
-a proof of concept implementation of accumarray based on these functions.
-While bincount offers decent speed, the ufunc based functions are not
-really competitive. Here is a recent benchmark print. accum_np marks
-the naive python for-loop approach for reference:
 
-```
-function       accum_np    accum_ufunc          accum
------------------------------------------------------
-sum             367.071          6.086          7.130
-amin            330.441        156.628          9.507
-amax            343.035        155.581          9.410
-prod            343.304        148.108          6.957
-all             516.369        174.532          7.473
-any             428.282        170.317          6.466
-mean            716.448          9.967          7.222
-std            1689.581         17.903         10.011
-nansum          757.071         10.611          7.254
-nanmin          617.014        160.916          9.793
-nanmax          616.106        161.215          9.689
-nanmean        2509.755         22.437          7.684
-nanstd         4901.624         32.452         10.643
-anynan          489.152        143.980          6.710
-allnan          493.877        148.592          6.511
-```
+### Some examples
+
+*TODO: show a variety of things, ideally explaining them with some real-world motivation.*
+
+### Benchmarking and testing
+Benchmarking and testing scripts are included here.  Here are some benchmarking results:
+
+*TODO: give results, giving full hardware and software details.*
+
+### Development
+The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation of individual functions will become unnecccessary.  However even if that does happen, there will still probably be a role for this `accumarray` function as a light-weight wrapper around those functions, and it may well be that `C` code will always be significantly faster than whatever `numpy` can offer.
+
+Maybe at some point a version of `accumarray` will make its way into `numpy` itself (or at least `scipy`).
+
+The pure python implementation is from the [scipy cookbook](http://www.scipy.org/Cookbook/AccumarrayLike). 
+The majority of the `numpy` code was written by @d1manson.  And the `scipy.weave` implementation is by @ml31415.
+
+ 
