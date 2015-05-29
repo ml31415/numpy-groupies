@@ -139,7 +139,7 @@ def _all(idx, vals, n, fillvalue, dtype=bool):
         pass # already initialised to True
     else:
         ret[idx] = True
-    ret[idx.compress(~vals.astype(bool))] = False
+    ret[idx.compress(np.logical_not(vals))] = False
     return ret
     
 def _any(idx, vals, n, fillvalue, dtype=bool):
