@@ -357,7 +357,7 @@ def accumarray(idx, vals, sz=None, func='sum', fillvalue=0, order='F', impl_dict
         else:
             if np.isscalar(sz):
                 raise Exception("Output size must be None or 1d sequence of length %d" % idx.shape[0])
-            if len(sz) != idx.shape[1]:
+            if len(sz) != idx.shape[0]:
                 raise Exception("%d sizes given, but %d output dimensions specified in index" % (len(sz), idx.shape[0]))
             
         idx = np.ravel_multi_index(tuple(idx), sz, order=order, mode='raise')
