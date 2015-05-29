@@ -125,10 +125,10 @@ def _first(idx, vals, n, fillvalue, dtype=None):
 
 def _prod(idx, vals, n, fillvalue, dtype=None):
     dtype = _get_minimum_dtype(fillvalue, dtype or vals.dtype)
-    ret = np.full(n, 1, dtype=dtype)
-    np.multiply.at(ret, idx, vals)
+    ret = np.full(n, fillvalue, dtype=dtype)
     if fillvalue != 1:
-        _fill_untouched(idx, ret, fillvalue)
+        ret[idx] = 1 # product starts from 1
+    np.multiply.at(ret, idx, vals)
     return ret
 
 
@@ -156,20 +156,20 @@ def _any(idx, vals, n, fillvalue, dtype=bool):
 
 def _min(idx, vals, n, fillvalue, dtype=None):
     dtype = _get_minimum_dtype(fillvalue, dtype or vals.dtype)
-    minfill = np.iinfo(vals.dtype).max if issubclass(vals.dtype.type, np.integer) else np.finfo(vals.dtype).max
-    ret = np.full(n, minfill, dtype=dtype)
+    dmax = np.iinfo(vals.dtype).max if issubclass(vals.dtype.type, np.integer) else np.finfo(vals.dtype).max
+    ret = np.full(n, fillvalue, dtype=dtype)
+    if fillvalue != dmax:
+        ret[idx] = dmax # min starts from maximum 
     np.minimum.at(ret, idx, vals)
-    if fillvalue != minfill:
-        _fill_untouched(idx, ret, fillvalue)
     return ret
 
 def _max(idx, vals, n, fillvalue, dtype=None):
     dtype = _get_minimum_dtype(fillvalue, dtype or vals.dtype)
-    maxfill = np.iinfo(vals.dtype).min if issubclass(vals.dtype.type, np.integer) else np.finfo(vals.dtype).min
-    ret = np.full(n, maxfill, dtype=dtype)
+    dmin = np.iinfo(vals.dtype).min if issubclass(vals.dtype.type, np.integer) else np.finfo(vals.dtype).min
+    ret = np.full(n, fillvalue, dtype=dtype)
+    if fillvalue != dmin:
+        ret[idx] = dmin # max starts from minimum
     np.maximum.at(ret, idx, vals)
-    if fillvalue != maxfill:
-        _fill_untouched(idx, ret, fillvalue)
     return ret
 
 def _mean(idx, vals, n, fillvalue, dtype=None):

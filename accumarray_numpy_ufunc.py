@@ -40,32 +40,34 @@ def _sum(idx, vals, n, fillvalue, dtype=None):
 
 
 def _prod(idx, vals, n, fillvalue, dtype=None):
+    """Same as accumarray_numpy.py"""
     dtype = _get_minimum_dtype(fillvalue, dtype or vals.dtype)
     ret = np.full(n, fillvalue, dtype=dtype)
     if fillvalue != 1:
         ret[idx] = 1 # product should start from 1
     np.multiply.at(ret, idx, vals)
     return ret
-    
+
 def _min(idx, vals, n, fillvalue, dtype=None):
     """Same as accumarray_numpy.py"""
     dtype = _get_minimum_dtype(fillvalue, dtype or vals.dtype)
-    minfill = np.iinfo(vals.dtype).max if issubclass(vals.dtype.type, np.integer) else np.finfo(vals.dtype).max
-    ret = np.full(n, minfill, dtype=dtype)
+    dmax = np.iinfo(vals.dtype).max if issubclass(vals.dtype.type, np.integer) else np.finfo(vals.dtype).max
+    ret = np.full(n, fillvalue, dtype=dtype)
+    if fillvalue != dmax:
+        ret[idx] = dmax # min starts from maximum 
     np.minimum.at(ret, idx, vals)
-    if fillvalue != minfill:
-        _fill_untouched(idx, ret, fillvalue)
     return ret
 
 def _max(idx, vals, n, fillvalue, dtype=None):
     """Same as accumarray_numpy.py"""
     dtype = _get_minimum_dtype(fillvalue, dtype or vals.dtype)
-    maxfill = np.iinfo(vals.dtype).min if issubclass(vals.dtype.type, np.integer) else np.finfo(vals.dtype).min
-    ret = np.full(n, maxfill, dtype=dtype)
+    dmin = np.iinfo(vals.dtype).min if issubclass(vals.dtype.type, np.integer) else np.finfo(vals.dtype).min
+    ret = np.full(n, fillvalue, dtype=dtype)
+    if fillvalue != dmin:
+        ret[idx] = dmin # max starts from minimum
     np.maximum.at(ret, idx, vals)
-    if fillvalue != maxfill:
-        _fill_untouched(idx, ret, fillvalue)
     return ret
+    
 
 
 _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_dummy, first=_dummy,
