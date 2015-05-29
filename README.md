@@ -21,8 +21,18 @@ Here is a simple example with ten `vals` and their paired `idx` (this is the sam
 The output is an array, with the ith element giving the `sum`  (or `mean` or whatever) of the relevant items from within `vals`.  By default, any gaps are filled with zero: in the above example, the label `2` does not appear in the `idx` list, so in the output, the element `2` is `0.0`.  If you would prefer to fill the gaps with `nan` (or some other value, e.g. `-1`) you can do this using `filvalue=nan`.
 
 ###Multiple implementations of accumarray
-This repositorary contains three independant implementations of the same function.  Some of the implementations may throw `NotImplemented` exceptions for certain inputs, but whenever a result is produced it should be the same across all implementations (to within some small floating-point error).  The simplest implementation, provided in the file **`accumarray_purepy.py`** uses pure python, but is much slower than the other implementations.  **`accumarray_numpy.py`** makes use of a variety of `numpy` tricks to try and get as close to the hardware's optimal performance as possible, however if you really want the absolute best performance possible you will need the **`accumarray_weave.py`** version - see the notes on `scipy.weave` below. Note that if you know which implementation you want you only need that one file.
-
+This repositorary contains several independant implementations of the same function.
+Some of the implementations may throw `NotImplemented` exceptions for certain inputs, 
+but whenever a result is produced it should be the same across all implementations
+(to within some small floating-point error).  
+The simplest implementation, provided in the file **`accumarray_purepy.py`** uses pure python, but is much slower
+ than the other implementations.  **`accumarray_numpy.py`** makes use of a variety of `numpy` tricks to try and get as close to
+the hardware's optimal performance as possible, however if you really want the absolute best performance possible you will need
+ the **`accumarray_weave.py`** version - see the notes on `scipy.weave` below *TODO: this isn't refactored properly yet*.
+The **`accumarray_numpy_ufunc.py`** version is only for testing and benchmarking, though hopefully in future, if numpy
+improves, this version will become more relevant.
+ Note that if you know which implementation you want you only need that one file, plus the `accumarray_utils.py` file.
+See below for benchmarking stats.
 *TODO: create a meta-implementation which dynamically picks from available implementations based on which is available.*
 
 ###Available aggregation functions
@@ -83,7 +93,37 @@ Sometimes you may want to force the output of `accumarray` to be of a particular
 ### Benchmarking and testing
 Benchmarking and testing scripts are included here.  Here are some benchmarking results:
 
-*TODO: give results, giving full hardware and software details.*
+*TODO: use a range of inputs shapes/types etc. and give more details hardware/software info*
+
+```text
+function       pure-py  np-grouploop**  np-ufuncat* np-optimised          ratio
+     std      1498.3ms       165.4ms       no-impl         7.5ms     200.8: 22.2:  -  : 1.0 
+     all      1371.2ms        65.1ms        44.4ms         6.6ms     208.4: 9.9 : 6.8 : 1.0 
+     min      1356.0ms        54.4ms        37.2ms        36.7ms      36.9: 1.5 : 1.0 : 1.0 
+     max      1246.9ms        54.5ms        37.3ms        38.0ms      33.5: 1.5 : 1.0 : 1.0 
+     sum      1382.1ms        58.5ms        39.9ms         2.0ms     692.0: 29.3: 20.0: 1.0 
+     var      1547.5ms       151.1ms       no-impl         7.9ms     195.5: 19.1:  -  : 1.0 
+    prod      1385.8ms        53.3ms        39.1ms        38.3ms      36.2: 1.4 : 1.0 : 1.0 
+     any      1223.1ms        65.0ms        48.5ms         5.5ms     221.4: 11.8: 8.8 : 1.0 
+    mean      1403.0ms        85.2ms       no-impl         3.4ms     407.2: 24.7:  -  : 1.0 
+Python 2.7.9, Numpy 1.9.2m, Win7 Core i7.
+```
+
+Note that the actual observed speedup depends on a variety of properties of the input.
+Here we are using `100,000` indices uniformly picked from `[0, 1000)`.
+Specifically, about 25% of the values are `0` (for use with bool operations),
+the remainder are uniformly distribuited on `[-50,25)`. 
+
+** The `np-grouploop` implementation shown here uses `accumarray_numpy.py`'s
+ generic function menchanism, which groups `vals` by `idx`, and then
+loops over each group, applying the specified function (in this case it is a numpy function 
+such as `np.add`).  It is only included here for reference, note that the output form
+this funciton is considered to be the "correct" answer when used in testing.
+
+*The `np-ufuncat` uses the `accumarray_numpy_ufunc.py` implementation. That implementation
+is not intended for mainstream usage, it is only include in the hope that numpy's `ufunc.at`
+performance will eventually improve.
+
 
 ### Development
 The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation of individual functions will become unnecccessary.  However even if that does happen, there will still probably be a role for this `accumarray` function as a light-weight wrapper around those functions, and it may well be that `C` code will always be significantly faster than whatever `numpy` can offer.

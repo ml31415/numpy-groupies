@@ -218,13 +218,13 @@ def _generic_callable(idx, vals, n, fillvalue, dtype=None, foo=lambda g: g):
             ret[ii] = foo(g)
     return ret
 
-_func_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_first,
+_impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_first,
                     all=_all, any=_any, mean=_mean, std=_std, var=_var,
                     anynan=_anynan, allnan=_allnan, sort=_sort, rsort=_rsort, 
                     array=_array)
 
 
-def accumarray(idx, vals, sz=None, func='sum', fillvalue=0, order='F'):
+def accumarray(idx, vals, sz=None, func='sum', fillvalue=0, order='F', impl_dict=_impl_dict):
     '''
     Accumulation function similar to Matlab's `accumarray` function.
     
@@ -295,6 +295,10 @@ def accumarray(idx, vals, sz=None, func='sum', fillvalue=0, order='F'):
         specifies the value to put in output where there was no input data,
         default is `0`, but you might want `np.nan` or some other specific
         value of your choosing.
+        
+    _impl_dict:
+        This is for benchmarking, testing, and development only, i.e. NOT
+        for everyday use!!
     
     Returns
     -------
@@ -384,9 +388,9 @@ def accumarray(idx, vals, sz=None, func='sum', fillvalue=0, order='F'):
             idx = idx[good]
         else:
             func = _func_alias.get(func, func)
-        if func not in _func_dict:
+        if func not in impl_dict:
             raise Exception(original_func + " not found in list of available functions.")
-        func = _func_dict[func]
+        func = impl_dict[func]
     
         # run the function
         ret = func(idx, vals, sz_n, fillvalue=fillvalue)
