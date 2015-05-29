@@ -68,14 +68,13 @@ print "Note that the actual observed speedup depends on a variety of properties 
 print "Here we are using 100,000 indices uniformly picked from [0, 1000)."
 print "Specifically, about 25% of the values are 0 (for use with bool operations),"
 print "the remainder are uniformly distribuited on [-50,25)."
+print "Times are scaled to 10 repetitions (actual number of reps used may not be 10)."
         
 print ''.join(['function'.rjust(8), 'pure-py'.rjust(14), 'np-grouploop'.rjust(14),
               'np-ufuncat'.rjust(14),'np-optimised'.rjust(14), 'pandas'.rjust(14),
                'ratio'.rjust(15)]) 
 
 for name, f in testable_funcs.items():
-    t_np_simple = timeit.Timer(lambda: accumarray_np(test_idx, test_vals, func=lambda x: f(x))).timeit(number=5)
-
     print name.rjust(8),     
     times = [None]*5
     for ii, acc_func in enumerate([accumarray_pure, accumarray_group_loop,
@@ -83,7 +82,8 @@ for name, f in testable_funcs.items():
                                    accumarray_pd]):
         try:
             func = f if acc_func is accumarray_group_loop else name
-            times[ii] = timeit.Timer(lambda: acc_func(test_idx, test_vals, func=func)).timeit(number=4)            
+            reps = 3 if acc_func is accumarray_pure else 20
+            times[ii] = timeit.Timer(lambda: acc_func(test_idx, test_vals, func=func)).timeit(number=reps)/reps*10
             print ("%.1fms" %( (times[ii]*1000))).rjust(13),
         except NotImplementedError:
             print "no-impl".rjust(13),
