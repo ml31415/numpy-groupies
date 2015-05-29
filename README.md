@@ -101,16 +101,16 @@ Benchmarking and testing scripts are included here.  Here are some benchmarking 
 *TODO: use a range of inputs shapes/types etc. and give more details hardware/software info*
 
 ```text
-function   pure-py  np-grouploop**  np-ufuncat* np-optimised     pandas          ratio
-     std   1737.8ms       171.8ms       no-impl         7.0ms    no-impl     247.1: 24.4:  -  : 1.0 :  -  
-     all   1280.8ms        62.2ms        41.8ms         6.6ms    550.7ms     193.5: 9.4 : 6.3 : 1.0 : 83.2
-     min   1358.7ms        59.6ms        42.6ms        42.7ms     24.5ms      55.4: 2.4 : 1.7 : 1.7 : 1.0 
-     max   1538.3ms        55.9ms        38.8ms        37.5ms     18.8ms      81.9: 3.0 : 2.1 : 2.0 : 1.0 
-     sum   1532.8ms        62.6ms        40.6ms         1.9ms     20.4ms     808.5: 33.0: 21.4: 1.0 : 10.7
-     var   1756.8ms       146.2ms       no-impl         6.3ms    no-impl     279.1: 23.2:  -  : 1.0 :  -  
-    prod   1448.8ms        55.2ms        39.9ms        38.7ms     20.2ms      71.7: 2.7 : 2.0 : 1.9 : 1.0 
-     any   1399.5ms        69.1ms        41.1ms         5.7ms    558.8ms     246.2: 12.2: 7.2 : 1.0 : 98.3
-    mean   1321.3ms        88.3ms       no-impl         4.0ms     20.9ms     327.6: 21.9:  -  : 1.0 : 5.2 
+function       pure-py  np-grouploop**   np-ufuncat* np-optimised        pandas          ratio
+     std      1806.9ms       171.9ms       no-impl         6.7ms       no-impl     268.1: 25.5:  -  : 1.0 :  -  
+     all      1357.8ms        65.5ms        46.7ms         6.7ms       670.0ms     203.1: 9.8 : 7.0 : 1.0 :100.2
+     min      1336.8ms        57.4ms        40.4ms        37.7ms        19.8ms      67.6: 2.9 : 2.0 : 1.9 : 1.0 
+     max      1623.4ms        56.9ms        41.1ms        37.2ms        20.5ms      79.1: 2.8 : 2.0 : 1.8 : 1.0 
+     sum      1561.0ms        61.0ms        38.5ms         2.5ms        19.7ms     633.0: 24.7: 15.6: 1.0 : 8.0 
+     var      1768.3ms       154.1ms       no-impl         6.5ms       no-impl     273.4: 23.8:  -  : 1.0 :  -  
+    prod      1569.5ms        56.4ms        39.2ms        39.1ms        21.7ms      72.2: 2.6 : 1.8 : 1.8 : 1.0 
+     any      1575.6ms        70.9ms        44.2ms         5.8ms       666.5ms     269.9: 12.1: 7.6 : 1.0 :114.2
+    mean      1333.2ms        90.3ms       no-impl         4.9ms        19.8ms     269.6: 18.3:  -  : 1.0 : 4.0 
 Python 2.7.9, Numpy 1.9.2, Win7 Core i7.
 ```
 
