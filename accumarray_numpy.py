@@ -139,8 +139,7 @@ def _all(idx, vals, n, fillvalue, dtype=bool):
         pass # already initialised to True
     else:
         ret[idx] = True
-    idx = idx[~vals.astype(bool)]
-    ret[idx] = False
+    ret[idx.compress(~vals.astype(bool))] = False
     return ret
     
 def _any(idx, vals, n, fillvalue, dtype=bool):
@@ -150,8 +149,7 @@ def _any(idx, vals, n, fillvalue, dtype=bool):
         ret[idx] = False
     else:
         pass # already initialsied to False
-    idx = idx[vals.astype(bool)]
-    ret[idx] = True
+    ret[idx.compress(vals)] = True
     return ret
 
 def _min(idx, vals, n, fillvalue, dtype=None):
