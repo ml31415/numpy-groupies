@@ -106,7 +106,7 @@ function       pure-py  np-grouploop**  np-ufuncat* np-optimised          ratio
     prod      1385.8ms        53.3ms        39.1ms        38.3ms      36.2: 1.4 : 1.0 : 1.0 
      any      1223.1ms        65.0ms        48.5ms         5.5ms     221.4: 11.8: 8.8 : 1.0 
     mean      1403.0ms        85.2ms       no-impl         3.4ms     407.2: 24.7:  -  : 1.0 
-Python 2.7.9, Numpy 1.9.2m, Win7 Core i7.
+Python 2.7.9, Numpy 1.9.2, Win7 Core i7.
 ```
 
 Note that the actual observed speedup depends on a variety of properties of the input.
