@@ -29,10 +29,15 @@ The simplest implementation, provided in the file **`accumarray_purepy.py`** use
  than the other implementations.  **`accumarray_numpy.py`** makes use of a variety of `numpy` tricks to try and get as close to
 the hardware's optimal performance as possible, however if you really want the absolute best performance possible you will need
  the **`accumarray_weave.py`** version - see the notes on `scipy.weave` below *TODO: this isn't refactored properly yet*.
-The **`accumarray_numpy_ufunc.py`** version is only for testing and benchmarking, though hopefully in future, if numpy
-improves, this version will become more relevant.
- Note that if you know which implementation you want you only need that one file, plus the `accumarray_utils.py` file.
+
+Note that if you know which implementation you want you only need that one file, plus the `accumarray_utils.py` file.
 See below for benchmarking stats.
+
+**Other implementations** The **`accumarray_numpy_ufunc.py`** version is only for testing and benchmarking, though hopefully in future, if numpy
+improves, this version will become more relevant.  The **`accumarray_pandas.py`"" version is faster than the numpy version for `prod`, `min`, and `max`,
+though only slightly.  Note that not much work has gone into trying to squeeze the most out of pandas, so it may be possible to do better still, especially
+for `all` and `any` which are oddly slow.  `std` and `var` are currently not implemented as `pandas` seems to be doing something slightly different.
+
 *TODO: create a meta-implementation which dynamically picks from available implementations based on which is available.*
 
 ###Available aggregation functions
@@ -96,16 +101,16 @@ Benchmarking and testing scripts are included here.  Here are some benchmarking 
 *TODO: use a range of inputs shapes/types etc. and give more details hardware/software info*
 
 ```text
-function       pure-py  np-grouploop**  np-ufuncat* np-optimised          ratio
-     std      1498.3ms       165.4ms       no-impl         7.5ms     200.8: 22.2:  -  : 1.0 
-     all      1371.2ms        65.1ms        44.4ms         6.6ms     208.4: 9.9 : 6.8 : 1.0 
-     min      1356.0ms        54.4ms        37.2ms        36.7ms      36.9: 1.5 : 1.0 : 1.0 
-     max      1246.9ms        54.5ms        37.3ms        38.0ms      33.5: 1.5 : 1.0 : 1.0 
-     sum      1382.1ms        58.5ms        39.9ms         2.0ms     692.0: 29.3: 20.0: 1.0 
-     var      1547.5ms       151.1ms       no-impl         7.9ms     195.5: 19.1:  -  : 1.0 
-    prod      1385.8ms        53.3ms        39.1ms        38.3ms      36.2: 1.4 : 1.0 : 1.0 
-     any      1223.1ms        65.0ms        48.5ms         5.5ms     221.4: 11.8: 8.8 : 1.0 
-    mean      1403.0ms        85.2ms       no-impl         3.4ms     407.2: 24.7:  -  : 1.0 
+function       pure-py  np-grouploop    np-ufuncat  np-optimised        pandas          ratio
+     std      1737.8ms       171.8ms       no-impl         7.0ms       no-impl     247.1: 24.4:  -  : 1.0 :  -  
+     all      1280.8ms        62.2ms        41.8ms         6.6ms       550.7ms     193.5: 9.4 : 6.3 : 1.0 : 83.2
+     min      1358.7ms        59.6ms        42.6ms        42.7ms        24.5ms      55.4: 2.4 : 1.7 : 1.7 : 1.0 
+     max      1538.3ms        55.9ms        38.8ms        37.5ms        18.8ms      81.9: 3.0 : 2.1 : 2.0 : 1.0 
+     sum      1532.8ms        62.6ms        40.6ms         1.9ms        20.4ms     808.5: 33.0: 21.4: 1.0 : 10.7
+     var      1756.8ms       146.2ms       no-impl         6.3ms       no-impl     279.1: 23.2:  -  : 1.0 :  -  
+    prod      1448.8ms        55.2ms        39.9ms        38.7ms        20.2ms      71.7: 2.7 : 2.0 : 1.9 : 1.0 
+     any      1399.5ms        69.1ms        41.1ms         5.7ms       558.8ms     246.2: 12.2: 7.2 : 1.0 : 98.3
+    mean      1321.3ms        88.3ms       no-impl         4.0ms        20.9ms     327.6: 21.9:  -  : 1.0 : 5.2 
 Python 2.7.9, Numpy 1.9.2, Win7 Core i7.
 ```
 

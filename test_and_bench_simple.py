@@ -7,7 +7,7 @@ import numpy as np
 from accumarray_purepy import accumarray as accumarray_pure
 from accumarray_numpy import accumarray as accumarray_np
 from accumarray_numpy_ufunc import accumarray as accumarray_npu
-
+from accumarray_pandas import accumarray as accumarray_pd
 
 def accumarray_group_loop(*args, **kwargs):
     """wraps func in lambda which prevents accumarray_numpy from
@@ -49,12 +49,13 @@ for name, f in testable_funcs.items():
     
     for acc_func, acc_name in [(accumarray_np, 'np-optimised'),
                                (accumarray_npu, 'np-ufunc-at'),
-                               (accumarray_pure, 'purepy')]:
+                               (accumarray_pure, 'purepy'),
+                               (accumarray_pd, 'pandas')]:
         try:
             test_out = acc_func(test_idx, test_vals, func=name)
             test_out = np.asarray(test_out)
             if not np.allclose(test_out, numpy_loop_group.astype(test_out.dtype)):
-                print name, acc_name, "FAILED test, output: [optimised; correct]..."
+                print name, acc_name, "FAILED test, output: [" + acc_name + "; correct]..."
                 print np.vstack((test_out, numpy_loop_group))
             else:
                 print name, acc_name, "PASSED test"            
@@ -69,15 +70,17 @@ print "Specifically, about 25% of the values are 0 (for use with bool operations
 print "the remainder are uniformly distribuited on [-50,25)."
         
 print ''.join(['function'.rjust(8), 'pure-py'.rjust(14), 'np-grouploop'.rjust(14),
-              'np-ufuncat'.rjust(14),'np-optimised'.rjust(14), 'ratio'.rjust(15)]) 
+              'np-ufuncat'.rjust(14),'np-optimised'.rjust(14), 'pandas'.rjust(14),
+               'ratio'.rjust(15)]) 
 
 for name, f in testable_funcs.items():
     t_np_simple = timeit.Timer(lambda: accumarray_np(test_idx, test_vals, func=lambda x: f(x))).timeit(number=5)
 
     print name.rjust(8),     
-    times = [None]*4
+    times = [None]*5
     for ii, acc_func in enumerate([accumarray_pure, accumarray_group_loop,
-                                   accumarray_npu, accumarray_np]):
+                                   accumarray_npu, accumarray_np, 
+                                   accumarray_pd]):
         try:
             func = f if acc_func is accumarray_group_loop else name
             times[ii] = timeit.Timer(lambda: acc_func(test_idx, test_vals, func=func)).timeit(number=4)            

@@ -389,7 +389,7 @@ def accumarray(idx, vals, sz=None, func='sum', fillvalue=0, order='F', impl_dict
         else:
             func = _func_alias.get(func, func)
         if func not in impl_dict:
-            raise Exception(original_func + " not found in list of available functions.")
+            raise NotImplementedError(original_func + " not found in list of available functions.")
         func = impl_dict[func]
     
         # run the function
