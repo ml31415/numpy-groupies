@@ -5,9 +5,7 @@ import pytest
 from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
                 aggregate_weave, aggregate_pd as aggregate_pandas)
 
-
-_implementations = "py ufunc numpy weave pandas".split()
-_implementations = ['aggregate_' + impl for impl in _implementations]
+_implementations = ['aggregate_' + impl for impl in "py ufunc numpy weave pandas".split()]
 aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
 
 
@@ -187,30 +185,3 @@ def test_timing_std(aggregate_compare):
     print "%s/%s speedup: %.3f" % (aggregate_compare.func.func_name, aggregate_compare.func_ref.func_name, t0 / t1)
 
 
-def benchmark(group_cnt=10000):
-    group_idx = np.repeat(np.arange(group_cnt), 2)
-    np.random.shuffle(group_idx)
-    group_idx = np.repeat(group_idx, 10)
-    a = np.random.randn(group_idx.size)
-
-    accfuncs = aggregate_implementations[1:]
-    print "function" + ''.join(f.__name__.rjust(15) for f in accfuncs)
-    print "-" * 53
-    for func in func_list[:-2]:
-        print func.__name__.ljust(8),
-        results = []
-        for aggregatefunc in accfuncs:
-            try:
-                res = aggregatefunc(group_idx, a, func=func)
-            except NotImplementedError:
-                continue
-            else:
-                results.append(res)
-            t0 = timeit.Timer(lambda: aggregatefunc(group_idx, a, func=func)).timeit(number=10)
-            print ("%.3f" % (t0 * 1000)).rjust(14),
-        print
-        for res in results[1:]:
-            np.testing.assert_array_almost_equal(res, results[0])
-
-if __name__ == '__main__':
-    benchmark()

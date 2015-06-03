@@ -1,3 +1,4 @@
+import math
 try:
     import numpy as np
 except ImportError:
@@ -139,12 +140,12 @@ if np is not None:
             except (ValueError, OverflowError):
                 return False
             # False if some overflow has happened
-            return converted == x
+            return converted == x or math.isnan(x)
 
         def type_loop(x, dtype, dtype_dict, default=None):
             while True:
                 try:
-                    dtype = dtype_dict[dtype.name]
+                    dtype = np.dtype(dtype_dict[dtype.name])
                     if check_type(x, dtype):
                         return np.dtype(dtype)
                 except KeyError:

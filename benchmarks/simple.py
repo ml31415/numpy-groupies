@@ -1,11 +1,12 @@
+#!/usr/bin/python -B
 # -*- coding: utf-8 -*-
 
 import timeit
 import numpy as np
 
 
-from ..utils import aliasing_numpy as aliasing
-from .. import aggregate_py, aggregate_np, aggregate_ufunc, aggregate_pd
+from aggregate.utils import aliasing_numpy as aliasing
+from aggregate import aggregate_py, aggregate_np, aggregate_ufunc, aggregate_pd
 
 
 def aggregate_group_loop(*args, **kwargs):
@@ -26,11 +27,11 @@ print "test_idx: ", test_idx
 print "accumarray(test_idx, test_vals):"
 print aggregate_np(test_idx, test_vals)  # group vals by idx and sum
 # array([3.2, 9.9, 0., 0., 88.])
-print "accumarray(test_idx, test_vals, sz=8, func='min', fillvalue=np.nan):"
-print aggregate_np(test_idx, test_vals, sz=8, func='min', fillvalue=np.nan)
+print "accumarray(test_idx, test_vals, sz=8, func='min', fill_value=np.nan):"
+print aggregate_np(test_idx, test_vals, size=8, func='min', fill_value=np.nan)
 # array([3.2, -15., nan, 88., nan, nan, nan, nan])
-print "accumarray(test_idx, test_vals, sz=5, func=lambda x: ' + '.join(str(xx) for xx in x),fillvalue='')"
-print aggregate_np(test_idx, test_vals, sz=5, func=lambda x: ' + '.join(str(xx) for xx in x), fillvalue='')
+print "accumarray(test_idx, test_vals, sz=5, func=lambda x: ' + '.join(str(xx) for xx in x),fill_value='')"
+print aggregate_np(test_idx, test_vals, size=5, func=lambda x: ' + '.join(str(xx) for xx in x), fill_value='')
 
 
 print ""

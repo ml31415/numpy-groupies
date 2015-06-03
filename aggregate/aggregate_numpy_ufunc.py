@@ -1,6 +1,6 @@
 import numpy as np
 
-from utils import minimum_dtype, check_boolean
+from .utils import minimum_dtype, check_boolean
 from .aggregate_numpy import aggregate as aggregate_np
 
 
