@@ -44,7 +44,7 @@ _alias_str = {
     'asort': 'sort',
     'asorted': 'sort',
     'rsorted': 'rsort',
-    'dsort': 'sort',
+    'dsort': 'rsort',
     'dsorted': 'rsort',
 }
 
@@ -202,6 +202,8 @@ if np is not None:
                         else:
                             # floating, inexact, whatever
                             return a.dtype
+                    elif func_str in {'min', 'max', 'nanmin', 'nanmax', 'first', 'last', 'nanfirst', 'nanlast'}:
+                        return a.dtype
                     else:
                         if isinstance(a.dtype, np.integer):
                             return np.dtype(np.int64)
