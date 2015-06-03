@@ -34,7 +34,7 @@ Note that if you know which implementation you want you only need that one file,
 See below for benchmarking stats.
 
 **Other implementations** The **`aggregate_numpy_ufunc.py`** version is only for testing and benchmarking, though hopefully in future, if numpy
-improves, this version will become more relevant.  The **`aggregate_pandas.py`"" version is faster than the numpy version for `prod`, `min`, and `max`,
+improves, this version will become more relevant.  The **`aggregate_pandas.py`** version is faster than the numpy version for `prod`, `min`, and `max`,
 though only slightly.  Note that not much work has gone into trying to squeeze the most out of pandas, so it may be possible to do better still, especially
 for `all` and `any` which are oddly slow.  `std` and `var` are currently not implemented as `pandas` seems to be doing something slightly different.
 
@@ -44,8 +44,10 @@ for `all` and `any` which are oddly slow.  `std` and `var` are currently not imp
 Below is a list of the main functions.  Note that you can also provide your own custom function, but obviously it wont run as fast as most of these optimised ones. As shown below, most functions have a "nan- version", for example there is a `"nansum"` function as well as a `"sum"` function. The nan- verions simply drop all the nans before doing the aggregation. This means that any groups consisting only of `nan`s will be given `fill_value` in the output (rather than `nan`). If you would like to set all-nan groups to have `nan` in the output, do the following:
 
 ```python
-a = aggregate(group_idx, a, func='nanvar') # e.g. get variance ignoring nans
-a[aggregate(group_idx, a, func='allnan')] = nan # here you set the all-nan groups to be nan
+# get variance ignoring nans
+a = aggregate(group_idx, a, func='nanvar') 
+# set the all-nan groups to be nan
+a[aggregate(group_idx, a, func='allnan')] = nan
 ```  
 
 The prefered way of specifying a function is using a string, e.g. `func="sum"`, however in many cases actual function objects will be recognised too:
@@ -77,13 +79,13 @@ Also, note that as of `numpy v1.9`, the `<custom function>` implementation is on
 Although we have so far assumed that `a` is a 1d array, it can in fact be a scalar. The most common example of this is using `aggregate` to simply count the number of occurances of each value in `group_idx`.
 
 ```python
-aggregate(idx, 1, func='sum') # equivalent to np.bincount(idx)
+aggregate(group_idx, 1, func='sum') # equivalent to np.bincount(idx)
 ```
 
-Most other functions do accept a scalar, but the output may be rather meaningless in many cases (e.g. `max`  just returns an array repeating the given scalar and/or `fill_value`.) .  Scalars are not accepted for "nan- versions" of the functions because either the single scalar value is `nan` or it's not!
+Most other functions do accept a scalar, but the output may be rather meaningless in many cases (e.g. `max`  just returns an array repeating the given scalar and/or `fill_value`). Scalars are not accepted for "nan- versions" of the functions because either the single scalar value is `nan` or it's not!
 
 ### 2D `group_idx` for multidimensional output
-Although we have so far assumed that `group_idx` is 1D, and the same length as `a`, it can in fact be 2D (or some form of nested sequences that can be converted to 2D).  When `group_idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `group_idx[i,j]` gives the index into the ith dimension in the output for `a[j]`.  Note that `a` should still be 1D (or scalar), with length matching `group_idx.shape[1]`.  When producing multidimensional output you can specify `C` or `Fortran` memory layout using `order='C'` or `order='F'` repsectively.
+Although we have so far assumed that `group_idx` is 1D, and the same length as `a`, it can in fact be 2D (or some form of nested sequences that can be converted to 2D).  When `group_idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `group_idx[i,j]` gives the index into the ith dimension in the output for `a[j]`.  Note that `a` should still be 1D (or scalar), with length matching `group_idx.shape[1]`.  When producing multidimensional output you can specify `C` or `Fortran` memory layout using `order='C'` or `order='F'` respectively.
 
 *TODO: show example*
 
@@ -131,10 +133,8 @@ performance will eventually improve.
 
 
 ### Development
-The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation of individual functions will become unnecccessary.  However even if that does happen, there will still probably be a role for this `aggregate` function as a light-weight wrapper around those functions, and it may well be that `C` code will always be significantly faster than whatever `numpy` can offer.
+The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation of individual functions will become unneccessary. However even if that does happen, there will still probably be a role for this `aggregate` function as a light-weight wrapper around those functions, and it may well be that `C` code will always be significantly faster than whatever `numpy` can offer.
 
 Maybe at some point a version of `aggregate` will make its way into `numpy` itself (or at least `scipy`).
 
-This project was started by @ml31415 and the `scipy.weave` implementation is by him.  The pure python and `numpy` implementations were written by @d1manson. 
-
- 
+This project was started by @ml31415 and the `scipy.weave` implementation is by him. The pure python and `numpy` implementations were written by @d1manson. 
