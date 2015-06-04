@@ -5,7 +5,7 @@ import numpy as np
 from ..aggregate_numpy import aggregate
 
 @pytest.mark.parametrize("first_last", ["first", "last"])
-def test_ufunc_indices(first_last):
+def test_first_last(first_last):
     group_idx = np.arange(0, 100, 2, dtype=int).repeat(5)
     a = np.arange(group_idx.size)
     res = aggregate(group_idx, a, func=first_last, fill_value=-1)
@@ -16,7 +16,7 @@ def test_ufunc_indices(first_last):
 
 
 @pytest.mark.parametrize(["first_last", "nanoffset"], itertools.product(["nanfirst", "nanlast"], [2, 0, 4]))
-def test_ufunc_nan_indices(first_last, nanoffset):
+def test_nan_first_last(first_last, nanoffset):
     group_idx = np.arange(0, 100, 2, dtype=int).repeat(5)
     a = np.arange(group_idx.size, dtype=float)
 

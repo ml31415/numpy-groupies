@@ -80,23 +80,19 @@ def _prod(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-def _all(group_idx, a, size, fill_value, dtype=bool):
+def _all(group_idx, a, size, fill_value, dtype=None):
     check_boolean(fill_value)
     ret = np.full(size, fill_value, dtype=bool)
-    if fill_value:
-        pass  # already initialised to True
-    else:
+    if not fill_value:
         ret[group_idx] = True
     ret[group_idx.compress(np.logical_not(a))] = False
     return ret
 
-def _any(group_idx, a, size, fill_value, dtype=bool):
+def _any(group_idx, a, size, fill_value, dtype=None):
     check_boolean(fill_value)
     ret = np.full(size, fill_value, dtype=bool)
     if fill_value:
         ret[group_idx] = False
-    else:
-        pass  # already initialsied to False
     ret[group_idx.compress(a)] = True
     return ret
 
@@ -118,10 +114,9 @@ def _max(group_idx, a, size, fill_value, dtype=None):
     np.maximum.at(ret, group_idx, a)
     return ret
 
-def _mean(group_idx, a, size, fill_value, dtype=None):
+def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if np.ndim(a) == 0:
         raise ValueError("cannot take mean with scalar a")
-    dtype = float if dtype is None else dtype
     counts = np.bincount(group_idx, minlength=size)
     sums = np.bincount(group_idx, weights=a, minlength=size)
     with np.errstate(divide='ignore'):
@@ -130,10 +125,9 @@ def _mean(group_idx, a, size, fill_value, dtype=None):
         ret[counts == 0] = fill_value
     return ret
 
-def _var(group_idx, a, size, fill_value, dtype=None, sqrt=False):
+def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64), sqrt=False):
     if np.ndim(a) == 0:
         raise ValueError("cannot take variance with scalar a")
-    dtype = float if dtype is None else dtype
     counts = np.bincount(group_idx, minlength=size)
     sums = np.bincount(group_idx, weights=a, minlength=size)
     with np.errstate(divide='ignore'):
@@ -145,7 +139,7 @@ def _var(group_idx, a, size, fill_value, dtype=None, sqrt=False):
         ret[counts == 0] = fill_value
     return ret
 
-def _std(group_idx, a, size, fill_value, dtype=None):
+def _std(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     return _var(group_idx, a, size, fill_value, dtype=dtype, sqrt=True)
 
 def _allnan(group_idx, a, size, fill_value, dtype=bool):

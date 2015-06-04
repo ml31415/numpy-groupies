@@ -20,36 +20,36 @@ def aggregate_group_loop(*args, **kwargs):
 print "TODO: use more extensive tests in test_accumarray.py"
 print ""
 print "-----simple examples----------"
-test_vals = np.array([12.0, 3.2, -15, 88, 12.9])
-test_idx = np.array([1, 0, 1, 4, 1  ])
-print "test_vals: ", test_vals
-print "test_idx: ", test_idx
-print "accumarray(test_idx, test_vals):"
-print aggregate_np(test_idx, test_vals)  # group vals by idx and sum
+test_a = np.array([12.0, 3.2, -15, 88, 12.9])
+test_group_idx = np.array([1, 0, 1, 4, 1  ])
+print "test_a: ", test_a
+print "test_group_idx: ", test_group_idx
+print "accumarray(test_group_idx, test_a):"
+print aggregate_np(test_group_idx, test_a)  # group vals by idx and sum
 # array([3.2, 9.9, 0., 0., 88.])
-print "accumarray(test_idx, test_vals, sz=8, func='min', fill_value=np.nan):"
-print aggregate_np(test_idx, test_vals, size=8, func='min', fill_value=np.nan)
+print "accumarray(test_group_idx, test_a, sz=8, func='min', fill_value=np.nan):"
+print aggregate_np(test_group_idx, test_a, size=8, func='min', fill_value=np.nan)
 # array([3.2, -15., nan, 88., nan, nan, nan, nan])
-print "accumarray(test_idx, test_vals, sz=5, func=lambda x: ' + '.join(str(xx) for xx in x),fill_value='')"
-print aggregate_np(test_idx, test_vals, size=5, func=lambda x: ' + '.join(str(xx) for xx in x), fill_value='')
+print "accumarray(test_group_idx, test_a, sz=5, func=lambda x: ' + '.join(str(xx) for xx in x),fill_value='')"
+print aggregate_np(test_group_idx, test_a, size=5, func=lambda x: ' + '.join(str(xx) for xx in x), fill_value='')
 
 
 print ""
 print "---------testing--------------"
 print "compare against group-and-loop with numpy"
 testable_funcs = {aliasing[f]: f for f in (np.sum, np.prod, np.any, np.all, np.min, np.max, np.std, np.var, np.mean)}
-test_idx = np.random.randint(0, 1e3, 1e5)
-test_vals = np.random.rand(1e5) * 100 - 50
-test_vals[test_vals > 25] = 0  # for use with bool functions
+test_group_idx = np.random.randint(0, 1e3, 1e5)
+test_a = np.random.rand(1e5) * 100 - 50
+test_a[test_a > 25] = 0  # for use with bool functions
 for name, f in testable_funcs.items():
-    numpy_loop_group = aggregate_group_loop(test_idx, test_vals, func=f)
+    numpy_loop_group = aggregate_group_loop(test_group_idx, test_a, func=f)
 
     for acc_func, acc_name in [(aggregate_np, 'np-optimised'),
                                (aggregate_ufunc, 'np-ufunc-at'),
                                (aggregate_py, 'purepy'),
                                (aggregate_pd, 'pandas')]:
         try:
-            test_out = acc_func(test_idx, test_vals, func=name)
+            test_out = acc_func(test_group_idx, test_a, func=name)
             test_out = np.asarray(test_out)
             if not np.allclose(test_out, numpy_loop_group.astype(test_out.dtype)):
                 print name, acc_name, "FAILED test, output: [" + acc_name + "; correct]..."
@@ -80,7 +80,7 @@ for name, f in testable_funcs.items():
         try:
             func = f if acc_func is aggregate_group_loop else name
             reps = 3 if acc_func is aggregate_py else 20
-            times[ii] = timeit.Timer(lambda: acc_func(test_idx, test_vals, func=func)).timeit(number=reps) / reps * 10
+            times[ii] = timeit.Timer(lambda: acc_func(test_group_idx, test_a, func=func)).timeit(number=reps) / reps * 10
             print ("%.1fms" % ((times[ii] * 1000))).rjust(13),
         except NotImplementedError:
             print "no-impl".rjust(13),
