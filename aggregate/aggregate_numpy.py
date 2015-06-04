@@ -1,10 +1,10 @@
 import numpy as np
 
-from .utils import (no_separate_nan_version, fill_untouched,
-                    check_boolean, minimum_dtype, aliasing_numpy as aliasing)
+from .utils import (fill_untouched, check_boolean, minimum_dtype, _no_separate_nan_version,
+                    aliasing_numpy as aliasing, get_func_str)
 
 
-def _sort(group_idx, a, n, fill_value, dtype=None, reversed_=False):
+def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
     if isinstance(a.dtype, np.complex):
         raise NotImplementedError("a must be real, could use np.lexsort or sort with recarray for complex.")
     if not (np.isscalar(fill_value) or len(fill_value) == 0):
@@ -13,76 +13,76 @@ def _sort(group_idx, a, n, fill_value, dtype=None, reversed_=False):
         order_group_idx = np.argsort(group_idx + -1j * a)
     else:
         order_group_idx = np.argsort(group_idx + 1j * a)
-    counts = np.bincount(group_idx, minlength=n)
+    counts = np.bincount(group_idx, minlength=size)
     if np.ndim(a) == 0:
-        a = np.full(n, a)
+        a = np.full(size, a)
     ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
     ret = np.asarray(ret, dtype=object)
     if np.isscalar(fill_value):
         fill_untouched(group_idx, ret, fill_value)
     return ret
 
-def _rsort(group_idx, a, n, fill_value, dtype=None):
-    return _sort(group_idx, a, n, fill_value, dtype=None, reversed_=True)
+def _rsort(group_idx, a, size, fill_value, dtype=None):
+    return _sort(group_idx, a, size, fill_value, dtype=None, reversed_=True)
 
-def _array(group_idx, a, n, fill_value, dtype=None):
+def _array(group_idx, a, size, fill_value, dtype=None):
     """groups a into separate arrays, keeping the order intact."""
-    if not (np.isscalar(fill_value) or len(fill_value) == 0):
-        raise ValueError("fill_value must be scalar or an empty sequence")
+    if fill_value is not None and not (np.isscalar(fill_value) or len(fill_value) == 0):
+        raise ValueError("fill_value must be None, a scalar or an empty sequence")
     order_group_idx = np.argsort(group_idx, kind='mergesort')
-    counts = np.bincount(group_idx, minlength=n)
+    counts = np.bincount(group_idx, minlength=size)
     ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
     ret = np.asarray(ret, dtype=object)
-    if np.isscalar(fill_value):
+    if fill_value is None or np.isscalar(fill_value):
         fill_untouched(group_idx, ret, fill_value)
     return ret
 
-def _sum(group_idx, a, n, fill_value, dtype=None):
+def _sum(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     if np.ndim(a) == 0:
-        ret = np.bincount(group_idx, minlength=n).astype(dtype)
+        ret = np.bincount(group_idx, minlength=size).astype(dtype)
         if a != 1:
             ret *= a
     else:
-        ret = np.bincount(group_idx, weights=a, minlength=n).astype(dtype)
+        ret = np.bincount(group_idx, weights=a, minlength=size).astype(dtype)
     if fill_value != 0:
         fill_untouched(group_idx, ret, fill_value)
     return ret
 
-def _last(group_idx, a, n, fill_value, dtype=None):
+def _last(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     if fill_value == 0:
-        ret = np.zeros(n, dtype=dtype)
+        ret = np.zeros(size, dtype=dtype)
     else:
-        ret = np.full(n, fill_value, dtype=dtype)
+        ret = np.full(size, fill_value, dtype=dtype)
     # repeated indexing gives last value, see:
     # the phrase "leaving behind the last value"  on this page:
     # http://wiki.scipy.org/Tentative_NumPy_Tutorial
     ret[group_idx] = a
     return ret
 
-def _first(group_idx, a, n, fill_value, dtype=None):
+def _first(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     if fill_value == 0:
-        ret = np.zeros(n, dtype=dtype)
+        ret = np.zeros(size, dtype=dtype)
     else:
-        ret = np.full(n, fill_value, dtype=dtype)
+        ret = np.full(size, fill_value, dtype=dtype)
     ret[group_idx[::-1]] = a[::-1]  # same trick as _last, but in reverse
     return ret
 
 
-def _prod(group_idx, a, n, fill_value, dtype=None):
+def _prod(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
-    ret = np.full(n, fill_value, dtype=dtype)
+    ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != 1:
         ret[group_idx] = 1  # product starts from 1
     np.multiply.at(ret, group_idx, a)
     return ret
 
 
-def _all(group_idx, a, n, fill_value, dtype=bool):
-    check_boolean(fill_value, name="fill_value")
-    ret = np.full(n, fill_value, dtype=bool)
+def _all(group_idx, a, size, fill_value, dtype=bool):
+    check_boolean(fill_value)
+    ret = np.full(size, fill_value, dtype=bool)
     if fill_value:
         pass  # already initialised to True
     else:
@@ -90,9 +90,9 @@ def _all(group_idx, a, n, fill_value, dtype=bool):
     ret[group_idx.compress(np.logical_not(a))] = False
     return ret
 
-def _any(group_idx, a, n, fill_value, dtype=bool):
-    check_boolean(fill_value, name="fill_value")
-    ret = np.full(n, fill_value, dtype=bool)
+def _any(group_idx, a, size, fill_value, dtype=bool):
+    check_boolean(fill_value)
+    ret = np.full(size, fill_value, dtype=bool)
     if fill_value:
         ret[group_idx] = False
     else:
@@ -100,77 +100,78 @@ def _any(group_idx, a, n, fill_value, dtype=bool):
     ret[group_idx.compress(a)] = True
     return ret
 
-def _min(group_idx, a, n, fill_value, dtype=None):
+def _min(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmax = np.iinfo(a.dtype).max if issubclass(a.dtype.type, np.integer) else np.finfo(a.dtype).max
-    ret = np.full(n, fill_value, dtype=dtype)
+    ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != dmax:
         ret[group_idx] = dmax  # min starts from maximum
     np.minimum.at(ret, group_idx, a)
     return ret
 
-def _max(group_idx, a, n, fill_value, dtype=None):
+def _max(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmin = np.iinfo(a.dtype).min if issubclass(a.dtype.type, np.integer) else np.finfo(a.dtype).min
-    ret = np.full(n, fill_value, dtype=dtype)
+    ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != dmin:
         ret[group_idx] = dmin  # max starts from minimum
     np.maximum.at(ret, group_idx, a)
     return ret
 
-def _mean(group_idx, a, n, fill_value, dtype=None):
+def _mean(group_idx, a, size, fill_value, dtype=None):
     if np.ndim(a) == 0:
         raise ValueError("cannot take mean with scalar a")
     dtype = float if dtype is None else dtype
-    counts = np.bincount(group_idx, minlength=n)
-    sums = np.bincount(group_idx, weights=a, minlength=n)
+    counts = np.bincount(group_idx, minlength=size)
+    sums = np.bincount(group_idx, weights=a, minlength=size)
     with np.errstate(divide='ignore'):
         ret = sums.astype(dtype) / counts
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
     return ret
 
-def _var(group_idx, a, n, fill_value, dtype=None, sqrt=False):
+def _var(group_idx, a, size, fill_value, dtype=None, sqrt=False):
     if np.ndim(a) == 0:
         raise ValueError("cannot take variance with scalar a")
     dtype = float if dtype is None else dtype
-    counts = np.bincount(group_idx, minlength=n)
-    sums = np.bincount(group_idx, weights=a, minlength=n)
+    counts = np.bincount(group_idx, minlength=size)
+    sums = np.bincount(group_idx, weights=a, minlength=size)
     with np.errstate(divide='ignore'):
         means = sums.astype(dtype) / counts
-        ret = np.bincount(group_idx, (a - means[group_idx]) ** 2, minlength=n) / counts
+        ret = np.bincount(group_idx, (a - means[group_idx]) ** 2, minlength=size) / counts
     if sqrt:
         ret = np.sqrt(ret)  # this is now std not var
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
     return ret
 
-def _std(group_idx, a, n, fill_value, dtype=None):
-    return _var(group_idx, a, n, fill_value, dtype=dtype, sqrt=True)
+def _std(group_idx, a, size, fill_value, dtype=None):
+    return _var(group_idx, a, size, fill_value, dtype=dtype, sqrt=True)
 
-def _allnan(group_idx, a, n, fill_value, dtype=bool):
-    return _all(group_idx, np.isnan(a), n, fill_value=fill_value, dtype=dtype)
+def _allnan(group_idx, a, size, fill_value, dtype=bool):
+    return _all(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
-def _anynan(group_idx, a, n, fill_value, dtype=bool):
-    return _any(group_idx, np.isnan(a), n, fill_value=fill_value, dtype=dtype)
+def _anynan(group_idx, a, size, fill_value, dtype=bool):
+    return _any(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
-def _generic_callable(group_idx, a, n, fill_value, dtype=None, func=lambda g: g):
+def _generic_callable(group_idx, a, size, fill_value, dtype=None, func=lambda g: g):
     """groups a by inds, and then applies foo to each group in turn, placing
     the results in an array."""
-    groups = _array(group_idx, a, n, (), dtype=dtype)
-    ret = np.full(n, fill_value, dtype=object)
-    for ii, g in enumerate(groups):
-        if np.ndim(g) == 1 and len(g) > 0:
-            ret[ii] = func(g)
+    groups = _array(group_idx, a, size, (), dtype=dtype)
+    ret = np.full(size, fill_value, dtype=object)
+    for i, grp in enumerate(groups):
+        if np.ndim(grp) == 1 and len(grp) > 0:
+            ret[i] = func(grp)
     return ret
 
 _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_first,
                     all=_all, any=_any, mean=_mean, std=_std, var=_var,
                     anynan=_anynan, allnan=_allnan, sort=_sort, rsort=_rsort,
                     array=_array)
+_impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items()) if k not in _no_separate_nan_version)
 
 
-def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='F', dtype=None, _impl_dict=_impl_dict):
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='F', dtype=None, _impl_dict=_impl_dict, _nansqueeze=True):
     '''
     Aggregation similar to Matlab's `accumarray` function.
     
@@ -307,34 +308,24 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='F', dtyp
         group_idx = np.ravel_multi_index(tuple(group_idx), size, order=order, mode='raise')
         size_n = np.prod(size)
 
-    if not isinstance(func, basestring):
-        if func in aliasing:
-            func = aliasing[func]
-        elif not callable(func):
-            raise ValueError("func is neither a string nor a callable object.")
-
-    if not isinstance(func, basestring):
+    func_str = get_func_str(aliasing, func)
+    if func_str not in _impl_dict and callable(func):
         # do simple grouping and execute function in loop
         ret = _generic_callable(group_idx, a, size_n, fill_value, func=func, dtype=dtype)
     else:
         # deal with nans and find the function
-        original_func = func
-        func = func.lower()
-        if func.startswith('nan'):
-            func = func[3:]
-            func = aliasing.get(func, func)
-            if func in no_separate_nan_version:
-                raise ValueError(original_func[3:] + " does not have a nan- version.")
+        if func_str.startswith('nan'):
             if np.ndim(a) == 0:
-                raise ValueError("nan- version not supported for scalar input.")
-            good = ~np.isnan(a)
-            a = a[good]
-            group_idx = group_idx[good]
-        else:
-            func = aliasing.get(func, func)
-        if func not in _impl_dict:
-            raise NotImplementedError(original_func + " not found in list of available functions.")
-        func = _impl_dict[func]
+                raise ValueError("nan-version not supported for scalar input.")
+            if _nansqueeze:
+                good = ~np.isnan(a)
+                a = a[good]
+                group_idx = group_idx[good]
+
+        try:
+            func = _impl_dict[func_str]
+        except KeyError:
+            raise NotImplementedError("No such function implemented: %s" % func_str)
 
         # run the function
         ret = func(group_idx, a, size_n, fill_value=fill_value, dtype=dtype)

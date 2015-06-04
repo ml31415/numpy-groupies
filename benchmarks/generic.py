@@ -4,7 +4,8 @@ import timeit
 import numpy as np
 
 from aggregate import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
-                aggregate_weave, aggregate_pd as aggregate_pandas)
+                       aggregate_weave, aggregate_pd as aggregate_pandas)
+from aggregate.utils import allnan, anynan
 
 _implementations = ['aggregate_' + impl for impl in "py ufunc numpy weave pandas".split()]
 aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
@@ -22,12 +23,6 @@ def func_preserve_order(iterator):
         tmp += x ** i
     return tmp
 
-
-def allnan(x):
-    return np.all(np.isnan(x))
-
-def anynan(x):
-    return np.any(np.isnan(x))
 
 func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
              np.nansum, np.nanmin, np.nanmax, np.nanmean, np.nanstd,

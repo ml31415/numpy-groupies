@@ -2,18 +2,28 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
+from .utils import check_dtype, allnan, anynan
 from .aggregate_numpy import aggregate as aggregate_np
 
 
-def _wrapper(group_idx, a, n, fill_value, func='sum', dtype=None):
-    ret = np.full(n, fill_value)
-    grouped = getattr(pd.DataFrame({'group_idx': group_idx, 'a': a}).groupby('group_idx'), func)()
+def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
+    kwargs = dict()
+    if func == 'std':
+        kwargs['ddof'] = ddof
+    if isinstance(func, basestring):
+        grouped = getattr(pd.DataFrame({'group_idx': group_idx, 'a': a}).groupby('group_idx'), func)(**kwargs)
+    else:
+        grouped = pd.DataFrame({'group_idx': group_idx, 'a': a}).groupby('group_idx').aggregate(func, **kwargs)
+
+    dtype = check_dtype(dtype, func, a)
+    ret = np.full(size, fill_value, dtype=dtype)
     ret[grouped.index] = grouped
     return ret
 
-
-_supported_funcs = 'min max sum prod mean first last all any'.split()
+_supported_funcs = 'min max sum prod mean std first last all any'.split()
 _impl_dict = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
+_impl_dict.update(('nan' + fn, partial(_wrapper, func=fn)) for fn in _supported_funcs)
+_impl_dict.update(allnan=partial(_wrapper, func=allnan), anynan=partial(_wrapper, func=anynan))
 
 
 def aggregate(*args, **kwargs):

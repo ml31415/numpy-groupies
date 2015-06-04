@@ -1,9 +1,9 @@
-import timeit
 import numpy as np
 import pytest
 
 from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
                 aggregate_weave, aggregate_pd as aggregate_pandas)
+from ..utils import allnan, anynan
 
 _implementations = ['aggregate_' + impl for impl in "py ufunc numpy weave pandas".split()]
 aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
@@ -13,7 +13,7 @@ class AttrDict(dict):
     __getattr__ = dict.__getitem__
 
 
-@pytest.fixture(params=_implementations, ids=lambda x: x[0])
+@pytest.fixture(params=_implementations, ids=lambda x: x[10:])
 def aggregate_all(request):
     impl = aggregate_implementations[request.param]
     if impl is None:
@@ -55,34 +55,52 @@ def test_shape_mismatch(aggregate_all):
 
 
 def test_create_lists(aggregate_all):
-    res = aggregate_all(np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int), func=list)
-    np.testing.assert_array_equal(np.array(res[0]), np.array([101]))
-    assert res[2] == 0
-    np.testing.assert_array_equal(np.array(res[3]), np.array([103, 105]))
+    try:
+        res = aggregate_all(np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int), func=list)
+    except NotImplementedError:
+        pytest.xfail("Function not yet implemented")
+    else:
+        np.testing.assert_array_equal(np.array(res[0]), np.array([101]))
+        assert res[2] == 0
+        np.testing.assert_array_equal(np.array(res[3]), np.array([103, 105]))
 
 
-def test_stable_sort(aggregate_all):
+@pytest.mark.parametrize("sort_order", ["normal", "reverse"])
+def test_stable_sort(aggregate_all, sort_order):
     group_idx = np.repeat(np.arange(5), 4)
     a = np.arange(group_idx.size)
-    res = aggregate_all(group_idx, a, func=list)
-    np.testing.assert_array_equal(np.array(res[0]), np.array([0, 1, 2, 3]))
-    a = np.arange(group_idx.size)[::-1]
-    res = aggregate_all(group_idx, a, func=list)
-    np.testing.assert_array_equal(np.array(res[0]), np.array([19, 18, 17, 16]))
+    if sort_order == "reverse":
+        a = a[::-1]
+    ref = a[:4]
+
+    try:
+        res = aggregate_all(group_idx, a, func=list)
+    except NotImplementedError:
+        pytest.xfail("Function not yet implemented")
+    else:
+        np.testing.assert_array_equal(np.array(res[0]), ref)
 
 
 def test_item_counting(aggregate_all):
     group_idx = np.array([0, 1, 2, 3, 3, 3, 3, 4, 5, 5, 5, 6, 5, 4, 3, 8, 8])
     a = np.arange(group_idx.size)
-    res = aggregate_all(group_idx, a, func=lambda x: len(x) > 1)
-    np.testing.assert_array_equal(res, np.array([0, 0, 0, 1, 1, 1, 0, 0, 1]))
+    try:
+        res = aggregate_all(group_idx, a, func=lambda x: len(x) > 1)
+    except NotImplementedError:
+        pytest.xfail("Function not yet implemented")
+    else:
+        np.testing.assert_array_equal(res, np.array([0, 0, 0, 1, 1, 1, 0, 0, 1]))
 
 
-@pytest.mark.parametrize(["func", "fill_value"], [(np.array, None), (np.sum, -1)])
+@pytest.mark.parametrize(["func", "fill_value"], [(np.array, None), (np.sum, -1)], ids=["array", "sum"])
 def test_fill_value(aggregate_all, func, fill_value):
     group_idx = np.array([0, 2, 2], dtype=int)
-    res = aggregate_all(group_idx, np.arange(len(group_idx), dtype=int), func=func, fill_value=fill_value)
-    assert res[1] == fill_value
+    try:
+        res = aggregate_all(group_idx, np.arange(len(group_idx), dtype=int), func=func, fill_value=fill_value)
+    except NotImplementedError:
+        pytest.xfail("Function not yet implemented")
+    else:
+        assert res[1] == fill_value
 
 
 def test_fortran_arrays(aggregate_all):
@@ -141,47 +159,17 @@ def func_preserve_order(iterator):
         tmp += x ** i
     return tmp
 
-
-def allnan(x):
-    return np.all(np.isnan(x))
-
-def anynan(x):
-    return np.any(np.isnan(x))
-
 func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
              np.nansum, np.nanmin, np.nanmax, np.nanmean, np.nanstd,
              anynan, allnan, func_arbitrary, func_preserve_order)
 
-
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
 def test_compare(aggregate_compare, func, decimal=14):
     a = aggregate_compare.nana if 'nan' in getattr(func, '__name__', func) else aggregate_compare.a
-    ref = aggregate_compare.func_ref(aggregate_compare.group_idx, a, func=func)
     try:
         res = aggregate_compare.func(aggregate_compare.group_idx, a, func=func)
     except NotImplementedError:
         pytest.xfail("Function not yet implemented")
     else:
+        ref = aggregate_compare.func_ref(aggregate_compare.group_idx, a, func=func)
         np.testing.assert_array_almost_equal(res, ref, decimal=decimal)
-
-
-def test_timing_sum(aggregate_compare):
-    try:
-        t1 = timeit.Timer(lambda: aggregate_compare.func(aggregate_compare.group_idx, aggregate_compare.a)).timeit(number=3)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    t0 = timeit.Timer(lambda: aggregate_compare.func_ref(aggregate_compare.group_idx, aggregate_compare.a)).timeit(number=3)
-    assert t0 > t1
-    print "%s/%s speedup: %.3f" % (aggregate_compare.func.func_name, aggregate_compare.func_ref.func_name, t0 / t1)
-
-
-def test_timing_std(aggregate_compare):
-    try:
-        t1 = timeit.Timer(lambda: aggregate_compare.func(aggregate_compare.group_idx, aggregate_compare.a, func=np.std)).timeit(number=3)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    t0 = timeit.Timer(lambda: aggregate_compare.func_ref(aggregate_compare.group_idx, aggregate_compare.a, func=np.std)).timeit(number=3)
-    assert t0 > t1
-    print "%s/%s speedup: %.3f" % (aggregate_compare.func.func_name, aggregate_compare.func_ref.func_name, t0 / t1)
-
-

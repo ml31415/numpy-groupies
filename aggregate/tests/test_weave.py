@@ -70,7 +70,7 @@ def test_unpack_timing():
     assert t0 / t1 > 0.5
 
 
-@pytest.skip("Needs reimplementation")
+@pytest.mark.skipif(True, reason="downscaled needs reimplementation")
 def test_unpack_downscaled():
     accmap = np.array([4, 4, 4, 1, 1, 1, 2, 2, 2])
     vals = aggregate_weave(accmap, np.arange(accmap.size), mode='downscaled')

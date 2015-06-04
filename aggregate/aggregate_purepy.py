@@ -1,7 +1,7 @@
 import math
 import itertools
 
-from .utils import no_separate_nan_version, aliasing
+from .utils import get_func_str, aliasing
 
 
 # min - builtin
@@ -54,33 +54,25 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dty
         full description.
     """
     # Check for 2d group_idx
-    for x in group_idx:
-        try:
-            x[0]
+    for i in group_idx:
+        if isinstance(i, int):
+            if i < 0:
+                raise ValueError("group_idx contains negative value")
+        elif isinstance(i, (list, tuple)):
             raise NotImplementedError("pure python implementation doesn't accept 2d idx input.")
-        except IndexError:
-            continue  # getting an error is good, it means this is scalar
+        else:
+            raise ValueError("Invalid value found in group_idx: %s" % i)
 
-    original_func = func
-    func = aliasing.get(func, func)
-    if isinstance(func, basestring) and func.startswith('nan') and func in no_separate_nan_version:
-        raise Exception(original_func[3:] + " does not have a nan- version.")
+    if len(group_idx) != len(a):
+            raise ValueError("group_idx and a must be of the same length")
 
-    # remove nans
-    if isinstance(func, basestring) and func.startswith('nan'):
+    func_str = get_func_str(aliasing, func)
+    if func_str.startswith('nan'):
+        func_str = func_str[3:]
+        # remove nans
         group_idx, a = zip(*((ix, val) for ix, val in zip(group_idx, a) if not math.isnan(val)))
-        func = func[3:]
 
-    # find the function
-    if isinstance(func, basestring):
-        if func not in _func_dict:
-            raise Exception(func + " not found in list of functions.")
-        func = _func_dict[func]
-    elif callable(func):
-        pass  # we can use it as is
-    else:
-        raise Exception("func should be a callable function or recognised function name")
-
+    func = _func_dict.get(func_str, func)
     if size is None:
         size = 1 + max(group_idx)
 
