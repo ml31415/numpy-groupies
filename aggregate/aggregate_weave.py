@@ -62,30 +62,40 @@ c_base_contiguous = r"""%(init)s
     """
 
 c_iter['sum'] = r"""
-        if (counter[write_idx] == 0) {
-            vals[write_idx] = a[i];
-            counter[write_idx] = 1;
-        } 
-        else vals[write_idx] += a[i];"""
+        counter[write_idx] = 0;
+        vals[write_idx] += a[i];"""
 
 c_iter['prod'] = r"""
-        if (counter[write_idx] == 0) {
-            vals[write_idx] = a[i];
-            counter[write_idx] = 1;
-        } 
-        else vals[write_idx] *= a[i];"""
+        counter[write_idx] = 0;
+        vals[write_idx] *= a[i];"""
+
+c_iter['all'] = r"""
+        counter[write_idx] = 0;
+        if (a[i] == 0) vals[write_idx] = 0;"""
+
+c_iter['any'] = r"""
+        counter[write_idx] = 0;
+        if (a[i] != 0) vals[write_idx] = 1;"""
+
+c_iter['allnan'] = r"""
+        counter[write_idx] = 0;
+        if (a[i] == a[i]) vals[write_idx] = 0;"""
+
+c_iter['anynan'] = r"""
+        counter[write_idx] = 0;
+        if (a[i] != a[i]) vals[write_idx] = 1;"""
 
 c_iter['max'] = r"""
-        if (counter[write_idx] == 0) {
+        if (counter[write_idx] == 1) {
             vals[write_idx] = a[i];
-            counter[write_idx] = 1;
+            counter[write_idx] = 0;
         } 
         else if (vals[write_idx] < a[i]) vals[write_idx] = a[i];"""
 
 c_iter['min'] = r"""
-        if (counter[write_idx] == 0) {
+        if (counter[write_idx] == 1) {
             vals[write_idx] = a[i];
-            counter[write_idx] = 1;
+            counter[write_idx] = 0;
         } 
         else if (vals[write_idx] > a[i]) vals[write_idx] = a[i];"""
 
@@ -113,26 +123,6 @@ c_finish['std'] = r"""
         }
         else vals[i] = fill_value;
     }"""
-
-c_iter['all'] = r"""
-        if (counter[write_idx] == 0) vals[write_idx] = 1;
-        counter[write_idx] = 1;
-        if (a[i] == 0) vals[write_idx] = 0;"""
-
-c_iter['any'] = r"""
-        if (counter[write_idx] == 0) vals[write_idx] = 0;
-        counter[write_idx] = 1;
-        if (a[i] != 0) vals[write_idx] = 1;"""
-
-c_iter['allnan'] = r"""
-        if (counter[write_idx] == 0) vals[write_idx] = 1;
-        counter[write_idx] = 1;
-        if (a[i] == a[i]) vals[write_idx] = 0;"""
-
-c_iter['anynan'] = r"""
-        if (counter[write_idx] == 0) vals[write_idx] = 0;
-        counter[write_idx] = 1;
-        if (a[i] != a[i]) vals[write_idx] = 1;"""
 
 
 # Fill c_funcs with constructed code from the templates
@@ -194,7 +184,7 @@ def step_indices(group_idx):
     return indices
 
 
-def aggregate(group_idx, a, func='sum', dtype=None, fill_value=0):
+def aggregate(group_idx, a, func='sum', size=None, dtype=None, fill_value=0):
     '''
     Aggregation function similar to Matlab's `accumarray`.
     
@@ -264,24 +254,34 @@ def aggregate(group_idx, a, func='sum', dtype=None, fill_value=0):
     check_group_idx(group_idx, a)
     dtype = check_dtype(dtype, func, a)
     check_fill_value(fill_value, dtype)
-    vals_len = np.max(group_idx) + 1
-    vals = np.zeros(vals_len, dtype=dtype)
-    # Fill if required and function does no second path
-    if fill_value != 0 and func not in {'mean', 'std', 'nanmean', 'nanstd'}:
-        vals.fill(fill_value)
+    size = size or np.max(group_idx) + 1
+    if func in ('sum', 'any', 'anynan', 'nansum'):
+        vals = np.zeros(size, dtype=dtype)
+    elif func in ('prod', 'all', 'allnan', 'nanprod'):
+        vals = np.ones(size, dtype=dtype)
+    else:
+        vals = np.full(size, fill_value, dtype=dtype)
 
     # In case we should get some ugly fortran arrays, convert them
     vals_dict = dict(group_idx=np.ascontiguousarray(group_idx), a=np.ascontiguousarray(a),
                      vals=vals, fill_value=fill_value)
     if func in ('std', 'nanstd'):
+        counter = np.zeros_like(vals, dtype=int)
         vals_dict['means'] = np.zeros_like(vals)
-        vals_dict['counter'] = np.zeros_like(vals, dtype=int)
     elif func in ('mean', 'nanmean'):
-        vals_dict['counter'] = np.zeros_like(vals, dtype=int)
+        counter = np.zeros_like(vals, dtype=int)
     else:
-        vals_dict['counter'] = np.zeros_like(vals, dtype=bool)
+        # Using inverse logic, marking anyting touched with zero for later removal
+        counter = np.ones_like(vals, dtype=bool)
+    vals_dict['counter'] = counter
 
     inline(c_funcs[func], vals_dict.keys(), local_dict=vals_dict, define_macros=c_macros)
+
+    # Postprocessing
+    if func in ('sum', 'any', 'anynan', 'nansum') and fill_value != 0:
+        vals[counter] = fill_value
+    elif func in ('prod', 'all', 'allnan', 'nanprod') and fill_value != 1:
+        vals[counter] = fill_value
     return vals
 
 
