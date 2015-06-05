@@ -1,7 +1,7 @@
 import numpy as np
 
-from .utils import (fill_untouched, check_boolean, minimum_dtype, _no_separate_nan_version,
-                    aliasing_numpy as aliasing, get_func_str)
+from .utils import fill_untouched, check_boolean, _no_separate_nan_version, get_func
+from .utils_numpy import aliasing, minimum_dtype, input_validation
 
 
 def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
@@ -32,7 +32,7 @@ def _array(group_idx, a, size, fill_value, dtype=None):
     order_group_idx = np.argsort(group_idx, kind='mergesort')
     counts = np.bincount(group_idx, minlength=size)
     ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
-    ret = np.asarray(ret, dtype=object)
+    ret = np.asanyarray(ret)
     if fill_value is None or np.isscalar(fill_value):
         fill_untouched(group_idx, ret, fill_value)
     return ret
@@ -70,7 +70,6 @@ def _first(group_idx, a, size, fill_value, dtype=None):
     ret[group_idx[::-1]] = a[::-1]  # same trick as _last, but in reverse
     return ret
 
-
 def _prod(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     ret = np.full(size, fill_value, dtype=dtype)
@@ -78,7 +77,6 @@ def _prod(group_idx, a, size, fill_value, dtype=None):
         ret[group_idx] = 1  # product starts from 1
     np.multiply.at(ret, group_idx, a)
     return ret
-
 
 def _all(group_idx, a, size, fill_value, dtype=None):
     check_boolean(fill_value)
@@ -153,6 +151,7 @@ def _generic_callable(group_idx, a, size, fill_value, dtype=None, func=lambda g:
     the results in an array."""
     groups = _array(group_idx, a, size, (), dtype=dtype)
     ret = np.full(size, fill_value, dtype=object)
+
     for i, grp in enumerate(groups):
         if np.ndim(grp) == 1 and len(grp) > 0:
             ret[i] = func(grp)
@@ -165,7 +164,7 @@ _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_f
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items()) if k not in _no_separate_nan_version)
 
 
-def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='F', dtype=None, _impl_dict=_impl_dict, _nansqueeze=True):
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, _impl_dict=_impl_dict, _nansqueeze=True):
     '''
     Aggregation similar to Matlab's `accumarray` function.
     
@@ -259,56 +258,14 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='F', dtyp
     ['3.2' '12.0 + -15.0 + 12.9' '' '' '88.0']
     '''
 
-
-    a = np.asanyarray(a)
-    group_idx = np.asanyarray(group_idx)
-
-    # do some basic checking on a
-    if not issubclass(group_idx.dtype.type, np.integer):
-        raise TypeError("group_idx must be of integer type")
-    if np.ndim(a) > 1:
-        raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten.")
-
-    # Do some fairly extensive checking of group_idx and a, trying to give the user
-    # as much help as possible with what is wrong.
-    # Also, convert ndindexing to 1d indexing
-    ndim_idx = np.ndim(group_idx)
-    if ndim_idx not in (1, 2):
-        raise ValueError("Expected indices to have either 1 or 2 dimension.")
-    elif ndim_idx == 1:
-        if not (np.ndim(a) == 0 or len(a) == group_idx.shape[0]):
-            raise ValueError("group_idx and a must be of the same length, or a can be scalar")
-        if np.any(group_idx < 0):
-            raise ValueError("Negative indices not supported.")
-        if size is not None:
-            if not np.isscalar(size):
-                raise ValueError("Output size must be scalar or None")
-            if np.any(group_idx > size - 1):
-                raise ValueError("One or more indices are too large for size %d." % size)
-        else:
-            size = np.max(group_idx) + 1
-        size_n = size
-    else:  # ndim_idx == 2
-        if  not (np.ndim(a) == 0 or len(a) == group_idx.shape[1]):
-            raise ValueError("a has length %d, but group_idx has length %d." % (len(a), group_idx.shape[1]))
-        if size is None:
-            size = np.max(group_idx, axis=1) + 1
-        else:
-            if np.isscalar(size):
-                raise ValueError("Output size must be None or 1d sequence of length %d" % group_idx.shape[0])
-            if len(size) != group_idx.shape[0]:
-                raise ValueError("%d sizes given, but %d output dimensions specified in index" % (len(size), group_idx.shape[0]))
-
-        group_idx = np.ravel_multi_index(tuple(group_idx), size, order=order, mode='raise')
-        size_n = np.prod(size)
-
-    func_str = get_func_str(aliasing, func)
-    if func_str not in _impl_dict and callable(func):
+    group_idx, a, flat_size, ndim_idx = input_validation(group_idx, a, size=size, order=order)
+    func = get_func(func, aliasing, _impl_dict)
+    if not isinstance(func, basestring):
         # do simple grouping and execute function in loop
-        ret = _generic_callable(group_idx, a, size_n, fill_value, func=func, dtype=dtype)
+        ret = _generic_callable(group_idx, a, flat_size, fill_value, func=func, dtype=dtype)
     else:
         # deal with nans and find the function
-        if func_str.startswith('nan'):
+        if func.startswith('nan'):
             if np.ndim(a) == 0:
                 raise ValueError("nan-version not supported for scalar input.")
             if _nansqueeze:
@@ -316,17 +273,10 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='F', dtyp
                 a = a[good]
                 group_idx = group_idx[good]
 
-        try:
-            func = _impl_dict[func_str]
-        except KeyError:
-            raise NotImplementedError("No such function implemented: %s" % func_str)
-
-        # run the function
-        ret = func(group_idx, a, size_n, fill_value=fill_value, dtype=dtype)
+        func = _impl_dict[func]
+        ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype)
 
     # deal with ndimensional indexing
-    if ndim_idx == 2:
+    if ndim_idx > 1:
         ret = ret.reshape(size, order=order)
-
     return ret
-

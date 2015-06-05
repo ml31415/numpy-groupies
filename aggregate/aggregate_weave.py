@@ -1,7 +1,8 @@
 import numpy as np
 from scipy.weave import inline
 
-from .utils import check_group_idx, check_dtype, aliasing_numpy as aliasing, check_fill_value
+from .utils import check_group_idx, _no_separate_nan_version, get_func
+from .utils_numpy import check_dtype, aliasing, check_fill_value, input_validation
 from .aggregate_numpy import aggregate as aggregate_np
 
 
@@ -36,10 +37,6 @@ def c_nan_iter(c_iter):
         }""" % '\n'.join('    ' + line for line in c_iter.splitlines())
 
 
-c_minmax = r"""
-    #define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
-    #define min( a, b ) ( ((a) < (b)) ? (a) : (b) )"""
-
 c_base = r"""%(init)s
 
     for (long i=0; i<Lgroup_idx; i++) {
@@ -63,65 +60,65 @@ c_base_contiguous = r"""%(init)s
 
 c_iter['sum'] = r"""
         counter[write_idx] = 0;
-        vals[write_idx] += a[i];"""
+        ret[write_idx] += a[i];"""
 
 c_iter['prod'] = r"""
         counter[write_idx] = 0;
-        vals[write_idx] *= a[i];"""
+        ret[write_idx] *= a[i];"""
 
 c_iter['all'] = r"""
         counter[write_idx] = 0;
-        if (a[i] == 0) vals[write_idx] = 0;"""
+        if (a[i] == 0) ret[write_idx] = 0;"""
 
 c_iter['any'] = r"""
         counter[write_idx] = 0;
-        if (a[i] != 0) vals[write_idx] = 1;"""
+        if (a[i] != 0) ret[write_idx] = 1;"""
 
 c_iter['allnan'] = r"""
         counter[write_idx] = 0;
-        if (a[i] == a[i]) vals[write_idx] = 0;"""
+        if (a[i] == a[i]) ret[write_idx] = 0;"""
 
 c_iter['anynan'] = r"""
         counter[write_idx] = 0;
-        if (a[i] != a[i]) vals[write_idx] = 1;"""
+        if (a[i] != a[i]) ret[write_idx] = 1;"""
 
 c_iter['max'] = r"""
         if (counter[write_idx] == 1) {
-            vals[write_idx] = a[i];
+            ret[write_idx] = a[i];
             counter[write_idx] = 0;
         } 
-        else if (vals[write_idx] < a[i]) vals[write_idx] = a[i];"""
+        else if (ret[write_idx] < a[i]) ret[write_idx] = a[i];"""
 
 c_iter['min'] = r"""
         if (counter[write_idx] == 1) {
-            vals[write_idx] = a[i];
+            ret[write_idx] = a[i];
             counter[write_idx] = 0;
         } 
-        else if (vals[write_idx] > a[i]) vals[write_idx] = a[i];"""
+        else if (ret[write_idx] > a[i]) ret[write_idx] = a[i];"""
 
 c_iter['mean'] = r"""
         counter[write_idx]++;
-        vals[write_idx] += a[i];"""
+        ret[write_idx] += a[i];"""
 
 c_finish['mean'] = r"""
-    for (long i=0; i<Lvals; i++) {
-        if (counter[i] != 0) vals[i] = vals[i] / counter[i];
-        else vals[i] = fill_value;
+    for (long i=0; i<Lret; i++) {
+        if (counter[i] != 0) ret[i] = ret[i] / counter[i];
+        else ret[i] = fill_value;
     }"""
 
 c_iter['std'] = r"""
         counter[write_idx]++;
         means[write_idx] += a[i];
-        vals[write_idx] += a[i] * a[i];"""
+        ret[write_idx] += a[i] * a[i];"""
 
 c_finish['std'] = r"""
     double mean = 0;
-    for (long i=0; i<Lvals; i++) {
+    for (long i=0; i<Lret; i++) {
         if (counter[i] != 0) {
             mean = means[i] / counter[i];
-            vals[i] = sqrt(vals[i] / counter[i] - mean * mean);
+            ret[i] = sqrt(ret[i] / counter[i] - mean * mean);
         }
-        else vals[i] = fill_value;
+        else ret[i] = fill_value;
     }"""
 
 
@@ -129,12 +126,12 @@ c_finish['std'] = r"""
 for mode in ('contiguous', ''):
     codebase = c_base_contiguous if mode == 'contiguous' else c_base
     mode_postfix = '_' + mode if mode else ''
-    varnames = ['group_idx', 'a', 'vals', 'counter']
+    varnames = ['group_idx', 'a', 'ret', 'counter']
     for funcname in c_iter:
         code = codebase % dict(init=c_init(varnames), iter=c_iter[funcname],
                                finish=c_finish.get(funcname, ''))
         c_funcs[funcname + mode_postfix] = code
-        if not 'nan' in funcname:
+        if funcname not in _no_separate_nan_version:
             code = codebase % dict(init=c_init(varnames), iter=c_nan_iter(c_iter[funcname]),
                                    finish=c_finish.get(funcname, ''))
             c_funcs['nan' + funcname + mode_postfix] = code
@@ -184,7 +181,7 @@ def step_indices(group_idx):
     return indices
 
 
-def aggregate(group_idx, a, func='sum', size=None, dtype=None, fill_value=0):
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None):
     '''
     Aggregation function similar to Matlab's `accumarray`.
     
@@ -243,75 +240,82 @@ def aggregate(group_idx, a, func='sum', size=None, dtype=None, fill_value=0):
            [ -8.,   9.]])
     '''
 
-    func = aliasing.get(func, func)
+    func = get_func(func, aliasing, optimized_funcs)
     if not isinstance(func, basestring):
-        # Fall back to acuum_np if no optimized C version available
+        # Fall back to acuum_np if no optimized C version is available
         return aggregate_np(group_idx, a, func=func, dtype=dtype,
                             fill_value=fill_value)
-    elif func not in optimized_funcs:
-        raise NotImplementedError("No optimized function for %s available" % func)
 
-    check_group_idx(group_idx, a)
+    # Preparations for optimized processing
     dtype = check_dtype(dtype, func, a)
     check_fill_value(fill_value, dtype)
-    size = size or np.max(group_idx) + 1
+    group_idx, a, flat_size, ndim_idx = input_validation(group_idx, a, size=size, order=order)
+
     if func in ('sum', 'any', 'anynan', 'nansum'):
-        vals = np.zeros(size, dtype=dtype)
+        ret = np.zeros(flat_size, dtype=dtype)
     elif func in ('prod', 'all', 'allnan', 'nanprod'):
-        vals = np.ones(size, dtype=dtype)
+        ret = np.ones(flat_size, dtype=dtype)
     else:
-        vals = np.full(size, fill_value, dtype=dtype)
+        ret = np.full(flat_size, fill_value, dtype=dtype)
 
     # In case we should get some ugly fortran arrays, convert them
-    vals_dict = dict(group_idx=np.ascontiguousarray(group_idx), a=np.ascontiguousarray(a),
-                     vals=vals, fill_value=fill_value)
+    ret_dict = dict(group_idx=np.ascontiguousarray(group_idx), a=np.ascontiguousarray(a),
+                     ret=ret, fill_value=fill_value)
     if func in ('std', 'nanstd'):
-        counter = np.zeros_like(vals, dtype=int)
-        vals_dict['means'] = np.zeros_like(vals)
+        counter = np.zeros_like(ret, dtype=int)
+        ret_dict['means'] = np.zeros_like(ret)
     elif func in ('mean', 'nanmean'):
-        counter = np.zeros_like(vals, dtype=int)
+        counter = np.zeros_like(ret, dtype=int)
     else:
         # Using inverse logic, marking anyting touched with zero for later removal
-        counter = np.ones_like(vals, dtype=bool)
-    vals_dict['counter'] = counter
+        counter = np.ones_like(ret, dtype=bool)
+    ret_dict['counter'] = counter
 
-    inline(c_funcs[func], vals_dict.keys(), local_dict=vals_dict, define_macros=c_macros)
+    inline(c_funcs[func], ret_dict.keys(), local_dict=ret_dict, define_macros=c_macros, extra_compile_args=['-O3'])
 
     # Postprocessing
     if func in ('sum', 'any', 'anynan', 'nansum') and fill_value != 0:
-        vals[counter] = fill_value
+        ret[counter] = fill_value
     elif func in ('prod', 'all', 'allnan', 'nanprod') and fill_value != 1:
-        vals[counter] = fill_value
-    return vals
+        ret[counter] = fill_value
+
+    # deal with ndimensional indexing
+    if ndim_idx > 1:
+        ret = ret.reshape(size, order=order)
+    return ret
 
 
+c_minmax = r"""
+    #define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
+    #define min( a, b ) ( ((a) < (b)) ? (a) : (b) )"""
 
-c_funcs['unpack_contiguous'] = c_minmax + c_size('group_idx') + c_size('vals') + r"""
+
+c_funcs['unpack_contiguous'] = c_minmax + c_size('group_idx') + c_size('ret') + r"""
     long cmp_pos = 0;
     long val_cnt = 0;
-    unpacked[0] = vals[0];
+    unpacked[0] = ret[0];
     for (long i=1; i<Lgroup_idx; i++) {
         if (group_idx[cmp_pos] != group_idx[i]) {
             cmp_pos = i;
-            val_cnt = min((val_cnt + 1), (Lvals - 1));
+            val_cnt = min((val_cnt + 1), (Lret - 1));
         }
-        unpacked[i] = vals[val_cnt];
+        unpacked[i] = ret[val_cnt];
     }"""
 
 
-def unpack(group_idx, vals, mode='incontiguous'):
+def unpack(group_idx, ret, mode='incontiguous'):
     """ Take an aggregate packed array and uncompress it to the size of group_idx. 
-        This is equivalent to vals[group_idx], but gives a more than 
+        This is equivalent to ret[group_idx], but gives a more than 
         3-fold speedup.
     """
     if mode == 'downscaled':
         group_idx = np.unique(group_idx, return_inverse=True)[1]
     if mode != 'contiguous':
         # Numpy internal version got faster recently, so let's just use this if possible
-        return vals[group_idx]
+        return ret[group_idx]
     check_group_idx(group_idx)
-    unpacked = np.zeros_like(group_idx, dtype=vals.dtype)
-    inline(c_funcs['unpack_contiguous'], ['group_idx', 'vals', 'unpacked'], define_macros=c_macros)
+    unpacked = np.zeros_like(group_idx, dtype=ret.dtype)
+    inline(c_funcs['unpack_contiguous'], ['group_idx', 'ret', 'unpacked'], define_macros=c_macros)
     return unpacked
 
 if __name__ == '__main__':
@@ -320,8 +324,8 @@ if __name__ == '__main__':
     a = np.arange(group_idx.size, dtype=float)
     mode = 'contiguous'
     for fn in (np.mean, np.std, 'allnan', 'anynan'):
-        vals = aggregate(group_idx, a, mode=mode, func=fn)
-        print vals
+        ret = aggregate(group_idx, a, mode=mode, func=fn)
+        print ret
 
 
 # For a future downscale wrapper:

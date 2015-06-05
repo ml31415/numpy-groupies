@@ -3,7 +3,7 @@ import pytest
 
 from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
                 aggregate_weave, aggregate_pd as aggregate_pandas)
-from ..utils import allnan, anynan
+from ..utils_numpy import allnan, anynan
 
 _implementations = ['aggregate_' + impl for impl in "py ufunc numpy weave pandas".split()]
 aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
@@ -161,7 +161,7 @@ def func_preserve_order(iterator):
 
 func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
              np.nansum, np.nanmin, np.nanmax, np.nanmean, np.nanstd,
-             anynan, allnan, func_arbitrary, func_preserve_order)
+             'anynan', 'allnan', func_arbitrary, func_preserve_order)
 
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
 def test_compare(aggregate_compare, func, decimal=14):

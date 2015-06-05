@@ -1,11 +1,8 @@
 import numpy as np
 
-from .utils import minimum_dtype, check_boolean, get_func_str, aliasing_numpy as aliasing
+from .utils_numpy import minimum_dtype, check_boolean, get_func, aliasing
 from .aggregate_numpy import aggregate as aggregate_np
 
-
-def _dummy(group_idx, a, size, fill_value, dtype=None):
-    raise NotImplementedError("No ufunc for this, is there?")
 
 def _anynan(group_idx, a, size, fill_value, dtype=None):
     return _any(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
@@ -68,13 +65,11 @@ def _max(group_idx, a, size, fill_value, dtype=None):
 
 
 
-_impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_dummy, first=_dummy,
-                all=_all, any=_any, mean=_dummy, std=_dummy, var=_dummy,
-                anynan=_dummy, allnan=_dummy, sort=_dummy, rsort=_dummy,
-                array=_dummy, dummy=_dummy)
+_impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, all=_all, any=_any,
+                  allnan=_allnan, anynan=_anynan)
 
 
-def aggregate(*args, **kwargs):
+def aggregate(group_idx, a, func='sum', **kwargs):
     """
     Aggregation similar to Matlab's `accumarray` function.
     
@@ -89,8 +84,8 @@ def aggregate(*args, **kwargs):
     Note that this implementation piggybacks on the main error checking and
     argument parsing etc. in ``accumarray_numpy.py``.
     """
-    # Intercept any calls to arbitrary functions, throw NotImplementedError instead
-    func_str = get_func_str(aliasing, kwargs.get('func', 'sum'))
-    kwargs['func'] = func_str if func_str in _impl_dict else 'dummy'
-    return aggregate_np(*args, _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
+    func = get_func(func, aliasing, _impl_dict)
+    if not isinstance(func, basestring):
+        raise NotImplementedError("No such ufunc available")
+    return aggregate_np(group_idx, a, func=func, _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
 

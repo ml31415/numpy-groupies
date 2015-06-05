@@ -5,7 +5,7 @@ import timeit
 import numpy as np
 
 
-from aggregate.utils import aliasing_numpy as aliasing
+from aggregate.utils_numpy import aliasing
 from aggregate import aggregate_py, aggregate_np, aggregate_ufunc, aggregate_pd
 
 

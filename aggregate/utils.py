@@ -1,4 +1,3 @@
-import math
 try:
     import numpy as np
 except ImportError:
@@ -24,6 +23,8 @@ def fill_untouched(idx, ret, fill_value):
     untouched = np.ones_like(ret, dtype=bool)
     untouched[idx] = False
     ret[untouched] = fill_value
+
+_funcs_common = 'first last mean var std allnan anynan'.split()
 
 _alias_str = {
     'or': 'any',
@@ -58,40 +59,10 @@ _alias_builtin = {
     list: 'array',
 }
 
-if np is None:
-    _alias_numpy = {}
-else:
-    _alias_numpy = {
-        np.add: 'sum',
-        np.sum: 'sum',
-        np.any: 'any',
-        np.all: 'all',
-        np.multiply: 'prod',
-        np.prod: 'prod',
-        np.amin: 'min',
-        np.min: 'min',
-        np.minimum: 'min',
-        np.amax: 'max',
-        np.max: 'max',
-        np.maximum: 'max',
-        np.mean: 'mean',
-        np.std: 'std',
-        np.var: 'var',
-        np.array: 'array',
-        np.asarray: 'array',
-        np.sort: 'sort',
-        np.nansum: 'nansum',
-        np.nanmean: 'nanmean',
-        np.nanvar: 'nanvar',
-        np.nanmax: 'nanmax',
-        np.nanmin: 'nanmin',
-        np.nanstd: 'nanstd',
-    }
-
-_no_separate_nan_version = {'sort', 'rsort', 'array', 'allnan', 'anynan', 'list'}
+_no_separate_nan_version = {'sort', 'rsort', 'array', 'allnan', 'anynan'}
 
 
-def get_aliasing(with_numpy=False):
+def get_aliasing(*extra):
     """This should be called only once by an aggregate_implementation.py file,
         i.e. it should be called at the point when the given implementation is imported.
 
@@ -101,11 +72,12 @@ def get_aliasing(with_numpy=False):
         The second output is a list of functions names which should not support
         nan- prefixing.
     """
-    alias = dict((k, k) for k in ['first', 'last'])
+    alias = dict((k, k) for k in _funcs_common)
     alias.update(_alias_str)
+    alias.update((fn, fn) for fn in _alias_builtin.values())
     alias.update(_alias_builtin)
-    if with_numpy:
-        alias.update(_alias_numpy)
+    for d in extra:
+        alias.update(d)
     alias.update((k, k) for k in set(alias.values()))
     # Treat nan-functions as firstclass member and add them directly
     for key in set(alias.values()):
@@ -116,137 +88,21 @@ def get_aliasing(with_numpy=False):
 
     return alias
 
-aliasing = get_aliasing(with_numpy=False)
-aliasing_numpy = get_aliasing(with_numpy=True)
+aliasing = get_aliasing()
 
 
-def get_func_str(aliasing, func):
+def get_func(func, aliasing, implementations):
+    """ Return the key of a found implementation or the func itself """
     try:
-        return aliasing[func]
+        func_str = aliasing[func]
     except KeyError:
-        if isinstance(func, basestring):
-            func_str = func
-        elif callable(func):
-            func_str = func.__name__
-        else:
-            raise ValueError("func is neither a string nor a callable object")
-        # Tried everything to resolve to string, if still not found,
-        # no optimized version is available and simple loop is required
-        # KeyError is thrown in that case
+        if callable(func):
+            return func
+    else:
+        if func_str in implementations:
+            return func_str
         if func_str.startswith('nan') and func_str[3:] in _no_separate_nan_version:
             raise ValueError("%s does not have a nan-version" % func_str[3:])
-        return aliasing.get(func_str, func_str)
-
-
-if np is not None:
-    def allnan(x):
-        return np.all(np.isnan(x))
-
-
-    def anynan(x):
-        return np.any(np.isnan(x))
-
-
-    _next_int_dtype = dict(
-        bool=np.int8,
-        uint8=np.int16,
-        int8=np.int16,
-        uint16=np.int32,
-        int16=np.int32,
-        uint32=np.int64,
-        int32=np.int64
-    )
-
-    _next_float_dtype = dict(
-        float16=np.float32,
-        float32=np.float64,
-        float64=np.complex64,
-        complex64=np.complex128
-    )
-
-    def minimum_dtype(x, dtype=np.bool_):
-        """returns the "most basic" dtype which represents `x` properly, which is
-        at least as "complicated" as the specified dtype."""
-
-        def check_type(x, dtype):
-            try:
-                converted = dtype.type(x)
-            except (ValueError, OverflowError):
-                return False
-            # False if some overflow has happened
-            return converted == x or math.isnan(x)
-
-        def type_loop(x, dtype, dtype_dict, default=None):
-            while True:
-                try:
-                    dtype = np.dtype(dtype_dict[dtype.name])
-                    if check_type(x, dtype):
-                        return np.dtype(dtype)
-                except KeyError:
-                    if default is not None:
-                        return np.dtype(default)
-                    raise ValueError("Can not determine dtype of %r" % x)
-
-        dtype = np.dtype(dtype)
-        if check_type(x, dtype):
-            return dtype
-
-        if np.issubdtype(dtype, np.inexact):
-            return type_loop(x, dtype, _next_float_dtype)
         else:
-            return type_loop(x, dtype, _next_int_dtype, default=np.int64)
-
-    _forced_types = {
-        'array': np.object,
-        'all': np.bool_,
-        'any': np.bool_,
-        'allnan': np.bool_,
-        'anynan': np.bool_,
-    }
-    _forced_float_types = {'mean', 'var', 'std', 'nanmean', 'nanvar', 'nanstd'}
-    _forced_same_type = {'min', 'max', 'first', 'last', 'nanmin', 'nanmax', 'nanfirst', 'nanlast'}
-
-    def check_dtype(dtype, func_str, a):
-        if dtype is not None:
-            # dtype set by the user
-            # Careful here: np.bool != np.bool_ !
-            if np.issubdtype(dtype, np.bool_) and not ('all' in func_str or 'any' in func_str):
-                raise TypeError("function %s requires a more complex datatype than bool" % func_str)
-            # TODO: Maybe have some more checks here, if the user is doing some sane thing
-            return np.dtype(dtype)
-        else:
-            try:
-                return np.dtype(_forced_types[func_str])
-            except KeyError:
-                if func_str in _forced_float_types:
-                    if not np.issubdtype(dtype, np.floating):
-                        return np.dtype(np.float64)
-                    else:
-                        return a.dtype
-                else:
-                    if func_str == 'sum':
-                        # Try to guess the minimally required int size
-                        if np.issubdtype(a.dtype, np.int64):
-                            # It's not getting bigger anymore, so let's shortcut this
-                            return np.dtype(np.int64)
-                        elif np.issubdtype(a.dtype, np.integer):
-                            maxval = np.iinfo(a.dtype).max * len(a)
-                            return minimum_dtype(maxval, a.dtype)
-                        elif np.issubdtype(dtype, np.bool_):
-                            return minimum_dtype(len(a), a.dtype)
-                        else:
-                            # floating, inexact, whatever
-                            return a.dtype
-                    elif func_str in _forced_same_type:
-                        return a.dtype
-                    else:
-                        if isinstance(a.dtype, np.integer):
-                            return np.dtype(np.int64)
-                        else:
-                            return a.dtype
-
-    def check_fill_value(fill_value, dtype):
-        try:
-            return dtype.type(fill_value)
-        except ValueError:
-            raise ValueError("fill_value must be convertible into %s" % dtype.type.__name__)
+            raise NotImplementedError("No such function available")
+    raise ValueError("func %s is neither a valid function string nor a callable object" % func)

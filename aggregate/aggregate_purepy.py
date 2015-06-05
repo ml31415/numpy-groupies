@@ -1,7 +1,7 @@
 import math
 import itertools
 
-from .utils import get_func_str, aliasing
+from .utils import get_func, aliasing
 
 
 # min - builtin
@@ -66,15 +66,17 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dty
     if len(group_idx) != len(a):
             raise ValueError("group_idx and a must be of the same length")
 
-    func_str = get_func_str(aliasing, func)
-    if func_str.startswith('nan'):
-        func_str = func_str[3:]
-        # remove nans
-        group_idx, a = zip(*((ix, val) for ix, val in zip(group_idx, a) if not math.isnan(val)))
-
-    func = _func_dict.get(func_str, func)
     if size is None:
         size = 1 + max(group_idx)
+
+    func = get_func(func, aliasing, _func_dict)
+    if isinstance(func, basestring):
+        if func.startswith('nan'):
+            func = func[3:]
+            # remove nans
+            group_idx, a = zip(*((ix, val) for ix, val in zip(group_idx, a) if not math.isnan(val)))
+
+        func = _func_dict[func]
 
     # sort data and evaluate function on groups
     data = sorted(zip(group_idx, a), key=lambda tp: tp[0])

@@ -2,7 +2,7 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-from .utils import check_dtype, allnan, anynan
+from .utils_numpy import check_dtype, allnan, anynan
 from .aggregate_numpy import aggregate as aggregate_np
 
 
