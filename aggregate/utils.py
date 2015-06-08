@@ -1,28 +1,7 @@
-try:
-    import numpy as np
-except ImportError:
-    np = None
-
-
-def check_group_idx(group_idx, a=None, check_min=True):
-    if a is not None and group_idx.size != a.size:
-        raise ValueError("The size of group_idx must be the same as a.size")
-    if not issubclass(group_idx.dtype.type, np.integer):
-        raise TypeError("group_idx must be of integer type")
-    if check_min and np.min(group_idx) < 0:
-        raise ValueError("group_idx contains negative indices")
-
-
 def check_boolean(x):
     if x not in (0, 1):
         raise ValueError("Value not boolean")
 
-
-def fill_untouched(idx, ret, fill_value):
-    """any elements of ret not indexed by idx are set to fill_value."""
-    untouched = np.ones_like(ret, dtype=bool)
-    untouched[idx] = False
-    ret[untouched] = fill_value
 
 _funcs_common = 'first last mean var std allnan anynan'.split()
 

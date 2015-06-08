@@ -1,19 +1,20 @@
+"""
+Implementation of tests, that are run against all implemented versions of aggregate.
+"""
+
+import itertools
 import numpy as np
 import pytest
 
 from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
                 aggregate_weave, aggregate_pd as aggregate_pandas)
-from ..utils_numpy import allnan, anynan
+
 
 _implementations = ['aggregate_' + impl for impl in "py ufunc numpy weave pandas".split()]
 aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
 
 
-class AttrDict(dict):
-    __getattr__ = dict.__getitem__
-
-
-@pytest.fixture(params=_implementations, ids=lambda x: x[10:])
+@pytest.fixture(params=_implementations, ids=lambda x: x.split('_')[1])
 def aggregate_all(request):
     impl = aggregate_implementations[request.param]
     if impl is None:
@@ -34,6 +35,19 @@ def test_start_with_offset(aggregate_all):
     np.testing.assert_array_equal(res, np.array([0, 2, 4, 0, 2]))
     if aggregate_all != aggregate_py:
         assert 'int' in res.dtype.name
+
+
+@pytest.mark.parametrize("floatfunc", [np.std, np.var, np.mean], ids=lambda x: x.__name__)
+def test_float_enforcement(aggregate_all, floatfunc):
+    group_idx = np.arange(10).repeat(3)
+    a = np.arange(group_idx.size)
+    try:
+        res = aggregate_all(group_idx, a, floatfunc)
+    except NotImplementedError:
+        pytest.xfail("Function not yet implemented")
+    if aggregate_all != aggregate_py:
+        assert 'float' in res.dtype.name
+    assert np.all(res > 0)
 
 
 def test_start_with_offset_prod(aggregate_all):
@@ -103,73 +117,58 @@ def test_fill_value(aggregate_all, func, fill_value):
         assert res[1] == fill_value
 
 
-def test_fortran_arrays(aggregate_all):
-    """ Numpy handles C and Fortran style indices. Optimized aggregate has to
-        convert the Fortran matrices to C style, before doing it's job.
-    """
-    t = 10
-    for order_style in ('C', 'F'):
-        mat = np.zeros((t, t), order=order_style, dtype=float)
-        mat.flat[:] = np.arange(t * t)
-        assert aggregate_all(np.zeros(t, dtype=int), mat[0, :])[0] == sum(range(t))
+@pytest.mark.parametrize("order", ["C", "F"])
+def test_array_ordering(aggregate_all, order, size=10):
+    mat = np.zeros((size, size), order=order, dtype=float)
+    mat.flat[:] = np.arange(size * size)
+    assert aggregate_all(np.zeros(size, dtype=int), mat[0, :])[0] == sum(range(size))
 
 
-@pytest.fixture(params=['np/py', 'c/np', 'ufunc/np', 'pandas/np'], scope='module')
-def aggregate_compare(request):
-    if request.param == 'np/py':
-        func = aggregate_numpy
-        func_ref = aggregate_py
-        group_cnt = 100
-    else:
-        group_cnt = 3000
-        func_ref = aggregate_numpy
-        if 'ufunc' in request.param:
-            func = aggregate_ufunc
-        elif 'pandas' in request.param:
-            func = aggregate_pandas
-        else:
-            func = aggregate_weave
-
-    if not func:
-        pytest.xfail("Implementation not available")
-
-    # Gives 100000 duplicates of size 10 each
-    group_idx = np.repeat(np.arange(group_cnt), 2)
-    np.random.shuffle(group_idx)
-    group_idx = np.repeat(group_idx, 10)
-
-    a = np.random.randn(group_idx.size)
-    nana = a.copy()
-    nana[::3] = np.nan
-    somea = a.copy()
-    somea[somea < 0.3] = 0
-    somea[::31] = np.nan
-    return AttrDict(locals())
-
-
-def func_arbitrary(iterator):
-    tmp = 0
-    for x in iterator:
-        tmp += x * x
-    return tmp
-
-def func_preserve_order(iterator):
-    tmp = 0
-    for i, x in enumerate(iterator, 1):
-        tmp += x ** i
-    return tmp
-
-func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
-             np.nansum, np.nanmin, np.nanmax, np.nanmean, np.nanstd,
-             'anynan', 'allnan', func_arbitrary, func_preserve_order)
-
-@pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
-def test_compare(aggregate_compare, func, decimal=14):
-    a = aggregate_compare.nana if 'nan' in getattr(func, '__name__', func) else aggregate_compare.a
+@pytest.mark.parametrize("first_last", ["first", "last"])
+def test_first_last(aggregate_all, first_last):
+    group_idx = np.arange(0, 100, 2, dtype=int).repeat(5)
+    a = np.arange(group_idx.size)
     try:
-        res = aggregate_compare.func(aggregate_compare.group_idx, a, func=func)
+        res = aggregate_all(group_idx, a, func=first_last, fill_value=-1)
+    except NotImplementedError:
+        pytest.xfail("Function not yet implemented")
+    ref = np.zeros(np.max(group_idx) + 1)
+    ref.fill(-1)
+    ref[::2] = np.arange(0 if first_last == 'first' else 4, group_idx.size, 5, dtype=int)
+    np.testing.assert_array_equal(res, ref)
+
+
+@pytest.mark.parametrize(["first_last", "nanoffset"], itertools.product(["nanfirst", "nanlast"], [2, 0, 4]))
+def test_nan_first_last(aggregate_all, first_last, nanoffset):
+    group_idx = np.arange(0, 100, 2, dtype=int).repeat(5)
+    a = np.arange(group_idx.size, dtype=float)
+
+    a[nanoffset::5] = np.nan
+    try:
+        res = aggregate_all(group_idx, a, func=first_last, fill_value=-1)
     except NotImplementedError:
         pytest.xfail("Function not yet implemented")
     else:
-        ref = aggregate_compare.func_ref(aggregate_compare.group_idx, a, func=func)
-        np.testing.assert_array_almost_equal(res, ref, decimal=decimal)
+        ref = np.zeros(np.max(group_idx) + 1)
+        ref.fill(-1)
+
+        if first_last == "nanfirst":
+            ref_offset = 1 if nanoffset == 0 else 0
+        else:
+            ref_offset = 3 if nanoffset == 4 else 4
+        ref[::2] = np.arange(ref_offset, group_idx.size, 5, dtype=int)
+        np.testing.assert_array_equal(res, ref)
+
+
+@pytest.mark.parametrize(["func", "ddof"], itertools.product(["var", "std"], [0, 1, 2]))
+def test_ddof(aggregate_all, func, ddof, size=20):
+    func = {'std': np.std, 'var': np.var}.get(func)
+    group_idx = np.zeros(20, dtype=int)
+    a = np.random.random(group_idx.size)
+    try:
+        res = aggregate_all(group_idx, a, func, ddof=ddof)
+    except NotImplementedError:
+        pytest.xfail("Function not yet implemented")
+    else:
+        assert abs(res[0] - func(a, ddof=ddof)) < 1e-10
+

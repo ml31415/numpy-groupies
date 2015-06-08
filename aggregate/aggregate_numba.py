@@ -4,7 +4,7 @@ from numba import jit, double
 
 logging.captureWarnings(True)
 
-from .utils import check_group_idx
+from .utils_numpy import check_group_idx
 from .aggregate_numpy import aggregate as aggregate_np
 
 

@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-from .utils import get_aliasing, check_boolean, get_func
+from .utils import get_aliasing, check_boolean, get_func, _no_separate_nan_version
 
 
 _alias_numpy = {
@@ -43,13 +43,11 @@ else:
 aliasing = get_aliasing(_alias_numpy, _alias_bottleneck)
 
 
-def allnan(x):
-    return np.all(np.isnan(x))
-
-
-def anynan(x):
-    return np.any(np.isnan(x))
-
+def fill_untouched(idx, ret, fill_value):
+    """any elements of ret not indexed by idx are set to fill_value."""
+    untouched = np.ones_like(ret, dtype=bool)
+    untouched[idx] = False
+    ret[untouched] = fill_value
 
 _next_int_dtype = dict(
     bool=np.int8,
@@ -124,10 +122,10 @@ def check_dtype(dtype, func_str, a):
             return np.dtype(_forced_types[func_str])
         except KeyError:
             if func_str in _forced_float_types:
-                if not np.issubdtype(dtype, np.floating):
-                    return np.dtype(np.float64)
-                else:
+                if np.issubdtype(a.dtype, np.floating):
                     return a.dtype
+                else:
+                    return np.dtype(np.float64)
             else:
                 if func_str == 'sum':
                     # Try to guess the minimally required int size
@@ -156,6 +154,15 @@ def check_fill_value(fill_value, dtype):
         return dtype.type(fill_value)
     except ValueError:
         raise ValueError("fill_value must be convertible into %s" % dtype.type.__name__)
+
+
+def check_group_idx(group_idx, a=None, check_min=True):
+    if a is not None and group_idx.size != a.size:
+        raise ValueError("The size of group_idx must be the same as a.size")
+    if not issubclass(group_idx.dtype.type, np.integer):
+        raise TypeError("group_idx must be of integer type")
+    if check_min and np.min(group_idx) < 0:
+        raise ValueError("group_idx contains negative indices")
 
 
 def input_validation(group_idx, a, size=None, order='C'):
@@ -198,3 +205,19 @@ def input_validation(group_idx, a, size=None, order='C'):
         raise ValueError("group_idx and a must be of the same length, or a can be scalar")
 
     return group_idx, a, flat_size, ndim_idx
+
+
+def allnan(x):
+    return np.all(np.isnan(x))
+
+
+def anynan(x):
+    return np.any(np.isnan(x))
+
+
+def nanfirst(x):
+    return x[~np.isnan(x)][0]
+
+
+def nanlast(x):
+    return x[~np.isnan(x)][-1]

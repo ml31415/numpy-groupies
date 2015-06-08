@@ -1,7 +1,7 @@
 import numpy as np
 
-from .utils import fill_untouched, check_boolean, _no_separate_nan_version, get_func
-from .utils_numpy import aliasing, minimum_dtype, input_validation
+from .utils import check_boolean, _no_separate_nan_version, get_func
+from .utils_numpy import aliasing, fill_untouched, minimum_dtype, input_validation
 
 
 def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
@@ -10,9 +10,9 @@ def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
     if not (np.isscalar(fill_value) or len(fill_value) == 0):
         raise ValueError("fill_value must be scalar or an empty sequence")
     if reversed_:
-        order_group_idx = np.argsort(group_idx + -1j * a)
+        order_group_idx = np.argsort(group_idx + -1j * a, kind='mergesort')
     else:
-        order_group_idx = np.argsort(group_idx + 1j * a)
+        order_group_idx = np.argsort(group_idx + 1j * a, kind='mergesort')
     counts = np.bincount(group_idx, minlength=size)
     if np.ndim(a) == 0:
         a = np.full(size, a)
@@ -123,22 +123,22 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
         ret[counts == 0] = fill_value
     return ret
 
-def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64), sqrt=False):
+def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64), sqrt=False, ddof=0):
     if np.ndim(a) == 0:
         raise ValueError("cannot take variance with scalar a")
     counts = np.bincount(group_idx, minlength=size)
     sums = np.bincount(group_idx, weights=a, minlength=size)
     with np.errstate(divide='ignore'):
         means = sums.astype(dtype) / counts
-        ret = np.bincount(group_idx, (a - means[group_idx]) ** 2, minlength=size) / counts
+        ret = np.bincount(group_idx, (a - means[group_idx]) ** 2, minlength=size) / (counts - ddof)
     if sqrt:
         ret = np.sqrt(ret)  # this is now std not var
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
     return ret
 
-def _std(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
-    return _var(group_idx, a, size, fill_value, dtype=dtype, sqrt=True)
+def _std(group_idx, a, size, fill_value, dtype=np.dtype(np.float64), ddof=0):
+    return _var(group_idx, a, size, fill_value, dtype=dtype, sqrt=True, ddof=ddof)
 
 def _allnan(group_idx, a, size, fill_value, dtype=bool):
     return _all(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
@@ -164,7 +164,7 @@ _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_f
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items()) if k not in _no_separate_nan_version)
 
 
-def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, _impl_dict=_impl_dict, _nansqueeze=True):
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, _impl_dict=_impl_dict, _nansqueeze=True, **kwargs):
     '''
     Aggregation similar to Matlab's `accumarray` function.
     
@@ -262,7 +262,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
     func = get_func(func, aliasing, _impl_dict)
     if not isinstance(func, basestring):
         # do simple grouping and execute function in loop
-        ret = _generic_callable(group_idx, a, flat_size, fill_value, func=func, dtype=dtype)
+        ret = _generic_callable(group_idx, a, flat_size, fill_value, func=func, dtype=dtype, **kwargs)
     else:
         # deal with nans and find the function
         if func.startswith('nan'):
@@ -274,7 +274,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
                 group_idx = group_idx[good]
 
         func = _impl_dict[func]
-        ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype)
+        ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
     # deal with ndimensional indexing
     if ndim_idx > 1:
