@@ -95,45 +95,79 @@ Sometimes you may want to force the output of `aggregate` to be of a particular 
 
 ### Some examples
 
-*TODO: show a variety of things, ideally explaining them with some real-world motivation.*
+```python
+import python as np
+from aggregate import aggregate
 
-### Benchmarking and testing
-Benchmarking and testing scripts are included here.  Here are some benchmarking results:
+group_idx = np.arange(5).repeat(3)
+a = np.arange(group_idx.size)
+aggregate(group_idx, a)
+>>> array([ 3, 12, 21, 30, 39])
 
-*TODO: use a range of inputs shapes/types etc. and give more details hardware/software info*
-
-```text
-function       pure-py  np-grouploop**  np-ufuncat*  np-optimised        pandas          ratio
-     std      4628.4ms       424.0ms       no-impl        22.8ms       no-impl     203.1: 18.6:  -  : 1.0 :  -  
-     all      4212.7ms       163.8ms       122.5ms        16.6ms      1205.8ms     253.4: 9.9 : 7.4 : 1.0 : 72.5
-     min      4057.3ms       135.0ms        96.3ms        97.1ms        49.0ms      82.8: 2.8 : 2.0 : 2.0 : 1.0 
-     max      3309.7ms       269.2ms        97.8ms        98.2ms        49.8ms      66.5: 5.4 : 2.0 : 2.0 : 1.0 
-     sum      3335.2ms       139.2ms        91.7ms         4.6ms       147.3ms     720.0: 30.0: 19.8: 1.0 : 31.8
-     var      4346.8ms       395.0ms       no-impl        16.4ms       no-impl     264.4: 24.0:  -  : 1.0 :  -  
-    prod      4940.4ms       134.6ms        99.3ms       100.8ms        51.6ms      95.8: 2.6 : 1.9 : 2.0 : 1.0 
-     any      4154.3ms       166.0ms        98.4ms        14.3ms      1189.5ms     290.4: 11.6: 6.9 : 1.0 : 83.1
-    mean      4158.2ms       246.0ms       no-impl         8.5ms        49.0ms     491.1: 29.0:  -  : 1.0 : 5.8 
-Python 2.7.9, Numpy 1.9.2, Win7 Core i7.
+aggregate(group_idx, a, np.prod)
+>>> array([   0,   60,  336,  990, 2184])
 ```
 
-Note that the actual observed speedup depends on a variety of properties of the input.
-Here we are using `100,000` indices uniformly picked from `[0, 1000)`.
-Specifically, about 25% of the values are `0` (for use with bool operations),
-the remainder are uniformly distribuited on `[-50,25)`. 
+### Benchmarking and testing
+Benchmarking and testing scripts are included. 
 
-**The `np-grouploop` implementation shown here uses `aggregate_numpy.py`'s
- generic function menchanism, which groups `a` by `group_idx`, and then
+Note that the actual observed results depend on a variety of properties of the input.
+Here we are using `500,000` indices uniformly picked from `[0, 1000)`.
+Specifically, about 20% of the values are set to `0` for use with bool operations.
+Nan operations get another 20% of the values set to nan. So the remainder is uniformly 
+distribuited on `[0.2,1)` or on `[0.2,0.8)` for nan operations. 
+
+The benchmarking results are given in ms for an i7-5500U@2.40GHz:
+
+```text
+function      grouploop          numpy          weave          ufunc         pandas
+-----------------------------------------------------------------------------------
+sum              53.087          1.846          1.615         36.961         17.032
+amin             51.126         37.652          1.609         37.539         16.976
+amax             51.221         38.330          1.639         38.447         17.086
+prod             51.779         37.284          1.610         37.733         17.091
+all              52.555          4.288          2.498         44.059        105.400
+any              52.545          6.972          2.493         42.346        102.686
+mean             54.946          2.674          1.655           ----         14.309
+var              65.339          6.176          1.978           ----         53.387
+std              67.685          6.345          1.966           ----         50.349
+first            49.388          2.708          1.481           ----         11.920
+last             50.277          1.898          1.489           ----         13.914
+nansum           58.896          6.427          2.462           ----         14.713
+nanmin           56.265         34.821          2.578           ----         14.778
+nanmax           56.173         35.606          2.570           ----         14.870
+nanmean          78.230          7.004          2.549           ----         14.736
+nanvar          103.345          9.977          2.819           ----         47.639
+nanstd          105.108         10.081          2.812           ----         47.951
+nanfirst         54.182          7.066          2.346           ----         15.226
+nanlast          54.418          6.456          2.357           ----         16.277
+anynan           53.635          3.178          2.423         36.306         73.342
+allnan           53.010          5.300          2.415         37.693         73.106
+Linux(x86_64), Python 2.7.6, Numpy 1.9.2
+```
+
+
+The `grouploop` implementation shown here uses `aggregate_numpy.py`'s
+generic function menchanism, which groups `a` by `group_idx`, and then
 loops over each group, applying the specified function (in this case it is a numpy function 
-such as `np.add`).  It is only included here for reference, note that the output form
-this funciton is considered to be the "correct" answer when used in testing.
+such as `np.add`). `grouploop` is only included for reference, note that the output from
+this function is considered to be the "correct" answer when used in testing.
 
-*The `np-ufuncat` uses the `aggregate_numpy_ufunc.py` implementation. That implementation
-is not intended for mainstream usage, it is only include in the hope that numpy's `ufunc.at`
+`ufunc` uses the `aggregate_numpy_ufunc.py` implementation. That implementation is not 
+intended for mainstream usage, it is only included in the hope that numpy's `ufunc.at`
 performance will eventually improve.
+
+`pandas` does some preprocessing and caching, probably reuses sorting when grouping. The
+times given here represent the full time from constructing the `DataFrame`, grouping it and finally
+doing the acutal aggregation. Skipping or reusing these steps speeds `pandas` up notably, but for a
+fair competition the grouping is done for each separate `aggregate` call.
 
 
 ### Development
-The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation of individual functions will become unneccessary. However even if that does happen, there will still probably be a role for this `aggregate` function as a light-weight wrapper around those functions, and it may well be that `C` code will always be significantly faster than whatever `numpy` can offer.
+The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation 
+of individual functions will become unneccessary. However even if that does happen, there will still 
+probably be a role for this `aggregate` function as a light-weight wrapper around those functions, 
+and it may well be that `C` code will always be significantly faster than whatever `numpy` can offer.
 
 Maybe at some point a version of `aggregate` will make its way into `numpy` itself (or at least `scipy`).
 
