@@ -21,12 +21,12 @@ _sort = lambda x: sorted(x)
 
 _rsort = lambda x: sorted(x, reverse=True)
 
-def _mean(x, ddof=0):
-    return sum(x) / (len(x) - ddof)
+def _mean(x):
+    return sum(x) / len(x)
 
 def _var(x, ddof=0):
-    mean = _mean(x, ddof=ddof)
-    return sum((xx - mean) ** 2 for xx in x) / len(x)
+    mean = _mean(x)
+    return sum((xx - mean) ** 2 for xx in x) / (len(x) - ddof)
 
 def _std(x, ddof=0):
     return math.sqrt(_var(x, ddof=ddof))
