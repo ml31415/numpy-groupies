@@ -296,10 +296,10 @@ else:
             flat_size = size
         else:
             if size is None:
-                raise ValueError("size must be given for ndim output")
-            if np.isscalar(size):
+                size = np.max(group_idx, axis=1) + 1
+            elif np.isscalar(size):
                 raise ValueError("output size must be of length %d" % group_idx.shape[0])
-            if len(size) != group_idx.shape[0]:
+            elif len(size) != group_idx.shape[0]:
                 raise ValueError("%d sizes given, but %d output dimensions specified in index" % (len(size), group_idx.shape[0]))
 
             group_idx = np.ravel_multi_index(group_idx, size, order=order, mode='raise')
