@@ -1,7 +1,7 @@
 import numpy as np
 
-from .utils import check_boolean, _no_separate_nan_version, get_func
-from .utils_numpy import aliasing, fill_untouched, minimum_dtype, input_validation, check_dtype, minimum_dtype_scalar
+from .utils import (check_boolean, _no_separate_nan_version, get_func, aliasing,
+                    fill_untouched, minimum_dtype, input_validation, check_dtype, minimum_dtype_scalar)
 
 
 def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):

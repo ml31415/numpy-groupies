@@ -1,6 +1,6 @@
 import numpy as np
 
-from .utils_numpy import minimum_dtype, minimum_dtype_scalar, check_boolean, get_func, aliasing
+from .utils import minimum_dtype, minimum_dtype_scalar, check_boolean, get_func, aliasing
 from .aggregate_numpy import aggregate as aggregate_np
 
 

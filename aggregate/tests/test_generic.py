@@ -19,13 +19,20 @@ def aggregate_all(request):
     impl = aggregate_implementations[request.param]
     if impl is None:
         pytest.xfail("Implementation not available")
-    return impl
+
+    def aggregate_xfail(*args, **kwargs):
+        """ Some implementations lack some functionality. That's ok, let's xfail that instead of raising errors. """
+        try:
+            return impl(*args, **kwargs)
+        except NotImplementedError:
+            raise pytest.xfail("Functionality not implemented")
+    return aggregate_xfail
 
 
 def test_preserve_missing(aggregate_all):
     res = aggregate_all(np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int))
     np.testing.assert_array_equal(res, np.array([101, 206, 0, 208]))
-    if aggregate_all != aggregate_py:
+    if not isinstance(res, list):
         assert 'int' in res.dtype.name
 
 
@@ -33,7 +40,7 @@ def test_start_with_offset(aggregate_all):
     group_idx = np.array([1, 1, 2, 2, 2, 2, 4, 4])
     res = aggregate_all(group_idx, np.ones(group_idx.size), dtype=int)
     np.testing.assert_array_equal(res, np.array([0, 2, 4, 0, 2]))
-    if aggregate_all != aggregate_py:
+    if not isinstance(res, list):
         assert 'int' in res.dtype.name
 
 
@@ -41,11 +48,8 @@ def test_start_with_offset(aggregate_all):
 def test_float_enforcement(aggregate_all, floatfunc):
     group_idx = np.arange(10).repeat(3)
     a = np.arange(group_idx.size)
-    try:
-        res = aggregate_all(group_idx, a, floatfunc)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    if aggregate_all != aggregate_py:
+    res = aggregate_all(group_idx, a, floatfunc)
+    if not isinstance(res, list):
         assert 'float' in res.dtype.name
     assert np.all(res > 0)
 
@@ -69,14 +73,10 @@ def test_shape_mismatch(aggregate_all):
 
 
 def test_create_lists(aggregate_all):
-    try:
-        res = aggregate_all(np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int), func=list)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    else:
-        np.testing.assert_array_equal(np.array(res[0]), np.array([101]))
-        assert res[2] == 0
-        np.testing.assert_array_equal(np.array(res[3]), np.array([103, 105]))
+    res = aggregate_all(np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int), func=list)
+    np.testing.assert_array_equal(np.array(res[0]), np.array([101]))
+    assert res[2] == 0
+    np.testing.assert_array_equal(np.array(res[3]), np.array([103, 105]))
 
 
 @pytest.mark.parametrize("sort_order", ["normal", "reverse"])
@@ -98,23 +98,15 @@ def test_stable_sort(aggregate_all, sort_order):
 def test_item_counting(aggregate_all):
     group_idx = np.array([0, 1, 2, 3, 3, 3, 3, 4, 5, 5, 5, 6, 5, 4, 3, 8, 8])
     a = np.arange(group_idx.size)
-    try:
-        res = aggregate_all(group_idx, a, func=lambda x: len(x) > 1)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    else:
-        np.testing.assert_array_equal(res, np.array([0, 0, 0, 1, 1, 1, 0, 0, 1]))
+    res = aggregate_all(group_idx, a, func=lambda x: len(x) > 1)
+    np.testing.assert_array_equal(res, np.array([0, 0, 0, 1, 1, 1, 0, 0, 1]))
 
 
 @pytest.mark.parametrize(["func", "fill_value"], [(np.array, None), (np.sum, -1)], ids=["array", "sum"])
 def test_fill_value(aggregate_all, func, fill_value):
     group_idx = np.array([0, 2, 2], dtype=int)
-    try:
-        res = aggregate_all(group_idx, np.arange(len(group_idx), dtype=int), func=func, fill_value=fill_value)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    else:
-        assert res[1] == fill_value
+    res = aggregate_all(group_idx, np.arange(len(group_idx), dtype=int), func=func, fill_value=fill_value)
+    assert res[1] == fill_value
 
 
 @pytest.mark.parametrize("order", ["C", "F"])
@@ -124,14 +116,19 @@ def test_array_ordering(aggregate_all, order, size=10):
     assert aggregate_all(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(range(size))
 
 
+@pytest.mark.parametrize(["ndim", "order"], itertools.product([1, 2, 3], ["C", "F"]))
+def test_ndim_indexing(aggregate_all, ndim, order, size=10):
+    group_idx = np.zeros([size] * ndim, order=order, dtype=int)
+    group_idx.flat[:] = np.random.randint(0, 10, group_idx.size)
+    mat = np.random.random(group_idx.size, order=order)
+    # TODO: create proper test
+
+
 @pytest.mark.parametrize("first_last", ["first", "last"])
 def test_first_last(aggregate_all, first_last):
     group_idx = np.arange(0, 100, 2, dtype=int).repeat(5)
     a = np.arange(group_idx.size)
-    try:
-        res = aggregate_all(group_idx, a, func=first_last, fill_value=-1)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
+    res = aggregate_all(group_idx, a, func=first_last, fill_value=-1)
     ref = np.zeros(np.max(group_idx) + 1)
     ref.fill(-1)
     ref[::2] = np.arange(0 if first_last == 'first' else 4, group_idx.size, 5, dtype=int)
@@ -144,34 +141,26 @@ def test_nan_first_last(aggregate_all, first_last, nanoffset):
     a = np.arange(group_idx.size, dtype=float)
 
     a[nanoffset::5] = np.nan
-    try:
-        res = aggregate_all(group_idx, a, func=first_last, fill_value=-1)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    else:
-        ref = np.zeros(np.max(group_idx) + 1)
-        ref.fill(-1)
+    res = aggregate_all(group_idx, a, func=first_last, fill_value=-1)
+    ref = np.zeros(np.max(group_idx) + 1)
+    ref.fill(-1)
 
-        if first_last == "nanfirst":
-            ref_offset = 1 if nanoffset == 0 else 0
-        else:
-            ref_offset = 3 if nanoffset == 4 else 4
-        ref[::2] = np.arange(ref_offset, group_idx.size, 5, dtype=int)
-        np.testing.assert_array_equal(res, ref)
+    if first_last == "nanfirst":
+        ref_offset = 1 if nanoffset == 0 else 0
+    else:
+        ref_offset = 3 if nanoffset == 4 else 4
+    ref[::2] = np.arange(ref_offset, group_idx.size, 5, dtype=int)
+    np.testing.assert_array_equal(res, ref)
 
 
 @pytest.mark.parametrize(["func", "ddof"], itertools.product(["var", "std"], [0, 1, 2]))
 def test_ddof(aggregate_all, func, ddof, size=20):
     group_idx = np.zeros(20, dtype=int)
     a = np.random.random(group_idx.size)
-    try:
-        res = aggregate_all(group_idx, a, func, ddof=ddof)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    else:
-        ref_func = {'std': np.std, 'var': np.var}.get(func)
-        ref = ref_func(a, ddof=ddof)
-        assert abs(res[0] - ref) < 1e-10
+    res = aggregate_all(group_idx, a, func, ddof=ddof)
+    ref_func = {'std': np.std, 'var': np.var}.get(func)
+    ref = ref_func(a, ddof=ddof)
+    assert abs(res[0] - ref) < 1e-10
 
 
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std"])
@@ -180,10 +169,6 @@ def test_scalar_input(aggregate_all, func):
     if func not in ("sum", "prod"):
         pytest.raises((ValueError, NotImplementedError), aggregate_all, group_idx, 1, func=func)
     else:
-        try:
-            res = aggregate_all(group_idx, 1, func=func)
-        except NotImplementedError:
-            pytest.xfail("Function not yet implemented")
-        else:
-            ref = aggregate_all(group_idx, np.ones_like(group_idx, dtype=int), func=func)
-            np.testing.assert_array_equal(res, ref)
+        res = aggregate_all(group_idx, 1, func=func)
+        ref = aggregate_all(group_idx, np.ones_like(group_idx, dtype=int), func=func)
+        np.testing.assert_array_equal(res, ref)

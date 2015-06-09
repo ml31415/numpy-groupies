@@ -8,7 +8,7 @@ import numpy as np
 from aggregate import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
                        aggregate_weave, aggregate_pd as aggregate_pandas)
 
-from aggregate.utils_numpy import allnan, anynan, nanfirst, nanlast
+from aggregate.utils import allnan, anynan, nanfirst, nanlast
 
 
 def aggregate_grouploop(*args, **kwargs):

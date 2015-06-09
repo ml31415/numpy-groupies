@@ -1,8 +1,7 @@
 import math
 import itertools
 
-from .utils import get_func, aliasing, _no_separate_nan_version
-
+from .utils import _no_separate_nan_version, aliasing_purepy, get_func
 
 # min - builtin
 # max - builtin
@@ -76,7 +75,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dty
     if size is None:
         size = 1 + max(group_idx)
 
-    func = get_func(func, aliasing, _impl_dict)
+    func = get_func(func, aliasing_purepy, _impl_dict)
     if isinstance(func, basestring):
         if func.startswith('nan'):
             func = func[3:]

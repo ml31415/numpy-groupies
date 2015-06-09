@@ -2,7 +2,7 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-from .utils_numpy import check_dtype, allnan, anynan, _no_separate_nan_version
+from .utils import check_dtype, allnan, anynan, _no_separate_nan_version
 from .aggregate_numpy import aggregate as aggregate_np
 
 
@@ -15,7 +15,7 @@ def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
     else:
         grouped = pd.DataFrame({'group_idx': group_idx, 'a': a}).groupby('group_idx').aggregate(func, **kwargs)
 
-    dtype = check_dtype(dtype, func, a)
+    dtype = check_dtype(dtype, getattr(func, '__name__', func), a)
     ret = np.full(size, fill_value, dtype=dtype)
     ret[grouped.index] = grouped
     return ret
