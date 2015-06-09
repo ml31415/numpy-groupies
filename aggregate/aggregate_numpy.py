@@ -1,7 +1,7 @@
 import numpy as np
 
 from .utils import check_boolean, _no_separate_nan_version, get_func
-from .utils_numpy import aliasing, fill_untouched, minimum_dtype, input_validation
+from .utils_numpy import aliasing, fill_untouched, minimum_dtype, input_validation, check_dtype, minimum_dtype_scalar
 
 
 def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
@@ -38,7 +38,7 @@ def _array(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 def _sum(group_idx, a, size, fill_value, dtype=None):
-    dtype = minimum_dtype(fill_value, dtype or a.dtype)
+    dtype = minimum_dtype_scalar(fill_value, dtype, a)
     if np.ndim(a) == 0:
         ret = np.bincount(group_idx, minlength=size).astype(dtype)
         if a != 1:
@@ -71,7 +71,7 @@ def _first(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 def _prod(group_idx, a, size, fill_value, dtype=None):
-    dtype = minimum_dtype(fill_value, dtype or a.dtype)
+    dtype = minimum_dtype_scalar(fill_value, dtype, a)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != 1:
         ret[group_idx] = 1  # product starts from 1
@@ -273,6 +273,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
                 a = a[good]
                 group_idx = group_idx[good]
 
+        dtype = check_dtype(dtype, func, a)
         func = _impl_dict[func]
         ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 

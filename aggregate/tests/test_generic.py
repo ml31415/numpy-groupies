@@ -121,7 +121,7 @@ def test_fill_value(aggregate_all, func, fill_value):
 def test_array_ordering(aggregate_all, order, size=10):
     mat = np.zeros((size, size), order=order, dtype=float)
     mat.flat[:] = np.arange(size * size)
-    assert aggregate_all(np.zeros(size, dtype=int), mat[0, :])[0] == sum(range(size))
+    assert aggregate_all(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(range(size))
 
 
 @pytest.mark.parametrize("first_last", ["first", "last"])
@@ -162,7 +162,6 @@ def test_nan_first_last(aggregate_all, first_last, nanoffset):
 
 @pytest.mark.parametrize(["func", "ddof"], itertools.product(["var", "std"], [0, 1, 2]))
 def test_ddof(aggregate_all, func, ddof, size=20):
-    func = {'std': np.std, 'var': np.var}.get(func)
     group_idx = np.zeros(20, dtype=int)
     a = np.random.random(group_idx.size)
     try:
@@ -170,5 +169,21 @@ def test_ddof(aggregate_all, func, ddof, size=20):
     except NotImplementedError:
         pytest.xfail("Function not yet implemented")
     else:
-        assert abs(res[0] - func(a, ddof=ddof)) < 1e-10
+        ref_func = {'std': np.std, 'var': np.var}.get(func)
+        ref = ref_func(a, ddof=ddof)
+        assert abs(res[0] - ref) < 1e-10
 
+
+@pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std"])
+def test_scalar_input(aggregate_all, func):
+    group_idx = np.arange(0, 100, dtype=int).repeat(5)
+    if func not in ("sum", "prod"):
+        pytest.raises((ValueError, NotImplementedError), aggregate_all, group_idx, 1, func=func)
+    else:
+        try:
+            res = aggregate_all(group_idx, 1, func=func)
+        except NotImplementedError:
+            pytest.xfail("Function not yet implemented")
+        else:
+            ref = aggregate_all(group_idx, np.ones_like(group_idx, dtype=int), func=func)
+            np.testing.assert_array_equal(res, ref)

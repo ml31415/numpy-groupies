@@ -66,8 +66,12 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dty
         else:
             raise ValueError("Invalid value found in group_idx: %s" % i)
 
-    if len(group_idx) != len(a):
-            raise ValueError("group_idx and a must be of the same length")
+    if isinstance(a, (int, float)):
+        if func not in ("sum", "prod"):
+            raise ValueError("scalar inputs are supported only for 'sum' and 'prod'")
+        a = [a] * len(group_idx)
+    elif len(group_idx) != len(a):
+        raise ValueError("group_idx and a must be of the same length")
 
     if size is None:
         size = 1 + max(group_idx)

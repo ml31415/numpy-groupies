@@ -2,7 +2,7 @@ import numpy as np
 from scipy.weave import inline
 
 from .utils import _no_separate_nan_version, get_func
-from .utils_numpy import check_dtype, aliasing, check_fill_value, input_validation
+from .utils_numpy import check_dtype, aliasing, check_fill_value, input_validation, minimum_dtype
 from .aggregate_numpy import aggregate as aggregate_np
 
 
@@ -11,10 +11,10 @@ optimized_funcs = {'sum', 'min', 'max', 'amin', 'amax', 'mean', 'var', 'std', 'p
                    'all', 'any', 'allnan', 'anynan',
                    'first', 'last', 'nanfirst', 'nanlast'}
 
-
 # c_funcs will contain all generated c code, so it can be read easily for debugging
 c_funcs = dict()
 c_iter = dict()
+c_iter_scalar = dict()
 c_finish = dict()
 
 # Set this for testing, to fail deprecated C-API calls
@@ -60,9 +60,17 @@ c_iter['sum'] = r"""
         counter[write_idx] = 0;
         ret[write_idx] += a[i];"""
 
+c_iter_scalar['sum'] = r"""
+        counter[write_idx] = 0;
+        ret[write_idx] += a;"""
+
 c_iter['prod'] = r"""
         counter[write_idx] = 0;
         ret[write_idx] *= a[i];"""
+
+c_iter_scalar['prod'] = r"""
+        counter[write_idx] = 0;
+        ret[write_idx] *= a;"""
 
 c_iter['all'] = r"""
         counter[write_idx] = 0;
@@ -136,12 +144,15 @@ c_finish['var'] = r"""
 
 
 
-def c_func(funcname, reverse=False, nans=False):
+def c_func(funcname, reverse=False, nans=False, scalar=False):
     """ Fill c_funcs with constructed code from the templates """
     varnames = ['group_idx', 'a', 'ret', 'counter']
     codebase = c_base_reverse if reverse else c_base
-    iterbase = c_nan_iter(c_iter[funcname]) if nans else c_iter[funcname]
-    return codebase % dict(init=c_init(varnames), iter=iterbase,
+    iterbase = c_iter_scalar[funcname] if scalar else c_iter[funcname]
+    iteration = c_nan_iter(iterbase) if nans else iterbase
+    if scalar:
+        varnames.remove('a')
+    return codebase % dict(init=c_init(varnames), iter=iteration,
                            finish=c_finish.get(funcname, ''))
 
 def get_cfuncs():
@@ -150,6 +161,8 @@ def get_cfuncs():
         c_funcs[funcname] = c_func(funcname)
         if funcname not in _no_separate_nan_version:
             c_funcs['nan' + funcname] = c_func(funcname, nans=True)
+    for funcname in c_iter_scalar:
+        c_funcs[funcname + 'scalar'] = c_func(funcname, scalar=True)
     c_funcs['first'] = c_func('last', reverse=True)
     c_funcs['nanfirst'] = c_func('last', reverse=True, nans=True)
     return c_funcs
@@ -267,9 +280,9 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
                             fill_value=fill_value)
 
     # Preparations for optimized processing
+    group_idx, a, flat_size, ndim_idx = input_validation(group_idx, a, size=size, order=order)
     dtype = check_dtype(dtype, func, a)
     check_fill_value(fill_value, dtype)
-    group_idx, a, flat_size, ndim_idx = input_validation(group_idx, a, size=size, order=order)
 
     if func in ('sum', 'any', 'anynan', 'nansum'):
         ret = np.zeros(flat_size, dtype=dtype)
@@ -280,7 +293,9 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
 
     # In case we should get some ugly fortran arrays, convert them
     inline_vars = dict(group_idx=np.ascontiguousarray(group_idx), a=np.ascontiguousarray(a),
-                       ret=ret, fill_value=fill_value)
+                      ret=ret, fill_value=fill_value)
+    # TODO: Have this fixed by proper raveling
+    # inline_vars = dict(group_idx=group_idx, a=a, ret=ret, fill_value=fill_value)
     if func in ('std', 'var', 'nanstd', 'nanvar'):
         counter = np.zeros_like(ret, dtype=int)
         inline_vars['means'] = np.zeros_like(ret)
@@ -292,6 +307,9 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
         counter = np.ones_like(ret, dtype=bool)
     inline_vars['counter'] = counter
 
+    if np.isscalar(a):
+        func += 'scalar'
+        inline_vars['a'] = a
     inline(c_funcs[func], inline_vars.keys(), local_dict=inline_vars, define_macros=c_macros, extra_compile_args=['-O3'])
 
     # Postprocessing

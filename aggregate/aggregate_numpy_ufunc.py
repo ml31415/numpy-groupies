@@ -1,6 +1,6 @@
 import numpy as np
 
-from .utils_numpy import minimum_dtype, check_boolean, get_func, aliasing
+from .utils_numpy import minimum_dtype, minimum_dtype_scalar, check_boolean, get_func, aliasing
 from .aggregate_numpy import aggregate as aggregate_np
 
 
@@ -27,7 +27,7 @@ def _all(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 def _sum(group_idx, a, size, fill_value, dtype=None):
-    dtype = minimum_dtype(fill_value, dtype or a.dtype)
+    dtype = minimum_dtype_scalar(fill_value, dtype, a)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != 0:
         ret[group_idx] = 0  # sums should start at 0
@@ -36,7 +36,7 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
 
 def _prod(group_idx, a, size, fill_value, dtype=None):
     """Same as accumarray_numpy.py"""
-    dtype = minimum_dtype(fill_value, dtype or a.dtype)
+    dtype = minimum_dtype_scalar(fill_value, dtype, a)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != 1:
         ret[group_idx] = 1  # product should start from 1
@@ -62,7 +62,6 @@ def _max(group_idx, a, size, fill_value, dtype=None):
         ret[group_idx] = dmin  # max starts from minimum
     np.maximum.at(ret, group_idx, a)
     return ret
-
 
 
 _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, all=_all, any=_any,

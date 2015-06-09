@@ -67,8 +67,8 @@ _next_float_dtype = dict(
 )
 
 def minimum_dtype(x, dtype=np.bool_):
-    """returns the "most basic" dtype which represents `x` properly, which is
-    at least as "complicated" as the specified dtype."""
+    """returns the "most basic" dtype which represents `x` properly, which provides
+    at least the same value range as the specified dtype."""
 
     def check_type(x, dtype):
         try:
@@ -98,6 +98,13 @@ def minimum_dtype(x, dtype=np.bool_):
     else:
         return type_loop(x, dtype, _next_int_dtype, default=np.int64)
 
+
+def minimum_dtype_scalar(x, dtype, a):
+    if dtype is None:
+        dtype = np.dtype(type(a)) if isinstance(a, (int, float)) else a.dtype
+    return minimum_dtype(x, dtype)
+
+
 _forced_types = {
     'array': np.object,
     'all': np.bool_,
@@ -110,6 +117,14 @@ _forced_same_type = {'min', 'max', 'first', 'last', 'nanmin', 'nanmax', 'nanfirs
 
 
 def check_dtype(dtype, func_str, a):
+    # a has to be already converted from a scalar to any sort of array type with one field
+    if np.isscalar(a) or not a.shape:
+        if func_str not in ("sum", "prod"):
+            raise ValueError("scalar inputs are supported only for 'sum' and 'prod'")
+        a_dtype = np.dtype(type(a))
+    else:
+        a_dtype = a.dtype
+
     if dtype is not None:
         # dtype set by the user
         # Careful here: np.bool != np.bool_ !
@@ -122,31 +137,31 @@ def check_dtype(dtype, func_str, a):
             return np.dtype(_forced_types[func_str])
         except KeyError:
             if func_str in _forced_float_types:
-                if np.issubdtype(a.dtype, np.floating):
-                    return a.dtype
+                if np.issubdtype(a_dtype, np.floating):
+                    return a_dtype
                 else:
                     return np.dtype(np.float64)
             else:
                 if func_str == 'sum':
                     # Try to guess the minimally required int size
-                    if np.issubdtype(a.dtype, np.int64):
+                    if np.issubdtype(a_dtype, np.int64):
                         # It's not getting bigger anymore, so let's shortcut this
                         return np.dtype(np.int64)
-                    elif np.issubdtype(a.dtype, np.integer):
-                        maxval = np.iinfo(a.dtype).max * len(a)
-                        return minimum_dtype(maxval, a.dtype)
-                    elif np.issubdtype(dtype, np.bool_):
-                        return minimum_dtype(len(a), a.dtype)
+                    elif np.issubdtype(a_dtype, np.integer):
+                        maxval = np.iinfo(a_dtype).max * len(a)
+                        return minimum_dtype(maxval, a_dtype)
+                    elif np.issubdtype(a_dtype, np.bool_):
+                        return minimum_dtype(len(a), a_dtype)
                     else:
                         # floating, inexact, whatever
-                        return a.dtype
+                        return a_dtype
                 elif func_str in _forced_same_type:
-                    return a.dtype
+                    return a_dtype
                 else:
-                    if isinstance(a.dtype, np.integer):
+                    if isinstance(a_dtype, np.integer):
                         return np.dtype(np.int64)
                     else:
-                        return a.dtype
+                        return a_dtype
 
 
 def check_fill_value(fill_value, dtype):
@@ -169,7 +184,8 @@ def input_validation(group_idx, a, size=None, order='C'):
     """ Do some fairly extensive checking of group_idx and a, trying to give the user
         as much help as possible with what is wrong. Also, convert ndim-indexing to 1d indexing.
     """
-    a = np.asanyarray(a)
+    if not isinstance(a, (int, float)):
+        a = np.asanyarray(a)
     group_idx = np.asanyarray(group_idx)
 
     if not issubclass(group_idx.dtype.type, np.integer):
