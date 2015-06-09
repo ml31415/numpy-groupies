@@ -13,13 +13,7 @@ from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
 _implementations = ['aggregate_' + impl for impl in "py ufunc numpy weave pandas".split()]
 aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
 
-
-@pytest.fixture(params=_implementations, ids=lambda x: x.split('_')[1])
-def aggregate_all(request):
-    impl = aggregate_implementations[request.param]
-    if impl is None:
-        pytest.xfail("Implementation not available")
-
+def wrap_aggregate_xfail(impl):
     def aggregate_xfail(*args, **kwargs):
         """ Some implementations lack some functionality. That's ok, let's xfail that instead of raising errors. """
         try:
@@ -27,6 +21,14 @@ def aggregate_all(request):
         except NotImplementedError:
             raise pytest.xfail("Functionality not implemented")
     return aggregate_xfail
+
+
+@pytest.fixture(params=_implementations, ids=lambda x: x.split('_')[1])
+def aggregate_all(request):
+    impl = aggregate_implementations[request.param]
+    if impl is None:
+        pytest.xfail("Implementation not available")
+    return wrap_aggregate_xfail(impl)
 
 
 def test_preserve_missing(aggregate_all):
@@ -117,11 +119,18 @@ def test_array_ordering(aggregate_all, order, size=10):
 
 
 @pytest.mark.parametrize(["ndim", "order"], itertools.product([1, 2, 3], ["C", "F"]))
-def test_ndim_indexing(aggregate_all, ndim, order, size=10):
-    group_idx = np.zeros([size] * ndim, order=order, dtype=int)
-    group_idx.flat[:] = np.random.randint(0, 10, group_idx.size)
-    mat = np.random.random(group_idx.size, order=order)
-    # TODO: create proper test
+def test_ndim_indexing(aggregate_all, ndim, order, outsize=10):
+    nindices = int(outsize ** ndim)
+    outshape = tuple([outsize] * ndim)
+    group_idx = np.random.randint(0, outsize, size=(ndim, nindices))
+    a = np.random.random(group_idx.shape[1])
+    res = aggregate_all(group_idx, a, size=outshape, order=order)
+    if ndim > 1 and order == 'F':
+        # 1d arrays always return False here
+        assert np.isfortran(res)
+    else:
+        assert not np.isfortran(res)
+    assert res.shape == outshape
 
 
 @pytest.mark.parametrize("first_last", ["first", "last"])

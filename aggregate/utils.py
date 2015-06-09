@@ -1,6 +1,8 @@
 import math
 
 _funcs_common = 'first last mean var std allnan anynan'.split()
+_no_separate_nan_version = {'sort', 'rsort', 'array', 'allnan', 'anynan'}
+
 
 _alias_str = {
     'or': 'any',
@@ -34,9 +36,6 @@ _alias_builtin = {
     slice: 'array',
     list: 'array',
 }
-
-_no_separate_nan_version = {'sort', 'rsort', 'array', 'allnan', 'anynan'}
-
 
 def get_aliasing(*extra):
     """This should be called only once by an aggregate_implementation.py file,
@@ -281,30 +280,29 @@ else:
         if not np.issubdtype(group_idx.dtype, np.integer):
             raise TypeError("group_idx must be of integer type")
         if np.ndim(a) > 1:
-            raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten.")
+            raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten")
 
         ndim_idx = np.ndim(group_idx)
         if ndim_idx == 1:
             if np.any(group_idx < 0):
-                raise ValueError("Negative indices not supported.")
+                raise ValueError("negative indices not supported")
             if size is None:
                 size = np.max(group_idx) + 1
             else:
                 if not np.isscalar(size):
-                    raise ValueError("Output size must be scalar or None")
+                    raise ValueError("output size must be scalar or None")
                 if np.any(group_idx > size - 1):
-                    raise ValueError("One or more indices are too large for size %d." % size)
+                    raise ValueError("one or more indices are too large for size %d" % size)
             flat_size = size
         else:
             if size is None:
-                size = np.max(group_idx, axis=1) + 1
-            else:
-                if np.isscalar(size):
-                    raise ValueError("Output size must be None or 1d sequence of length %d" % group_idx.shape[0])
-                if len(size) != group_idx.shape[0]:
-                    raise ValueError("%d sizes given, but %d output dimensions specified in index" % (len(size), group_idx.shape[0]))
+                raise ValueError("size must be given for ndim output")
+            if np.isscalar(size):
+                raise ValueError("output size must be of length %d" % group_idx.shape[0])
+            if len(size) != group_idx.shape[0]:
+                raise ValueError("%d sizes given, but %d output dimensions specified in index" % (len(size), group_idx.shape[0]))
 
-            group_idx = np.ravel_multi_index(tuple(group_idx), size, order=order, mode='raise')
+            group_idx = np.ravel_multi_index(group_idx, size, order=order, mode='raise')
             flat_size = np.prod(size)
 
         if not (np.ndim(a) == 0 or len(a) == group_idx.size):

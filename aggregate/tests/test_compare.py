@@ -4,12 +4,13 @@ results are compared against the results of the other implementations. Implement
 may throw NotImplementedError in order to show missing functionality without throwing
 test errors. 
 """
+import itertools
 import numpy as np
 import pytest
 
 from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
                 aggregate_weave, aggregate_pd as aggregate_pandas)
-
+from .test_generic import wrap_aggregate_xfail
 
 class AttrDict(dict):
     __getattr__ = dict.__getitem__
@@ -19,7 +20,7 @@ class AttrDict(dict):
 def aggregate_cmp(request):
     if request.param == 'np/py':
         func = aggregate_numpy
-        func_ref = aggregate_py
+        func_ref = wrap_aggregate_xfail(aggregate_py)
         group_cnt = 100
     else:
         group_cnt = 3000
@@ -33,6 +34,7 @@ def aggregate_cmp(request):
 
     if not func:
         pytest.xfail("Implementation not available")
+    func = wrap_aggregate_xfail(func)
 
     # Gives 100000 duplicates of size 10 each
     group_idx = np.repeat(np.arange(group_cnt), 2)
@@ -65,14 +67,26 @@ func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
              'anynan', 'allnan', func_arbitrary, func_preserve_order)
 
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
-def test_compare(aggregate_cmp, func, decimal=14):
+def test_cmp(aggregate_cmp, func, decimal=14):
     a = aggregate_cmp.nana if 'nan' in getattr(func, '__name__', func) else aggregate_cmp.a
-    try:
-        res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
+    res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func)
+    ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func)
+    np.testing.assert_array_almost_equal(res, ref, decimal=decimal)
+
+
+@pytest.mark.parametrize(["ndim", "order"], itertools.product([2, 3], ["C", "F"]))
+def test_cmp_ndim(aggregate_cmp, ndim, order, outsize=100, decimal=14):
+    nindices = int(outsize ** ndim)
+    outshape = tuple([outsize] * ndim)
+    group_idx = np.random.randint(0, outsize, size=(ndim, nindices))
+    a = np.random.random(group_idx.shape[1])
+
+    res = aggregate_cmp.func(group_idx, a, size=outshape, order=order)
+    ref = aggregate_cmp.func_ref(group_idx, a, size=outshape, order=order)
+    if ndim > 1 and order == 'F':
+        # 1d arrays always return False here
+        assert np.isfortran(res)
     else:
-        ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func)
-        np.testing.assert_array_almost_equal(res, ref, decimal=decimal)
-
-
+        assert not np.isfortran(res)
+    assert res.shape == outshape
+    np.testing.assert_array_almost_equal(res, ref, decimal=decimal)

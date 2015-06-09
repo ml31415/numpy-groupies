@@ -56,6 +56,9 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dty
         full description.
     """
     # Check for 2d group_idx
+    if size is None:
+        size = 1 + max(group_idx)
+
     for i in group_idx:
         if isinstance(i, int):
             if i < 0:
@@ -63,7 +66,12 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dty
         elif isinstance(i, (list, tuple)):
             raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
         else:
-            raise ValueError("Invalid value found in group_idx: %s" % i)
+            try:
+                len(i)
+            except TypeError:
+                raise ValueError("invalid value found in group_idx: %s" % i)
+            else:
+                raise NotImplementedError("pure python implementation doesn't accept ndim indexed input.")
 
     if isinstance(a, (int, float)):
         if func not in ("sum", "prod"):
@@ -71,9 +79,6 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dty
         a = [a] * len(group_idx)
     elif len(group_idx) != len(a):
         raise ValueError("group_idx and a must be of the same length")
-
-    if size is None:
-        size = 1 + max(group_idx)
 
     func = get_func(func, aliasing_purepy, _impl_dict)
     if isinstance(func, basestring):
