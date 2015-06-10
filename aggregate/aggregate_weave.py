@@ -2,7 +2,7 @@ import numpy as np
 from scipy.weave import inline
 
 from .utils import (_no_separate_nan_version, get_func, check_dtype,
-                    aliasing, check_fill_value, input_validation)
+                    aliasing, check_fill_value, input_validation, _doc_str)
 from .aggregate_numpy import aggregate as aggregate_np
 
 
@@ -215,64 +215,6 @@ def step_indices(group_idx):
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, **kwargs):
-    '''
-    Aggregation function similar to Matlab's `accumarray`.
-    
-    See readme file at https://github.com/ml31415/accumarray for 
-    full description.
-
-    Parameters
-    ----------
-    group_idx : ndarray
-        This is the "aggregation map". It maps input (i.e. indices into
-        `a`) to their destination in the output array.  The dimensions 
-        of `group_idx` must be the same as `a.shape`.
-    a : ndarray
-        The input data to be aggregated.
-    func : callable or None
-        The aggregation function. The function will be passed a list of 
-        values from `a` to be aggregated. If None, np.sum is assumed.
-    dtype : numpy data type, or None
-        The data type of the output array. If None, the data type of
-        `a` is used.
-        
-    Additional Notes
-    --------
-    group_idx and a are generally treated as flattened arrays.
-    
-    Contiguous:
-    Same values within group_idx can be expected to be grouped
-    or be treated as new values starting a new group, in 
-    case they should appear another time
-    E.g. group_idx = [1 1 2 2 2 1 1 3 3] with contiguous set will 
-    be treated the same way as [0 0 1 1 1 2 2 3 3]
-    That way, feeding data through np.unique, maintaining order
-    etc. can be omitted. It also gives a nice speed boost, as
-    np.argsort of group_idx can also be omitted.
-
-    Returns
-    -------
-    out : ndarray
-        The aggregated results.
-
-    Examples
-    --------
-    >>> from numpy import array, prod
-    >>> a = array([[1,2,3],[4,-1,6],[-1,8,9]])
-    >>> a
-    array([[ 1,  2,  3],
-           [ 4, -1,  6],
-           [-1,  8,  9]])
-    >>> # Sum the diagonals.
-    >>> group_idx = array([[0,1,2],[2,0,1],[1,2,0]])
-    >>> s = aggregate(group_idx, a)
-    array([9, 7, 15])
-    >>> # Aggregate using a product.
-    >>> aggregate(group_idx, a, func=prod, dtype=float)
-    array([[ -8.,  18.],
-           [ -8.,   9.]])
-    '''
-
     func = get_func(func, aliasing, optimized_funcs)
     if not isinstance(func, basestring):
         # Fall back to acuum_np if no optimized C version is available
@@ -322,3 +264,8 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
     if ndim_idx > 1:
         ret = ret.reshape(size, order=order)
     return ret
+
+aggregate.__doc__ = """
+    This is the scipy.weave implementation of aggregate.
+    
+    """ +_doc_str

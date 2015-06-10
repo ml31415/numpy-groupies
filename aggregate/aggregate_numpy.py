@@ -1,7 +1,8 @@
 import numpy as np
 
 from .utils import (check_boolean, _no_separate_nan_version, get_func, aliasing,
-                    fill_untouched, minimum_dtype, input_validation, check_dtype, minimum_dtype_scalar)
+                    fill_untouched, minimum_dtype, input_validation, check_dtype,
+                    minimum_dtype_scalar, _doc_str, ShyDict)
 
 
 def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
@@ -157,7 +158,7 @@ def _generic_callable(group_idx, a, size, fill_value, dtype=None, func=lambda g:
             ret[i] = func(grp)
     return ret
 
-_impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_first,
+_impl_dict = ShyDict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_first,
                     all=_all, any=_any, mean=_mean, std=_std, var=_var,
                     anynan=_anynan, allnan=_allnan, sort=_sort, rsort=_rsort,
                     array=_array)
@@ -165,99 +166,6 @@ _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items()) if k not i
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, _impl_dict=_impl_dict, _nansqueeze=True, **kwargs):
-    '''
-    Aggregation similar to Matlab's `accumarray` function.
-    
-    See readme file at https://github.com/ml31415/accumarray for 
-    full description.
-
-    Parameters
-    ----------
-    group_idx : 1D or ndarray or sequence of 1D ndarrays
-        The length of the 1d array(s) should be the same shape as `a`.
-        This gives the "bin" (aka "group" or "index") in which to put the 
-        given values, before* evaluating the aggregation function. 
-        [*actually it's not really done in a separate step beforehand 
-        in most cases, but you can think of it like that.]
-    a : 1D ndarray or scalar
-        The data to be aggregated. Note that the matlab version of this
-        function accepts ndimensional inputs, but this does not.  Instead
-        you must use `inds.ravel(), a.ravel()`. (Note that if your arrays 
-        are `order='F'` you can use this as a kwarg to `ravel` to prevent
-        excess work being done, although the two arrays must match).
-    size : scalar or 1D sequence or None
-        The desired shape of the output.  Note that no check is performed
-        to ensure that indices of `group_idx` are within the specified size.
-        If `group_idx` is a sequence of 1D arrays `size` must be a 1d sequence or None
-        rather than a scalar.
-    func : string or callable (i.e. function)
-        The primary list is: `"sum", "min", "max", "mean", "std", "var", "prod",
-        "all", "any", "first", "last", "sort", "rsort", "array", "allnan", "anynan"`.  
-        All, but the last five, are also available in a nan form as: 
-        `"nansum", "nanmin"...etc.`  Note that any groups with only nans will
-        be considered empty and assigned `fill_value`, rather than being assinged
-        `nan`. (If you want such groups to have the value `nan` you can use
-        `"allnan"` to check which groups are all nan, and then set them to 
-        `nan` in your output data.)
-        
-        For convenience a few aliases are defined (for both the nan and basic 
-        versions):
-         * `"min"`: `"amin"` and `"minimum"`       
-         * `"max"`: `"amin"` and `"minimum"`       
-         * `"prod"`: `"product"` and `"times"` and `"multiply"`    
-         * `"sum"`: `"plus"` and `"add"`    
-         * `"any"`: `"or"`     
-         * `"all"`: `"and"`   
-         * `"array"`: `"split"` and `"splice"`    
-         * `"sort"`: `"sorted"` and `"asort"` and `"asorted"`     
-         * `"rsort"`: `"rsorted"` and `"dsort"` and `"dsorted"`    
-        
-        The string matching is case-insensitive.
-        
-        By providing one of the recognised string inputs you will get an optimised
-        function (although, as of numpy 1.9, `"min"`, `"max"` and `"prod"
-        are actually not as fast as they should be, by a factor of 10x or more.)
-        
-        If instead of providing a string you provide a numpy function, e.g.
-        `np.sum`, in most cases, this will be aliased to one of the above strings.
-        If no alias is recognised, it will be treated as a generic callable function.
-        
-        For the case of generic callable functions, the data will be split into 
-        actual groups and fed into the callable, one at a time.
-        This is true even for `np.ufunc`s, which could potentially use their
-        `.at` methods.  However using `.at` requires some understanding of what 
-        the function is diong, e.g. logical_or should be initialised with 0s,
-        but logical_and should be initialised with 1s.
-        
-    fill_value: scalar
-        specifies the value to put in output where there was no input data,
-        default is `0`, but you might want `np.nan` or some other specific
-        value of your choosing.
-        
-    _impl_dict:
-        This is for benchmarking, testing, and development only, i.e. NOT
-        for everyday use!!
-    
-    Returns
-    -------
-    out : ndarray
-        The aggregated results.  The dtype of the result will be float in cases
-        where division occurs as part of the aggregation, otherwise the minimal
-        dtype will be chosen to match `a` and the `fill_value`.
-    
-    Examples
-    --------
-    >>> from numpy import array
-    >>> a = array([12.0, 3.2, -15, 88, 12.9])
-    >>> group_idx = array([1,    0,    1,  4,   1  ])
-    >>> aggregate(group_idx, a) # group a by group_idx and sum
-    array([3.2, 9.9, 0, 88.])
-    >>> aggregate(group_idx, a, size=8, func='min', fillval=np.nan)
-    array([3.2, -15., nan, 88., nan, nan, nan, nan])
-    >>> aggregate(test_group_idx, test_a, size=5, func=lambda x: ' + '.join(str(xx) for xx in x),fill_value='')
-    ['3.2' '12.0 + -15.0 + 12.9' '' '' '88.0']
-    '''
-
     group_idx, a, flat_size, ndim_idx = input_validation(group_idx, a, size=size, order=order)
     func = get_func(func, aliasing, _impl_dict)
     if not isinstance(func, basestring):
@@ -278,6 +186,8 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
         ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
     # deal with ndimensional indexing
-    if ndim_idx > 1:
+    if ndim_idx > 1:    
         ret = ret.reshape(size, order=order)
     return ret
+
+aggregate.__doc__ = _doc_str

@@ -4,7 +4,7 @@ from numba import jit, double
 
 logging.captureWarnings(True)
 
-from .utils_numpy import check_group_idx
+from .utils import check_group_idx, _doc_str
 from .aggregate_numpy import aggregate as aggregate_np
 
 
@@ -217,7 +217,8 @@ def aggregate(group_idx, a, func='sum', dtype=None, fillvalue=0):
         finish_func(res, counter, tmp, fillvalue)
 
     return res
-
+    
+aggregate.__doc__ = _doc_str
 
 @jit
 def unpack(group_idx, res):

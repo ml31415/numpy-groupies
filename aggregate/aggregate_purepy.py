@@ -1,7 +1,7 @@
 import math
 import itertools
 
-from .utils import _no_separate_nan_version, aliasing_purepy, get_func
+from .utils import _no_separate_nan_version, aliasing_purepy, get_func, _doc_str
 
 # min - builtin
 # max - builtin
@@ -50,11 +50,6 @@ _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items()) if k not i
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dtype=None, **kwargs):
-    """ Accumulation function similar to Matlab's `accumarray` function.
-    
-        See readme file at https://github.com/ml31415/accumarray for 
-        full description.
-    """
     # Check for 2d group_idx
     if size is None:
         size = 1 + max(group_idx)
@@ -97,3 +92,4 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dty
 
     return ret
 
+aggregate.__doc__ = _doc_str
