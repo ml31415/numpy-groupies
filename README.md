@@ -1,6 +1,7 @@
 # aggregate
-Aggregation function for python. It is named after, and very similar to, Matlab's `accumarray` function - [see Mathworks docs here](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true). If you are familiar with `pandas`, you could consider `aggregate` to be a light-weight version of the [`groupby` concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html).
+Aggregation function for python.
 
+![aggregate_diagram](/diagram.png)
 ```python
 import numpy as np
 from aggregate import aggregate 
@@ -9,100 +10,68 @@ a = np.array([13.2,3.5,3.5,-8.2,3.0,13.4,99.2,-7.1,0.0,53.7])
 aggregate(group_idx, a, func='sum', fill_value=np.nan)
 # >>> array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
 ```
-`aggregate` can be run with zero dependecies, i.e. using pure python, but a fast `numpy` implementation is also available. If that's not enough, you can use the super-fast `scipy.weave` version.
 
-### The main idea of aggregate
-Suppose that that you have a list of values, `a`, and some labels for each of the values, `group_idx`. The purpose of the `aggregate` function is to aggregate over all the values with the same label, for example taking the `sum` or `mean` (using whatever aggregation function the user requests).  
+If you have used [Matlab's `accumarray` function](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true), this `aggregate` function should appear fairly familiar to you because the inputs and output are almost identical to `accumarray`.  Alternatively, if you are familiar with the [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), the purpose, if not the exact syntax, of `aggregate` will be familiar to you.  Failing that, if you've come across the [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce) you should at least appriciate the need for an `aggreagate` function such as this.  Anyone still confused should think back to the last time they created a histogram, and then look carefully at the above diagram..although if you are reading this the chances are you already basically understand what's going on.
 
-Here is a simple example with ten values in `a` and their paired `group_idx` (this is the same as the code example above):
+### Available functions   
+By default, `aggregate` assumes you want to sum the values within each group, however you can specify another function using the `func` kwarg.  This `func` can be any custom callable, however in normal use you will probably want one of the following optimized functions:
 
-![aggregate_diagram](/diagram.png)
-    
-The output is an array, with the ith element giving the `sum`  (or `mean` or whatever) of the relevant items from within `a`. By default, any gaps are filled with zero: in the above example, the label `2` does not appear in the `group_idx` list, so in the output, the element `2` is `0.0`.  If you would prefer to fill the gaps with `nan` (or some other value, e.g. `-1`) you can do this using `fill_value=nan`.
+* `'sum'` - sum of items within each group (see example above).
+* `'prod'` - product of items within the group
+* `'mean'` - mean of items within each group
+* `'var'`- variance of items within each group. Use `ddof` kwarg for degrees of freedom. The divisor used in calculations is `N - ddof`, where `N` represents the number of elements. By default `ddof` is zero.
+* `'std'` - standard deviation of items within each group. Use `ddof` kwarg for degrees of freedom (see `var` above).
+* `'min'` - minimum value of items within each group.
+* `'max'` - maximum value of items within each group.
+* `'first'` - first item in `a` from each group.
+* `'last'` - last item in `a` from each group.
 
-### Multiple implementations of aggregate
-This repository contains several independent implementations of the same function.
-Some of the implementations may throw `NotImplementedError` for certain inputs, 
-but whenever a result is produced it should be the same across all implementations
-(to within some small floating-point error).  
-The simplest implementation, provided in the file **`aggregate_purepy.py`** uses pure python, but is magnitudes slower
-than the other implementations. **`aggregate_numpy.py`** makes use of a variety of `numpy` tricks to try and get as close to
-the hardwares optimal performance as possible, however if you really want the absolute best performance possible you will need
-the **`aggregate_weave.py`** version, see benchmarking below.
+The above functions also have a `nan-` form, for which `nan` values are dropped before the aggregation calculation is computed:
+* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`
 
-Note that if you know which implementation you want you only need that one file, plus the `utils.py` file.
+The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
+* `'all'` - `True` if all items within a group are truethy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truethy.
+* `'any'` - `True` if any items within a group are truethy.
+* `allnan` - `True` if all items within a group are `nan`.
+* `anynan` - `True` if any items within a gorup are `nan`.
 
-**Other implementations** The **`aggregate_numpy_ufunc.py`** version is only for testing and benchmarking, though hopefully in future, if numpy
-improves, this version will become more relevant.  The **`aggregate_pandas.py`** version is faster than the numpy version for `prod`, `min`, and `max`,
-though only slightly.  Note that not much work has gone into trying to squeeze the most out of pandas, so it may be possible to do better still, especially
-for `all` and `any` which are oddly slow.
+Finally, there are three functions which don't reduce each group to a single value, instead they return the full set of items within the group:  
+* `'array'` - simply returns the grouped items, using the same order as appeared in `a`.
+* `'sort'` - like `'array'`, above, but the items within each group are now sorted in ascending order.
+* `'rsort'` - same as `'sort'`, but in reverse, i.e. descending order.
 
-### Available aggregation functions
-Below is a list of the main functions. Note that you can also provide your own custom function, but obviously it wont run as fast as most of these optimised ones. As shown below, most functions have a "nan- version", for example there is a `"nansum"` function as well as a `"sum"` function. The nan- verions simply drop all the nans before doing the aggregation. This means that any groups consisting only of `nan`s will be given `fill_value` in the output (rather than `nan`). If you would like to set all-nan groups to have `nan` in the output, do the following:
+### Full description of inputs
+The first three inputs have already been explained/demonstrated above, but we list them here again for completeness.  
+* `group_idx` - this is an array of non-negative integers, to be used as the "labels" with which to group the values in `a`.  If `group_idx` is one-dimensional, it should be of the same length as `a`. For multidimensional output `group_idx` will need to be two-dimensional - see the dedicated section below.
+* `a` - this is the array of values to be aggregated.  See the above for a simple demonstration of what this means.  `a` will normally be a one-dimensional array, however it can also be a scalar in some cases.
+* `func='sum'` - the function to use for aggregation.  See the section above for details.  Note that the simplest way to specify the function is using a string (e.g. `func='mac'`) however a number of aliases are also defined (e.g. you can use the `func=np.max`, or even `func=max`, where `max` is the builtin function).  To check the available aliases see `utils.py`.
+* `size=None` - the shape of the output array. If `None`, the maximum value in `group_idx` will set the size of the output.  Note that for multidimensional output you need to list the size of each dimension here, or give `None`.
+* `fill_value=0` - in the example above, group 2 does not have any data, so requires some kind of filling value - in this case the default of `0` is used.  If you had set `fill_value=nan` or something else, that value would appear instead of `0` for the 2 element in the output.  Note that there are some subtle interactions between what is permitted for `fill_value` and the input/output `dtype` - exceptions should be raised in most cases to alert the programmer if issue arrise.
+* `order='C'` - this is relevant only for multimensional output. See that section below for details.
+* `dtype=None` - the `dtype` of the output.  By default something sensible is chosen based on the input, aggregation function, and `fill_value`.
 
-```python
-# get variance ignoring nans
-a = aggregate(group_idx, a, func='nanvar') 
-# set the all-nan groups to be nan
-a[aggregate(group_idx, a, func='allnan')] = nan
-```  
+### Installing `aggregate`
+You can download the whole repository and import the `aggregate` function from the package using `from aggregate import aggregate`.
 
-The prefered way of specifying a function is using a string, e.g. `func="sum"`, however in many cases actual function objects will be recognised too. For an overview of the performance of the functions, see the benchmarking below.
+Or if you'd rather just take a single file, you can download the file `aggregate\aggregate_numpy.py` (or whichever implementation you want) **AND** then copy-paste the contents of `aggregate\utils.py` into the top of that file, replacing the `from .utils import (...)` line.  This can then be used as `from aggregate_numpy import aggregate`.
 
-Note that the last few functions listed above do not return an array of scalars but an array with `dtype=object`.  
-Also, note that as of `numpy v1.9`, the `<custom function>` implementation is only slightly slower than the `ufunc.at` method, so if you want to use a `ufunc` not in the above list, it wont run that much slower when simple supplied as a `<custom function>`, e.g. `func=np.logaddexp`.  There is a [numpy issue](https://github.com/numpy/numpy/issues/5922) trying to get this performance bug fixed - please show interest there if you want to encourage the `numpy` devs to work on that! If, however, for a specific `ufunc`, you know of a fast algorithm which does signficantly better than `ufunc.at` please get in touch and we can incorporate it here.
+As discussed below there are multiple implementations of `aggregate` provided.  They range from the pure-python implementation which has no dependencies at all but is not very fast, to the `scipy.weave` implementation which runs fast but requires a working install of `scipy.weave`.  For most users, the `aggregate_numpy.py` implementation is probably the easiest to install and offers fairly reasonable speed for the majority of aggregation functions.  If you download the whole repository and use `from aggregate import aggregate`, the best available implementation will automatically be selected.
 
-### Scalar `a`
-Although we have so far assumed that `a` is a 1d array, it can in fact be a scalar. The most common example of this is using `aggregate` to simply count the number of occurances of each value in `group_idx`.
+### Multiple implementations - explanation and benchmark results
+Currently the following implementations exist:  
+* **pure python**. *Use only if you don't have numpy installed*. This has no dependencies, instead making use of the grouping and sorting functionality provided by the python language itself plus the standard library.
+* **numpy ufunc**. *Only for use with testing/benchmarking, i.e. normally do NOT use this.*  This impelmentation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for perfoming excactly the same calculation that `aggregate` executes, however the numpy implementation is very slow (as of `v1.9.2`).  A [numpy issue](https://github.com/numpy/numpy/issues/5922) has be created to try and address this performance bug.  Also, note that some of the desired functions do not have suitable `ufunc.at` analogues (e.g. `mean`, `var`).
+* **numpy**.  *RECOMMENDED, unless you have weave installed and working.* This also uses `numpy`, but most of the aggregation functions have been hand-optimised using something other than `ufunc.at`.  You can see the tricks employed by reading the code: it mostly relies on `np.bincount` and some basic indexing magic.  For most users this will be the most sensible choice of implementation, at least initially.
+* **pandas**. *You probably don't want this - check the benchmarks.*  As mentioned at the top of this page, pandas' `groupby` concept is the same as the task performed by `aggregate`.  Thus, it makes sense to try and piggyback off pandas if it is available. Note however, that `pandas` is not actually any faster than the recommended `numpy` implementation (except in a few cases).  Also, note that there may be room for improvement in the way that `pandas` is utilized here.  Most notably, when computing multiple aggregations of the same data (e.g. `'min'` and `'max'`) pandas could potentially be used much more efficiently - although other implementations could also deal with this case better,[as discussed in this issue](https://github.com/ml31415/accumarray/issues/3).
+* **weave** - *If you need absolute speed and have/can get weave working then use this.* Weave does just-in-time compilation of handwritten C-code, producing binaries that can be easily run from python.  In all cases this allows this implementation to be faster than the recommended numpy implementation, especially for `'min'`, `'max'`, and `'prod'`.
 
-```python
-aggregate(group_idx, 1, func='sum') # equivalent to np.bincount(idx)
-```
+All implementations have the same calling syntax and produce the same outputs, to within some floating-point error. However some implementations only support a subset of the valid inputs and will sometimes throw `NotImplementedError`.
 
-Most other functions do accept a scalar, but the output may be rather meaningless in many cases (e.g. `max`  just returns an array repeating the given scalar and/or `fill_value`). Scalars are not accepted for "nan- versions" of the functions because either the single scalar value is `nan` or it's not!
+Scripts for testing and benchmarking are included in this repository, which you can run yourself if need be.  Note that relative speeds will vary depending on the nature of the inputs.
 
-### 2D `group_idx` for multidimensional output
-Although we have so far assumed that `group_idx` is 1D, and the same length as `a`, it can in fact be 2D (or some form of nested sequences that can be converted to 2D).  When `group_idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `group_idx[i,j]` gives the index into the ith dimension in the output for `a[j]`.  Note that `a` should still be 1D (or scalar), with length matching `group_idx.shape[1]`.  When producing multidimensional output you can specify `C` or `Fortran` memory layout using `order='C'` or `order='F'` respectively.
-
-```python
-nindices = 100
-outsize = (10, 10)
-group_idx = np.random.randint(0, 10, size=(len(outsize), nindices))
-a = np.random.random(group_idx.shape[1])
-res = aggregate(group_idx, a, func="sum", size=outsize, order="F")
-res.shape
-# >>> (10, 10)
-np.isfortran(res)
-# >>> True
-```
-
-### Specifying the size of the output array
-Sometimes you may want to force the output of `aggregate` to be of a particular length/shape.  You can use the `size` keyword argument for this. The length of `size` should match the number of dimesnions in the output. If left as `None`the maximumum values in `group_idx` will define the size of the output array.
-
-
-### Some examples
-
-```python
-group_idx = np.arange(5).repeat(3)
-a = np.arange(group_idx.size)
-aggregate(group_idx, a)
-# >>> array([ 3, 12, 21, 30, 39])
-
-aggregate(group_idx, a, np.prod)
-# >>> array([   0,   60,  336,  990, 2184])
-```
-
-### Benchmarking and testing
-Benchmarking and testing scripts are included. 
-
-Note that the actual observed results depend on a variety of properties of the input.
-Here we are using `500,000` indices uniformly picked from `[0, 1000)`.
-Specifically, about 20% of the values are set to `0` for use with bool operations.
-Nan operations get another 20% of the values set to nan. So the remainder is uniformly 
-distribuited on `[0.2,1)` or on `[0.2,0.8)` for nan operations. 
+Below we are using `500,000` indices uniformly picked from `[0, 1000)`.  The values of `a` are uniformly picked from the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). For `nan-` operations another 20% of the are values set to nan, leaving the remainder on the interval `[0.2,0.8)`.
 
 The benchmarking results are given in ms for an i7-5500U running at 2.40GHz:
-
 ```text
 function      grouploop          numpy          weave          ufunc         pandas
 -----------------------------------------------------------------------------------
@@ -130,21 +99,51 @@ allnan           52.968          5.374          2.539         38.186         73.
 Linux(x86_64), Python 2.7.6, Numpy 1.9.2
 ```
 
+The `grouploop` implementation shown here uses `aggregate_numpy.py`'s generic function menchanism, which groups `a` by `group_idx`, and then loops over each group, applying the specified function (in this case it is a numpy function such as `np.add`). `grouploop` is only included for reference, note that the output from this function is considered to be the "correct" answer when used in testing.
 
-The `grouploop` implementation shown here uses `aggregate_numpy.py`'s
-generic function menchanism, which groups `a` by `group_idx`, and then
-loops over each group, applying the specified function (in this case it is a numpy function 
-such as `np.add`). `grouploop` is only included for reference, note that the output from
-this function is considered to be the "correct" answer when used in testing.
 
-`ufunc` uses the `aggregate_numpy_ufunc.py` implementation. That implementation is not 
-intended for mainstream usage, it is only included in the hope that numpy's `ufunc.at`
-performance will eventually improve.
 
-`pandas` does some preprocessing and caching, probably reuses sorting when grouping. The
-times given here represent the full time from constructing the `DataFrame`, grouping it and finally
-doing the acutal aggregation. Skipping or reusing these steps speeds `pandas` up notably, but for a
-fair competition the grouping is done for each separate `aggregate` call.
+### 2D `group_idx` for multidimensional output
+Although we have so far assumed that `group_idx` is 1D, and the same length as `a`, it can in fact be 2D (or some form of nested sequences that can be converted to 2D).  When `group_idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `group_idx[i,j]` gives the index into the ith dimension in the output for `a[j]`.  Note that `a` should still be 1D (or scalar), with length matching `group_idx.shape[1]`.  When producing multidimensional output you can specify `C` or `Fortran` memory layout using `order='C'` or `order='F'` respectively.  See example below.
+
+### Examples
+See the example at the top of the page for a super-simple introduction.
+
+
+Compute sums of consecutive integers, and then compute products of those consecutive integers.
+```python
+group_idx = np.arange(5).repeat(3)
+# group_idx: array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
+a = np.arange(group_idx.size)
+# a: array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14])
+x =aggregate(group_idx, a) # sum is default
+# x: array([ 3, 12, 21, 30, 39])
+x = aggregate(group_idx, a, 'prod')
+# x: array([ 0, 60, 336, 990, 2184])
+```
+
+Get variance ignoring nans, but set all-nan groups to `nan` rather than `fill_value`.
+```python
+x = aggregate(group_idx, a, func='nanvar', fill_value=0) 
+x[aggregate(group_idx, a, func='allnan')] = nan
+```  
+
+
+Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(a)`, indeed that is how the numpy implementation does it.
+```python
+x = aggregate(group_idx, 1)
+```
+
+
+Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions have the same size, but that doesn't have to be the case.
+```python
+group_idx = np.random.randint(0, 15, size=(3, 1000))
+a = np.random.random(group_idx.shape[1])
+x = aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
+# x.shape: (10, 10)
+# np.isfortran(x): True
+```
+
 
 
 ### Development
