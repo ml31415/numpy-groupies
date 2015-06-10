@@ -7,7 +7,7 @@ import numpy as np
 from aggregate import aggregate 
 group_idx = np.array([3,0,0,1,0,3,5,5,0,4])
 a = np.array([13.2,3.5,3.5,-8.2,3.0,13.4,99.2,-7.1,0.0,53.7])
-aggregate(group_idx, a, func='sum', fill_value=np.nan)
+aggregate(group_idx, a, func='sum', fill_value=0) # see below for further examples
 # >>> array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
 ```
 
@@ -17,7 +17,7 @@ If you have used [Matlab's `accumarray` function](http://uk.mathworks.com/help/m
 By default, `aggregate` assumes you want to sum the values within each group, however you can specify another function using the `func` kwarg.  This `func` can be any custom callable, however in normal use you will probably want one of the following optimized functions:
 
 * `'sum'` - sum of items within each group (see example above).
-* `'prod'` - product of items within the group
+* `'prod'` - product of items within each group
 * `'mean'` - mean of items within each group
 * `'var'`- variance of items within each group. Use `ddof` kwarg for degrees of freedom. The divisor used in calculations is `N - ddof`, where `N` represents the number of elements. By default `ddof` is zero.
 * `'std'` - standard deviation of items within each group. Use `ddof` kwarg for degrees of freedom (see `var` above).
@@ -42,13 +42,14 @@ Finally, there are three functions which don't reduce each group to a single val
 
 ### Full description of inputs
 The first three inputs have already been explained/demonstrated above, but we list them here again for completeness.  
-* `group_idx` - this is an array of non-negative integers, to be used as the "labels" with which to group the values in `a`.  If `group_idx` is one-dimensional, it should be of the same length as `a`. For multidimensional output `group_idx` will need to be two-dimensional - see the dedicated section below.
+* `group_idx` - this is an array of non-negative integers, to be used as the "labels" with which to group the values in `a`. Although we have so far assumed that `group_idx` is one-dimesnaional, and the same length as `a`, it can in fact be two-dimensional (or some form of nested sequences that can be converted to 2D).  When `group_idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `group_idx[i,j]` gives the index into the ith dimension in the output for `a[j]`.  Note that `a` should still be 1D (or scalar), with length matching `group_idx.shape[1]`. 
 * `a` - this is the array of values to be aggregated.  See the above for a simple demonstration of what this means.  `a` will normally be a one-dimensional array, however it can also be a scalar in some cases.
 * `func='sum'` - the function to use for aggregation.  See the section above for details.  Note that the simplest way to specify the function is using a string (e.g. `func='mac'`) however a number of aliases are also defined (e.g. you can use the `func=np.max`, or even `func=max`, where `max` is the builtin function).  To check the available aliases see `utils.py`.
 * `size=None` - the shape of the output array. If `None`, the maximum value in `group_idx` will set the size of the output.  Note that for multidimensional output you need to list the size of each dimension here, or give `None`.
 * `fill_value=0` - in the example above, group 2 does not have any data, so requires some kind of filling value - in this case the default of `0` is used.  If you had set `fill_value=nan` or something else, that value would appear instead of `0` for the 2 element in the output.  Note that there are some subtle interactions between what is permitted for `fill_value` and the input/output `dtype` - exceptions should be raised in most cases to alert the programmer if issue arrise.
-* `order='C'` - this is relevant only for multimensional output. See that section below for details.
+* `order='C'` - this is relevant only for multimensional output.  It controls the layout of the output array in memory, can be `'F'` for fortran-style.
 * `dtype=None` - the `dtype` of the output.  By default something sensible is chosen based on the input, aggregation function, and `fill_value`.
+* `ddof=0` - passed through into calculations of variance and standard deviation (see above).
 
 ### Installing `aggregate`
 You can download the whole repository and import the `aggregate` function from the package using `from aggregate import aggregate`.
@@ -69,7 +70,7 @@ All implementations have the same calling syntax and produce the same outputs, t
 
 Scripts for testing and benchmarking are included in this repository, which you can run yourself if need be.  Note that relative speeds will vary depending on the nature of the inputs.
 
-Below we are using `500,000` indices uniformly picked from `[0, 1000)`.  The values of `a` are uniformly picked from the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). For `nan-` operations another 20% of the are values set to nan, leaving the remainder on the interval `[0.2,0.8)`.
+Below we are using `500,000` indices uniformly picked from `[0, 1000)`.  The values of `a` are uniformly picked from the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). For `nan-` operations another 20% of the values set to nan, leaving the remainder on the interval `[0.2,0.8)`.
 
 The benchmarking results are given in ms for an i7-5500U running at 2.40GHz:
 ```text
@@ -102,10 +103,6 @@ Linux(x86_64), Python 2.7.6, Numpy 1.9.2
 The `grouploop` implementation shown here uses `aggregate_numpy.py`'s generic function menchanism, which groups `a` by `group_idx`, and then loops over each group, applying the specified function (in this case it is a numpy function such as `np.add`). `grouploop` is only included for reference, note that the output from this function is considered to be the "correct" answer when used in testing.
 
 
-
-### 2D `group_idx` for multidimensional output
-Although we have so far assumed that `group_idx` is 1D, and the same length as `a`, it can in fact be 2D (or some form of nested sequences that can be converted to 2D).  When `group_idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `group_idx[i,j]` gives the index into the ith dimension in the output for `a[j]`.  Note that `a` should still be 1D (or scalar), with length matching `group_idx.shape[1]`.  When producing multidimensional output you can specify `C` or `Fortran` memory layout using `order='C'` or `order='F'` respectively.  See example below.
-
 ### Examples
 See the example at the top of the page for a super-simple introduction.
 
@@ -116,7 +113,7 @@ group_idx = np.arange(5).repeat(3)
 # group_idx: array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
 a = np.arange(group_idx.size)
 # a: array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14])
-x =aggregate(group_idx, a) # sum is default
+x = aggregate(group_idx, a) # sum is default
 # x: array([ 3, 12, 21, 30, 39])
 x = aggregate(group_idx, a, 'prod')
 # x: array([ 0, 60, 336, 990, 2184])
@@ -145,6 +142,13 @@ x = aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
 ```
 
 
+Use a custom function to generate some strings.
+```python
+group_idx = array([1, 0,  1,  4,  1])
+a = array([12.0, 3.2, -15, 88, 12.9])
+x = aggregate(group_idx, a, func=lambda x: ' or maybe '.join(str(xx) for xx in x), fill_value='')
+# x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
+```
 
 ### Development
 The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation 
