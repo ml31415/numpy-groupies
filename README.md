@@ -107,7 +107,7 @@ The `grouploop` implementation shown here uses `aggregate_numpy.py`'s generic fu
 See the example at the top of the page for a super-simple introduction.
 
 
-Compute sums of consecutive integers, and then compute products of those consecutive integers.
+* Compute sums of consecutive integers, and then compute products of those consecutive integers.
 ```python
 group_idx = np.arange(5).repeat(3)
 # group_idx: array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
@@ -119,34 +119,31 @@ x = aggregate(group_idx, a, 'prod')
 # x: array([ 0, 60, 336, 990, 2184])
 ```
 
-Get variance ignoring nans, but set all-nan groups to `nan` rather than `fill_value`.
+* Get variance ignoring nans, but set all-nan groups to `nan` rather than `fill_value`.
 ```python
 x = aggregate(group_idx, a, func='nanvar', fill_value=0) 
 x[aggregate(group_idx, a, func='allnan')] = nan
 ```  
 
-
-Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(a)`, indeed that is how the numpy implementation does it.
+* Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(a)`, indeed that is how the numpy implementation does it.
 ```python
 x = aggregate(group_idx, 1)
 ```
 
-
-Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions have the same size, but that doesn't have to be the case.
+* Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions have the same size, but that doesn't have to be the case.
 ```python
 group_idx = np.random.randint(0, 15, size=(3, 1000))
 a = np.random.random(group_idx.shape[1])
 x = aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
-# x.shape: (10, 10)
+# x.shape: (15, 15, 15)
 # np.isfortran(x): True
 ```
 
-
-Use a custom function to generate some strings.
+* Use a custom function to generate some strings.
 ```python
 group_idx = array([1, 0,  1,  4,  1])
 a = array([12.0, 3.2, -15, 88, 12.9])
-x = aggregate(group_idx, a, func=lambda x: ' or maybe '.join(str(xx) for xx in x), fill_value='')
+x = aggregate(group_idx, a, func=lambda g: ' or maybe '.join(str(gg) for gg in g), fill_value='')
 # x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
 
