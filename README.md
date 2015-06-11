@@ -143,7 +143,8 @@ x = aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
 ```python
 group_idx = array([1, 0,  1,  4,  1])
 a = array([12.0, 3.2, -15, 88, 12.9])
-x = aggregate(group_idx, a, func=lambda g: ' or maybe '.join(str(gg) for gg in g), fill_value='')
+x = aggregate(group_idx, a, 
+              func=lambda g: ' or maybe '.join(str(gg) for gg in g), fill_value='')
 # x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
 
