@@ -125,7 +125,7 @@ x = aggregate(group_idx, a, func='nanvar', fill_value=0)
 x[aggregate(group_idx, a, func='allnan')] = nan
 ```  
 
-* Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(a)`, indeed that is how the numpy implementation does it.
+* Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, indeed that is how the numpy implementation does it.
 ```python
 x = aggregate(group_idx, 1)
 ```
