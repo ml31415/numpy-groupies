@@ -267,5 +267,4 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
 
 aggregate.__doc__ = """
     This is the scipy.weave implementation of aggregate.
-    
-    """ +_doc_str
+    """ + _doc_str

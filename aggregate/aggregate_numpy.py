@@ -2,7 +2,7 @@ import numpy as np
 
 from .utils import (check_boolean, _no_separate_nan_version, get_func, aliasing,
                     fill_untouched, minimum_dtype, input_validation, check_dtype,
-                    minimum_dtype_scalar, _doc_str, ShyDict)
+                    minimum_dtype_scalar, _doc_str)
 
 
 def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
@@ -158,14 +158,14 @@ def _generic_callable(group_idx, a, size, fill_value, dtype=None, func=lambda g:
             ret[i] = func(grp)
     return ret
 
-_impl_dict = ShyDict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_first,
+_impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last, first=_first,
                     all=_all, any=_any, mean=_mean, std=_std, var=_var,
                     anynan=_anynan, allnan=_allnan, sort=_sort, rsort=_rsort,
                     array=_array)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items()) if k not in _no_separate_nan_version)
 
 
-def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, _impl_dict=_impl_dict, _nansqueeze=True, **kwargs):
+def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, _impl_dict=_impl_dict, _nansqueeze=False, **kwargs):
     group_idx, a, flat_size, ndim_idx = input_validation(group_idx, a, size=size, order=order)
     func = get_func(func, aliasing, _impl_dict)
     if not isinstance(func, basestring):
@@ -186,8 +186,15 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
         ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
     # deal with ndimensional indexing
-    if ndim_idx > 1:    
+    if ndim_idx > 1:
         ret = ret.reshape(size, order=order)
     return ret
 
-aggregate.__doc__ = _doc_str
+
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, **kwargs):
+    return _aggregate_base(group_idx, a, size=size, fill_value=fill_value, order=order, dtype=dtype,
+                           func=func, _impl_dict=_impl_dict, _nansqueeze=True, **kwargs)
+
+aggregate.__doc__ = """
+    This is the pure numpy implementation of aggregate.
+    """ + _doc_str

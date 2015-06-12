@@ -375,11 +375,3 @@ else:
 
     def nanlast(x):
         return x[~np.isnan(x)][-1]
-
-    class ShyDict(dict):
-        """This is like a normal dict except that it doesn't show its contents
-        when printed/converted to string."""
-        def __repr__(self):
-            return "<dict>"
-        def __str__(self):
-            return "<dict>"

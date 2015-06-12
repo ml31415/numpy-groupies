@@ -1,8 +1,8 @@
 import numpy as np
 
-from .utils import (minimum_dtype, minimum_dtype_scalar, check_boolean, 
-                    get_func, aliasing, _doc_str, ShyDict)
-from .aggregate_numpy import aggregate as aggregate_np
+from .utils import (minimum_dtype, minimum_dtype_scalar, check_boolean,
+                    get_func, aliasing, _doc_str)
+from .aggregate_numpy import _aggregate_base
 
 
 def _anynan(group_idx, a, size, fill_value, dtype=None):
@@ -65,15 +65,16 @@ def _max(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-_impl_dict = ShyDict(min=_min, max=_max, sum=_sum, prod=_prod, all=_all, any=_any,
+_impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, all=_all, any=_any,
                   allnan=_allnan, anynan=_anynan)
 
 
-def aggregate(group_idx, a, func='sum', **kwargs):
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, **kwargs):
     func = get_func(func, aliasing, _impl_dict)
     if not isinstance(func, basestring):
         raise NotImplementedError("No such ufunc available")
-    return aggregate_np(group_idx, a, func=func, _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
+    return _aggregate_base(group_idx, a, size=size, fill_value=fill_value, order=order, dtype=dtype,
+                           func=func, _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
 
 aggregate.__doc__ = """
     Unlike the ``accumarray_numpy.py``, which in most cases does some custom 
@@ -82,5 +83,4 @@ aggregate.__doc__ = """
     As of version 1.9 this gives fairly poor performance.  There should normally
     be no need to use this version, it is intended to be used in testing and
     benchmarking only.
-    
-    """ +  _doc_str
+    """ + _doc_str

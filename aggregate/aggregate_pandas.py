@@ -2,9 +2,8 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-from .utils import (check_dtype, allnan, anynan, _no_separate_nan_version, 
-                    _doc_str, ShyDict)
-from .aggregate_numpy import aggregate as aggregate_np
+from .utils import check_dtype, allnan, anynan, _no_separate_nan_version, _doc_str
+from .aggregate_numpy import _aggregate_base
 
 
 def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
@@ -22,19 +21,18 @@ def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
     return ret
 
 _supported_funcs = 'min max sum prod mean var std first last all any'.split()
-_impl_dict = ShyDict(**{fn: partial(_wrapper, func=fn) for fn in _supported_funcs})
+_impl_dict = dict(**{fn: partial(_wrapper, func=fn) for fn in _supported_funcs})
 _impl_dict.update(('nan' + fn, partial(_wrapper, func=fn)) for fn in _supported_funcs if fn not in _no_separate_nan_version)
 _impl_dict.update(allnan=partial(_wrapper, func=allnan), anynan=partial(_wrapper, func=anynan))
 
 
-def aggregate(*args, **kwargs):
-    return aggregate_np(*args, _impl_dict=_impl_dict, **kwargs)
-
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, **kwargs):
+    return _aggregate_base(group_idx, a, size=size, fill_value=fill_value, order=order, dtype=dtype,
+                           func=func, _impl_dict=_impl_dict, _nansqueeze=True, **kwargs)
 
 
 aggregate.__doc__ = """
     This function makes use of `pandas`'s groupby machienery, it is slightly
     faster than the numpy implementation for `max`, `min`, and `prod`, but slower
     for other functions.
-    
-    """ +  _doc_str
+    """ + _doc_str

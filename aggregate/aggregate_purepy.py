@@ -92,4 +92,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None, dty
 
     return ret
 
-aggregate.__doc__ = _doc_str
+aggregate.__doc__ = """
+    This is the pure python implementation of aggregate. It is terribly slow. Using 
+    the numpy version is highly recommended.
+    """ + _doc_str
