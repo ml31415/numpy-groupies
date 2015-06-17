@@ -267,4 +267,14 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtyp
 
 aggregate.__doc__ = """
     This is the scipy.weave implementation of aggregate.
+
+    **NOTE:** If weave is installed but fails to run (probably because you
+    have not setup a suitable compiler) then you can manually select the numpy
+    implementation by using::
+
+
+        # NOT THIS: from aggregate import aggregate
+        from aggregate.aggregate_numpy import aggregate
+
+
     """ + _doc_str
