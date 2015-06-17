@@ -28,7 +28,7 @@ _impl_dict.update(allnan=partial(_wrapper, func=allnan), anynan=partial(_wrapper
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, **kwargs):
     return _aggregate_base(group_idx, a, size=size, fill_value=fill_value, order=order, dtype=dtype,
-                           func=func, _impl_dict=_impl_dict, _nansqueeze=True, **kwargs)
+                           func=func, _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
 
 
 aggregate.__doc__ = """

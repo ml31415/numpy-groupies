@@ -13,13 +13,15 @@ from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
 _implementations = ['aggregate_' + impl for impl in "py ufunc numpy weave pandas".split()]
 aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
 
-def wrap_aggregate_xfail(impl):
+def wrap_aggregate_xfail(impl, name=None):
     def aggregate_xfail(*args, **kwargs):
         """ Some implementations lack some functionality. That's ok, let's xfail that instead of raising errors. """
         try:
             return impl(*args, **kwargs)
         except NotImplementedError:
             raise pytest.xfail("Functionality not implemented")
+    if name:
+        aggregate_xfail.__name__ = name
     return aggregate_xfail
 
 
@@ -28,7 +30,7 @@ def aggregate_all(request):
     impl = aggregate_implementations[request.param]
     if impl is None:
         pytest.xfail("Implementation not available")
-    return wrap_aggregate_xfail(impl)
+    return wrap_aggregate_xfail(impl, request.param)
 
 
 def test_preserve_missing(aggregate_all):
@@ -181,3 +183,19 @@ def test_scalar_input(aggregate_all, func):
         res = aggregate_all(group_idx, 1, func=func)
         ref = aggregate_all(group_idx, np.ones_like(group_idx, dtype=int), func=func)
         np.testing.assert_array_equal(res, ref)
+
+
+@pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std" , "all", "any"])
+def test_nan_input(aggregate_all, func, groups=100):
+    if aggregate_all.__name__.endswith('pandas'):
+        pytest.skip("pandas seems to automatically skip nan values")
+    group_idx = np.arange(0, groups, dtype=int).repeat(5)
+    a = np.random.random(group_idx.size)
+    a[::2] = np.nan
+
+    if func in ('all', 'any'):
+        ref = np.ones(groups, dtype=bool)
+    else:
+        ref = np.full(groups, np.nan)
+    res = aggregate_all(group_idx, a, func=func)
+    np.testing.assert_array_equal(res, ref)
