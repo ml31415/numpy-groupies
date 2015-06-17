@@ -1,52 +1,54 @@
 import math
 
 _doc_str = """
-    See readme file at https://github.com/ml31415/accumarray for a full 
-    description.  Below we reproduce the "Full description of inputs" 
-    section from that readme, note that the text below makes references to other 
-    portions of the readme that are not shown here.
+    See readme file at https://github.com/ml31415/accumarray for a full
+    description.  Below we reproduce the "Full description of inputs"
+    section from that readme, note that the text below makes references to
+    other portions of the readme that are not shown here.
 
     group_idx:
-        this is an array of non-negative integers, to be used as the "labels" 
-        with which to group the values in ``a``. Although we have so far assumed 
-        that ``group_idx`` is one-dimesnaional, and the same length as ``a``, it 
-        can in fact be two-dimensional (or some form of nested sequences that 
-        can be converted to 2D).  When ``group_idx`` is 2D, the size of the 0th 
-        dimension corresponds to the number of dimesnions in the output, i.e.
-        ``group_idx[i,j]`` gives the index into the ith dimension in the output 
-        for ``a[j]``.  Note that ``a`` should still be 1D (or scalar), with length 
-        matching ``group_idx.shape[1]``. 
+        this is an array of non-negative integers, to be used as the "labels"
+        with which to group the values in ``a``. Although we have so far
+        assumed that ``group_idx`` is one-dimesnaional, and the same length as
+        ``a``, it can in fact be two-dimensional (or some form of nested
+        sequences that can be converted to 2D).  When ``group_idx`` is 2D, the
+        size of the 0th dimension corresponds to the number of dimesnions in
+        the output, i.e. ``group_idx[i,j]`` gives the index into the ith
+        dimension in the output
+        for ``a[j]``.  Note that ``a`` should still be 1D (or scalar), with
+        length matching ``group_idx.shape[1]``.
     a:
-        this is the array of values to be aggregated.  See above for a 
+        this is the array of values to be aggregated.  See above for a
         simple demonstration of what this means.  ``a`` will normally be a
         one-dimensional array, however it can also be a scalar in some cases.
     func: default='sum'
-        the function to use for aggregation.  See the section above for details.  
-        Note that the simplest way to specify the function is using a string 
-        (e.g. ``func='max'``) however a number of aliases are also defined (e.g.
-        you can use the ``func=np.max``, or even ``func=max``, where ``max`` is the 
+        the function to use for aggregation.  See the section above for
+        details. Note that the simplest way to specify the function is using a
+        string (e.g. ``func='max'``) however a number of aliases are also
+        defined (e.g. you can use the ``func=np.max``, or even ``func=max``,
+        where ``max`` is the
         builtin function).  To check the available aliases see ``utils.py``.
     size: default=None
-        the shape of the output array. If ``None``, the maximum value in 
-        ``group_idx`` will set the size of the output.  Note that for 
-        multidimensional output you need to list the size of each dimension 
+        the shape of the output array. If ``None``, the maximum value in
+        ``group_idx`` will set the size of the output.  Note that for
+        multidimensional output you need to list the size of each dimension
         here, or give ``None``.
     fill_value: default=0
-        in the example above, group 2 does not have any data, so requires some 
-        kind of filling value - in this case the default of ``0`` is used.  If 
-        you had set ``fill_value=nan`` or something else, that value would appear 
-        instead of ``0`` for the 2 element in the output.  Note that there are 
-        some subtle interactions between what is permitted for ``fill_value`` and
-        the input/output ``dtype`` - exceptions should be raised in most cases to 
-        alert the programmer if issue arrise.
+        in the example above, group 2 does not have any data, so requires some
+        kind of filling value - in this case the default of ``0`` is used.  If
+        you had set ``fill_value=nan`` or something else, that value would
+        appear instead of ``0`` for the 2 element in the output.  Note that
+        there are some subtle interactions between what is permitted for
+        ``fill_value`` and the input/output ``dtype`` - exceptions should be
+        raised in most cases to alert the programmer if issue arrise.
     order: default='C'
-        this is relevant only for multimensional output.  It controls the layout 
-        of the output array in memory, can be ``'F'`` for fortran-style.
+        this is relevant only for multimensional output.  It controls the
+        layout of the output array in memory, can be ``'F'`` for fortran-style.
     dtype: default=None
-        the ``dtype`` of the output.  By default something sensible is chosen 
+        the ``dtype`` of the output.  By default something sensible is chosen
         based on the input, aggregation function, and ``fill_value``.
     ddof: default=0
-        passed through into calculations of variance and standard deviation 
+        passed through into calculations of variance and standard deviation
         (see above).
 """
 
@@ -87,15 +89,12 @@ _alias_builtin = {
     list: 'array',
 }
 
-def get_aliasing(*extra):
-    """This should be called only once by an aggregate_implementation.py file,
-        i.e. it should be called at the point when the given implementation is imported.
 
-        It returns two things. The first is a dict mapping strings and functions
-        to the list of supported funciton names:     
-            e.g. alias['add'] = 'sum'  and alias[sorted] = 'sort'   
-        The second output is a list of functions names which should not support
-        nan- prefixing.
+def get_aliasing(*extra):
+    """The assembles the dict mapping strings and functions to the list of
+    supported function names:
+            e.g. alias['add'] = 'sum'  and alias[sorted] = 'sort'
+    This funciton should only be called during import.
     """
     alias = dict((k, k) for k in _funcs_common)
     alias.update(_alias_str)
@@ -109,8 +108,6 @@ def get_aliasing(*extra):
         if key not in _no_separate_nan_version:
             key = 'nan' + key
             alias[key] = key
-
-
     return alias
 
 aliasing_purepy = get_aliasing()
@@ -126,11 +123,13 @@ def get_func(func, aliasing, implementations):
     else:
         if func_str in implementations:
             return func_str
-        if func_str.startswith('nan') and func_str[3:] in _no_separate_nan_version:
+        if func_str.startswith('nan') and \
+                func_str[3:] in _no_separate_nan_version:
             raise ValueError("%s does not have a nan-version" % func_str[3:])
         else:
             raise NotImplementedError("No such function available")
-    raise ValueError("func %s is neither a valid function string nor a callable object" % func)
+    raise ValueError("func %s is neither a valid function string nor a "
+                     "callable object" % func)
 
 
 def check_boolean(x):
@@ -170,17 +169,16 @@ else:
         np.nanstd: 'nanstd',
     }
 
-
     try:
         import bottleneck as bn
     except ImportError:
         _alias_bottleneck = {}
     else:
-        _bn_funcs = 'allnan anynan nansum nanmin nanmax nanmean nanvar nanstd'.split()
-        _alias_bottleneck = dict((getattr(bn, fn), fn) for fn in _bn_funcs)
+        _bn_funcs = 'allnan anynan nansum nanmin nanmax nanmean nanvar nanstd'
+        _alias_bottleneck = dict((getattr(bn, fn), fn)
+                                 for fn in _bn_funcs.split())
 
     aliasing = get_aliasing(_alias_numpy, _alias_bottleneck)
-
 
     def fill_untouched(idx, ret, fill_value):
         """any elements of ret not indexed by idx are set to fill_value."""
@@ -206,8 +204,8 @@ else:
     )
 
     def minimum_dtype(x, dtype=np.bool_):
-        """returns the "most basic" dtype which represents `x` properly, which provides
-        at least the same value range as the specified dtype."""
+        """returns the "most basic" dtype which represents `x` properly, which
+        provides at least the same value range as the specified dtype."""
 
         def check_type(x, dtype):
             try:
@@ -237,12 +235,11 @@ else:
         else:
             return type_loop(x, dtype, _next_int_dtype, default=np.int64)
 
-
     def minimum_dtype_scalar(x, dtype, a):
         if dtype is None:
-            dtype = np.dtype(type(a)) if isinstance(a, (int, float)) else a.dtype
+            dtype = np.dtype(type(a)) if isinstance(a, (int, float))\
+                                      else a.dtype
         return minimum_dtype(x, dtype)
-
 
     _forced_types = {
         'array': np.object,
@@ -252,14 +249,14 @@ else:
         'anynan': np.bool_,
     }
     _forced_float_types = {'mean', 'var', 'std', 'nanmean', 'nanvar', 'nanstd'}
-    _forced_same_type = {'min', 'max', 'first', 'last', 'nanmin', 'nanmax', 'nanfirst', 'nanlast'}
+    _forced_same_type = {'min', 'max', 'first', 'last', 'nanmin', 'nanmax',
+                         'nanfirst', 'nanlast'}
 
-
-    def check_dtype(dtype, func_str, a):
-        # a has to be already converted from a scalar to any sort of array type with one field
+    def check_dtype(dtype, func_str, a, n):
         if np.isscalar(a) or not a.shape:
             if func_str not in ("sum", "prod"):
-                raise ValueError("scalar inputs are supported only for 'sum' and 'prod'")
+                raise ValueError("scalar inputs are supported only for 'sum' "
+                                 "and 'prod'")
             a_dtype = np.dtype(type(a))
         else:
             a_dtype = a.dtype
@@ -267,9 +264,11 @@ else:
         if dtype is not None:
             # dtype set by the user
             # Careful here: np.bool != np.bool_ !
-            if np.issubdtype(dtype, np.bool_) and not ('all' in func_str or 'any' in func_str):
-                raise TypeError("function %s requires a more complex datatype than bool" % func_str)
-            # TODO: Maybe have some more checks here, if the user is doing some sane thing
+            if np.issubdtype(dtype, np.bool_) and \
+                    not('all' in func_str or 'any' in func_str):
+                raise TypeError("function %s requires a more complex datatype "
+                                "than bool" % func_str)
+            # TODO: Maybe have some more checks here
             return np.dtype(dtype)
         else:
             try:
@@ -284,13 +283,14 @@ else:
                     if func_str == 'sum':
                         # Try to guess the minimally required int size
                         if np.issubdtype(a_dtype, np.int64):
-                            # It's not getting bigger anymore, so let's shortcut this
+                            # It's not getting bigger anymore
+                            # TODO: strictly speaking it might need float
                             return np.dtype(np.int64)
                         elif np.issubdtype(a_dtype, np.integer):
-                            maxval = np.iinfo(a_dtype).max * len(a)
+                            maxval = np.iinfo(a_dtype).max * n
                             return minimum_dtype(maxval, a_dtype)
                         elif np.issubdtype(a_dtype, np.bool_):
-                            return minimum_dtype(len(a), a_dtype)
+                            return minimum_dtype(n, a_dtype)
                         else:
                             # floating, inexact, whatever
                             return a_dtype
@@ -302,26 +302,26 @@ else:
                         else:
                             return a_dtype
 
-
     def check_fill_value(fill_value, dtype):
         try:
             return dtype.type(fill_value)
         except ValueError:
-            raise ValueError("fill_value must be convertible into %s" % dtype.type.__name__)
-
+            raise ValueError("fill_value must be convertible into %s"
+                             % dtype.type.__name__)
 
     def check_group_idx(group_idx, a=None, check_min=True):
         if a is not None and group_idx.size != a.size:
-            raise ValueError("The size of group_idx must be the same as a.size")
+            raise ValueError("The size of group_idx must be the same as "
+                             "a.size")
         if not issubclass(group_idx.dtype.type, np.integer):
             raise TypeError("group_idx must be of integer type")
         if check_min and np.min(group_idx) < 0:
             raise ValueError("group_idx contains negative indices")
 
-
     def input_validation(group_idx, a, size=None, order='C'):
-        """ Do some fairly extensive checking of group_idx and a, trying to give the user
-            as much help as possible with what is wrong. Also, convert ndim-indexing to 1d indexing.
+        """ Do some fairly extensive checking of group_idx and a, trying to
+        give the user as much help as possible with what is wrong. Also,
+        convert ndim-indexing to 1d indexing.
         """
         if not isinstance(a, (int, float)):
             a = np.asanyarray(a)
@@ -330,7 +330,8 @@ else:
         if not np.issubdtype(group_idx.dtype, np.integer):
             raise TypeError("group_idx must be of integer type")
         if np.ndim(a) > 1:
-            raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten")
+            raise ValueError("a must be scalar or 1 dimensional, use .ravel to"
+                             " flatten")
 
         ndim_idx = np.ndim(group_idx)
         if ndim_idx == 1:
@@ -342,36 +343,38 @@ else:
                 if not np.isscalar(size):
                     raise ValueError("output size must be scalar or None")
                 if np.any(group_idx > size - 1):
-                    raise ValueError("one or more indices are too large for size %d" % size)
+                    raise ValueError("one or more indices are too large for "
+                                     "size %d" % size)
             flat_size = size
         else:
             if size is None:
                 size = np.max(group_idx, axis=1) + 1
             elif np.isscalar(size):
-                raise ValueError("output size must be of length %d" % group_idx.shape[0])
+                raise ValueError("output size must be of length %d"
+                                 % group_idx.shape[0])
             elif len(size) != group_idx.shape[0]:
-                raise ValueError("%d sizes given, but %d output dimensions specified in index" % (len(size), group_idx.shape[0]))
+                raise ValueError("%d sizes given, but %d output dimensions "
+                                 "specified in index" % (len(size),
+                                                         group_idx.shape[0]))
 
-            group_idx = np.ravel_multi_index(group_idx, size, order=order, mode='raise')
+            group_idx = np.ravel_multi_index(group_idx, size, order=order,
+                                             mode='raise')
             flat_size = np.prod(size)
 
         if not (np.ndim(a) == 0 or len(a) == group_idx.size):
-            raise ValueError("group_idx and a must be of the same length, or a can be scalar")
+            raise ValueError("group_idx and a must be of the same length, or a"
+                             " can be scalar")
 
         return group_idx, a, flat_size, ndim_idx
-
 
     def allnan(x):
         return np.all(np.isnan(x))
 
-
     def anynan(x):
         return np.any(np.isnan(x))
 
-
     def nanfirst(x):
         return x[~np.isnan(x)][0]
-
 
     def nanlast(x):
         return x[~np.isnan(x)][-1]
