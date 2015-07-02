@@ -323,7 +323,7 @@ else:
         give the user as much help as possible with what is wrong. Also,
         convert ndim-indexing to 1d indexing.
         """
-        if not isinstance(a, (int, float)):
+        if not isinstance(a, (int, float, complex)):
             a = np.asanyarray(a)
         group_idx = np.asanyarray(group_idx)
 

@@ -6,7 +6,7 @@ from .utils import (check_boolean, _no_separate_nan_version, get_func,
 
 
 def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
-    if isinstance(a.dtype, np.complex):
+    if np.iscomplexobj(a):
         raise NotImplementedError("a must be real, could use np.lexsort or "
                                   "sort with recarray for complex.")
     if not (np.isscalar(fill_value) or len(fill_value) == 0):
@@ -46,12 +46,22 @@ def _array(group_idx, a, size, fill_value, dtype=None):
 
 def _sum(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
+
     if np.ndim(a) == 0:
         ret = np.bincount(group_idx, minlength=size).astype(dtype)
         if a != 1:
             ret *= a
     else:
-        ret = np.bincount(group_idx, weights=a, minlength=size).astype(dtype)
+        if np.iscomplexobj(a):
+            ret = np.empty(size, dtype=dtype)
+            ret.real = np.bincount(group_idx, weights=a.real, 
+                              minlength=size)
+            ret.imag = np.bincount(group_idx, weights=a.imag, 
+                              minlength=size)
+        else:
+            ret = np.bincount(group_idx, weights=a, 
+                              minlength=size).astype(dtype)
+        
     if fill_value != 0:
         fill_untouched(group_idx, ret, fill_value)
     return ret
@@ -133,7 +143,17 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if np.ndim(a) == 0:
         raise ValueError("cannot take mean with scalar a")
     counts = np.bincount(group_idx, minlength=size)
-    sums = np.bincount(group_idx, weights=a, minlength=size)
+    if np.iscomplexobj(a):
+        dtype = a.dtype # TODO: this is a bit clumsy
+        sums = np.empty(size, dtype=dtype)
+        sums.real = np.bincount(group_idx, weights=a.real, 
+                                minlength=size)
+        sums.imag = np.bincount(group_idx, weights=a.imag, 
+                                minlength=size)
+    else:
+        sums = np.bincount(group_idx, weights=a, 
+                           minlength=size).astype(dtype)
+
     with np.errstate(divide='ignore'):
         ret = sums.astype(dtype) / counts
     if not np.isnan(fill_value):
