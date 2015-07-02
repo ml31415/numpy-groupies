@@ -43,7 +43,7 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
 
 
 def _prod(group_idx, a, size, fill_value, dtype=None):
-    """Same as accumarray_numpy.py"""
+    """Same as aggregate_numpy.py"""
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != 1:
@@ -53,7 +53,7 @@ def _prod(group_idx, a, size, fill_value, dtype=None):
 
 
 def _min(group_idx, a, size, fill_value, dtype=None):
-    """Same as accumarray_numpy.py"""
+    """Same as aggregate_numpy.py"""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmax = np.iinfo(a.dtype).max if issubclass(a.dtype.type, np.integer)\
         else np.finfo(a.dtype).max
@@ -65,7 +65,7 @@ def _min(group_idx, a, size, fill_value, dtype=None):
 
 
 def _max(group_idx, a, size, fill_value, dtype=None):
-    """Same as accumarray_numpy.py"""
+    """Same as aggregate_numpy.py"""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmin = np.iinfo(a.dtype).min if issubclass(a.dtype.type, np.integer)\
         else np.finfo(a.dtype).min
