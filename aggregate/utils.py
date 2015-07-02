@@ -365,7 +365,7 @@ else:
             raise ValueError("group_idx and a must be of the same length, or a"
                              " can be scalar")
 
-        return group_idx, a, flat_size, ndim_idx
+        return group_idx, a, flat_size, ndim_idx, size
 
     def allnan(x):
         return np.all(np.isnan(x))
