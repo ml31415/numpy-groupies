@@ -213,13 +213,22 @@ _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in _no_separate_nan_version)
 
 
+try:
+    basestring  # attempt to evaluate basestring
+    def isstr(s):
+        return isinstance(s, basestring)
+except NameError:
+    # probably Python 3.x
+    def isstr(s):
+        return isinstance(s, str)
+        
 def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                     order='C', dtype=None, _impl_dict=_impl_dict,
                     _nansqueeze=False, **kwargs):
     group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
                                                          size=size, order=order)
     func = get_func(func, aliasing, _impl_dict)
-    if not isinstance(func, basestring):
+    if not isstr(func):
         # do simple grouping and execute function in loop
         ret = _generic_callable(group_idx, a, flat_size, fill_value, func=func,
                                 dtype=dtype, **kwargs)
