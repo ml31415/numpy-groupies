@@ -213,10 +213,18 @@ def step_indices(group_idx):
     inline(c_step_indices, ['group_idx', 'indices'], define_macros=c_macros)
     return indices
 
-
+try:
+    basestring  # attempt to evaluate basestring
+    def isstr(s):
+        return isinstance(s, basestring)
+except NameError:
+    # probably Python 3.x
+    def isstr(s):
+        return isinstance(s, str)
+        
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, **kwargs):
     func = get_func(func, aliasing, optimized_funcs)
-    if not isinstance(func, basestring):
+    if not isstr(func):
         # Fall back to acuum_np if no optimized C version is available
         return aggregate_np(group_idx, a, func=func, dtype=dtype,
                             fill_value=fill_value)

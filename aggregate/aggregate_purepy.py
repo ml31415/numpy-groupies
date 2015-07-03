@@ -4,6 +4,15 @@ import itertools
 from .utils import (_no_separate_nan_version, aliasing_purepy, get_func,
                     _doc_str)
 
+try:
+    basestring  # attempt to evaluate basestring
+    def isstr(s):
+        return isinstance(s, basestring)
+except NameError:
+    # probably Python 3.x
+    def isstr(s):
+        return isinstance(s, str)
+        
 # min - builtin
 # max - builtin
 # sum - builtin
@@ -98,7 +107,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
         raise ValueError("group_idx and a must be of the same length")
 
     func = get_func(func, aliasing_purepy, _impl_dict)
-    if isinstance(func, basestring):
+    if isstr(func):
         if func.startswith('nan'):
             func = func[3:]
             # remove nans
