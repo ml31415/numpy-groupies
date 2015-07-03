@@ -1,7 +1,11 @@
-# aggregate
-Aggregation function for python.
+# numpy-groupies
 
-![aggregate_diagram](/diagram.png)
+This package consists of a small library of optimised tools for doing things that can roughly be considered "group-indexing operations".  The most prominent tool is `aggregate`, which is descibed in detail further down the page.
+
+# Overview of tools
+#### aggregate
+
+![aggregate_diagram](/diagrams/aggregate.png)
 ```python
 import numpy as np
 from aggregate import aggregate 
@@ -10,8 +14,29 @@ a = np.array([13.2,3.5,3.5,-8.2,3.0,13.4,99.2,-7.1,0.0,53.7])
 aggregate(group_idx, a, func='sum', fill_value=0) # see below for further examples
 # >>> array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
 ```
-
 If you have used [Matlab's `accumarray` function](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true), this `aggregate` function should appear fairly familiar to you because the inputs and output are almost identical to `accumarray`.  Alternatively, if you are familiar with the [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), the purpose, if not the exact syntax, of `aggregate` will be familiar to you.  Failing that, if you've come across the [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce) you should at least appriciate the need for an `aggreagate` function such as this.  Anyone still confused should think back to the last time they created a histogram, and then look carefully at the above diagram..although if you are reading this the chances are you already basically understand what's going on.
+
+#### multi_cumsum
+![multicumsum_diagram](/diagrams/multi_cumsum.png)
+```python
+#TODO: give code example as with aggregate
+```
+
+#### multi_repeat
+![multicumsum_diagram](/diagrams/multi_repeat.png)
+```python
+#TODO: give code example as with aggregate
+```
+
+#### multi_arange
+![multicumsum_diagram](/diagrams/multi_arange.png)
+```python
+#TODO: give code example as with aggregate
+```
+
+
+
+# aggregate - full documentation
 
 ### Available functions   
 By default, `aggregate` assumes you want to sum the values within each group, however you can specify another function using the `func` kwarg.  This `func` can be any custom callable, however in normal use you will probably want one of the following optimized functions:
