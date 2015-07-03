@@ -22,12 +22,6 @@ If you have used [Matlab's `accumarray` function](http://uk.mathworks.com/help/m
 #TODO: give code example as with aggregate
 ```
 
-#### multi_repeat
-![multicumsum_diagram](/diagrams/multi_repeat.png)
-```python
-#TODO: give code example as with aggregate
-```
-
 #### multi_arange
 ![multicumsum_diagram](/diagrams/multi_arange.png)
 ```python

@@ -1,34 +1,4 @@
 import numpy as np
-
-def multi_repeat(n):
-    """By example:
-    
-        #    0  1  2  3  4  5  6  7  8
-        n = [0, 0, 3, 0, 0, 2, 0, 2, 1]
-        res = [2, 2, 2, 5, 5, 7, 7, 8]
-        
-    That is the input specifies how many times to repeat the given index.
-
-    It is equivalent to something like this :
-    
-        hstack((zeros(n_i,dtype=int)+i for i, n_i in enumerate(n)))
-        
-    But this version seems to be faster, and probably scales better, at
-    any rate it encapsulates a task in a function.
-    """
-    if n.ndim != 1:
-        raise Exception("n is supposed to be 1d array.")
-        
-    n_mask = n.astype(bool)
-    n_inds = np.nonzero(n_mask)[0]
-    n_inds[1:] = n_inds[1:]-n_inds[:-1] # take diff and leave 0th value in place
-    n_cumsum = np.empty(len(n)+1,dtype=int)
-    n_cumsum[0] = 0 
-    n_cumsum[1:] = np.cumsum(n)
-    ret = np.zeros(n_cumsum[-1],dtype=int)
-    ret[n_cumsum[n_mask]] = n_inds # note that n_mask is 1 element shorter than n_cumsum
-    return np.cumsum(ret)
-
     
 def multi_arange(n):
     """By example:
