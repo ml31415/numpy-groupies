@@ -20,10 +20,10 @@ import platform
 packages=['aggregate']
     
 setup (name = 'aggregate',
-       version = '0.2',
+       version = '0.9',
        author      = "@ml31415 and @d1manson",
        description = "Replacement for Matlab's accumarray function.",
-       author_email='xxx@gmail.com',
+       author_email='',
 	license="Not set",
 	keywords=[ "accumarray aggregate"],
         packages=packages,
