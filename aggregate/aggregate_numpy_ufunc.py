@@ -1,18 +1,10 @@
 import numpy as np
 
 from .utils import (minimum_dtype, minimum_dtype_scalar, check_boolean,
-                    get_func, aliasing, _doc_str)
+                    get_func, aliasing, _doc_str, isstr)
 from .aggregate_numpy import _aggregate_base
 
-try:
-    basestring  # attempt to evaluate basestring
-    def isstr(s):
-        return isinstance(s, basestring)
-except NameError:
-    # probably Python 3.x
-    def isstr(s):
-        return isinstance(s, str)
-        
+       
 def _anynan(group_idx, a, size, fill_value, dtype=None):
     return _any(group_idx, np.isnan(a), size, fill_value=fill_value,
                 dtype=dtype)

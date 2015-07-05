@@ -136,6 +136,14 @@ def check_boolean(x):
     if x not in (0, 1):
         raise ValueError("Value not boolean")
 
+try:
+    basestring  # attempt to evaluate basestring
+    def isstr(s):
+        return isinstance(s, basestring)
+except NameError:
+    # probably Python 3.x
+    def isstr(s):
+        return isinstance(s, str)
 
 try:
     import numpy as np

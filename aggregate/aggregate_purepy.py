@@ -2,16 +2,8 @@ import math
 import itertools
 
 from .utils import (_no_separate_nan_version, aliasing_purepy, get_func,
-                    _doc_str)
+                    _doc_str, isstr)
 
-try:
-    basestring  # attempt to evaluate basestring
-    def isstr(s):
-        return isinstance(s, basestring)
-except NameError:
-    # probably Python 3.x
-    def isstr(s):
-        return isinstance(s, str)
         
 # min - builtin
 # max - builtin

@@ -3,17 +3,9 @@ import numpy as np
 import pandas as pd
 
 from .utils import (check_dtype, allnan, anynan, _no_separate_nan_version,
-                    _doc_str)
+                    _doc_str, isstr)
 from .aggregate_numpy import _aggregate_base
 
-try:
-    basestring  # attempt to evaluate basestring
-    def isstr(s):
-        return isinstance(s, basestring)
-except NameError:
-    # probably Python 3.x
-    def isstr(s):
-        return isinstance(s, str)
 
 def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
     kwargs = dict()
