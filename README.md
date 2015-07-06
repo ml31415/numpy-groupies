@@ -4,6 +4,18 @@ This package consists of a small library of optimised tools for doing things
 that can roughly be considered "group-indexing operations".  The most prominent
 tool is `aggregate`, which is descibed in detail further down the page.
 
+**Installation**
+If you have `pip`, then simply:
+```
+pip install numpy_groupies
+```
+Note that `numpy_groupies` doesn't have any compulsorary dependencies (even `numpy`
+is optional) so you should be able to install it fairly easily even without a package 
+manager.  If you just want one particular implementation of `aggregate` (e.g. `aggregate_numpy.py`), you can
+download that one file, and copy-paste the contents of `utils.py` into the top
+of that file (replacing the `from .utils import (...)` line).
+
+
 # Overview of tools
 #### aggregate
 
@@ -83,14 +95,21 @@ The first three inputs have already been explained/demonstrated above, but we li
 * `dtype=None` - the `dtype` of the output.  By default something sensible is chosen based on the input, aggregation function, and `fill_value`.
 * `ddof=0` - passed through into calculations of variance and standard deviation (see above).
 
-### Installing `aggregate`
-You can download the whole repository and import the `aggregate` function from the package using `from aggregate import aggregate`.
 
-Or if you'd rather just take a single file, you can download the file `aggregate\aggregate_numpy.py` (or whichever implementation you want) **AND** then copy-paste the contents of `aggregate\utils.py` into the top of that file, replacing the `from .utils import (...)` line.  This can then be used as `from aggregate_numpy import aggregate`.
-
-As discussed below there are multiple implementations of `aggregate` provided.  They range from the pure-python implementation which has no dependencies at all but is not very fast, to the `scipy.weave` implementation which runs fast but requires a working install of `scipy.weave`.  For most users, the `aggregate_numpy.py` implementation is probably the easiest to install and offers fairly reasonable speed for the majority of aggregation functions.  If you download the whole repository and use `from aggregate import aggregate`, the best available implementation will automatically be selected.
 
 ### Multiple implementations - explanation and benchmark results
+There are multiple implementations of `aggregate` provided.  They range from the 
+pure-python implementation which has no dependencies at all but is not very fast,
+ to the `scipy.weave` implementation which runs fast but requires a working install 
+of `scipy.weave`.  For most users, the `aggregate_numpy.py` implementation is probably 
+the easiest to install and offers fairly reasonable speed for the majority of aggregation 
+functions.  If you download the whole repository and use `from aggregate import aggregate`, 
+the best available implementation will automatically be selected.  
+
+**Note:** if you have `weave` installed but no working compiler registered then you 
+may run in to problems with the default implementation of `aggregate`.  The workaround
+is to explicitly use `npg.aggregate_np` rather than `npg.aggregate`.
+
 Currently the following implementations exist:  
 * **pure python**. *Use only if you don't have numpy installed*. This has no dependencies, instead making use of the grouping and sorting functionality provided by the python language itself plus the standard library.
 * **numpy ufunc**. *Only for use with testing/benchmarking, i.e. normally do NOT use this.*  This impelmentation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for perfoming excactly the same calculation that `aggregate` executes, however the numpy implementation is very slow (as of `v1.9.2`).  A [numpy issue](https://github.com/numpy/numpy/issues/5922) has be created to try and address this performance bug.  Also, note that some of the desired functions do not have suitable `ufunc.at` analogues (e.g. `mean`, `var`).

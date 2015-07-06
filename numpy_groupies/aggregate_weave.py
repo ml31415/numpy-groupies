@@ -275,8 +275,9 @@ aggregate.__doc__ = """
     implementation by using::
 
 
-        # NOT THIS: from aggregate import aggregate
-        from aggregate.aggregate_numpy import aggregate
+        import numpy_groupies as npg
+        # NOT THIS: npg.aggregate(...)
+        npg.aggregate_np(...)
 
 
     """ + _doc_str

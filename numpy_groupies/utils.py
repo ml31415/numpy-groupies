@@ -1,7 +1,7 @@
 import math
 
 _doc_str = """
-    See readme file at https://github.com/ml31415/accumarray for a full
+    See readme file at https://github.com/ml31415/numpy-groupies for a full
     description.  Below we reproduce the "Full description of inputs"
     section from that readme, note that the text below makes references to
     other portions of the readme that are not shown here.
