@@ -3,6 +3,7 @@ import numpy as np
 from .aggregate_purepy import aggregate as aggregate_py
 from .aggregate_numpy import aggregate as aggregate_np
 from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
+from .misc_tools import multi_arange, multi_cumsum
 
 try:
     import pandas

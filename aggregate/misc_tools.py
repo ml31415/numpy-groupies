@@ -26,13 +26,15 @@ def multi_arange(n):
     return np.cumsum(ret)[:-1]
 
 
-def multi_cumsum(X, L, invalid=nan):
+def multi_cumsum(X, L, invalid=np.nan):
     """    
+    WARNING: API for this function is not liable to change!!!
+    
     By example:
 
-    X=     [3   5 8  9 1  2    5    8 5  4  9   2]
-    L=     [0   1 1  2 2  0    0    1 1  1  0   5]
-    result=[NaN 5 13 9 10 NaN  NaN  8 13 17 NaN 2]
+        X=     [3   5 8  9 1  2    5    8 5  4  9   2]
+        L=     [0   1 1  2 2  0    0    1 1  1  0   5]
+        result=[NaN 5 13 9 10 NaN  NaN  8 13 17 NaN 2]
 
     That is we calculate the cumsum for each section of `X`
     where the sections are defined by contiguous blocks of
@@ -54,7 +56,7 @@ def multi_cumsum(X, L, invalid=nan):
     isStart = mask.copy()
     isStart[1:] &= (L[:-1] != L[1:])
     startInds, = isStart.nonzero()
-    S_starts = S[startInds-1] if startInds[0] != 0 else  insert(S[startInds[1:]-1],0,0)
+    S_starts = S[startInds-1] if startInds[0] != 0 else  np.insert(S[startInds[1:]-1],0,0)
     
     # Subtract off the excess values (i.e. the ones obtained above)
     L_safe = np.cumsum(isStart) # we do this in case the labels in L were not sorted integers
@@ -67,11 +69,17 @@ def multi_cumsum(X, L, invalid=nan):
 
     
 def label_mask_1D(M):
-    """ By example:
-    M =      [F T T F F T F F F T T T]
-    result = [0 1 1 0 0 2 0 0 0 3 3 3]
+    """ 
+    WARNING: API for this function is not liable to change!!!    
     
-    M is boolean array, result is integer labels of contiguous True sections."""
+    By example:
+
+        M =      [F T T F F T F F F T T T]
+        result = [0 1 1 0 0 2 0 0 0 3 3 3]
+    
+    M is boolean array, result is integer labels of contiguous True sections.
+        
+    """
     
     if M.ndim != 1:
         raise Exception("this is for 1d masks only.")
