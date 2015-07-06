@@ -4,7 +4,7 @@ This package consists of a small library of optimised tools for doing things
 that can roughly be considered "group-indexing operations".  The most prominent
 tool is `aggregate`, which is descibed in detail further down the page.
 
-**Installation**
+#### Installation 
 If you have `pip`, then simply:
 ```
 pip install numpy_groupies
