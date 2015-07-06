@@ -2,7 +2,7 @@ import numpy as np
 from scipy.weave import inline
 
 from .utils import (_no_separate_nan_version, get_func, check_dtype,
-                    aliasing, check_fill_value, input_validation, _doc_str)
+                    aliasing, check_fill_value, input_validation, _doc_str, isstr)
 from .aggregate_numpy import aggregate as aggregate_np
 
 
@@ -213,10 +213,10 @@ def step_indices(group_idx):
     inline(c_step_indices, ['group_idx', 'indices'], define_macros=c_macros)
     return indices
 
-
+        
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, **kwargs):
     func = get_func(func, aliasing, optimized_funcs)
-    if not isinstance(func, basestring):
+    if not isstr(func):
         # Fall back to acuum_np if no optimized C version is available
         return aggregate_np(group_idx, a, func=func, dtype=dtype,
                             fill_value=fill_value)

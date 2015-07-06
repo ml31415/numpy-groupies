@@ -1,10 +1,10 @@
 import numpy as np
 
 from .utils import (minimum_dtype, minimum_dtype_scalar, check_boolean,
-                    get_func, aliasing, _doc_str)
+                    get_func, aliasing, _doc_str, isstr)
 from .aggregate_numpy import _aggregate_base
 
-
+       
 def _anynan(group_idx, a, size, fill_value, dtype=None):
     return _any(group_idx, np.isnan(a), size, fill_value=fill_value,
                 dtype=dtype)
@@ -83,7 +83,7 @@ _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, all=_all, any=_any,
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
               dtype=None, **kwargs):
     func = get_func(func, aliasing, _impl_dict)
-    if not isinstance(func, basestring):
+    if not isstr(func):
         raise NotImplementedError("No such ufunc available")
     return _aggregate_base(group_idx, a, size=size, fill_value=fill_value,
                            order=order, dtype=dtype, func=func,

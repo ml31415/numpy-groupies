@@ -4,7 +4,7 @@ from numba import jit, double
 
 logging.captureWarnings(True)
 
-from .utils import check_group_idx, _doc_str
+from .utils import check_group_idx, _doc_str, isstr
 from .aggregate_numpy import aggregate as aggregate_np
 
 
@@ -178,7 +178,7 @@ def aggregate(group_idx, a, func='sum', dtype=None, fillvalue=0):
         etc. can be omitted. It also gives a nice speed boost, as
         np.argsort of group_idx can also be omitted.
     """
-    if not isinstance(func, basestring):
+    if not isstr(func):
         if getattr(func, '__name__', None) in iter_funcs:
             func = func.__name__
         else:

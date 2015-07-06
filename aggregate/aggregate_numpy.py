@@ -2,7 +2,7 @@ import numpy as np
 
 from .utils import (check_boolean, _no_separate_nan_version, get_func,
                     aliasing, fill_untouched, minimum_dtype, input_validation,
-                    check_dtype, minimum_dtype_scalar, _doc_str)
+                    check_dtype, minimum_dtype_scalar, _doc_str, isstr)
 
 
 def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
@@ -212,14 +212,14 @@ _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last,
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in _no_separate_nan_version)
 
-
+       
 def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                     order='C', dtype=None, _impl_dict=_impl_dict,
                     _nansqueeze=False, **kwargs):
     group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
                                                          size=size, order=order)
     func = get_func(func, aliasing, _impl_dict)
-    if not isinstance(func, basestring):
+    if not isstr(func):
         # do simple grouping and execute function in loop
         ret = _generic_callable(group_idx, a, flat_size, fill_value, func=func,
                                 dtype=dtype, **kwargs)

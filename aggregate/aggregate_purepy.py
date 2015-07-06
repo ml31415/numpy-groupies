@@ -2,8 +2,9 @@ import math
 import itertools
 
 from .utils import (_no_separate_nan_version, aliasing_purepy, get_func,
-                    _doc_str)
+                    _doc_str, isstr)
 
+        
 # min - builtin
 # max - builtin
 # sum - builtin
@@ -98,7 +99,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
         raise ValueError("group_idx and a must be of the same length")
 
     func = get_func(func, aliasing_purepy, _impl_dict)
-    if isinstance(func, basestring):
+    if isstr(func):
         if func.startswith('nan'):
             func = func[3:]
             # remove nans
