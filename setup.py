@@ -3,9 +3,8 @@
 
 from setuptools import setup
 
-import py    
 setup (name = 'numpy_groupies',
-       version = '0.9',
+       version = '0.9.1',
        author      = "@ml31415 and @d1manson",
        description = "Optimised tools for group-indexing operations: aggregated sum and more.",
        url="https://github.com/ml31415/numpy-groupies",
