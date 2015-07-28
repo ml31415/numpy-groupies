@@ -76,9 +76,11 @@ By default, `aggregate` assumes you want to sum the values within each group, ho
 * `'max'` - maximum value of items within each group.
 * `'first'` - first item in `a` from each group.
 * `'last'` - last item in `a` from each group.
+* ``argmax`` - the index in `a` of the maximum value in each group.
+* ``argmin`` - the index in `a` of the minimum value in each group.
 
 The above functions also have a `nan-` form, for which `nan` values are dropped before the aggregation calculation is computed:
-* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`
+* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, ``nanargmax``, ``nanargmin``   
 
 The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
 * `'all'` - `True` if all items within a group are truethy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truethy.

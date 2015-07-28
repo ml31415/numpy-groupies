@@ -138,7 +138,31 @@ def _max(group_idx, a, size, fill_value, dtype=None):
     np.maximum.at(ret, group_idx, a)
     return ret
 
+def _argmax(group_idx, a, size, fill_value, dtype=None):
+    dtype = minimum_dtype(fill_value, dtype or int)
+    dmin = np.iinfo(a.dtype).min if issubclass(a.dtype.type, np.integer)\
+        else np.finfo(a.dtype).min
+    group_max = _max(group_idx, a, size, dmin)
+    is_max = a == group_max[group_idx]        
+    ret = np.full(size, fill_value, dtype=dtype)
+    group_idx_max = group_idx[is_max]
+    argmax, = is_max.nonzero()   
+    ret[group_idx_max[::-1]] = argmax[::-1] # reverse to ensure first value for each group wins    
+    return ret
 
+def _argmin(group_idx, a, size, fill_value, dtype=None):
+    dtype = minimum_dtype(fill_value, dtype or int)
+    print dtype
+    dmax = np.iinfo(a.dtype).max if issubclass(a.dtype.type, np.integer)\
+        else np.finfo(a.dtype).max
+    group_min = _min(group_idx, a, size, dmax)
+    is_min = a == group_min[group_idx]        
+    ret = np.full(size, fill_value, dtype=dtype)
+    group_idx_min = group_idx[is_min]
+    argmin,  = is_min.nonzero()   
+    ret[group_idx_min[::-1]] = argmin[::-1] # reverse to ensure first value for each group wins
+    return ret
+    
 def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if np.ndim(a) == 0:
         raise ValueError("cannot take mean with scalar a")
@@ -208,7 +232,7 @@ def _generic_callable(group_idx, a, size, fill_value, dtype=None,
 _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last,
                   first=_first, all=_all, any=_any, mean=_mean, std=_std,
                   var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
-                  rsort=_rsort, array=_array)
+                  rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in _no_separate_nan_version)
 

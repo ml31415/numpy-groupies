@@ -1,5 +1,6 @@
 import math
 import itertools
+import operator
 
 from .utils import (_no_separate_nan_version, aliasing_purepy, get_func,
                     _doc_str, isstr)
@@ -59,11 +60,21 @@ def _anynan(x):
 def _allnan(x):
     return all(math.isnan(xx) for xx in x)
 
+def _argmax(x_and_idx):
+    # TODO: this doesn't seem to handle equal maxima correctly
+    return max(x_and_idx, key=operator.itemgetter(1))[0]
+_argmax.x_and_idx = True # tell aggregate what to use as first arg
 
+def _argmin(x_and_idx):
+    # TODO: this doesn't seem to handle equal minima correctly
+    return min(x_and_idx, key=operator.itemgetter(1))[0]
+    
+_argmin.x_and_idx = True # tell aggregate what to use as first arg
+    
 _impl_dict = dict(min=min, max=max, sum=sum, prod=_prod, last=_last,
                   first=_first, all=all, any=any, mean=_mean, std=_std,
                   var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
-                  rsort=_rsort, array=_array)
+                  rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in _no_separate_nan_version)
 
@@ -109,11 +120,16 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
         func = _impl_dict[func]
 
     # sort data and evaluate function on groups
-    data = sorted(zip(group_idx, a), key=lambda tp: tp[0])
     ret = [fill_value] * size
-    for ix, group in itertools.groupby(data, key=lambda tp: tp[0]):
-        ret[ix] = func(tuple(val for _, val in group), **kwargs)
-
+    if not getattr(func, 'x_and_idx', False):
+        data = sorted(zip(group_idx, a), key=operator.itemgetter(0))    
+        for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
+            ret[ix] = func(tuple(val for _, val in group), **kwargs)
+    else:
+        data = sorted(zip(range(len(a)), group_idx, a), key=operator.itemgetter(1))
+        for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
+            ret[ix] = func(tuple((val_idx, val) for val_idx, _, val in group), **kwargs)
+        
     return ret
 
 aggregate.__doc__ = """

@@ -52,7 +52,7 @@ _doc_str = """
         (see above).
 """
 
-_funcs_common = 'first last mean var std allnan anynan'.split()
+_funcs_common = 'first last mean var std allnan anynan max min argmax argmin'.split()
 _no_separate_nan_version = {'sort', 'rsort', 'array', 'allnan', 'anynan'}
 
 
@@ -163,6 +163,8 @@ else:
         np.amax: 'max',
         np.max: 'max',
         np.maximum: 'max',
+        np.argmax: 'argmax',
+        np.argmin: 'argmin',
         np.mean: 'mean',
         np.std: 'std',
         np.var: 'var',
@@ -175,6 +177,8 @@ else:
         np.nanmax: 'nanmax',
         np.nanmin: 'nanmin',
         np.nanstd: 'nanstd',
+        np.nanargmax: 'nanargmax',
+        np.nanargmin: 'nanargmin'
     }
 
     try:
@@ -241,7 +245,7 @@ else:
         if np.issubdtype(dtype, np.inexact):
             return type_loop(x, dtype, _next_float_dtype)
         else:
-            return type_loop(x, dtype, _next_int_dtype, default=np.int64)
+            return type_loop(x, dtype, _next_int_dtype, default=np.float32)
 
     def minimum_dtype_scalar(x, dtype, a):
         if dtype is None:
