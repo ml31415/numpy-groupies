@@ -11,12 +11,12 @@ try:
     import numpy as np
 except ImportError:
     aggregate_np = aggregate_ufunc = dummy_no_impl
-    multi_arange = multi_cumsum = dummy_no_impl
+    multi_arange = multi_cumsum = label_contiguous_1d = dummy_no_impl
 else:
     from .aggregate_numpy import aggregate as aggregate_np
     from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
     aggregate = aggregate_np
-    from .misc_tools_numpy import multi_arange, multi_cumsum
+    from .misc_tools_numpy import multi_arange, multi_cumsum, label_contiguous_1d
 
     
 # TODO: unless we are benchmarking/testing there is probably no need to import pandas as this stage

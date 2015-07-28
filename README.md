@@ -53,6 +53,13 @@ are you already basically understand what's going on.
 #TODO: give code example as with aggregate
 ```
 
+#### label_contiguous_1d [alpha]
+![label_contiguous_1d](/diagrams/label_contiguous_1d.png)
+**Warning:** the API for this function has not be stabilized yet and is liable to change.
+```python
+#TODO: give code example as with aggregate
+```
+
 
 
 # aggregate - full documentation

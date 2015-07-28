@@ -68,25 +68,41 @@ def multi_cumsum(X, L, invalid=np.nan):
     return S
 
     
-def label_mask_1D(M):
+def label_contiguous_1d(X):
     """ 
     WARNING: API for this function is not liable to change!!!    
     
     By example:
 
-        M =      [F T T F F T F F F T T T]
+        X =      [F T T F F T F F F T T T]
         result = [0 1 1 0 0 2 0 0 0 3 3 3]
     
-    M is boolean array, result is integer labels of contiguous True sections.
-        
+    Or:
+        X =      [0 3 3 0 0 5 5 5 1 1 0 2]
+        result = [0 1 1 0 0 2 2 2 3 3 0 4]
+    
+    The ``0`` or ``False`` elements of ``X`` are labeled as ``0`` in the output. If ``X``
+    is a boolean array, each contiguous block of ``True`` is given an integer
+    label, if ``X`` is not boolean, then each contiguous block of identical values
+    is given an integer label. Integer labels are 1, 2, 3,..... (i.e. start a 1
+    and increase by 1 for each block with no skipped numbers.)
+    
     """
     
-    if M.ndim != 1:
+    if X.ndim != 1:
         raise Exception("this is for 1d masks only.")
+
+    is_start = np.empty(len(X),dtype=bool)
+    is_start[0] = X[0] # True if X[0] is True or non-zero
         
-    is_start = np.empty(len(M),dtype=bool)
-    is_start[0] = M[0]
-    is_start[1:] = ~M[:-1] & M[1:]
-    L = np.cumsum(is_start)
+    if X.dtype.kind == 'b':
+        is_start[1:] = ~X[:-1] & X[1:]
+        M = X
+    else:
+        M = X.astype(bool)
+        is_start[1:] = X[:-1] != X[1:]
+        is_start[~M] = False
+        
+    L = np.cumsum(is_start)    
     L[~M] = 0
     return L
