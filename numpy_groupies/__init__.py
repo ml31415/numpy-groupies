@@ -16,7 +16,11 @@ else:
     from .aggregate_numpy import aggregate as aggregate_np
     from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
     aggregate = aggregate_np
-    from .misc_tools_numpy import multi_arange, multi_cumsum, label_contiguous_1d
+    from .misc_tools_numpy import (multi_arange, multi_cumsum, 
+                                   label_contiguous_1d,
+                                   find_contiguous_boundaries,
+                                   relabel_groups_masked,
+                                   relabel_groups_unique)
 
     
 # TODO: unless we are benchmarking/testing there is probably no need to import pandas as this stage
