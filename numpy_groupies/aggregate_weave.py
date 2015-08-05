@@ -214,17 +214,19 @@ def step_indices(group_idx):
     return indices
 
         
-def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', dtype=None, **kwargs):
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', 
+             dtype=None, axis=None, **kwargs):
     func = get_func(func, aliasing, optimized_funcs)
     if not isstr(func):
         # Fall back to acuum_np if no optimized C version is available
         return aggregate_np(group_idx, a, func=func, dtype=dtype,
-                            fill_value=fill_value)
+                            axis=axis, fill_value=fill_value)
 
     # Preparations for optimized processing
     group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
                                                                size=size,
-                                                               order=order)
+                                                               order=order,
+                                                               axis=axis)
     dtype = check_dtype(dtype, func, a, len(group_idx))
     check_fill_value(fill_value, dtype)
 

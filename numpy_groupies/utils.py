@@ -330,7 +330,7 @@ else:
         if check_min and np.min(group_idx) < 0:
             raise ValueError("group_idx contains negative indices")
 
-    def input_validation(group_idx, a, size=None, order='C'):
+    def input_validation(group_idx, a, size=None, order='C', axis=None):
         """ Do some fairly extensive checking of group_idx and a, trying to
         give the user as much help as possible with what is wrong. Also,
         convert ndim-indexing to 1d indexing.
@@ -341,14 +341,58 @@ else:
 
         if not np.issubdtype(group_idx.dtype, np.integer):
             raise TypeError("group_idx must be of integer type")
-        if np.ndim(a) > 1:
-            raise ValueError("a must be scalar or 1 dimensional, use .ravel to"
-                             " flatten")
 
+        if np.any(group_idx < 0): # this works for multidimensional indexing as well
+            raise ValueError("negative indices not supported")
+                
         ndim_idx = np.ndim(group_idx)
+        ndim_a = np.ndim(a)        
+        
+        
+        # Deal with the axis arg: if present, then turn 1d indexing into
+        # multi-dimensional indexing along the specified axis.
+        if axis is None:
+            if ndim_a > 1:
+                raise ValueError("a must be scalar or 1 dimensional, use .ravel to"
+                                 " flatten. Alternatively specify axis.")
+        elif axis >= ndim_a or axis < -ndim_a:
+            raise ValueError("axis arg too large for np.ndim(a)")
+        else:
+            axis = axis if axis >= 0 else ndim_a + axis # negative indexing
+            if ndim_idx > 1:
+                # TODO: we could support a sequence of axis values for multiple 
+                # dimensions of group_idx.
+                raise NotImplementedError("only 1d indexing currently"
+                                          "supported with axis arg.")
+            elif a.shape[axis] != len(group_idx):
+                raise ValueError("a.shape[axis] doesn't match length of group_idx.")
+            elif size is not None and not np.isscalar(size):
+                raise NotImplementedError("when using axis arg, size must be"
+                                          "None or scalar.")
+            else:                        
+                # create the broadcast-ready multidimensional indexing.
+                # Note the user could do this themselves, so this is
+                # very much just a convenience.
+                size_in = np.max(group_idx) + 1 if size is None else size
+                group_idx_in = group_idx
+                group_idx = []
+                size = []                
+                for ii, s in enumerate(a.shape):
+                    ii_idx = group_idx_in if ii == axis else np.arange(s)
+                    ii_shape = [1]*ndim_a
+                    ii_shape[ii] = s
+                    group_idx.append(ii_idx.reshape(ii_shape))
+                    size.append(size_in if ii == axis else s)
+                # use the indexing, and return..it's a bit simpler than
+                # using trying to keep all the logic below happy
+                group_idx = np.ravel_multi_index(group_idx, size, order=order,
+                                                 mode='raise')
+                flat_size = np.prod(size)
+                ndim_idx = ndim_a
+                return group_idx.ravel(), a.ravel(), flat_size, ndim_idx, size
+
+
         if ndim_idx == 1:
-            if np.any(group_idx < 0):
-                raise ValueError("negative indices not supported")
             if size is None:
                 size = np.max(group_idx) + 1
             else:
@@ -363,11 +407,11 @@ else:
                 size = np.max(group_idx, axis=1) + 1
             elif np.isscalar(size):
                 raise ValueError("output size must be of length %d"
-                                 % group_idx.shape[0])
-            elif len(size) != group_idx.shape[0]:
+                                 % len(group_idx))
+            elif len(size) != len(group_idx):
                 raise ValueError("%d sizes given, but %d output dimensions "
                                  "specified in index" % (len(size),
-                                                         group_idx.shape[0]))
+                                                         len(group_idx)))
 
             group_idx = np.ravel_multi_index(group_idx, size, order=order,
                                              mode='raise')

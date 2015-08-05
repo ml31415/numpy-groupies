@@ -95,13 +95,14 @@ Finally, there are three functions which don't reduce each group to a single val
 
 ### Full description of inputs
 The first three inputs have already been explained/demonstrated above, but we list them here again for completeness.  
-* `group_idx` - this is an array of non-negative integers, to be used as the "labels" with which to group the values in `a`. Although we have so far assumed that `group_idx` is one-dimesnaional, and the same length as `a`, it can in fact be two-dimensional (or some form of nested sequences that can be converted to 2D).  When `group_idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `group_idx[i,j]` gives the index into the ith dimension in the output for `a[j]`.  Note that `a` should still be 1D (or scalar), with length matching `group_idx.shape[1]`. 
+* `group_idx` - this is an array of non-negative integers, to be used as the "labels" with which to group the values in `a`. Although we have so far assumed that `group_idx` is one-dimesnaional, and the same length as `a`, it can in fact be two-dimensional (or some form of nested sequences that can be converted to 2D).  When `group_idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `group_idx[i,j]` gives the index into the ith dimension in the output for `a[j]`.  Note that `a` should still be 1D (or scalar), with length matching `group_idx.shape[1]`.  One final option for `group_idx` involves the `axis` argument - see description below.
 * `a` - this is the array of values to be aggregated.  See the above for a simple demonstration of what this means.  `a` will normally be a one-dimensional array, however it can also be a scalar in some cases.
 * `func='sum'` - the function to use for aggregation.  See the section above for details.  Note that the simplest way to specify the function is using a string (e.g. `func='mac'`) however a number of aliases are also defined (e.g. you can use the `func=np.max`, or even `func=max`, where `max` is the builtin function).  To check the available aliases see `utils.py`.
 * `size=None` - the shape of the output array. If `None`, the maximum value in `group_idx` will set the size of the output.  Note that for multidimensional output you need to list the size of each dimension here, or give `None`.
 * `fill_value=0` - in the example above, group 2 does not have any data, so requires some kind of filling value - in this case the default of `0` is used.  If you had set `fill_value=nan` or something else, that value would appear instead of `0` for the 2 element in the output.  Note that there are some subtle interactions between what is permitted for `fill_value` and the input/output `dtype` - exceptions should be raised in most cases to alert the programmer if issue arrise.
 * `order='C'` - this is relevant only for multimensional output.  It controls the layout of the output array in memory, can be `'F'` for fortran-style.
 * `dtype=None` - the `dtype` of the output.  By default something sensible is chosen based on the input, aggregation function, and `fill_value`.
+* `axis=None` - in addition to the basic 1D form for `a`, you can provide multimensional `a`, with `group_idx` being 1D and corresponding to only one axis of `a`.  Use the `axis` argument to specify which axis `group_idx` correspodns to. See the example below for a demonstration of this.
 * `ddof=0` - passed through into calculations of variance and standard deviation (see above).
 
 
@@ -206,6 +207,18 @@ a = array([12.0, 3.2, -15, 88, 12.9])
 x = aggregate(group_idx, a, 
               func=lambda g: ' or maybe '.join(str(gg) for gg in g), fill_value='')
 # x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
+```
+
+* Use the `axis` arg in order to do a sum-aggregation on three rows simultaneously.
+```python
+a = array([[99, 2,  11, 14,  20],
+	   	   [33, 76, 12, 100, 71],
+		   [67, 10, -8, 1,   9]])
+group_idx = array([[3, 3, 7, 0, 0]])
+x = aggregate(group_idx, a, axis=1) 
+# x : [[ 34, 0, 0, 101, 0, 0, 0, 11],
+#      [171, 0, 0, 109, 0, 0, 0, 12],
+#      [ 10, 0, 0,  77, 0, 0, 0, -8]]
 ```
 
 ### Development

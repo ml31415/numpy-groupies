@@ -238,10 +238,10 @@ _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
 
        
 def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
-                    order='C', dtype=None, _impl_dict=_impl_dict,
+                    order='C', dtype=None, axis=None, _impl_dict=_impl_dict,
                     _nansqueeze=False, **kwargs):
     group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
-                                                         size=size, order=order)
+                                             size=size, order=order, axis=axis)
     func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
         # do simple grouping and execute function in loop
@@ -269,9 +269,9 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
-              dtype=None, **kwargs):
+              dtype=None, axis=None, **kwargs):
     return _aggregate_base(group_idx, a, size=size, fill_value=fill_value,
-                           order=order, dtype=dtype, func=func,
+                           order=order, dtype=dtype, func=func, axis=axis, 
                            _impl_dict=_impl_dict, _nansqueeze=True, **kwargs)
 
 aggregate.__doc__ = """

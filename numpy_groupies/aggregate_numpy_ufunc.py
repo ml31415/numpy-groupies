@@ -81,12 +81,12 @@ _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, all=_all, any=_any,
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
-              dtype=None, **kwargs):
+              dtype=None, axis=None, **kwargs):
     func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
         raise NotImplementedError("No such ufunc available")
     return _aggregate_base(group_idx, a, size=size, fill_value=fill_value,
-                           order=order, dtype=dtype, func=func,
+                           order=order, dtype=dtype, func=func, axis=axis,
                            _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
 
 aggregate.__doc__ = """

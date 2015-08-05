@@ -80,7 +80,10 @@ _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
-              dtype=None, **kwargs):
+              dtype=None, axis=None, **kwargs):
+    if axis is not None:
+        raise NotImplementedError("axis arg not supported in purepy implementation.")
+        
     # Check for 2d group_idx
     if size is None:
         size = 1 + max(group_idx)
