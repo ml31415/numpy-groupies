@@ -17,7 +17,7 @@ def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
         order_group_idx = np.argsort(group_idx + 1j * a, kind='mergesort')
     counts = np.bincount(group_idx, minlength=size)
     if np.ndim(a) == 0:
-        a = np.full(size, a)
+        a = np.full(size, a, dtype=type(a))
     ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
     ret = np.asarray(ret, dtype=object)
     if np.isscalar(fill_value):
@@ -54,14 +54,14 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
     else:
         if np.iscomplexobj(a):
             ret = np.empty(size, dtype=dtype)
-            ret.real = np.bincount(group_idx, weights=a.real, 
+            ret.real = np.bincount(group_idx, weights=a.real,
                               minlength=size)
-            ret.imag = np.bincount(group_idx, weights=a.imag, 
+            ret.imag = np.bincount(group_idx, weights=a.imag,
                               minlength=size)
         else:
-            ret = np.bincount(group_idx, weights=a, 
+            ret = np.bincount(group_idx, weights=a,
                               minlength=size).astype(dtype)
-        
+
     if fill_value != 0:
         fill_untouched(group_idx, ret, fill_value)
     return ret
@@ -143,11 +143,11 @@ def _argmax(group_idx, a, size, fill_value, dtype=None):
     dmin = np.iinfo(a.dtype).min if issubclass(a.dtype.type, np.integer)\
         else np.finfo(a.dtype).min
     group_max = _max(group_idx, a, size, dmin)
-    is_max = a == group_max[group_idx]        
+    is_max = a == group_max[group_idx]
     ret = np.full(size, fill_value, dtype=dtype)
     group_idx_max = group_idx[is_max]
-    argmax, = is_max.nonzero()   
-    ret[group_idx_max[::-1]] = argmax[::-1] # reverse to ensure first value for each group wins    
+    argmax, = is_max.nonzero()
+    ret[group_idx_max[::-1]] = argmax[::-1]  # reverse to ensure first value for each group wins
     return ret
 
 def _argmin(group_idx, a, size, fill_value, dtype=None):
@@ -156,26 +156,26 @@ def _argmin(group_idx, a, size, fill_value, dtype=None):
     dmax = np.iinfo(a.dtype).max if issubclass(a.dtype.type, np.integer)\
         else np.finfo(a.dtype).max
     group_min = _min(group_idx, a, size, dmax)
-    is_min = a == group_min[group_idx]        
+    is_min = a == group_min[group_idx]
     ret = np.full(size, fill_value, dtype=dtype)
     group_idx_min = group_idx[is_min]
-    argmin,  = is_min.nonzero()   
-    ret[group_idx_min[::-1]] = argmin[::-1] # reverse to ensure first value for each group wins
+    argmin, = is_min.nonzero()
+    ret[group_idx_min[::-1]] = argmin[::-1]  # reverse to ensure first value for each group wins
     return ret
-    
+
 def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if np.ndim(a) == 0:
         raise ValueError("cannot take mean with scalar a")
     counts = np.bincount(group_idx, minlength=size)
     if np.iscomplexobj(a):
-        dtype = a.dtype # TODO: this is a bit clumsy
+        dtype = a.dtype  # TODO: this is a bit clumsy
         sums = np.empty(size, dtype=dtype)
-        sums.real = np.bincount(group_idx, weights=a.real, 
+        sums.real = np.bincount(group_idx, weights=a.real,
                                 minlength=size)
-        sums.imag = np.bincount(group_idx, weights=a.imag, 
+        sums.imag = np.bincount(group_idx, weights=a.imag,
                                 minlength=size)
     else:
-        sums = np.bincount(group_idx, weights=a, 
+        sums = np.bincount(group_idx, weights=a,
                            minlength=size).astype(dtype)
 
     with np.errstate(divide='ignore'):
@@ -236,7 +236,7 @@ _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last,
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in _no_separate_nan_version)
 
-       
+
 def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                     order='C', dtype=None, axis=None, _impl_dict=_impl_dict,
                     _nansqueeze=False, **kwargs):
@@ -271,7 +271,7 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
               dtype=None, axis=None, **kwargs):
     return _aggregate_base(group_idx, a, size=size, fill_value=fill_value,
-                           order=order, dtype=dtype, func=func, axis=axis, 
+                           order=order, dtype=dtype, func=func, axis=axis,
                            _impl_dict=_impl_dict, _nansqueeze=True, **kwargs)
 
 aggregate.__doc__ = """

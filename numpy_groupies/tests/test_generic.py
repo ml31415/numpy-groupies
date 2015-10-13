@@ -196,6 +196,6 @@ def test_nan_input(aggregate_all, func, groups=100):
     if func in ('all', 'any'):
         ref = np.ones(groups, dtype=bool)
     else:
-        ref = np.full(groups, np.nan)
+        ref = np.full(groups, np.nan, dtype=float)
     res = aggregate_all(group_idx, a, func=func)
     np.testing.assert_array_equal(res, ref)
