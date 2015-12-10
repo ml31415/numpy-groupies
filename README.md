@@ -32,7 +32,7 @@ npg.aggregate(group_idx, a, func='sum', fill_value=0)
  [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), or 
  [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce), or simply the [basic histogram](https://en.wikipedia.org/wiki/Histogram).
 
-This is the most complex and mature of the functions in this package.  See further down the page for more details of the inputs examples, and benchmarks.
+This is the most complex and mature of the functions in this package.  See further down the page for more details of the inputs, examples, and benchmarks.
 
 #### multi_cumsum [alpha]
 ![multicumsum_diagram](/diagrams/multi_cumsum.png)   
@@ -77,10 +77,10 @@ The function accepts various different combinations of inputs, producing various
 * Form 1 is the simplest, taking `group_idx` and `a` of matching 1D lengths, and producing a 1D output.
 * Form 2 is similar to Form 1, but takes a scalar `a`, which is broadcast out to the length of `group_idx`. Note that this is generally not that useful.
 * Form 3 is more complicated. `group_idx` is the same length as the `a.shape[axis]`. The groups are broadcast out along the other axis/axes of `a`, thus the output is of shape `n_groups x a.shape[0] x ... x a.shape[axis-1] x a.shape[axis+1] x ... a.shape[-1]`, i.e. the output has two or more dimensions.
-* Form 4 also produces output with two or more dimensions, but for very different reasons to Form 3.  Here `a` is 1D and `group_idx` is exactly `2D`, whereas in Form 3 `a` is `ND` and `group_idx` is `1D`.  The length of `a` must match `group_idx.shape[1]`, the value of `group_idx.shape[0]` determines the number of dimensions in the ouput, i.e. `group_idx[:,99]` gives the `(x,y,z)` group indices for the `a[99]`.
+* Form 4 also produces output with two or more dimensions, but for very different reasons to Form 3.  Here `a` is 1D and `group_idx` is exactly `2D`, whereas in Form 3 `a` is `ND`, `group_idx` is `1D`, and we provide a value for `axis`.  The length of `a` must match `group_idx.shape[1]`, the value of `group_idx.shape[0]` determines the number of dimensions in the ouput, i.e. `group_idx[:,99]` gives the `(x,y,z)` group indices for the `a[99]`.
 * Form 5 is the same as Form 4 but with scalar `a`. As with Form 2, this is rarely that helpful.
 
-The `order` of the output is unlikely to effect performance of `aggregate` (although it may effect your downstream usage of that output), however the order of multidimensional `a` or `group_idx` can effect performance:  in Form 4 is is best if columns are contiguous in memory within `group_idx`, i.e. `group_idx[:, 99]` corresponds to a contiguous chunk of memory; in Form 3 it's best if all the data in `a` for `group_idx[i]` is contiguous, e.g. if `axis=1` then we want `a[:, 55]` to be contiguous.
+**Note on performance.** The `order` of the output is unlikely to affect performance of `aggregate` (although it may affect your downstream usage of that output), however the order of multidimensional `a` or `group_idx` can affect performance:  in Form 4 it is best if columns are contiguous in memory within `group_idx`, i.e. `group_idx[:, 99]` corresponds to a contiguous chunk of memory; in Form 3 it's best if all the data in `a` for `group_idx[i]` is contiguous, e.g. if `axis=1` then we want `a[:, 55]` to be contiguous.
 
 ### Available functions   
 By default, `aggregate` assumes you want to sum the values within each group, however you can specify another function using the `func` kwarg.  This `func` can be any custom callable, however in normal use you will probably want one of the following optimized functions:
