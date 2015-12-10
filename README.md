@@ -25,36 +25,31 @@ import numpy as np
 import numpy_groupies as npg
 group_idx = np.array([3,0,0,1,0,3,5,5,0,4])
 a = np.array([13.2,3.5,3.5,-8.2,3.0,13.4,99.2,-7.1,0.0,53.7])
-npg.aggregate(group_idx, a, func='sum', fill_value=0) # see below for further examples
+npg.aggregate(group_idx, a, func='sum', fill_value=0)
 # >>> array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
 ```
-If you have used [Matlab's `accumarray` function](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true),
-this `aggregate` function should appear fairly familiar to you because the inputs 
-and output are almost identical to `accumarray`.  Alternatively, if you are familiar 
-with the [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), 
-the purpose, if not the exact syntax, of `aggregate` will be familiar to you.  Failing that, 
-if you've come across the [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce) you 
-should at least appriciate the need for an `aggreagate` function such as this.  Anyone 
-still confused should think back to the last time they created a histogram, and then 
-look carefully at the above diagram..although if you are reading this the chances 
-are you already basically understand what's going on.
+`aggregate` takes an array of values, and an array giving the group number for each of those values. It then returns the sum (or mean, or std, or any, ...etc.)  of the values in each group.  You have probably come across this idea before - see [Matlab's `accumarray` function](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true), or
+ [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), or 
+ [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce), or simply the [basic histogram](https://en.wikipedia.org/wiki/Histogram).
+
+This is the most complex and mature of the functions in this package.  See further down the page for more details of the inputs examples, and benchmarks.
 
 #### multi_cumsum [alpha]
-![multicumsum_diagram](/diagrams/multi_cumsum.png)
+![multicumsum_diagram](/diagrams/multi_cumsum.png)   
 **Warning:** the API for this function has not be stabilized yet and is liable to change.
 ```python
 #TODO: give code example as with aggregate
 ```
 
 #### multi_arange [alpha]
-![multicumsum_diagram](/diagrams/multi_arange.png)
+![multicumsum_diagram](/diagrams/multi_arange.png)   
 **Warning:** the API for this function has not be stabilized yet and is liable to change.
 ```python
 #TODO: give code example as with aggregate
 ```
 
 #### label_contiguous_1d [alpha]
-![label_contiguous_1d](/diagrams/label_contiguous_1d.png)
+![label_contiguous_1d](/diagrams/label_contiguous_1d.png)   
 **Warning:** the API for this function has not be stabilized yet and is liable to change.
 ```python
 #TODO: give code example as with aggregate
@@ -63,6 +58,29 @@ are you already basically understand what's going on.
 
 
 # aggregate - full documentation
+
+### Full description of inputs
+The function accepts various different combinations of inputs, producing various different shapes of output. We give a brief description of the general meaning of the inputs and then go over the different combinations in more detail:
+
+* `group_idx` - array of non-negative integers to be used as the "labels" with which to group the values in `a`. 
+* `a` - array of values to be aggregated.
+* `func='sum'` - the function to use for aggregation.  See the section below for nore details. 
+* `size=None` - the shape of the output array. If `None`, the maximum value in `group_idx` will set the size of the output.
+* `fill_value=0` - value to use for output groups that do not appear anywhere in the `group_idx` input array.
+* `order='C'` - for multimensional output, this controls the layout in memory, can be `'F'` for fortran-style.
+* `dtype=None` - the`dtype` of the output. `None` means choose a sensible type for the given `a`, `func`, and `fill_value`.
+* `axis=None` - explained below.
+* `ddof=0` - passed through into calculations of variance and standard deviation (see section on functions).
+ 
+![aggregate_dims_diagram](/diagrams/aggregate_dims.png)
+
+* Form 1 is the simplest, taking `group_idx` and `a` of matching 1D lengths, and producing a 1D output.
+* Form 2 is similar to Form 1, but takes a scalar `a`, which is broadcast out to the length of `group_idx`. Note that this is generally not that useful.
+* Form 3 is more complicated. `group_idx` is the same length as the `a.shape[axis]`. The groups are broadcast out along the other axis/axes of `a`, thus the output is of shape `n_groups x a.shape[0] x ... x a.shape[axis-1] x a.shape[axis+1] x ... a.shape[-1]`, i.e. the output has two or more dimensions.
+* Form 4 also produces output with two or more dimensions, but for very different reasons to Form 3.  Here `a` is 1D and `group_idx` is exactly `2D`, whereas in Form 3 `a` is `ND` and `group_idx` is `1D`.  The length of `a` must match `group_idx.shape[1]`, the value of `group_idx.shape[0]` determines the number of dimensions in the ouput, i.e. `group_idx[:,99]` gives the `(x,y,z)` group indices for the `a[99]`.
+* Form 5 is the same as Form 4 but with scalar `a`. As with Form 2, this is rarely that helpful.
+
+The `order` of the output is unlikely to effect performance of `aggregate` (although it may effect your downstream usage of that output), however the order of multidimensional `a` or `group_idx` can effect performance:  in Form 4 is is best if columns are contiguous in memory within `group_idx`, i.e. `group_idx[:, 99]` corresponds to a contiguous chunk of memory; in Form 3 it's best if all the data in `a` for `group_idx[i]` is contiguous, e.g. if `axis=1` then we want `a[:, 55]` to be contiguous.
 
 ### Available functions   
 By default, `aggregate` assumes you want to sum the values within each group, however you can specify another function using the `func` kwarg.  This `func` can be any custom callable, however in normal use you will probably want one of the following optimized functions:
@@ -93,18 +111,62 @@ Finally, there are three functions which don't reduce each group to a single val
 * `'sort'` - like `'array'`, above, but the items within each group are now sorted in ascending order.
 * `'rsort'` - same as `'sort'`, but in reverse, i.e. descending order.
 
-### Full description of inputs
-The first three inputs have already been explained/demonstrated above, but we list them here again for completeness.  
-* `group_idx` - this is an array of non-negative integers, to be used as the "labels" with which to group the values in `a`. Although we have so far assumed that `group_idx` is one-dimesnaional, and the same length as `a`, it can in fact be two-dimensional (or some form of nested sequences that can be converted to 2D).  When `group_idx` is 2D, the size of the 0th dimension corresponds to the number of dimesnions in the output, i.e. `group_idx[i,j]` gives the index into the ith dimension in the output for `a[j]`.  Note that `a` should still be 1D (or scalar), with length matching `group_idx.shape[1]`.  One final option for `group_idx` involves the `axis` argument - see description below.
-* `a` - this is the array of values to be aggregated.  See the above for a simple demonstration of what this means.  `a` will normally be a one-dimensional array, however it can also be a scalar in some cases.
-* `func='sum'` - the function to use for aggregation.  See the section above for details.  Note that the simplest way to specify the function is using a string (e.g. `func='mac'`) however a number of aliases are also defined (e.g. you can use the `func=np.max`, or even `func=max`, where `max` is the builtin function).  To check the available aliases see `utils.py`.
-* `size=None` - the shape of the output array. If `None`, the maximum value in `group_idx` will set the size of the output.  Note that for multidimensional output you need to list the size of each dimension here, or give `None`.
-* `fill_value=0` - in the example above, group 2 does not have any data, so requires some kind of filling value - in this case the default of `0` is used.  If you had set `fill_value=nan` or something else, that value would appear instead of `0` for the 2 element in the output.  Note that there are some subtle interactions between what is permitted for `fill_value` and the input/output `dtype` - exceptions should be raised in most cases to alert the programmer if issue arrise.
-* `order='C'` - this is relevant only for multimensional output.  It controls the layout of the output array in memory, can be `'F'` for fortran-style.
-* `dtype=None` - the `dtype` of the output.  By default something sensible is chosen based on the input, aggregation function, and `fill_value`.
-* `axis=None` - in addition to the basic 1D form for `a`, you can provide multimensional `a`, with `group_idx` being 1D and corresponding to only one axis of `a`.  Use the `axis` argument to specify which axis `group_idx` correspodns to. See the example below for a demonstration of this.
-* `ddof=0` - passed through into calculations of variance and standard deviation (see above).
+### Examples
+See the example at the top of the page for a super-simple introduction.
 
+
+* Compute sums of consecutive integers, and then compute products of those consecutive integers. (Form 1)
+```python
+group_idx = np.arange(5).repeat(3)
+# group_idx: array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
+a = np.arange(group_idx.size)
+# a: array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14])
+x = aggregate(group_idx, a) # sum is default
+# x: array([ 3, 12, 21, 30, 39])
+x = aggregate(group_idx, a, 'prod')
+# x: array([ 0, 60, 336, 990, 2184])
+```
+
+* Get variance ignoring nans, but set all-nan groups to `nan` rather than `fill_value`. (Form 1)
+```python
+x = aggregate(group_idx, a, func='nanvar', fill_value=0) 
+x[aggregate(group_idx, a, func='allnan')] = nan
+```  
+
+* Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, indeed that is how the numpy implementation does it. (Form 2)
+```python
+x = aggregate(group_idx, 1)
+```
+
+* Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions have the same size, but that doesn't have to be the case. (Form 4)
+```python
+group_idx = np.random.randint(0, 15, size=(3, 1000))
+a = np.random.random(group_idx.shape[1])
+x = aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
+# x.shape: (15, 15, 15)
+# np.isfortran(x): True
+```
+
+* Use a custom function to generate some strings. (Form 1)
+```python
+group_idx = array([1, 0,  1,  4,  1])
+a = array([12.0, 3.2, -15, 88, 12.9])
+x = aggregate(group_idx, a, 
+              func=lambda g: ' or maybe '.join(str(gg) for gg in g), fill_value='')
+# x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
+```
+
+* Use the `axis` arg in order to do a sum-aggregation on three rows simultaneously. (Form 3)
+```python
+a = array([[99, 2,  11, 14,  20],
+	   	   [33, 76, 12, 100, 71],
+		   [67, 10, -8, 1,   9]])
+group_idx = array([[3, 3, 7, 0, 0]])
+x = aggregate(group_idx, a, axis=1) 
+# x : [[ 34, 0, 0, 101, 0, 0, 0, 11],
+#      [171, 0, 0, 109, 0, 0, 0, 12],
+#      [ 10, 0, 0,  77, 0, 0, 0, -8]]
+```
 
 
 ### Multiple implementations - explanation and benchmark results
@@ -116,9 +178,12 @@ the easiest to install and offers fairly reasonable speed for the majority of ag
 functions.  If you download the whole repository and use `from aggregate import aggregate`, 
 the best available implementation will automatically be selected.  
 
-**Note:** if you have `weave` installed but no working compiler registered then you 
+**Note 1:** if you have `weave` installed but no working compiler registered then you 
 may run in to problems with the default implementation of `aggregate`.  The workaround
 is to explicitly use `npg.aggregate_np` rather than `npg.aggregate`.
+
+**Note 2:** hopefully the `numba` implementation will soon be finished so that we can retire
+the `weave` version.
 
 Currently the following implementations exist:  
 * **pure python**. *Use only if you don't have numpy installed*. This has no dependencies, instead making use of the grouping and sorting functionality provided by the python language itself plus the standard library.
@@ -164,62 +229,6 @@ Linux(x86_64), Python 2.7.6, Numpy 1.9.2
 The `grouploop` implementation shown here uses `aggregate_numpy.py`'s generic function menchanism, which groups `a` by `group_idx`, and then loops over each group, applying the specified function (in this case it is a numpy function such as `np.add`). `grouploop` is only included for reference, note that the output from this function is considered to be the "correct" answer when used in testing.
 
 
-### Examples
-See the example at the top of the page for a super-simple introduction.
-
-
-* Compute sums of consecutive integers, and then compute products of those consecutive integers.
-```python
-group_idx = np.arange(5).repeat(3)
-# group_idx: array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
-a = np.arange(group_idx.size)
-# a: array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14])
-x = aggregate(group_idx, a) # sum is default
-# x: array([ 3, 12, 21, 30, 39])
-x = aggregate(group_idx, a, 'prod')
-# x: array([ 0, 60, 336, 990, 2184])
-```
-
-* Get variance ignoring nans, but set all-nan groups to `nan` rather than `fill_value`.
-```python
-x = aggregate(group_idx, a, func='nanvar', fill_value=0) 
-x[aggregate(group_idx, a, func='allnan')] = nan
-```  
-
-* Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, indeed that is how the numpy implementation does it.
-```python
-x = aggregate(group_idx, 1)
-```
-
-* Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions have the same size, but that doesn't have to be the case.
-```python
-group_idx = np.random.randint(0, 15, size=(3, 1000))
-a = np.random.random(group_idx.shape[1])
-x = aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
-# x.shape: (15, 15, 15)
-# np.isfortran(x): True
-```
-
-* Use a custom function to generate some strings.
-```python
-group_idx = array([1, 0,  1,  4,  1])
-a = array([12.0, 3.2, -15, 88, 12.9])
-x = aggregate(group_idx, a, 
-              func=lambda g: ' or maybe '.join(str(gg) for gg in g), fill_value='')
-# x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
-```
-
-* Use the `axis` arg in order to do a sum-aggregation on three rows simultaneously.
-```python
-a = array([[99, 2,  11, 14,  20],
-	   	   [33, 76, 12, 100, 71],
-		   [67, 10, -8, 1,   9]])
-group_idx = array([[3, 3, 7, 0, 0]])
-x = aggregate(group_idx, a, axis=1) 
-# x : [[ 34, 0, 0, 101, 0, 0, 0, 11],
-#      [171, 0, 0, 109, 0, 0, 0, 12],
-#      [ 10, 0, 0,  77, 0, 0, 0, -8]]
-```
 
 ### Development
 The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation 
