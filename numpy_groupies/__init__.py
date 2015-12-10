@@ -25,6 +25,7 @@ else:
     
 # TODO: unless we are benchmarking/testing there is probably no need to import pandas as this stage
 try:
+    raise ImportError # we don't really want this
     import pandas
 except ImportError:
     aggregate_pd = None
@@ -32,6 +33,7 @@ else:
     from .aggregate_pandas import aggregate as aggregate_pd
 
 try:
+    raise ImportError # we don't really want this
     from scipy import weave
 except ImportError:
     aggregate_weave = None

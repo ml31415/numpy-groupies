@@ -330,7 +330,8 @@ else:
         if check_min and np.min(group_idx) < 0:
             raise ValueError("group_idx contains negative indices")
 
-    def input_validation(group_idx, a, size=None, order='C', axis=None):
+    def input_validation(group_idx, a, size=None, order='C', axis=None,
+                         ravel_group_idx=True, check_bounds=True):
         """ Do some fairly extensive checking of group_idx and a, trying to
         give the user as much help as possible with what is wrong. Also,
         convert ndim-indexing to 1d indexing.
@@ -342,7 +343,8 @@ else:
         if not np.issubdtype(group_idx.dtype, np.integer):
             raise TypeError("group_idx must be of integer type")
 
-        if np.any(group_idx < 0): # this works for multidimensional indexing as well
+         # this check works for multidimensional indexing as well
+        if check_bounds and np.any(group_idx < 0):
             raise ValueError("negative indices not supported")
                 
         ndim_idx = np.ndim(group_idx)
@@ -398,7 +400,7 @@ else:
             else:
                 if not np.isscalar(size):
                     raise ValueError("output size must be scalar or None")
-                if np.any(group_idx > size - 1):
+                if check_bounds and np.any(group_idx > size - 1):
                     raise ValueError("one or more indices are too large for "
                                      "size %d" % size)
             flat_size = size
@@ -412,9 +414,9 @@ else:
                 raise ValueError("%d sizes given, but %d output dimensions "
                                  "specified in index" % (len(size),
                                                          len(group_idx)))
-
-            group_idx = np.ravel_multi_index(group_idx, size, order=order,
-                                             mode='raise')
+            if ravel_group_idx:
+                group_idx = np.ravel_multi_index(group_idx, size, order=order,
+                                                 mode='raise')
             flat_size = np.prod(size)
 
         if not (np.ndim(a) == 0 or len(a) == group_idx.size):
