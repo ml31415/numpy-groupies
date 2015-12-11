@@ -192,8 +192,15 @@ def _sum(gidx_ii, a_ii, res, ii):
 @jitted_loop(initial_value_mode=0, int_version=_sum)
 def _nansum(gidx_ii, a_ii, res, ii):
     # you can only have nans in floats, so ints can do basic sum
-    not_nan = a_ii == a_ii  
-    res[gidx_ii] += a_ii if not_nan else 0 # TODO: remove branch!
+
+    # hack to avoid branching on nans..store nan values in 0 group
+    # and everything else shifted by one position to the right.
+    is_nan = a_ii != a_ii
+    res[(gidx_ii + 1) * (not is_nan)] += a_ii
+    # TODO: need to finish this by shifting values back by one, or
+    # changing view of array...also need to actually request the extra
+    # 1 value in the length of result.
+    
     
 @jitted_loop(initial_value_mode=1)
 def _prod(gidx_ii, a_ii, res, ii):
