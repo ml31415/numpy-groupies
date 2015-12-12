@@ -37,6 +37,23 @@ function in another function which handles the flag outside numba.
 
 Although numba supports zip, it's a lot faster to use range(n) and indexing.
 
+We use a hack to avoid branching in nan-prefixed functions:
+if a is nan then we assign to group[0] otherwise we assign to the correct
+group, or rather we assign to the correct group plus one.  At the end
+
+Because ints cant represent floats, we can get away with using the non-nan
+version of functions for ints, i.e. nansum(<ints>) = sum(<ints>).
+
+In python min(99, nan) is 99, but min(nan, 99) is nan. In numba it seems
+like this isn't always true.  For our use of min and max, for some reason
+we need to do it the other way around.  TODO: investigate further, and
+write a proper test for this...the minimal test I tried seemed to agree
+with python.  If need be, use the nansum-style hack.
+
+TODO: there is probably a slightly cleaner way to write the nan functions,
+that doesn't involve so much copy-pasting...though what we have now is at
+least fairly explicit.
+    
 Note that sometimes you have to spend a bit of time looking for the correct
 way of doing something, e.g. numba's implementation of python's builtin min
 function is about 10x faster than np.minimum or an if statement, or a 
@@ -48,7 +65,7 @@ mode_equals_fill = -100
 mode_pos_inf = -101
 mode_neg_inf = -102
             
-def jitted_loop(initial_value_mode=0, intrusive_used=False, 
+def jitted_loop(initial_value_mode=0, intrusive_used=False, dummy_0=False,
                 end_func=None, result_view_dtype=None, iter_reversed=False,
                 int_version=None):
     """
@@ -60,11 +77,11 @@ def jitted_loop(initial_value_mode=0, intrusive_used=False,
     result_view_dtype - if not None, then a view of result is created with this
         other type. see note about x.view above.    
         
-    end_func - lambda result_view, fill_value, need_to_fill, initial_value: None.
+    end_func - lambda result_view, fill_value, need_to_fill, initial_value: result.
     
     iter_reversed - True reverses iteration order (used by _first)
 
-    int_version - an alternative jitted function to use if input is int type    
+    int_version - an alternative jitted function to use if input is int type     
     """
     def iter_decorator(iter_func):
         iter_func = numba.jit(iter_func, nopython=True) 
@@ -73,9 +90,12 @@ def jitted_loop(initial_value_mode=0, intrusive_used=False,
         else:
             @numba.jit(nopython=True)
             def end_func_(res, fill_value, is_unused, initial_value):
+                if dummy_0:
+                    res = res[1:]
                 if initial_value == fill_value:
-                    return
+                    return res
                 res[is_unused] = fill_value
+                return res
             
         @numba.jit(nopython=True)
         def jitted_loop(group_idx, a, result, result_view, size, fill_value,
@@ -112,19 +132,20 @@ def jitted_loop(initial_value_mode=0, intrusive_used=False,
                 iter_func(gidx_ii, a_ii, result_view, ii)
         
             # apply fill_value if neccessary and do any final processing
-            end_func_(result_view, fill_value, need_to_fill, initial_value) 
+            return end_func_(result_view, fill_value, need_to_fill, initial_value) 
                 
-            return result  
         # end jitted_loop
         
-        def jitted_loop_wrapped(group_idx, a, result, size, fill_value,
-                                *args, **kwargs):
+        def jitted_loop_wrapped(group_idx, a, flat_size, dtype, size,
+                                fill_value, *args, **kwargs):
             if int_version and issubclass(a.dtype.type, np.integer):
                 # delegate to alternative jit function
                 print "delegating to int version"
-                return int_version(group_idx, a, result, size, fill_value,
-                                   *args, **kwargs)
+                return int_version(group_idx, a, flat_size, dtype, size, 
+                                   fill_value, *args, **kwargs)
                 
+            result = np.empty(flat_size + (1 if dummy_0 else 0), dtype=dtype)
+
             # See note at top about x.view
             result_view = result if result_view_dtype is None else \
                             result.view(result_view_dtype)
@@ -183,44 +204,49 @@ def finish_bool_func(res, fill_value, None_, initial_value):
             res[ii] = (res_ii >> special_shift) == (res_ii & group_true) 
         else:
             res[ii] = (res_ii >> special_shift) & (res_ii & group_true) 
-            
+    return res.view(np.bool_)
             
 @jitted_loop(initial_value_mode=0)
 def _sum(gidx_ii, a_ii, res, ii):
     res[gidx_ii] += a_ii
 
-@jitted_loop(initial_value_mode=0, int_version=_sum)
+@jitted_loop(initial_value_mode=0, int_version=_sum, dummy_0=True)
 def _nansum(gidx_ii, a_ii, res, ii):
-    # you can only have nans in floats, so ints can do basic sum
-
-    # hack to avoid branching on nans..store nan values in 0 group
-    # and everything else shifted by one position to the right.
-    is_nan = a_ii != a_ii
-    res[(gidx_ii + 1) * (not is_nan)] += a_ii
-    # TODO: need to finish this by shifting values back by one, or
-    # changing view of array...also need to actually request the extra
-    # 1 value in the length of result.
-    
+    res[(gidx_ii + 1) * (a_ii == a_ii)] += a_ii
     
 @jitted_loop(initial_value_mode=1)
 def _prod(gidx_ii, a_ii, res, ii):
     res[gidx_ii] *= a_ii
 
+@jitted_loop(initial_value_mode=1, int_version=_prod, dummy_0=True)
+def _nanprod(gidx_ii, a_ii, res, ii):
+    res[(gidx_ii + 1) * (a_ii == a_ii)] *= a_ii
+    
 @jitted_loop(initial_value_mode=mode_pos_inf)
 def _min(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] = min(a_ii, res[gidx_ii])
-
+    res[gidx_ii] = min(a_ii, res[gidx_ii]) #if a is nan, min is res[g_idx]
+        
 @jitted_loop(initial_value_mode=mode_neg_inf) 
 def _max(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] = max(a_ii, res[gidx_ii])
-
+    res[gidx_ii] = max(a_ii, res[gidx_ii]) #if a is nan, min is res[g_idx]
+    
 @jitted_loop(initial_value_mode=mode_equals_fill, iter_reversed=True)
 def _first(gidx_ii, a_ii, res, ii):
     res[gidx_ii] = a_ii
+
+@jitted_loop(initial_value_mode=mode_equals_fill, int_version=_first,
+             dummy_0=True, iter_reversed=True)
+def _nanfirst(gidx_ii, a_ii, res, ii):
+    res[(gidx_ii + 1) * (a_ii == a_ii)] = a_ii
     
 @jitted_loop(initial_value_mode=mode_equals_fill)
 def _last(gidx_ii, a_ii, res, ii):
     res[gidx_ii] = a_ii
+    
+@jitted_loop(initial_value_mode=mode_equals_fill, int_version=_last,
+             dummy_0=True)
+def _nanlast(gidx_ii, a_ii, res, ii):
+    res[(gidx_ii + 1) * (a_ii == a_ii)] = a_ii
     
 @jitted_loop(initial_value_mode=group_true, intrusive_used=True, 
              end_func=finish_bool_func, result_view_dtype=np.uint8)
@@ -272,9 +298,10 @@ def _finish_std(res, counter, tmp, fillvalue):
 
 """
 
-_impl_dict = dict(sum=_sum, nansum=_nansum, prod=_prod, min=_min, max=_max,
-                  last=_last, first=_first, all=_all, any=_any, allnan=_allnan, 
-                  anynan=_anynan)
+_impl_dict = dict(sum=_sum, nansum=_nansum, prod=_prod, nanprod=_nanprod,
+                  min=_min, nanmin=_min, max=_max, nanmax=_max,
+                  last=_last, nanlast=_nanlast, first=_first, nanfirst=_nanfirst,
+                  all=_all, any=_any, allnan=_allnan, anynan=_anynan)
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
               dtype=None, axis=None, **kwargs):
@@ -291,8 +318,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
         # final prep and launch the function.    
         dtype = check_dtype(dtype, func, a, flat_size)
         func = _impl_dict[func]
-        empty_result = np.empty(flat_size, dtype=dtype)
-        ret = func(group_idx, a, empty_result, size, fill_value=fill_value, 
+        ret = func(group_idx, a, flat_size, dtype, size, fill_value=fill_value, 
                    result_c_order=order=='C', **kwargs)
 
     return ret
