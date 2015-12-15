@@ -1,13 +1,320 @@
 import numpy as np
-
+import numba # version 0.22.1
 from .utils import (get_func, aliasing, input_validation, check_dtype,
                     _doc_str, isstr)
-import numba
 
-"""
-================================
-Written for numba version 0.22.1
-================================
+""" =======================================================================
+    The decorator and enums used by the various functions 
+    ======================================================================= """
+
+mode_equals_fill = -100
+mode_pos_inf = -101
+mode_neg_inf = -102
+            
+info_mode_simple = 0
+info_mode_bool = 1
+info_mode_special = 2
+
+def aggregate_loop( info_mode=info_mode_simple,
+                    initial_value_mode=0,                
+                    iter_reversed=False,
+                    end_func=None, 
+                    start_func=None,
+                    dtype_func=None,
+                    _nan_to_0=False,
+                    _int_version=None,
+                    ):
+    """
+    info_mode:
+        
+        info_mode_simple - the decorator will record is_used if
+                        initial_value != fill_value, and it will do the filling
+                        after the loop. 
+                        
+        info_mode_bool - if initial_value != fill_value, then iter_func
+                         needs to set both the group_used bit and the group
+                         true bit, provided as an argument to iter_func.
+                         The decorator will do the post-loop stuff. The work
+                         array is of dtype=uint8.
+        
+        info_mode_special - a special dtype is created by dtype_func, which
+          dtype_func      is then used by iter_func.  You must also provide
+          start_func      start_func for initialising and end_func for finishing. 
+          end_func
+        
+    initial_value_mode - num > -10; or mode_equals_fill to match fill_value;
+                     or mode_neg_inf/mode_pos_inf for dtype's max/min values.
+        
+    iter_reversed - True reverses iteration order (used by _first)
+
+    _nan_to_0    -  if _nan_to_0 is True the work array is one element longer 
+    _int_version    than the actual result, with all nan data being diverted 
+                    into element 0.  Rather than supplying this value directly 
+                    in the decorator, use the get_nan_version() method on the 
+                    decorated function, which will build a second version of 
+                    the function with nan_to_0 set to True.  It will also divert
+                    integer input to the non-nan version, because ints can't 
+                    be nan.
+    
+    """
+    def iter_decorator(iter_func):            
+        # private const for info_mode_bool             
+        is_used_b = 7 # takes group_true to group_used_flag
+
+        # jit the main iter function
+        iter_func = numba.jit(iter_func, nopython=True)         
+    
+        # jit the start and end functions, which depends on info_mode, _nan_to_0 
+        # and possibly the end_func arg passed into the decorator
+        if info_mode == info_mode_simple:
+            @numba.jit(nopython=True)
+            def start_func_(work, initial_value):
+                work[:] = initial_value
+                
+            @numba.jit(nopython=True)
+            def end_func_(work, is_used, result, initial_value, fill_value):
+                if initial_value == fill_value:
+                    for ii in range(len(result)):
+                        if _nan_to_0:
+                            result[ii] = work[ii+_nan_to_0]
+                        else:
+                            result[ii] = (work[ii+_nan_to_0] if is_used[ii+_nan_to_0]
+                                          else fill_value)
+                            
+        elif info_mode == info_mode_bool: 
+            assert(not _nan_to_0)
+            @numba.jit(nopython=True)
+            def start_func_(work, initial_value):
+                work[:] = initial_value
+                
+            @numba.jit(nopython=True)
+            def end_func_(work, ignore, result, initial_value, fill_value):
+                # see notes at bottom of file
+                if initial_value != fill_value:
+                    for ii in range(len(result)):
+                        if fill_value:
+                            work[ii] = ((work[ii] >> is_used_b) == (work[ii] & 1))
+                        else: 
+                            work[ii] = ((work[ii] >> is_used_b) & (work[ii] & 1))
+                            
+        else: # info_mode == info_mode_special
+            start_func_ = numba.jit(start_func, nopython=True)
+                
+            end_iter = numba.jit(end_func, nopython=True)
+            @numba.jit(nopython=True)
+            def end_func_(work, ignore, result, initial_value, fill_value):            
+                for ii in range(len(result)):
+                    result[ii] = end_iter(work[ii + _nan_to_0], initial_value, 
+                                            fill_value)
+                    
+        # this is the main function we generate, though it will get wrapped
+        @numba.jit(nopython=True)
+        def jitted_loop(group_idx, a, work, is_used, result, 
+                        fill_value, initial_value):
+
+            # prepare the array
+            start_func_(work, initial_value)
+            
+            # TODO: reshape result according to size and order_out
+            assert(group_idx.ndim == 1 and a.ndim == 1) # for now we do Form 1
+            
+            # if we need it, this encodes is_used as a single bit
+            is_used_mask = (initial_value != fill_value) << is_used_b
+            
+            # the main loop, this is what we're here for...
+            for ii in range(len(group_idx)):
+                gidx_ii = group_idx[-1-ii] if iter_reversed else group_idx[ii]
+                a_ii = a[-1-ii] if iter_reversed else a[ii]
+                assert(0 <= gidx_ii < len(result))
+                if _nan_to_0:
+                    gidx_ii = (gidx_ii + 1) * (a_ii == a_ii) 
+                if len(is_used):
+                    is_used[gidx_ii] = True
+                iter_func(gidx_ii, a_ii, work, ii, is_used_mask)
+        
+            # post-loop operations on work and result...
+            end_func_(work, is_used, result, initial_value, fill_value) 
+        # end aggregate_loop -----------------------------------------------------
+        
+        # The above numba function needs to be wrapped in python prep code
+        def jitted_loop_wrapped(group_idx, a, flat_size, res_dtype, size,
+                                fill_value, *args, **kwargs):
+            if _int_version and issubclass(a.dtype.type, np.integer):
+                # delegate to alternative jit function
+                return _int_version(group_idx, a, flat_size, res_dtype, size, 
+                                   fill_value, *args, **kwargs)
+            
+            # select the intial value
+            if initial_value_mode > -10:
+                initial_value = initial_value_mode
+            elif initial_value_mode == mode_equals_fill:
+                initial_value = fill_value
+            elif initial_value_mode == mode_pos_inf:
+                initial_value = np.inf if not issubclass(res_dtype.type, np.integer)\
+                                  else np.iinfo(res_dtype).max 
+            elif initial_value_mode == mode_neg_inf:
+                initial_value = -np.inf if not issubclass(res_dtype.type, np.integer)\
+                                  else np.iinfo(res_dtype).min
+            else:
+                raise TypeError("unkown initial_value_mode")
+            
+            # allocate memory/views for work and result
+            # note that result may overlap with work
+            work_size = flat_size + _nan_to_0
+            is_used = np.empty(0, dtype=bool)
+            if info_mode == info_mode_special:
+                work = np.empty(work_size, dtype=dtype_func(res_dtype, a.dtype))
+                result = np.empty(flat_size, dtype=res_dtype)
+            elif info_mode == info_mode_bool:
+                work = np.empty(work_size, np.uint8)
+                result = work[:flat_size].view(dtype=np.bool_)
+            elif info_mode == info_mode_simple:
+                work = np.empty(work_size, dtype=res_dtype)                
+                if initial_value != fill_value:
+                    is_used = np.zeros(work_size, dtype=bool)
+                result = work[:flat_size]
+            else:
+                raise TypeError("unknown info_mode")
+
+            jitted_loop(group_idx, a, work, is_used, result, # return value in result
+                        fill_value, initial_value)
+            return result
+        # end aggregate_loop_wrapped ---------------------------------------------
+
+        # add a method for building a nan-version (not valid in all cases)            
+        jitted_loop_wrapped.get_nan_version = lambda: aggregate_loop(
+            info_mode=info_mode, initial_value_mode=initial_value_mode,
+            iter_reversed=iter_reversed, end_func=end_func, dtype_func=dtype_func,
+            _nan_to_0=True, _int_version=jitted_loop_wrapped)(iter_func.py_func)
+        
+        return jitted_loop_wrapped
+    return iter_decorator
+           
+           
+""" =======================================================================
+    Functions with info_mode == info_mode_simple
+    ======================================================================= """
+
+@aggregate_loop(initial_value_mode=0)
+def _sum(gidx_ii, a_ii, work, *args):
+    work[gidx_ii] += a_ii
+    
+@aggregate_loop(initial_value_mode=1)
+def _prod(gidx_ii, a_ii, work, *args):
+    work[gidx_ii] *= a_ii
+    
+@aggregate_loop(initial_value_mode=mode_pos_inf)
+def _min(gidx_ii, a_ii, work, *args):
+    work[gidx_ii] = min(a_ii, work[gidx_ii]) # if a is nan, min is work[g_idx]
+        
+@aggregate_loop(initial_value_mode=mode_neg_inf) 
+def _max(gidx_ii, a_ii, work, *args):
+    work[gidx_ii] = max(a_ii, work[gidx_ii]) # if a is nan, min is work[g_idx]
+    
+@aggregate_loop(initial_value_mode=mode_equals_fill, iter_reversed=True)
+def _first(gidx_ii, a_ii, work, *args):
+    work[gidx_ii] = a_ii
+    
+@aggregate_loop(initial_value_mode=mode_equals_fill)
+def _last(gidx_ii, a_ii, work, *args):
+    work[gidx_ii] = a_ii
+    
+""" =======================================================================
+    Functions with info_mode == info_mode_bool
+    ======================================================================= """
+
+@aggregate_loop(initial_value_mode=1, info_mode=info_mode_bool)
+def _all(gidx_ii, a_ii, work, ignore, is_used_b):
+    work[gidx_ii] = is_used_b | (work[gidx_ii] & (a_ii != 0))
+
+@aggregate_loop(initial_value_mode=1, info_mode=info_mode_bool)
+def _allnan(gidx_ii, a_ii, work, ignore, is_used_b):
+    work[gidx_ii] = is_used_b | (work[gidx_ii] & (a_ii != a_ii))
+        
+@aggregate_loop(initial_value_mode=0, info_mode=info_mode_bool)
+def _any(gidx_ii, a_ii, work, ignore, is_used_b):
+    work[gidx_ii] |= is_used_b | (a_ii != 0)
+        
+@aggregate_loop(initial_value_mode=0, info_mode=info_mode_bool)
+def _anynan(gidx_ii, a_ii, work, ignore, is_used_b):
+    work[gidx_ii] |= is_used_b | (a_ii != a_ii)
+
+""" =======================================================================
+    Functions with info_mode == info_mode_special
+    ======================================================================= """
+            
+def _mean_initial(work, ignore):
+    for ii in range(len(work)):
+        work[ii].sum = 0
+        work[ii].count = 0
+
+# TODO: in end_func, if fill is zero, cant we take advantage of 0/0=0?        
+@aggregate_loop(info_mode=info_mode_special, start_func=_mean_initial,
+        dtype_func=lambda res, a: np.dtype([('sum', res), ('count', int)]),
+        end_func=lambda work, ignore, fill: work.sum/work.count
+                                            if work.count > 0 else fill)
+def _mean(gidx_ii, a_ii, work, ignore, is_used_b): 
+    work[gidx_ii].sum += a_ii
+    work[gidx_ii].count += 1
+    
+# TODO: std, var, argmin, argmax
+
+
+""" =======================================================================
+    User-facing aggregate implementation
+    ======================================================================= """
+
+
+_impl_dict = dict(sum=_sum, nansum=_sum.get_nan_version(),
+                  prod=_prod, nanprod=_prod.get_nan_version(),
+                  min=_min, nanmin=_min, max=_max, nanmax=_max,
+                  last=_last, nanlast=_last.get_nan_version(),
+                  first=_first, nanfirst=_first.get_nan_version(),
+                  all=_all, any=_any, allnan=_allnan, anynan=_anynan,
+                  mean=_mean, nanmean=_mean.get_nan_version())
+
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
+              dtype=None, axis=None, **kwargs):
+
+    group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
+                size=size, order=order, axis=axis, check_bounds=False,
+                ravel_group_idx=False)
+    func = get_func(func, aliasing, _impl_dict)
+    if not isstr(func):
+        # TODO: this isn't hard to fix, but I'll leave it for now
+        raise NotImplementedError("generic functions not supported in numba"
+                                  " implementation of aggregate.")
+    else:
+        # final prep and launch the function.    
+        dtype = check_dtype(dtype, func, a, flat_size)
+        func = _impl_dict[func]
+        ret = func(group_idx, a, flat_size, dtype, size, fill_value=fill_value, 
+                   result_c_order=order=='C', **kwargs)
+
+    return ret
+    
+    
+aggregate.__doc__ =  """
+    This is the numba implementation of aggregate.
+
+    You can use negative indexing in this version.
+    
+    If you provide a size value we will be able to iterate over ``a`` and 
+    ``group_idx`` exactly once.
+    
+    TODO: make this true even for the case where we broadcast ``group_idx``
+    with an ``axis`` argument.
+    """ + _doc_str
+
+
+
+
+
+""" ===================================================================
+    ADDITIONAL NOTES
+    ===================================================================
+    
+Written for numba version 0.22.1.
 
 Some notes on numba quirks and performance hacks....
 
@@ -59,281 +366,48 @@ way of doing something, e.g. numba's implementation of python's builtin min
 function is about 10x faster than np.minimum or an if statement, or a 
 crazy 2-element lookup table + 1-bit-bool-indexing ...but I only disovered
 that the builtin after messing around for a while with the other versions.
-"""
 
-mode_equals_fill = -100
-mode_pos_inf = -101
-mode_neg_inf = -102
-            
-def jitted_loop(initial_value_mode=0, intrusive_used=False, dummy_0=False,
-                end_func=None, result_view_dtype=None, iter_reversed=False,
-                int_version=None):
-    """
-    initial_value_mode - a num > -10 or one of the enum values (see code).
-    
-    intrusive_used - if True the iter_func records the is_used/count stuff
-        "intrusively" in result.
 
-    result_view_dtype - if not None, then a view of result is created with this
-        other type. see note about x.view above.    
-        
-    end_func - lambda result_view, fill_value, need_to_fill, initial_value: result.
-    
-    iter_reversed - True reverses iteration order (used by _first)
+==================
 
-    int_version - an alternative jitted function to use if input is int type     
-    """
-    def iter_decorator(iter_func):
-        iter_func = numba.jit(iter_func, nopython=True) 
-        if end_func:
-            end_func_ = numba.jit(end_func, nopython=True)
-        else:
-            @numba.jit(nopython=True)
-            def end_func_(res, fill_value, is_unused, initial_value):
-                if dummy_0:
-                    res = res[1:]
-                if initial_value == fill_value:
-                    return res
-                res[is_unused] = fill_value
-                return res
-            
-        @numba.jit(nopython=True)
-        def jitted_loop(group_idx, a, result, result_view, size, fill_value,
-                        initial_value, result_c_order=True, ddof=0):
-            """
-            result is an empty 1D array of the chosen dtype.
-            TODO: ideally, wherever we need counts/is_used flag we would
-                  prefer it to be intrusive, unless that screws up alignment.
-                  at the end we can collapse the extra-large array down to 
-                  it's final size, possibly even doing it in-place.
-            """
-            result[:] = initial_value
-            if not intrusive_used and initial_value != fill_value:
-                need_to_fill = np.ones(len(result), dtype=np.bool_)
-            else:
-                need_to_fill = np.ones(0, dtype=np.bool_) # using None causes problems
-                
-            # TODO: reshape result according to size and order_out
-                
-            # Form 1
-            assert(group_idx.ndim == 1 and a.ndim == 1)
-            
-            n = len(group_idx)
-            for ii in range(n):
-                if iter_reversed:
-                    gidx_ii = group_idx[-1-ii]
-                    a_ii = a[-1-ii]
-                else:
-                    gidx_ii = group_idx[ii]
-                    a_ii = a[ii]
-                assert(0 <= gidx_ii < len(result))                 
-                if not intrusive_used and initial_value != fill_value:
-                    need_to_fill[gidx_ii] = False
-                iter_func(gidx_ii, a_ii, result_view, ii)
-        
-            # apply fill_value if neccessary and do any final processing
-            return end_func_(result_view, fill_value, need_to_fill, initial_value) 
-                
-        # end jitted_loop
-        
-        def jitted_loop_wrapped(group_idx, a, flat_size, dtype, size,
-                                fill_value, *args, **kwargs):
-            if int_version and issubclass(a.dtype.type, np.integer):
-                # delegate to alternative jit function
-                print "delegating to int version"
-                return int_version(group_idx, a, flat_size, dtype, size, 
-                                   fill_value, *args, **kwargs)
-                
-            result = np.empty(flat_size + (1 if dummy_0 else 0), dtype=dtype)
 
-            # See note at top about x.view
-            result_view = result if result_view_dtype is None else \
-                            result.view(result_view_dtype)
-            # This bit also is difficult/impossible to do inside numba...
-            if initial_value_mode > -10:
-                initial_value = initial_value_mode
-            elif initial_value_mode == mode_equals_fill:
-                initial_value = fill_value
-            elif initial_value_mode == mode_pos_inf:
-                initial_value = np.inf if not issubclass(result.dtype.type, np.integer)\
-                                  else np.iinfo(result.dtype).max 
-            elif initial_value_mode == mode_neg_inf:
-                initial_value = -np.inf if not issubclass(result.dtype.type, np.integer)\
-                                  else np.iinfo(result.dtype).min
-            else:
-                raise TypeError("unkown initial_value_mode")
-
-            return jitted_loop(group_idx, a, result, result_view, size, 
-                                   fill_value, initial_value, *args, **kwargs)
-        # end jitted_loop_wrapped
-                
-        return jitted_loop_wrapped
-    return iter_decorator
+The post-loop stuff for info_mode_bool, when fill_value != initial_value, has
+to perform the following...(numba strugles to optimize so we do it manually)...
     
-"""
-Our bool functions store an "intrusive" flag that records
-for each group  whether or not it has been used, i.e. if 0
-then it needs to be set to fill_value at the end.  They can do
-this because their actual data consists of just 1 bit. 
-"""
-special_shift = 7 # takes group_used to group_true
-group_true = 1
-group_used = group_true << special_shift
-def finish_bool_func(res, fill_value, None_, initial_value):
-    """
-    numba strugles to remove branches for if statements, so we
-    do the hard work manually....
-    
-    fill_value equals   fill_value is 1      fill_value is 0
-    intial_value        intial_value is 0    initial_value is 1
-    ----------------    -----------------    -----------------
-                        used | x | res       used | x  | res
-                        1      1    1        1      1    1
-         easy           1      0    0        1      0    0
-                        0      1    *        0      1    0
-                        0      0    1        0      0    *
-    ----------------    -----------------    -----------------
-    res: x              res: used==x         res: used & res
-    
+    fill_value is 1      fill_value is 0
+    intial_value is 0    initial_value is 1
+    -----------------    -----------------
+    used | x | res       used | x  | res
+    1      1    1        1      1    1
+    1      0    0        1      0    0
+    0      1    *        0      1    0
+    0      0    1        0      0    *
+    -----------------    -----------------
+    res: used==x         res: used & res    
     * cannot occur due to initial_value and used=0
-    """  
-    for ii, res_ii in enumerate(res):
-        if fill_value == initial_value:
-            res[ii] = res_ii & group_true
-        elif fill_value:
-            res[ii] = (res_ii >> special_shift) == (res_ii & group_true) 
-        else:
-            res[ii] = (res_ii >> special_shift) & (res_ii & group_true) 
-    return res.view(np.bool_)
-            
-@jitted_loop(initial_value_mode=0)
-def _sum(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] += a_ii
+    
+    
+====================
 
-@jitted_loop(initial_value_mode=0, int_version=_sum, dummy_0=True)
-def _nansum(gidx_ii, a_ii, res, ii):
-    res[(gidx_ii + 1) * (a_ii == a_ii)] += a_ii
-    
-@jitted_loop(initial_value_mode=1)
-def _prod(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] *= a_ii
+Computation of Variance
+https://en.wikipedia.org/wiki/...
+                    Algorithms_for_calculating_variance#Computing_shifted_data
+For each group, subtract the first value from all subsequent values before
+storing sum and sum of squares, also store count.
+..thus 4 items need to be stored.
+..we could possibly use the mean of the first two numbers as the shift, because
+you only need to store one number still to make that work, but the branching 
+requirements could get (more) complex and slow.
 
-@jitted_loop(initial_value_mode=1, int_version=_prod, dummy_0=True)
-def _nanprod(gidx_ii, a_ii, res, ii):
-    res[(gidx_ii + 1) * (a_ii == a_ii)] *= a_ii
-    
-@jitted_loop(initial_value_mode=mode_pos_inf)
-def _min(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] = min(a_ii, res[gidx_ii]) #if a is nan, min is res[g_idx]
-        
-@jitted_loop(initial_value_mode=mode_neg_inf) 
-def _max(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] = max(a_ii, res[gidx_ii]) #if a is nan, min is res[g_idx]
-    
-@jitted_loop(initial_value_mode=mode_equals_fill, iter_reversed=True)
-def _first(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] = a_ii
+Note that numpy's var does two passes, first computing the sum, to get the mean
+and then the sum of squared deviations from the mean.  To avoid the second pass
+we use the shifted method, which isn't quite as good, but in all real-world
+cases will be fine. 
 
-@jitted_loop(initial_value_mode=mode_equals_fill, int_version=_first,
-             dummy_0=True, iter_reversed=True)
-def _nanfirst(gidx_ii, a_ii, res, ii):
-    res[(gidx_ii + 1) * (a_ii == a_ii)] = a_ii
-    
-@jitted_loop(initial_value_mode=mode_equals_fill)
-def _last(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] = a_ii
-    
-@jitted_loop(initial_value_mode=mode_equals_fill, int_version=_last,
-             dummy_0=True)
-def _nanlast(gidx_ii, a_ii, res, ii):
-    res[(gidx_ii + 1) * (a_ii == a_ii)] = a_ii
-    
-@jitted_loop(initial_value_mode=group_true, intrusive_used=True, 
-             end_func=finish_bool_func, result_view_dtype=np.uint8)
-def _all(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] = group_used | (res[gidx_ii] & (a_ii != 0))
-
-@jitted_loop(initial_value_mode=0, intrusive_used=True,
-             end_func=finish_bool_func, result_view_dtype=np.uint8)
-def _any(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] |= group_used | (a_ii != 0)
-        
-@jitted_loop(initial_value_mode=1, intrusive_used=True,
-             end_func=finish_bool_func, result_view_dtype=np.uint8)
-def _allnan(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] = group_used | (res[gidx_ii] & (a_ii != a_ii))
-        
-@jitted_loop(initial_value_mode=0, intrusive_used=True,
-             end_func=finish_bool_func, result_view_dtype=np.uint8)
-def _anynan(gidx_ii, a_ii, res, ii):
-    res[gidx_ii] |= group_used | (a_ii != a_ii)
-
-    
+For the mean, numpy just takes the sum and divides by n, so we'll do that too.
+Note that this can lead to overflow (which would normally be reasonably 
+evident to the end user), but is otherwise ok (I think).
 
 """
-def _iter_mean(g_idx, a_ii, res, *args):
-    counter[gidx_ii] += 1
-    res[gidx_ii] += a_ii
-
-def _iter_std(gidx_ii, a_ii, res, *args):
-    counter[gidx_ii] += 1
-    tmp[gidx_ii] += a_ii
-    res[gidx_ii] += a_ii * a_ii
-
-def _finish_mean(res, counter, tmp, fillvalue):
-    for i in range(len(res)):
-        if counter[i]:
-            res[i] /= counter[i]
-        else:
-            res[i] = fillvalue
-
-def _finish_std(res, counter, tmp, fillvalue):
-    for i in range(len(res)):
-        if counter[i]:
-            mean = tmp[i] / counter[i]
-            res[i] = np.sqrt(res[i] / counter[i] - mean * mean)
-        else:
-            res[i] = fillvalue
-
-
-"""
-
-_impl_dict = dict(sum=_sum, nansum=_nansum, prod=_prod, nanprod=_nanprod,
-                  min=_min, nanmin=_min, max=_max, nanmax=_max,
-                  last=_last, nanlast=_nanlast, first=_first, nanfirst=_nanfirst,
-                  all=_all, any=_any, allnan=_allnan, anynan=_anynan)
-
-def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
-              dtype=None, axis=None, **kwargs):
-
-    group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
-                size=size, order=order, axis=axis, check_bounds=False,
-                ravel_group_idx=False)
-    func = get_func(func, aliasing, _impl_dict)
-    if not isstr(func):
-        # TODO: this isn't hard to fix, but I'll leave it for now
-        raise NotImplementedError("generic functions not supported in numba"
-                                  " implementation of aggregate.")
-    else:
-        # final prep and launch the function.    
-        dtype = check_dtype(dtype, func, a, flat_size)
-        func = _impl_dict[func]
-        ret = func(group_idx, a, flat_size, dtype, size, fill_value=fill_value, 
-                   result_c_order=order=='C', **kwargs)
-
-    return ret
-    
-    
-aggregate.__doc__ =  """
-    This is the numba implementation of aggregate.
-
-    You can use negative indexing in this version.
-    
-    If you provide a size value we will be able to iterate over ``a`` and 
-    ``group_idx`` exactly once.
-    
-    TODO: make this true even for the case where we broadcast ``group_idx``
-    with an ``axis`` argument.
-    """ + _doc_str
 
 
