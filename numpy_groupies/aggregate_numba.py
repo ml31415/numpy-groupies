@@ -16,11 +16,12 @@ info_mode_bool = 1
 info_mode_special = 2
 
 def aggregate_loop( info_mode=info_mode_simple,
-                    initial_value_mode=0,                
+                    initial_value_mode=0,   
+                    dtype_func=lambda dt, fill_value: dt,
                     iter_reversed=False,
                     end_func=None, 
                     start_func=None,
-                    dtype_func=None,
+                    work_dtype_func=None,
                     _nan_to_0=False,
                     _int_version=None,
                     ):
@@ -37,9 +38,9 @@ def aggregate_loop( info_mode=info_mode_simple,
                          The decorator will do the post-loop stuff. The work
                          array is of dtype=uint8.
         
-        info_mode_special - a special dtype is created by dtype_func, which
-          dtype_func      is then used by iter_func.  You must also provide
-          start_func      start_func for initialising and end_func for finishing. 
+        info_mode_special -   a special dtype is created by work_dtype_func, which
+          work_dtype_func     is then used by iter_func.  You must also provide
+          start_func          start_func for initialising and end_func for finishing. 
           end_func
         
     initial_value_mode - num > -10; or mode_equals_fill to match fill_value;
@@ -143,6 +144,9 @@ def aggregate_loop( info_mode=info_mode_simple,
                 # delegate to alternative jit function
                 return _int_version(group_idx, a, flat_size, res_dtype, size, 
                                    fill_value, *args, **kwargs)
+                
+            # get sensible result dtype
+            res_dtype = dtype_func(res_dtype, fill_value)
             
             # select the intial value
             if initial_value_mode > -10:
@@ -163,7 +167,7 @@ def aggregate_loop( info_mode=info_mode_simple,
             work_size = flat_size + _nan_to_0
             is_used = np.empty(0, dtype=bool)
             if info_mode == info_mode_special:
-                work = np.empty(work_size, dtype=dtype_func(res_dtype, a.dtype))
+                work = np.empty(work_size, dtype=work_dtype_func(res_dtype, a.dtype))
                 result = np.empty(flat_size, dtype=res_dtype)
             elif info_mode == info_mode_bool:
                 work = np.empty(work_size, np.uint8)
@@ -184,7 +188,7 @@ def aggregate_loop( info_mode=info_mode_simple,
         # add a method for building a nan-version (not valid in all cases)            
         jitted_loop_wrapped.get_nan_version = lambda: aggregate_loop(
             info_mode=info_mode, initial_value_mode=initial_value_mode,
-            iter_reversed=iter_reversed, end_func=end_func, dtype_func=dtype_func,
+            iter_reversed=iter_reversed, end_func=end_func, work_dtype_func=work_dtype_func,
             _nan_to_0=True, _int_version=jitted_loop_wrapped)(iter_func.py_func)
         
         return jitted_loop_wrapped
@@ -242,7 +246,8 @@ def _anynan(gidx_ii, a_ii, work, ignore, is_used_b):
 """ =======================================================================
     Functions with info_mode == info_mode_special
     ======================================================================= """
-            
+
+# mean =======================================================================            
 def _mean_initial(work, ignore):
     for ii in range(len(work)):
         work[ii].sum = 0
@@ -250,14 +255,77 @@ def _mean_initial(work, ignore):
 
 # TODO: in end_func, if fill is zero, cant we take advantage of 0/0=0?        
 @aggregate_loop(info_mode=info_mode_special, start_func=_mean_initial,
-        dtype_func=lambda res, a: np.dtype([('sum', res), ('count', int)]),
+        work_dtype_func=lambda res, a: np.dtype([('sum', res), ('count', np.uint32)]),
         end_func=lambda work, ignore, fill: work.sum/work.count
                                             if work.count > 0 else fill)
-def _mean(gidx_ii, a_ii, work, ignore, is_used_b): 
-    work[gidx_ii].sum += a_ii
-    work[gidx_ii].count += 1
+def _mean(gidx_ii, a_ii, work, *args): 
+    work_g = work[gidx_ii]
+    work_g.sum += a_ii
+    work_g.count += 1
     
-# TODO: std, var, argmin, argmax
+# var =======================================================================            
+ddof = 0 # TODO: pipe this through all the machinery
+         #       and pipe through a request for sqrt, i.e. std
+
+def _var_initial(work, ignore):
+    for ii in range(len(work)):
+        work[ii].count = 0
+        work[ii].sum_sqrs = 0
+        work[ii].sum = 0
+        work[ii].shift = 0
+
+def _var_end(work, ignore, fill):
+    return (work.sum_sqrs - (work.sum**2)/work.count) / (work.count-ddof) \
+            if work.count > 0 else fill
+          
+@aggregate_loop(info_mode=info_mode_special, start_func=_var_initial,
+        work_dtype_func=lambda res, a: np.dtype([
+        ('sum', res),('sum_sqrs', res), ('shift', res), ('count', np.uint32)]),
+        end_func=_var_end)
+def _var(gidx_ii, a_ii, work, *args): 
+    work_g = work[gidx_ii]
+    work_g.shift = a_ii * (work_g.count == 0)
+    a_ii_shifted = a_ii - work_g.shift # see note at bottom of file..TODO: check this is correct
+    work_g.sum += a_ii_shifted
+    work_g.sum_sqrs += a_ii_shifted**2
+    work_g.count +=1
+    
+    
+# argmin =======================================================================
+def _argmin_initial(work, initial):
+    for ii in range(len(work)):
+        work[ii].best = initial # pos_inf
+        work[ii].idx = -1 # but as uint
+
+# TODO: in end_func, if fill is -1, we can avoid branch.
+@aggregate_loop(info_mode=info_mode_special, initial_value_mode=mode_pos_inf,
+        start_func=_argmin_initial, dtype_func=lambda *args: np.dtype('uint32'),
+        work_dtype_func=lambda res, a: np.dtype([('best', a), ('idx', np.uint32)]),
+        end_func=lambda work, ignore, fill: work.idx if work.idx != -1 else fill)
+def _argmin(gidx_ii, a_ii, work, ii, ignore): 
+    work_g = work[gidx_ii]
+    new_best = min(a_ii, work_g.best)
+    work_g.idx += (ii - work_g.idx) * (new_best == a_ii)
+    work_g.best = new_best
+    
+# argmax =======================================================================
+def _argmax_initial(work, initial):
+    for ii in range(len(work)):
+        work[ii].best = initial # neg_inf
+        work[ii].idx = -1 # but as uint
+
+# TODO: in end_func, if fill is -1, we can avoid branch.
+@aggregate_loop(info_mode=info_mode_special, initial_value_mode=mode_pos_inf,
+        start_func=_argmax_initial, dtype_func=lambda *args: np.dtype('uint32'),
+        work_dtype_func=lambda res, a: np.dtype([('best', a), ('idx', np.uint32)]),
+        end_func=lambda work, ignore, fill: work.idx if work.idx != -1 else fill)
+def _argmax(gidx_ii, a_ii, work, ii, ignore): 
+    work_g = work[gidx_ii]
+    new_best = max(a_ii, work_g.best)
+    work_g.idx += (ii - work_g.idx) * (new_best == a_ii)
+    work_g.best = new_best
+    
+# TODO: std and var
 
 
 """ =======================================================================
@@ -271,7 +339,10 @@ _impl_dict = dict(sum=_sum, nansum=_sum.get_nan_version(),
                   last=_last, nanlast=_last.get_nan_version(),
                   first=_first, nanfirst=_first.get_nan_version(),
                   all=_all, any=_any, allnan=_allnan, anynan=_anynan,
-                  mean=_mean, nanmean=_mean.get_nan_version())
+                  mean=_mean, nanmean=_mean.get_nan_version(),
+                  var=_var, nanvar=_var.get_nan_version(),
+                  argmin=_argmin, nanargmin=_argmin,
+                  argmax=_argmax, nanargmax=_argmax)
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
               dtype=None, axis=None, **kwargs):
@@ -356,10 +427,6 @@ like this isn't always true.  For our use of min and max, for some reason
 we need to do it the other way around.  TODO: investigate further, and
 write a proper test for this...the minimal test I tried seemed to agree
 with python.  If need be, use the nansum-style hack.
-
-TODO: there is probably a slightly cleaner way to write the nan functions,
-that doesn't involve so much copy-pasting...though what we have now is at
-least fairly explicit.
     
 Note that sometimes you have to spend a bit of time looking for the correct
 way of doing something, e.g. numba's implementation of python's builtin min
@@ -367,9 +434,16 @@ function is about 10x faster than np.minimum or an if statement, or a
 crazy 2-element lookup table + 1-bit-bool-indexing ...but I only disovered
 that the builtin after messing around for a while with the other versions.
 
+==================
+
+TODO: the end_func stuff should possibly use numpy logical indexing rather
+than expect numba to do a good job of jitting branches.
 
 ==================
 
+TODO: note that argmin/argmax in numpy give the wrong indices as output: they
+provide indices into the squashed array, not the original array.
+==================
 
 The post-loop stuff for info_mode_bool, when fill_value != initial_value, has
 to perform the following...(numba strugles to optimize so we do it manually)...
