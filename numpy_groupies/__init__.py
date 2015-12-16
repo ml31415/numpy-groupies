@@ -42,6 +42,13 @@ else:
     aggregate = aggregate_weave 
 
 
+try:
+    import numba
+except ImportError:
+    aggregate_nb = None
+else:
+    from .aggregate_numba import aggregate as aggregate_nb
+    aggregate = aggregate_nb
 
 def unpack(group_idx, ret, mode='normal'):
     """ Take an aggregate packed array and uncompress it to the size of group_idx. 
