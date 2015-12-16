@@ -365,7 +365,7 @@ class _argmin:
         return work.idx if work.idx != -1 else fill
     
     
-@_aggregate_loop(mode=MODE_SPECIAL, initial_value_mode=MODE_POS_INF)
+@_aggregate_loop(mode=MODE_SPECIAL, initial_value_mode=MODE_NEG_INF)
 class _argmax:
     def dtype_func(*args):
         return np.dtype('uint32')
