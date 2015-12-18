@@ -97,7 +97,7 @@ By default, `aggregate` assumes you want to sum the values within each group, ho
 * ``argmax`` - the index in `a` of the maximum value in each group.
 * ``argmin`` - the index in `a` of the minimum value in each group.
 
-The above functions also have a `nan-` form, for which `nan` values are dropped before the aggregation calculation is computed:
+The above functions also have a `nan-` form, which skip the `nan` values instead of propagating them to the result of the calculation:
 * `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, ``nanargmax``, ``nanargmin``   
 
 The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
@@ -170,33 +170,24 @@ x = aggregate(group_idx, a, axis=1)
 
 
 ### Multiple implementations - explanation and benchmark results
-There are multiple implementations of `aggregate` provided.  They range from the 
-pure-python implementation which has no dependencies at all but is not very fast,
- to the `scipy.weave` implementation which runs fast but requires a working install 
-of `scipy.weave`.  For most users, the `aggregate_numpy.py` implementation is probably 
-the easiest to install and offers fairly reasonable speed for the majority of aggregation 
-functions.  If you download the whole repository and use `from aggregate import aggregate`, 
-the best available implementation will automatically be selected.  
+There are multiple implementations of `aggregate` provided.  They range from the pure-python implementation which has no dependencies at all but is not very fast, to the `scipy.weave` implementation which runs fast but requires a working install of `scipy.weave`.  For most users, the `aggregate_numpy.py` implementation is probably the easiest to install and offers fairly reasonable speed for the majority of aggregation functions.  If you download the whole repository and use `from aggregate import aggregate`, the best available implementation will automatically be selected.  
 
-**Note 1:** if you have `weave` installed but no working compiler registered then you 
-may run in to problems with the default implementation of `aggregate`.  The workaround
-is to explicitly use `npg.aggregate_np` rather than `npg.aggregate`.
+**Note 1:** if you have `weave` installed, but no working compiler registered then you may run in to problems with the default implementation of `aggregate`. The workaround is to explicitly use `npg.aggregate_np` rather than `npg.aggregate`.
 
-**Note 2:** hopefully the `numba` implementation will soon be finished so that we can retire
-the `weave` version.
+**Note 2:** the `numba` implementation will soon be finished, and is supposed to replace the `weave` version in some environments.
 
 Currently the following implementations exist:  
-* **pure python**. *Use only if you don't have numpy installed*. This has no dependencies, instead making use of the grouping and sorting functionality provided by the python language itself plus the standard library.
-* **numpy ufunc**. *Only for use with testing/benchmarking, i.e. normally do NOT use this.*  This impelmentation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for perfoming excactly the same calculation that `aggregate` executes, however the numpy implementation is very slow (as of `v1.9.2`).  A [numpy issue](https://github.com/numpy/numpy/issues/5922) has be created to try and address this performance bug.  Also, note that some of the desired functions do not have suitable `ufunc.at` analogues (e.g. `mean`, `var`).
-* **numpy**.  *RECOMMENDED, unless you have weave installed and working.* This also uses `numpy`, but most of the aggregation functions have been hand-optimised using something other than `ufunc.at`.  You can see the tricks employed by reading the code: it mostly relies on `np.bincount` and some basic indexing magic.  For most users this will be the most sensible choice of implementation, at least initially.
-* **pandas**. *You probably don't want this - check the benchmarks.*  As mentioned at the top of this page, pandas' `groupby` concept is the same as the task performed by `aggregate`.  Thus, it makes sense to try and piggyback off pandas if it is available. Note however, that `pandas` is not actually any faster than the recommended `numpy` implementation (except in a few cases).  Also, note that there may be room for improvement in the way that `pandas` is utilized here.  Most notably, when computing multiple aggregations of the same data (e.g. `'min'` and `'max'`) pandas could potentially be used much more efficiently - although other implementations could also deal with this case better,[as discussed in this issue](https://github.com/ml31415/accumarray/issues/3).
-* **weave** - *If you need absolute speed and have/can get weave working then use this.* Weave does just-in-time compilation of handwritten C-code, producing binaries that can be easily run from python.  In all cases this allows this implementation to be faster than the recommended numpy implementation, especially for `'min'`, `'max'`, and `'prod'`.
+* **numpy** - *RECOMMENDED.* This implementation uses plain `numpy`, mainly relying on `np.bincount` and basic indexing magic. As it comes without other dependencies except `numpy` and shows reasonable performance, this is the recommended implementation.
+* **weave** - *If you have a working GCC environment and need best performance, use this.* Weave compiles C-code on demand at runtime, producing (and caching) binaries that get executed from within python. This is currently the fastest of our implementations, especially for `'min'`, `'max'`, and `'prod'`.
+* **pure python** - *Use only if you don't have numpy installed*. This has no dependencies, instead making use of the grouping and sorting functionality provided by the python language itself plus the standard library.
+* **numpy ufunc** - *Only used for testing/benchmarking.*  This impelmentation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for perfoming excactly the same calculation that `aggregate` executes, however the numpy implementation is very slow (as of `v1.9.2`).  A [numpy issue](https://github.com/numpy/numpy/issues/5922) has been created to address this performance issue. Also, note that some of the desired functions do not have suitable `ufunc.at` analogues (e.g. `mean`, `var`).
+* **pandas** - *You don't want this - check the benchmarks.*  As mentioned at the top of this page, pandas' `groupby` concept is the same as the task performed by `aggregate`. Thus, it makes sense to try and piggyback off pandas if it is available. Note however, that `pandas` is not actually any faster than the recommended `numpy` implementation (except in a few cases). Also, note that there may be room for improvement in the way that `pandas` is utilized here. Most notably, when computing multiple aggregations of the same data (e.g. `'min'` and `'max'`) pandas could potentially be used much more efficiently - although other implementations could also deal with this case better, [as discussed in this issue](https://github.com/ml31415/accumarray/issues/3).
 
 All implementations have the same calling syntax and produce the same outputs, to within some floating-point error. However some implementations only support a subset of the valid inputs and will sometimes throw `NotImplementedError`.
 
-Scripts for testing and benchmarking are included in this repository, which you can run yourself if need be.  Note that relative speeds will vary depending on the nature of the inputs.
+Scripts for testing and benchmarking are included in this repository, which you can run yourself if need be. Note that relative speeds will vary depending on the nature of the inputs.
 
-Below we are using `500,000` indices uniformly picked from `[0, 1000)`.  The values of `a` are uniformly picked from the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). For `nan-` operations another 20% of the values set to nan, leaving the remainder on the interval `[0.2,0.8)`.
+Below we are using `500,000` indices uniformly picked from `[0, 1000)`. The values of `a` are uniformly picked from the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). For `nan-` operations another 20% of the values are set to nan, leaving the remainder on the interval `[0.2,0.8)`.
 
 The benchmarking results are given in ms for an i7-5500U running at 2.40GHz:
 ```text
@@ -231,10 +222,7 @@ The `grouploop` implementation shown here uses `aggregate_numpy.py`'s generic fu
 
 
 ### Development
-The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation 
-of individual functions will become unneccessary. However even if that does happen, there will still 
-probably be a role for this `aggregate` function as a light-weight wrapper around those functions, 
-and it may well be that `C` code will always be significantly faster than whatever `numpy` can offer.
+The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation of individual functions will become unneccessary. However even if that does happen, there may still be a role for the `aggregate` function as a light-weight wrapper around those functions.
 
 Maybe at some point a version of `aggregate` will make its way into `numpy` itself (or at least `scipy`).
 
