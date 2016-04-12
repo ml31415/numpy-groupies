@@ -6,11 +6,15 @@ import itertools
 import numpy as np
 import pytest
 
-from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
-                aggregate_weave, aggregate_pd as aggregate_pandas)
+from .. import (aggregate_py,
+                aggregate_ufunc,
+                aggregate_np as aggregate_numpy,
+                aggregate_nb as aggregate_numba,
+                aggregate_weave,
+                aggregate_pd as aggregate_pandas)
 
 
-_implementations = ['aggregate_' + impl for impl in "py ufunc numpy weave pandas".split()]
+_implementations = ['aggregate_' + impl for impl in "py ufunc numpy numba weave pandas".split()]
 aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
 
 def wrap_aggregate_xfail(impl, name=None):

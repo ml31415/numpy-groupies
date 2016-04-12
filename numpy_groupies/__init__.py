@@ -30,6 +30,7 @@ else:
     from .aggregate_numba import aggregate as aggregate_nb
 
 try:
+    raise ImportError  # we don't really want this
     from scipy import weave
 except ImportError:
     aggregate_weave = None
