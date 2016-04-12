@@ -1,8 +1,8 @@
 
-def dummy_no_impl(*args,**kwargs):
+def dummy_no_impl(*args, **kwargs):
     raise NotImplementedError("You may need to install another package (numpy, "
                               "weave, or numba) to access a working implementation.")
-    
+
 from .aggregate_purepy import aggregate as aggregate_py
 
 aggregate = aggregate_py
@@ -13,23 +13,21 @@ except ImportError:
     aggregate_np = aggregate_ufunc = dummy_no_impl
     multi_arange = multi_cumsum = label_contiguous_1d = dummy_no_impl
 else:
-    from .aggregate_numpy import aggregate as aggregate_np
+    from .aggregate_numpy import aggregate
+    aggregate_np = aggregate
     from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
-    aggregate = aggregate_np
-    from .misc_tools_numpy import (multi_arange, multi_cumsum, 
+    from .misc_tools_numpy import (multi_arange, multi_cumsum,
                                    label_contiguous_1d,
                                    find_contiguous_boundaries,
                                    relabel_groups_masked,
                                    relabel_groups_unique)
 
-    
-# TODO: unless we are benchmarking/testing there is probably no need to import pandas as this stage
 try:
-    import pandas
+    import numba
 except ImportError:
-    aggregate_pd = None
+    aggregate_nb = None
 else:
-    from .aggregate_pandas import aggregate as aggregate_pd
+    from .aggregate_numba import aggregate as aggregate_nb
 
 try:
     from scipy import weave
@@ -37,8 +35,15 @@ except ImportError:
     aggregate_weave = None
 else:
     from .aggregate_weave import aggregate as aggregate_weave, step_indices, step_count
-    aggregate = aggregate_weave 
+    aggregate = aggregate_weave
 
+# TODO: Unless we are benchmarking/testing there is probably no need to import pandas as this stage
+try:
+    import pandas
+except ImportError:
+    aggregate_pd = None
+else:
+    from .aggregate_pandas import aggregate as aggregate_pd
 
 
 def unpack(group_idx, ret, mode='normal'):

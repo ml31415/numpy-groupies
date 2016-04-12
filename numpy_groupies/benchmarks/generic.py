@@ -5,10 +5,14 @@ import timeit
 from operator import itemgetter
 import numpy as np
 
-from aggregate import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
-                       aggregate_weave, aggregate_pd as aggregate_pandas)
+from numpy_groupies import (aggregate_py,
+                            aggregate_ufunc,
+                            aggregate_np as aggregate_numpy,
+                            aggregate_nb as aggregate_numba,
+                            aggregate_weave,
+                            aggregate_pd as aggregate_pandas)
 
-from aggregate.utils import allnan, anynan, nanfirst, nanlast
+from numpy_groupies.utils import allnan, anynan, nanfirst, nanlast
 
 
 def aggregate_grouploop(*args, **kwargs):
@@ -24,7 +28,7 @@ def aggregate_grouploop(*args, **kwargs):
     return aggregate_numpy(*args, func=lambda x: func(x), **kwargs)
 
 
-_implementations = ['aggregate_' + impl for impl in "py grouploop numpy weave ufunc pandas".split()]
+_implementations = ['aggregate_' + impl for impl in "py grouploop numpy numba weave ufunc pandas".split()]
 aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
 
 
@@ -62,14 +66,19 @@ def benchmark(implementations, size=5e5, repeat=3):
             except NotImplementedError:
                 print '----'.rjust(14),
                 continue
+            except Exception:
+                print 'ERROR'.rjust(14),
             else:
                 results.append(res)
-            t0 = min(timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func)).repeat(repeat=repeat, number=1))
-            print ("%.3f" % (t0 * 1000)).rjust(14),
+                try:
+                    np.testing.assert_array_almost_equal(res, results[0])
+                except AssertionError:
+                    print 'FAIL'.rjust(14),
+                else:
+                    t0 = min(timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func)).repeat(repeat=repeat, number=1))
+                    print ("%.3f" % (t0 * 1000)).rjust(14),
             sys.stdout.flush()
         print
-        for res in results[1:]:
-            np.testing.assert_array_almost_equal(res, results[0])
 
     print "%s(%s), Python %s, Numpy %s" % (platform.system(), platform.machine(), sys.version.split()[0], np.version.version)
 

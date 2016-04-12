@@ -5,8 +5,8 @@ import timeit
 import numpy as np
 
 
-from aggregate.utils import aliasing
-from aggregate import aggregate_py, aggregate_np, aggregate_ufunc, aggregate_pd
+from numpy_groupies.utils import aliasing
+from numpy_groupies import aggregate_py, aggregate_np, aggregate_ufunc, aggregate_pd
 
 
 def aggregate_group_loop(*args, **kwargs):
