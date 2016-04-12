@@ -1,0 +1,870 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="899.61053"
+   height="529.73029"
+   id="svg2"
+   version="1.1"
+   inkscape:version="0.48.4 r"
+   sodipodi:docname="aggregate_dims.svg"
+   inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+   inkscape:export-xdpi="100"
+   inkscape:export-ydpi="100">
+  <defs
+     id="defs4">
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5275"
+       id="pattern6241"
+       patternTransform="matrix(10,0,0,18.544032,-193.96854,-129.01309)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5470"
+       id="pattern6238"
+       patternTransform="matrix(10,0,0,15.194616,-194.81761,-2.5743096)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5491"
+       id="pattern6227"
+       patternTransform="matrix(10,0,0,15.855732,-23,-113.33828)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5498"
+       id="pattern6137"
+       patternTransform="matrix(10,0,0,15.194616,-194.45923,-287.40696)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5505"
+       id="pattern6130"
+       patternTransform="matrix(10,0,0,15.194616,-194.45925,-256.46749)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5512"
+       id="pattern6123"
+       patternTransform="matrix(10,0,0,43.061529,93.957634,462.22964)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5642"
+       id="pattern5916"
+       patternTransform="matrix(10,0,0,16.363046,0.35837606,74.953694)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Checkerboard"
+       id="pattern5714"
+       patternTransform="matrix(9.1156894,0,-4.931593e-7,16.82432,555.28756,110.0202)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Checkerboard"
+       id="pattern5708"
+       patternTransform="matrix(16.085254,-5.3148091e-8,0,16.32564,-52.090568,-267.9006)" />
+    <inkscape:perspective
+       sodipodi:type="inkscape:persp3d"
+       inkscape:vp_x="20.602674 : 305.96482 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_z="1369.5928 : 305.96482 : 1"
+       inkscape:persp3d-origin="695.09773 : 163.3435 : 1"
+       id="perspective5658" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Checkerboard"
+       id="pattern5656"
+       patternTransform="matrix(9.3642593,0,0,16.202402,-3.5957529,-270.37048)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Checkerboard"
+       id="pattern5642"
+       patternTransform="matrix(10,0,0,16.363046,0.35837606,-176.68636)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5505"
+       id="pattern5616"
+       patternTransform="matrix(10,0,0,15.194616,-194.45925,282.63585)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5308"
+       id="pattern5512"
+       patternTransform="matrix(10,0,0,43.061529,93.957634,462.22967)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5273"
+       id="pattern5505"
+       patternTransform="matrix(10,0,0,15.194616,-194.45925,-256.46746)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5277"
+       id="pattern5498"
+       patternTransform="matrix(10,0,0,15.194616,-194.45923,-287.40693)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Checkerboard"
+       id="pattern5491"
+       patternTransform="matrix(10,0,0,15.855732,-23,-122.09326)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5432"
+       id="pattern5472"
+       patternTransform="matrix(10,0,0,15.194616,-194.81761,-151.32929)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5432"
+       id="pattern5470"
+       patternTransform="matrix(10,0,0,15.194616,-194.81761,-11.32929)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5277"
+       id="pattern5432"
+       patternTransform="matrix(10,0,0,15.194616,-194.81761,-130.32929)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Checkerboard"
+       id="pattern5308"
+       patternTransform="matrix(10,0,0,43.061529,85.957634,473.26756)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5224"
+       id="pattern5277"
+       patternTransform="matrix(10,0,0,15.194616,-202.45923,-287.40693)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5265"
+       id="pattern5275"
+       patternTransform="matrix(10,0,0,18.544032,-193.96854,-137.76807)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#pattern5224"
+       id="pattern5273"
+       patternTransform="matrix(10,0,0,15.194616,-202.45925,-245.42957)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Checkerboard"
+       id="pattern5265"
+       patternTransform="matrix(10,0,0,18.544032,-19.528575,1.2884542)" />
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#Checkerboard"
+       id="pattern5224"
+       patternTransform="matrix(10,0,0,15.194616,-16.132299,30.642012)" />
+    <pattern
+       inkscape:stockid="Checkerboard"
+       id="Checkerboard"
+       patternTransform="translate(0,0) scale(10,10)"
+       height="2"
+       width="2"
+       patternUnits="userSpaceOnUse"
+       inkscape:collect="always">
+      <rect
+         id="rect4549"
+         height="1"
+         width="1"
+         y="0"
+         x="0"
+         style="fill:black;stroke:none" />
+      <rect
+         id="rect4551"
+         height="1"
+         width="1"
+         y="1"
+         x="1"
+         style="fill:black;stroke:none" />
+    </pattern>
+  </defs>
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="2"
+     inkscape:cx="227.23882"
+     inkscape:cy="103.48214"
+     inkscape:document-units="px"
+     inkscape:current-layer="layer1"
+     showgrid="false"
+     fit-margin-right="10"
+     fit-margin-bottom="10"
+     fit-margin-top="10"
+     fit-margin-left="10"
+     inkscape:window-width="1366"
+     inkscape:window-height="745"
+     inkscape:window-x="249"
+     inkscape:window-y="1072"
+     inkscape:window-maximized="1" />
+  <metadata
+     id="metadata7">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(234,267.51702)">
+    <flowRoot
+       xml:space="preserve"
+       id="flowRoot5326"
+       style="font-size:40px;font-style:normal;font-weight:normal;text-align:center;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;font-family:Sans"><flowRegion
+         id="flowRegion5328"><rect
+           id="rect5330"
+           width="106.98261"
+           height="46.698761"
+           x="4.2453418"
+           y="106.84968" /></flowRegion><flowPara
+         id="flowPara5332"></flowPara></flowRoot>    <g
+       id="g6045"
+       transform="translate(0,2.3577045)"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100">
+      <rect
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         ry="0"
+         y="-75.252502"
+         x="-110.57227"
+         height="17.385098"
+         width="18.377663"
+         id="rect5271"
+         style="fill:none;stroke:#3100ff;stroke-width:3.99999976;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0" />
+      <rect
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         style="fill:url(#pattern5472);fill-opacity:1;fill-rule:nonzero;stroke:#ff00ff;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+         id="rect5384"
+         width="311.30624"
+         height="17.385098"
+         x="-110.57227"
+         y="-106.84576"
+         ry="0" />
+      <flowRoot
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         xml:space="preserve"
+         id="flowRoot5386"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314;stroke:none;font-family:Sans"
+         transform="translate(-528.57152,-135.31805)"><flowRegion
+           id="flowRegion5388"><rect
+             id="rect5390"
+             width="387.84677"
+             height="289.38412"
+             x="18.011459"
+             y="23.59853"
+             style="text-align:end;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314" /></flowRegion><flowPara
+           id="flowPara5392"
+           style="font-size:20px">group_idx</flowPara></flowRoot>      <flowRoot
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         transform="translate(-528.57152,-104.47623)"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#3100ff;fill-opacity:1;stroke:none;font-family:Sans"
+         id="flowRoot5398"
+         xml:space="preserve"><flowRegion
+           id="flowRegion5400"><rect
+             style="text-align:end;text-anchor:end;fill:#3100ff;fill-opacity:1"
+             y="23.59853"
+             x="18.011459"
+             height="289.38412"
+             width="387.84677"
+             id="rect5402" /></flowRegion><flowPara
+           style="font-size:20px;fill:#3100ff;fill-opacity:1"
+           id="flowPara5404">a</flowPara></flowRoot>      <g
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         id="g5406"
+         transform="translate(7.6416152,125.03976)">
+        <rect
+           ry="0"
+           y="-159.56903"
+           x="-118.21389"
+           height="17.985479"
+           width="136.39816"
+           id="rect5408"
+           style="fill:url(#pattern5308);fill-opacity:1;fill-rule:nonzero;stroke:#31ff4d;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0" />
+        <flowRoot
+           xml:space="preserve"
+           id="flowRoot5410"
+           style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902;stroke:none;font-family:Sans"
+           transform="translate(-536.21314,-185.82707)"><flowRegion
+             id="flowRegion5412"><rect
+               id="rect5414"
+               width="387.84677"
+               height="289.38412"
+               x="18.011459"
+               y="23.59853"
+               style="text-align:end;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902" /></flowRegion><flowPara
+             id="flowPara5416"
+             style="font-size:20px;fill:#31ff4d;fill-opacity:0.97254902">result</flowPara></flowRoot>      </g>
+      <rect
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         style="fill:none;stroke:#000000;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:0.31666667;stroke-dasharray:none;stroke-dashoffset:0"
+         id="rect5434"
+         width="430.47766"
+         height="115.4733"
+         x="-222.00002"
+         y="-116.02664" />
+    </g>
+    <rect
+       style="fill:url(#pattern6241);fill-opacity:1;fill-rule:nonzero;stroke:#3100ff;stroke-width:3.99999952;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+       id="rect5269"
+       width="311.30624"
+       height="70.027321"
+       x="-110.57227"
+       y="76.429604"
+       ry="0"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100" />
+    <rect
+       style="fill:url(#pattern6238);fill-opacity:1;fill-rule:nonzero;stroke:#ff00ff;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+       id="rect5438"
+       width="311.30624"
+       height="17.385098"
+       x="-110.57227"
+       y="41.909218"
+       ry="0"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100" />
+    <flowRoot
+       xml:space="preserve"
+       id="flowRoot5440"
+       style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314;stroke:none;font-family:Sans"
+       transform="translate(-528.57152,13.43693)"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100"><flowRegion
+         id="flowRegion5442"><rect
+           id="rect5444"
+           width="387.84677"
+           height="289.38412"
+           x="18.011459"
+           y="23.59853"
+           style="text-align:end;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314" /></flowRegion><flowPara
+         id="flowPara5446"
+         style="font-size:20px">group_idx</flowPara></flowRoot>    <flowRoot
+       transform="translate(-526.57152,46.27875)"
+       style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#3100ff;fill-opacity:1;stroke:none;font-family:Sans"
+       id="flowRoot5448"
+       xml:space="preserve"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100"><flowRegion
+         id="flowRegion5450"><rect
+           style="text-align:end;text-anchor:end;fill:#3100ff;fill-opacity:1"
+           y="23.59853"
+           x="18.011459"
+           height="289.38412"
+           width="387.84677"
+           id="rect5452" /></flowRegion><flowPara
+         style="font-size:20px;fill:#3100ff;fill-opacity:1"
+         id="flowPara5476">a, axis=1</flowPara><flowPara
+         style="font-size:20px;fill:#3100ff;fill-opacity:1"
+         id="flowPara6245" /></flowRoot>    <rect
+       style="fill:url(#pattern6227);fill-opacity:1;fill-rule:nonzero;stroke:#31ff4d;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+       id="rect5458"
+       width="136.39816"
+       height="64.985481"
+       x="-110.57227"
+       y="171.22571"
+       ry="0"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100" />
+    <flowRoot
+       transform="translate(-533.57152,140.96767)"
+       style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902;stroke:none;font-family:Sans"
+       id="flowRoot5460"
+       xml:space="preserve"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100"><flowRegion
+         id="flowRegion5462"><rect
+           style="text-align:end;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902"
+           y="23.59853"
+           x="18.011459"
+           height="289.38412"
+           width="387.84677"
+           id="rect5464" /></flowRegion><flowPara
+         style="font-size:20px;fill:#31ff4d;fill-opacity:0.97254902"
+         id="flowPara5466">result</flowPara></flowRoot>    <rect
+       style="fill:none;stroke:#000000;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:0.31666667;stroke-dasharray:none;stroke-dashoffset:0"
+       id="rect5468"
+       width="430.47766"
+       height="217.4733"
+       x="-222.00002"
+       y="32.72834"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100" />
+    <g
+       id="g6006"
+       transform="translate(445.14176,-510.39202)"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100">
+      <rect
+         style="fill:url(#pattern5642);fill-opacity:1;fill-rule:nonzero;stroke:#ff00ff;stroke-width:3.99999952;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+         id="rect5226"
+         width="311.30624"
+         height="48.566196"
+         x="-110.21389"
+         y="264.43042"
+         ry="0" />
+      <rect
+         style="fill:none;stroke:#000000;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:0.31666667;stroke-dasharray:none;stroke-dashoffset:0"
+         id="rect5518"
+         width="430.47766"
+         height="244.24001"
+         x="-222.00002"
+         y="254.88956"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         inkscape:export-xdpi="100"
+         inkscape:export-ydpi="100" />
+      <flowRoot
+         xml:space="preserve"
+         id="flowRoot5522"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314;stroke:none;font-family:Sans"
+         transform="translate(-528.57152,238.5205)"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         inkscape:export-xdpi="100"
+         inkscape:export-ydpi="100"><flowRegion
+           id="flowRegion5524"><rect
+             id="rect5526"
+             width="387.84677"
+             height="289.38412"
+             x="18.011459"
+             y="23.59853"
+             style="text-align:end;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314" /></flowRegion><flowPara
+           id="flowPara5528"
+           style="font-size:20px">group_idx</flowPara></flowRoot>      <rect
+         ry="0"
+         y="327.11935"
+         x="-110.21389"
+         height="17.385098"
+         width="311.30624"
+         id="rect5530"
+         style="fill:url(#pattern5616);fill-opacity:1;fill-rule:nonzero;stroke:#3100ff;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         inkscape:export-xdpi="100"
+         inkscape:export-ydpi="100" />
+      <flowRoot
+         transform="translate(-527.42894,298.54943)"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#3100ff;fill-opacity:1;stroke:none;font-family:Sans"
+         id="flowRoot5532"
+         xml:space="preserve"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         inkscape:export-xdpi="100"
+         inkscape:export-ydpi="100"><flowRegion
+           id="flowRegion5534"><rect
+             style="text-align:end;text-anchor:end;fill:#3100ff;fill-opacity:1"
+             y="23.59853"
+             x="18.011459"
+             height="289.38412"
+             width="387.84677"
+             id="rect5536" /></flowRegion><flowPara
+           style="font-size:20px;fill:#3100ff;fill-opacity:1"
+           id="flowPara5538">a</flowPara></flowRoot>      <flowRoot
+         transform="translate(-528.66918,343.95524)"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902;stroke:none;font-family:Sans"
+         id="flowRoot5542"
+         xml:space="preserve"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         inkscape:export-xdpi="100"
+         inkscape:export-ydpi="100"><flowRegion
+           id="flowRegion5544"><rect
+             style="text-align:end;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902"
+             y="23.59853"
+             x="18.011459"
+             height="289.38412"
+             width="387.84677"
+             id="rect5546" /></flowRegion><flowPara
+           style="font-size:20px;fill:#31ff4d;fill-opacity:0.97254902"
+           id="flowPara5548">result</flowPara></flowRoot>      <g
+         transform="translate(-1.1869814,7.1218883)"
+         id="g5716">
+        <rect
+           inkscape:export-ydpi="100"
+           inkscape:export-xdpi="100"
+           inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+           ry="0"
+           y="375.36508"
+           x="-107.1385"
+           height="98.337669"
+           width="58.593956"
+           id="rect5644"
+           style="fill:url(#pattern5656);fill-opacity:1;fill-rule:nonzero;stroke:#31ff4d;stroke-width:3.99999952;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0" />
+        <rect
+           style="fill:url(#pattern5708);fill-opacity:1;fill-rule:nonzero;stroke:#31ff4d;stroke-width:4.26032257;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+           id="rect5688"
+           width="47.913658"
+           height="97.213654"
+           x="-52.633987"
+           y="350.91931"
+           ry="0"
+           inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+           inkscape:export-xdpi="100"
+           inkscape:export-ydpi="100"
+           transform="matrix(0.88152551,-0.4721364,0,1,0,0)" />
+        <rect
+           style="fill:url(#pattern5714);fill-opacity:1;fill-rule:nonzero;stroke:#31ff4d;stroke-width:5.84869576;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+           id="rect5710"
+           width="59.885006"
+           height="52.163929"
+           x="598.62207"
+           y="747.74231"
+           ry="0"
+           inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+           inkscape:export-xdpi="100"
+           inkscape:export-ydpi="100"
+           transform="matrix(1,0,-0.88386769,0.46773701,0,0)" />
+      </g>
+    </g>
+    <g
+       id="g5985"
+       transform="translate(445.14176,-500.56797)"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100">
+      <rect
+         ry="0"
+         y="516.0705"
+         x="-110.21389"
+         height="48.566196"
+         width="311.30624"
+         id="rect5878"
+         style="fill:url(#pattern5916);fill-opacity:1;fill-rule:nonzero;stroke:#ff00ff;stroke-width:3.99999952;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0" />
+      <rect
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         y="506.5296"
+         x="-222.00002"
+         height="244.24001"
+         width="430.47766"
+         id="rect5880"
+         style="fill:none;stroke:#000000;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:0.31666667;stroke-dasharray:none;stroke-dashoffset:0" />
+      <flowRoot
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         transform="translate(-528.57152,490.16055)"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314;stroke:none;font-family:Sans"
+         id="flowRoot5882"
+         xml:space="preserve"><flowRegion
+           id="flowRegion5884"><rect
+             style="text-align:end;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314"
+             y="23.59853"
+             x="18.011459"
+             height="289.38412"
+             width="387.84677"
+             id="rect5886" /></flowRegion><flowPara
+           style="font-size:20px"
+           id="flowPara5888">group_idx</flowPara></flowRoot>      <flowRoot
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         xml:space="preserve"
+         id="flowRoot5892"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#3100ff;fill-opacity:1;stroke:none;font-family:Sans"
+         transform="translate(-527.42894,550.18948)"><flowRegion
+           id="flowRegion5894"><rect
+             id="rect5896"
+             width="387.84677"
+             height="289.38412"
+             x="18.011459"
+             y="23.59853"
+             style="text-align:end;text-anchor:end;fill:#3100ff;fill-opacity:1" /></flowRegion><flowPara
+           id="flowPara5898"
+           style="font-size:20px;fill:#3100ff;fill-opacity:1">a</flowPara></flowRoot>      <flowRoot
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         xml:space="preserve"
+         id="flowRoot5900"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902;stroke:none;font-family:Sans"
+         transform="translate(-528.66918,595.59529)"><flowRegion
+           id="flowRegion5902"><rect
+             id="rect5904"
+             width="387.84677"
+             height="289.38412"
+             x="18.011459"
+             y="23.59853"
+             style="text-align:end;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902" /></flowRegion><flowPara
+           id="flowPara5906"
+           style="font-size:20px;fill:#31ff4d;fill-opacity:0.97254902">result</flowPara></flowRoot>      <g
+         id="g5908"
+         transform="translate(-1.1869814,258.76194)">
+        <rect
+           style="fill:url(#pattern5656);fill-opacity:1;fill-rule:nonzero;stroke:#31ff4d;stroke-width:3.99999952;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+           id="rect5910"
+           width="58.593956"
+           height="98.337669"
+           x="-107.1385"
+           y="375.36508"
+           ry="0"
+           inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+           inkscape:export-xdpi="100"
+           inkscape:export-ydpi="100" />
+        <rect
+           transform="matrix(0.88152551,-0.4721364,0,1,0,0)"
+           inkscape:export-ydpi="100"
+           inkscape:export-xdpi="100"
+           inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+           ry="0"
+           y="350.91931"
+           x="-52.633987"
+           height="97.213654"
+           width="47.913658"
+           id="rect5912"
+           style="fill:url(#pattern5708);fill-opacity:1;fill-rule:nonzero;stroke:#31ff4d;stroke-width:4.26032257;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0" />
+        <rect
+           transform="matrix(1,0,-0.88386769,0.46773701,0,0)"
+           inkscape:export-ydpi="100"
+           inkscape:export-xdpi="100"
+           inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+           ry="0"
+           y="747.74231"
+           x="598.62207"
+           height="52.163929"
+           width="59.885006"
+           id="rect5914"
+           style="fill:url(#pattern5714);fill-opacity:1;fill-rule:nonzero;stroke:#31ff4d;stroke-width:5.84869576;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0" />
+      </g>
+      <rect
+         style="fill:none;stroke:#3100ff;stroke-width:3.99999976;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+         id="rect5931"
+         width="18.377663"
+         height="17.385098"
+         x="-110.57227"
+         y="577.58728"
+         ry="0"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         inkscape:export-xdpi="100"
+         inkscape:export-ydpi="100" />
+    </g>
+    <g
+       id="g6199"
+       transform="translate(0,-0.47579075)"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100">
+      <rect
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         y="-255.02667"
+         x="-222.00002"
+         height="115.4733"
+         width="430.47766"
+         id="rect5418"
+         style="fill:none;stroke:#000000;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:0.31666667;stroke-dasharray:none;stroke-dashoffset:0" />
+      <rect
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         ry="0"
+         y="-242.92343"
+         x="-110.21389"
+         height="17.385098"
+         width="311.30624"
+         id="rect2985"
+         style="fill:url(#pattern6137);fill-opacity:1;fill-rule:nonzero;stroke:#ff00ff;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0" />
+      <flowRoot
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         transform="translate(-528.57152,-271.39572)"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314;stroke:none;font-family:Sans"
+         id="flowRoot5310"
+         xml:space="preserve"><flowRegion
+           id="flowRegion5312"><rect
+             style="text-align:end;text-anchor:end;fill:#ff00ff;fill-opacity:0.40784314"
+             y="23.59853"
+             x="18.011459"
+             height="289.38412"
+             width="387.84677"
+             id="rect5314" /></flowRegion><flowPara
+           style="font-size:20px"
+           id="flowPara5316">group_idx</flowPara></flowRoot>      <rect
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         style="fill:url(#pattern6130);fill-opacity:1;fill-rule:nonzero;stroke:#3100ff;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0"
+         id="rect5267"
+         width="311.30624"
+         height="17.385098"
+         x="-110.21389"
+         y="-211.98396"
+         ry="0" />
+      <flowRoot
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         xml:space="preserve"
+         id="flowRoot5318"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#3100ff;fill-opacity:1;stroke:none;font-family:Sans"
+         transform="translate(-527.42894,-240.55391)"><flowRegion
+           id="flowRegion5320"><rect
+             id="rect5322"
+             width="387.84677"
+             height="289.38412"
+             x="18.011459"
+             y="23.59853"
+             style="text-align:end;text-anchor:end;fill:#3100ff;fill-opacity:1" /></flowRegion><flowPara
+           id="flowPara5324"
+           style="font-size:20px;fill:#3100ff;fill-opacity:1">a</flowPara></flowRoot>      <rect
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         ry="0"
+         y="-170.60695"
+         x="-110.21389"
+         height="17.985479"
+         width="136.39816"
+         id="rect5279"
+         style="fill:url(#pattern6123);fill-opacity:1;fill-rule:nonzero;stroke:#31ff4d;stroke-width:4;stroke-linecap:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0" />
+      <flowRoot
+         inkscape:export-ydpi="100"
+         inkscape:export-xdpi="100"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         xml:space="preserve"
+         id="flowRoot5334"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902;stroke:none;font-family:Sans"
+         transform="translate(-528.66918,-196.86499)"><flowRegion
+           id="flowRegion5336"><rect
+             id="rect5338"
+             width="387.84677"
+             height="289.38412"
+             x="18.011459"
+             y="23.59853"
+             style="text-align:end;text-anchor:end;fill:#31ff4d;fill-opacity:0.97254902" /></flowRegion><flowPara
+           id="flowPara5340"
+           style="font-size:20px;fill:#31ff4d;fill-opacity:0.97254902">result</flowPara></flowRoot>      <flowRoot
+         xml:space="preserve"
+         id="flowRoot6140"
+         style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#000000;fill-opacity:0.29128238;stroke:none;font-family:Sans"
+         transform="translate(-201.21046,-189.98847)"
+         inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+         inkscape:export-xdpi="100"
+         inkscape:export-ydpi="100"><flowRegion
+           id="flowRegion6142"><rect
+             id="rect6144"
+             width="387.84677"
+             height="289.38412"
+             x="18.011459"
+             y="23.59853"
+             style="text-align:end;text-anchor:end;fill:#000000;fill-opacity:0.29128238" /></flowRegion><flowPara
+           id="flowPara6146"
+           style="font-size:20px;fill:#000000;fill-opacity:0.29128238">form 1</flowPara></flowRoot>    </g>
+    <flowRoot
+       xml:space="preserve"
+       id="flowRoot6148"
+       style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#000000;fill-opacity:0.29128238;stroke:none;font-family:Sans"
+       transform="translate(-201.21046,-49.690874)"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100"><flowRegion
+         id="flowRegion6150"><rect
+           id="rect6152"
+           width="387.84677"
+           height="289.38412"
+           x="18.011459"
+           y="23.59853"
+           style="text-align:end;text-anchor:end;fill:#000000;fill-opacity:0.29128238" /></flowRegion><flowPara
+         id="flowPara6154"
+         style="font-size:20px;fill:#000000;fill-opacity:0.29128238">form 2</flowPara></flowRoot>    <flowRoot
+       inkscape:export-ydpi="100"
+       inkscape:export-xdpi="100"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       transform="translate(-201.21046,199.31918)"
+       style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#000000;fill-opacity:0.29128238;stroke:none;font-family:Sans"
+       id="flowRoot6156"
+       xml:space="preserve"><flowRegion
+         id="flowRegion6158"><rect
+           style="text-align:end;text-anchor:end;fill:#000000;fill-opacity:0.29128238"
+           y="23.59853"
+           x="18.011459"
+           height="289.38412"
+           width="387.84677"
+           id="rect6160" /></flowRegion><flowPara
+         style="font-size:20px;fill:#000000;fill-opacity:0.29128238"
+         id="flowPara6162">form 3</flowPara></flowRoot>    <flowRoot
+       xml:space="preserve"
+       id="flowRoot6164"
+       style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#000000;fill-opacity:0.29128238;stroke:none;font-family:Sans"
+       transform="translate(243.9313,-58.710688)"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       inkscape:export-xdpi="100"
+       inkscape:export-ydpi="100"><flowRegion
+         id="flowRegion6166"><rect
+           id="rect6168"
+           width="387.84677"
+           height="289.38412"
+           x="18.011459"
+           y="23.59853"
+           style="text-align:end;text-anchor:end;fill:#000000;fill-opacity:0.29128238" /></flowRegion><flowPara
+         id="flowPara6170"
+         style="font-size:20px;fill:#000000;fill-opacity:0.29128238">form 4</flowPara></flowRoot>    <flowRoot
+       inkscape:export-ydpi="100"
+       inkscape:export-xdpi="100"
+       inkscape:export-filename="C:\Users\daniel\Google Drive\Python\OSS forks\accumarray\diagrams\aggregate_dims.png"
+       transform="translate(243.9313,199.3676)"
+       style="font-size:40px;font-style:normal;font-weight:normal;text-align:end;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:end;fill:#000000;fill-opacity:0.29128238;stroke:none;font-family:Sans"
+       id="flowRoot6172"
+       xml:space="preserve"><flowRegion
+         id="flowRegion6174"><rect
+           style="text-align:end;text-anchor:end;fill:#000000;fill-opacity:0.29128238"
+           y="23.59853"
+           x="18.011459"
+           height="289.38412"
+           width="387.84677"
+           id="rect6176" /></flowRegion><flowPara
+         style="font-size:20px;fill:#000000;fill-opacity:0.29128238"
+         id="flowPara6178">form 5</flowPara></flowRoot>    <text
+       xml:space="preserve"
+       style="font-size:17.41650963px;font-style:normal;font-weight:normal;text-align:center;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#3100ff;fill-opacity:1;stroke:none;font-family:Sans"
+       x="129.75897"
+       y="176.0551"
+       id="text6253"
+       sodipodi:linespacing="125%"><tspan
+         sodipodi:role="line"
+         x="129.75897"
+         y="176.0551"
+         id="tspan6257"
+         style="font-size:14px">note ndim(a) can be &gt;2</tspan></text>
+    <text
+       sodipodi:linespacing="125%"
+       id="text6261"
+       y="190.5551"
+       x="120.75897"
+       style="font-size:17.41650963px;font-style:normal;font-weight:normal;text-align:center;line-height:125%;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#31ff4d;fill-opacity:1;stroke:none;font-family:Sans"
+       xml:space="preserve"><tspan
+         style="font-size:14px;fill:#31ff4d;fill-opacity:1"
+         id="tspan6263"
+         y="190.5551"
+         x="120.75897"
+         sodipodi:role="line">and ndim(result) = ndim(a)</tspan></text>
+  </g>
+</svg>
