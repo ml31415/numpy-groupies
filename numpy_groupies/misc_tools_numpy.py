@@ -1,5 +1,29 @@
 import numpy as np
-    
+
+
+def unpack(group_idx, ret):
+    """ Take an aggregate packed array and uncompress it to the size of group_idx. 
+        This is equivalent to ret[group_idx].
+    """
+    return ret[group_idx]
+
+
+def allnan(x):
+    return np.all(np.isnan(x))
+
+
+def anynan(x):
+    return np.any(np.isnan(x))
+
+
+def nanfirst(x):
+    return x[~np.isnan(x)][0]
+
+
+def nanlast(x):
+    return x[~np.isnan(x)][-1]
+
+
 def multi_arange(n):
     """By example:
     
@@ -16,12 +40,12 @@ def multi_arange(n):
     in a function.
     """
     if n.ndim != 1:
-        raise Exception("n is supposed to be 1d array.")
-        
+        raise ValueError("n is supposed to be 1d array.")
+
     n_mask = n.astype(bool)
     n_cumsum = np.cumsum(n)
-    ret = np.ones(n_cumsum[-1]+1,dtype=int)
-    ret[n_cumsum[n_mask]] -= n[n_mask] 
+    ret = np.ones(n_cumsum[-1] + 1, dtype=int)
+    ret[n_cumsum[n_mask]] -= n[n_mask]
     ret[0] -= 1
     return np.cumsum(ret)[:-1]
 
@@ -40,34 +64,34 @@ def multi_cumsum(X, L, invalid=np.nan):
     where the sections are defined by contiguous blocks of
     labels in `L`. Where `L==0`, the output is set to `invalid`     
     """
-    
-    L, X = L.ravel(), X.ravel() # TODO: be consistent with other functions in this module
-    
+
+    L, X = L.ravel(), X.ravel()  # TODO: be consistent with other functions in this module
+
     if len(L) != len(X):
-        raise Exception('The two inputs should be vectors of the same length.')
-    
+        raise ValueError('The two inputs should be vectors of the same length.')
+
     # Do the full cumulative sum
     X[np.isnan(X)] = 0
     S = np.cumsum(X)
-    
+
     mask = L.astype(bool)
-    
+
     # Lookup the cumulative value just before the start of each segment
-    isStart = mask.copy()
-    isStart[1:] &= (L[:-1] != L[1:])
-    startInds, = isStart.nonzero()
-    S_starts = S[startInds-1] if startInds[0] != 0 else  np.insert(S[startInds[1:]-1],0,0)
-    
+    is_start = mask.copy()
+    is_start[1:] &= (L[:-1] != L[1:])
+    start_inds, = is_start.nonzero()
+    S_starts = S[start_inds - 1] if start_inds[0] != 0 else  np.insert(S[start_inds[1:] - 1], 0, 0)
+
     # Subtract off the excess values (i.e. the ones obtained above)
-    L_safe = np.cumsum(isStart) # we do this in case the labels in L were not sorted integers
-    S[mask] = S[mask] - S_starts[L_safe[mask]-1]  
-    
+    L_safe = np.cumsum(is_start)  # we do this in case the labels in L were not sorted integers
+    S[mask] = S[mask] - S_starts[L_safe[mask] - 1]
+
     # Put NaNs in the false blocks
-    S[L==0] = invalid
-    
+    S[L == 0] = invalid
+
     return S
 
-    
+
 def label_contiguous_1d(X):
     """ 
     WARNING: API for this function is not liable to change!!!    
@@ -88,13 +112,13 @@ def label_contiguous_1d(X):
     and increase by 1 for each block with no skipped numbers.)
     
     """
-    
-    if X.ndim != 1:
-        raise Exception("this is for 1d masks only.")
 
-    is_start = np.empty(len(X),dtype=bool)
-    is_start[0] = X[0] # True if X[0] is True or non-zero
-        
+    if X.ndim != 1:
+        raise ValueError("this is for 1d masks only.")
+
+    is_start = np.empty(len(X), dtype=bool)
+    is_start[0] = X[0]  # True if X[0] is True or non-zero
+
     if X.dtype.kind == 'b':
         is_start[1:] = ~X[:-1] & X[1:]
         M = X
@@ -102,12 +126,12 @@ def label_contiguous_1d(X):
         M = X.astype(bool)
         is_start[1:] = X[:-1] != X[1:]
         is_start[~M] = False
-        
-    L = np.cumsum(is_start)    
+
+    L = np.cumsum(is_start)
     L[~M] = 0
     return L
-    
-    
+
+
 def relabel_groups_unique(group_idx):
     """
     See also ``relabel_groups_masked``.
@@ -120,12 +144,13 @@ def relabel_groups_unique(group_idx):
     Relabeling maintains order, just "compressing" the higher numbers
     to fill gaps.
     """
-    
-    keep_group = np.zeros(np.max(group_idx)+1,dtype=bool)
-    keep_group[0] = True    
+
+    keep_group = np.zeros(np.max(group_idx) + 1, dtype=bool)
+    keep_group[0] = True
     keep_group[group_idx] = True
     return relabel_groups_masked(group_idx, keep_group)
-    
+
+
 def relabel_groups_masked(group_idx, keep_group):
     """
     group_idx: [0 3 3 3 0 2 5 2 0 1 1 0 3 5 5]
@@ -150,14 +175,14 @@ def relabel_groups_masked(group_idx, keep_group):
     """
 
     keep_group = keep_group.astype(bool, copy=not keep_group[0])
-    if not keep_group[0]: # ensuring keep_group[0] is True makes life easier
+    if not keep_group[0]:  # ensuring keep_group[0] is True makes life easier
         keep_group[0] = True
-        
+
     relabel = np.zeros(keep_group.size, dtype=group_idx.dtype)
     relabel[keep_group] = np.arange(np.count_nonzero(keep_group))
-    return relabel[group_idx]    
-    
-    
+    return relabel[group_idx]
+
+
 def find_contiguous_boundaries(X):
     """
             0 1 2 3 4 5 6 7 8 9 10 11
@@ -170,11 +195,10 @@ def find_contiguous_boundaries(X):
     M = X.astype(bool, copy=False)
     end_idx = change_idx[M[change_idx]]
     if X[-1]:
-        end_idx = np.append(end_idx, len(X)-1)
+        end_idx = np.append(end_idx, len(X) - 1)
     change_idx += 1
     start_idx = change_idx[M[change_idx]]
     if X[0]:
         start_idx = np.insert(start_idx, 0, 0)
-    
+
     return start_idx, end_idx
-    

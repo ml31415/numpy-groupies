@@ -1,7 +1,7 @@
 import numpy as np
-import pytest
 
 from .. import unpack, aggregate
+
 
 def test_compare():
     group_idx = np.arange(10)
@@ -36,11 +36,3 @@ def test_long():
     a = np.arange(group_idx.size, dtype=int)
     vals = aggregate(group_idx, a)
     np.testing.assert_array_equal(unpack(group_idx, vals), vals[group_idx])
-
-
-@pytest.mark.skipif(True, reason="downscaled needs reimplementation")
-def test_downscaled():
-    group_idx = np.array([4, 4, 4, 1, 1, 1, 2, 2, 2])
-    vals = aggregate(group_idx, np.arange(group_idx.size), mode='downscaled')
-    unpacked = unpack(group_idx, vals, mode='downscaled')
-    np.testing.assert_array_equal(unpacked, np.array([3, 3, 3, 12, 12, 12, 21, 21, 21]))

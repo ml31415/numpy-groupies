@@ -136,14 +136,16 @@ def check_boolean(x):
     if x not in (0, 1):
         raise ValueError("Value not boolean")
 
+
 try:
-    basestring  # attempt to evaluate basestring
+    basestring  # Attempt to evaluate basestring
     def isstr(s):
         return isinstance(s, basestring)
 except NameError:
-    # probably Python 3.x
+    # Probably Python 3.x
     def isstr(s):
         return isinstance(s, str)
+
 
 try:
     import numpy as np
@@ -247,6 +249,7 @@ else:
         else:
             return type_loop(x, dtype, _next_int_dtype, default=np.float32)
 
+
     def minimum_dtype_scalar(x, dtype, a):
         if dtype is None:
             dtype = np.dtype(type(a)) if isinstance(a, (int, float))\
@@ -263,6 +266,7 @@ else:
     _forced_float_types = {'mean', 'var', 'std', 'nanmean', 'nanvar', 'nanstd'}
     _forced_same_type = {'min', 'max', 'first', 'last', 'nanmin', 'nanmax',
                          'nanfirst', 'nanlast'}
+
 
     def check_dtype(dtype, func_str, a, n):
         if np.isscalar(a) or not a.shape:
@@ -314,12 +318,14 @@ else:
                         else:
                             return a_dtype
 
+
     def check_fill_value(fill_value, dtype):
         try:
             return dtype.type(fill_value)
         except ValueError:
             raise ValueError("fill_value must be convertible into %s"
                              % dtype.type.__name__)
+
 
     def check_group_idx(group_idx, a=None, check_min=True):
         if a is not None and group_idx.size != a.size:
@@ -329,6 +335,7 @@ else:
             raise TypeError("group_idx must be of integer type")
         if check_min and np.min(group_idx) < 0:
             raise ValueError("group_idx contains negative indices")
+
 
     def input_validation(group_idx, a, size=None, order='C', axis=None,
                          ravel_group_idx=True, check_bounds=True):
@@ -343,14 +350,13 @@ else:
         if not np.issubdtype(group_idx.dtype, np.integer):
             raise TypeError("group_idx must be of integer type")
 
-         # this check works for multidimensional indexing as well
+        # This check works for multidimensional indexing as well
         if check_bounds and np.any(group_idx < 0):
             raise ValueError("negative indices not supported")
-                
+
         ndim_idx = np.ndim(group_idx)
-        ndim_a = np.ndim(a)        
-        
-        
+        ndim_a = np.ndim(a)
+
         # Deal with the axis arg: if present, then turn 1d indexing into
         # multi-dimensional indexing along the specified axis.
         if axis is None:
@@ -360,9 +366,9 @@ else:
         elif axis >= ndim_a or axis < -ndim_a:
             raise ValueError("axis arg too large for np.ndim(a)")
         else:
-            axis = axis if axis >= 0 else ndim_a + axis # negative indexing
+            axis = axis if axis >= 0 else ndim_a + axis  # negative indexing
             if ndim_idx > 1:
-                # TODO: we could support a sequence of axis values for multiple 
+                # TODO: we could support a sequence of axis values for multiple
                 # dimensions of group_idx.
                 raise NotImplementedError("only 1d indexing currently"
                                           "supported with axis arg.")
@@ -371,28 +377,27 @@ else:
             elif size is not None and not np.isscalar(size):
                 raise NotImplementedError("when using axis arg, size must be"
                                           "None or scalar.")
-            else:                        
-                # create the broadcast-ready multidimensional indexing.
+            else:
+                # Create the broadcast-ready multidimensional indexing.
                 # Note the user could do this themselves, so this is
                 # very much just a convenience.
                 size_in = np.max(group_idx) + 1 if size is None else size
                 group_idx_in = group_idx
                 group_idx = []
-                size = []                
+                size = []
                 for ii, s in enumerate(a.shape):
                     ii_idx = group_idx_in if ii == axis else np.arange(s)
-                    ii_shape = [1]*ndim_a
+                    ii_shape = [1] * ndim_a
                     ii_shape[ii] = s
                     group_idx.append(ii_idx.reshape(ii_shape))
                     size.append(size_in if ii == axis else s)
-                # use the indexing, and return..it's a bit simpler than
+                # Use the indexing, and return. It's a bit simpler than
                 # using trying to keep all the logic below happy
                 group_idx = np.ravel_multi_index(group_idx, size, order=order,
                                                  mode='raise')
                 flat_size = np.prod(size)
                 ndim_idx = ndim_a
                 return group_idx.ravel(), a.ravel(), flat_size, ndim_idx, size
-
 
         if ndim_idx == 1:
             if size is None:
@@ -424,15 +429,3 @@ else:
                              " can be scalar")
 
         return group_idx, a, flat_size, ndim_idx, size
-
-    def allnan(x):
-        return np.all(np.isnan(x))
-
-    def anynan(x):
-        return np.any(np.isnan(x))
-
-    def nanfirst(x):
-        return x[~np.isnan(x)][0]
-
-    def nanlast(x):
-        return x[~np.isnan(x)][-1]

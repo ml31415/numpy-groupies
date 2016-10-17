@@ -8,33 +8,36 @@ import itertools
 import numpy as np
 import pytest
 
-from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
-                aggregate_weave, aggregate_pd as aggregate_pandas)
-from .test_generic import wrap_aggregate_xfail
+from . import (aggregate_purepy, aggregate_numpy_ufunc, aggregate_numpy,
+               aggregate_weave, aggregate_pandas,
+               _wrap_notimplemented_xfail, _impl_name)
 
 class AttrDict(dict):
     __getattr__ = dict.__getitem__
 
 
-@pytest.fixture(params=['np/py', 'c/np', 'ufunc/np', 'pandas/np'], scope='module')
+@pytest.fixture(params=['np/py', 'weave/np', 'ufunc/np', 'pandas/np'], scope='module')
 def aggregate_cmp(request):
     if request.param == 'np/py':
-        func = aggregate_numpy
-        func_ref = wrap_aggregate_xfail(aggregate_py)
+        # Some functions in purepy are not implemented
+        func_ref = _wrap_notimplemented_xfail(aggregate_purepy.aggregate)
+        func = aggregate_numpy.aggregate
         group_cnt = 100
     else:
         group_cnt = 3000
-        func_ref = aggregate_numpy
+        func_ref = aggregate_numpy.aggregate
         if 'ufunc' in request.param:
-            func = aggregate_ufunc
+            impl = aggregate_numpy_ufunc
         elif 'pandas' in request.param:
-            func = aggregate_pandas
+            impl = aggregate_pandas
+        elif 'weave' in request.param:
+            impl = aggregate_weave
         else:
-            func = aggregate_weave
+            impl = None
 
-    if not func:
-        pytest.xfail("Implementation not available")
-    func = wrap_aggregate_xfail(func)
+        if not impl:
+            pytest.xfail("Implementation not available")
+        func = _wrap_notimplemented_xfail(impl.aggregate, 'aggregate_' + _impl_name(impl))
 
     # Gives 100000 duplicates of size 10 each
     group_idx = np.repeat(np.arange(group_cnt), 2)
