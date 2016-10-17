@@ -1,16 +1,16 @@
 # numpy-groupies
 
-This package consists of a small library of optimised tools for doing things 
+This package consists of a small library of optimised tools for doing things
 that can roughly be considered "group-indexing operations".  The most prominent
 tool is `aggregate`, which is descibed in detail further down the page.
 
-#### Installation 
+#### Installation
 If you have `pip`, then simply:
 ```
 pip install numpy_groupies
 ```
 Note that `numpy_groupies` doesn't have any compulsorary dependencies (even `numpy`
-is optional) so you should be able to install it fairly easily even without a package 
+is optional) so you should be able to install it fairly easily even without a package
 manager.  If you just want one particular implementation of `aggregate` (e.g. `aggregate_numpy.py`), you can
 download that one file, and copy-paste the contents of `utils.py` into the top
 of that file (replacing the `from .utils import (...)` line).
@@ -29,27 +29,27 @@ npg.aggregate(group_idx, a, func='sum', fill_value=0)
 # >>> array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
 ```
 `aggregate` takes an array of values, and an array giving the group number for each of those values. It then returns the sum (or mean, or std, or any, ...etc.)  of the values in each group.  You have probably come across this idea before - see [Matlab's `accumarray` function](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true), or
- [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), or 
+ [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), or
  [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce), or simply the [basic histogram](https://en.wikipedia.org/wiki/Histogram).
 
 This is the most complex and mature of the functions in this package.  See further down the page for more details of the inputs, examples, and benchmarks.
 
 #### multi_cumsum [alpha]
-![multicumsum_diagram](/diagrams/multi_cumsum.png)   
+![multicumsum_diagram](/diagrams/multi_cumsum.png)
 **Warning:** the API for this function has not be stabilized yet and is liable to change.
 ```python
 #TODO: give code example as with aggregate
 ```
 
 #### multi_arange [alpha]
-![multicumsum_diagram](/diagrams/multi_arange.png)   
+![multicumsum_diagram](/diagrams/multi_arange.png)
 **Warning:** the API for this function has not be stabilized yet and is liable to change.
 ```python
 #TODO: give code example as with aggregate
 ```
 
 #### label_contiguous_1d [alpha]
-![label_contiguous_1d](/diagrams/label_contiguous_1d.png)   
+![label_contiguous_1d](/diagrams/label_contiguous_1d.png)
 **Warning:** the API for this function has not be stabilized yet and is liable to change.
 ```python
 #TODO: give code example as with aggregate
@@ -62,16 +62,16 @@ This is the most complex and mature of the functions in this package.  See furth
 ### Full description of inputs
 The function accepts various different combinations of inputs, producing various different shapes of output. We give a brief description of the general meaning of the inputs and then go over the different combinations in more detail:
 
-* `group_idx` - array of non-negative integers to be used as the "labels" with which to group the values in `a`. 
+* `group_idx` - array of non-negative integers to be used as the "labels" with which to group the values in `a`.
 * `a` - array of values to be aggregated.
-* `func='sum'` - the function to use for aggregation.  See the section below for nore details. 
+* `func='sum'` - the function to use for aggregation.  See the section below for nore details.
 * `size=None` - the shape of the output array. If `None`, the maximum value in `group_idx` will set the size of the output.
 * `fill_value=0` - value to use for output groups that do not appear anywhere in the `group_idx` input array.
 * `order='C'` - for multimensional output, this controls the layout in memory, can be `'F'` for fortran-style.
 * `dtype=None` - the`dtype` of the output. `None` means choose a sensible type for the given `a`, `func`, and `fill_value`.
 * `axis=None` - explained below.
 * `ddof=0` - passed through into calculations of variance and standard deviation (see section on functions).
- 
+
 ![aggregate_dims_diagram](/diagrams/aggregate_dims.png)
 
 * Form 1 is the simplest, taking `group_idx` and `a` of matching 1D lengths, and producing a 1D output.
@@ -82,7 +82,7 @@ The function accepts various different combinations of inputs, producing various
 
 **Note on performance.** The `order` of the output is unlikely to affect performance of `aggregate` (although it may affect your downstream usage of that output), however the order of multidimensional `a` or `group_idx` can affect performance:  in Form 4 it is best if columns are contiguous in memory within `group_idx`, i.e. `group_idx[:, 99]` corresponds to a contiguous chunk of memory; in Form 3 it's best if all the data in `a` for `group_idx[i]` is contiguous, e.g. if `axis=1` then we want `a[:, 55]` to be contiguous.
 
-### Available functions   
+### Available functions
 By default, `aggregate` assumes you want to sum the values within each group, however you can specify another function using the `func` kwarg.  This `func` can be any custom callable, however in normal use you will probably want one of the following optimized functions:
 
 * `'sum'` - sum of items within each group (see example above).
@@ -98,7 +98,7 @@ By default, `aggregate` assumes you want to sum the values within each group, ho
 * ``argmin`` - the index in `a` of the minimum value in each group.
 
 The above functions also have a `nan-` form, which skip the `nan` values instead of propagating them to the result of the calculation:
-* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, ``nanargmax``, ``nanargmin``   
+* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, ``nanargmax``, ``nanargmin``
 
 The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
 * `'all'` - `True` if all items within a group are truethy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truethy.
@@ -106,7 +106,7 @@ The following functions are slightly different in that they always return boolea
 * `allnan` - `True` if all items within a group are `nan`.
 * `anynan` - `True` if any items within a gorup are `nan`.
 
-Finally, there are three functions which don't reduce each group to a single value, instead they return the full set of items within the group:  
+Finally, there are three functions which don't reduce each group to a single value, instead they return the full set of items within the group:
 * `'array'` - simply returns the grouped items, using the same order as appeared in `a`.
 * `'sort'` - like `'array'`, above, but the items within each group are now sorted in ascending order.
 * `'rsort'` - same as `'sort'`, but in reverse, i.e. descending order.
@@ -129,9 +129,9 @@ x = aggregate(group_idx, a, 'prod')
 
 * Get variance ignoring nans, but set all-nan groups to `nan` rather than `fill_value`. (Form 1)
 ```python
-x = aggregate(group_idx, a, func='nanvar', fill_value=0) 
+x = aggregate(group_idx, a, func='nanvar', fill_value=0)
 x[aggregate(group_idx, a, func='allnan')] = nan
-```  
+```
 
 * Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, indeed that is how the numpy implementation does it. (Form 2)
 ```python
@@ -151,7 +151,7 @@ x = aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
 ```python
 group_idx = array([1, 0,  1,  4,  1])
 a = array([12.0, 3.2, -15, 88, 12.9])
-x = aggregate(group_idx, a, 
+x = aggregate(group_idx, a,
               func=lambda g: ' or maybe '.join(str(gg) for gg in g), fill_value='')
 # x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
@@ -162,7 +162,7 @@ a = array([[99, 2,  11, 14,  20],
 	   	   [33, 76, 12, 100, 71],
 		   [67, 10, -8, 1,   9]])
 group_idx = array([[3, 3, 7, 0, 0]])
-x = aggregate(group_idx, a, axis=1) 
+x = aggregate(group_idx, a, axis=1)
 # x : [[ 34, 0, 0, 101, 0, 0, 0, 11],
 #      [171, 0, 0, 109, 0, 0, 0, 12],
 #      [ 10, 0, 0,  77, 0, 0, 0, -8]]
@@ -170,13 +170,13 @@ x = aggregate(group_idx, a, axis=1)
 
 
 ### Multiple implementations - explanation and benchmark results
-There are multiple implementations of `aggregate` provided.  They range from the pure-python implementation which has no dependencies at all but is not very fast, to the `scipy.weave` implementation which runs fast but requires a working install of `scipy.weave`.  For most users, the `aggregate_numpy.py` implementation is probably the easiest to install and offers fairly reasonable speed for the majority of aggregation functions.  If you download the whole repository and use `from aggregate import aggregate`, the best available implementation will automatically be selected.  
+There are multiple implementations of `aggregate` provided.  They range from the pure-python implementation which has no dependencies at all but is not very fast, to the `scipy.weave` implementation which runs fast but requires a working install of `scipy.weave`.  For most users, the `aggregate_numpy.py` implementation is probably the easiest to install and offers fairly reasonable speed for the majority of aggregation functions.  If you download the whole repository and use `from aggregate import aggregate`, the best available implementation will automatically be selected.
 
 **Note 1:** if you have `weave` installed, but no working compiler registered then you may run in to problems with the default implementation of `aggregate`. The workaround is to explicitly use `npg.aggregate_np` rather than `npg.aggregate`.
 
 **Note 2:** the `numba` implementation will soon be finished, and is supposed to replace the `weave` version in some environments.
 
-Currently the following implementations exist:  
+Currently the following implementations exist:
 * **numpy** - *RECOMMENDED.* This implementation uses plain `numpy`, mainly relying on `np.bincount` and basic indexing magic. As it comes without other dependencies except `numpy` and shows reasonable performance, this is the recommended implementation.
 * **weave** - *If you have a working GCC environment and need best performance, use this.* Weave compiles C-code on demand at runtime, producing (and caching) binaries that get executed from within python. This is currently the fastest of our implementations, especially for `'min'`, `'max'`, and `'prod'`.
 * **pure python** - *Use only if you don't have numpy installed*. This has no dependencies, instead making use of the grouping and sorting functionality provided by the python language itself plus the standard library.
@@ -191,30 +191,30 @@ Below we are using `500,000` indices uniformly picked from `[0, 1000)`. The valu
 
 The benchmarking results are given in ms for an i7-5500U running at 2.40GHz:
 ```text
-function      grouploop          numpy          weave          ufunc         pandas
+function          ufunc          numpy          numba          weave         pandas
 -----------------------------------------------------------------------------------
-sum              54.090          1.922          1.616         36.598         17.789
-amin             51.318         37.344          1.643         37.354         17.197
-amax             51.623         38.418          1.686         38.598         17.238
-prod             51.676         37.296          1.675         37.656         17.225
-all              52.587          4.343          2.508         44.119        104.996
-any              52.284          7.038          2.460         42.797        103.572
-mean             55.270          2.720          1.692           ----         14.104
-var              66.521          6.468          1.933           ----         53.966
-std              67.732          6.269          1.920           ----         50.633
-first            49.457          2.768          1.511           ----         11.761
-last             49.573          1.966          1.526           ----         13.403
-nansum           58.828          6.470          2.443           ----         14.711
-nanmin           56.135         35.125          2.581           ----         14.845
-nanmax           56.190         35.639          2.636           ----         14.579
-nanmean          78.909          7.096          2.592           ----         14.594
-nanvar          104.019          9.916          2.845           ----         47.680
-nanstd          106.703         10.135          2.872           ----         48.563
-nanfirst         53.752          7.213          2.393           ----         14.936
-nanlast          54.073          6.529          2.381           ----         16.094
-anynan           52.983          3.249          2.441         36.368         73.483
-allnan           52.968          5.374          2.539         38.186         73.396
-Linux(x86_64), Python 2.7.6, Numpy 1.9.2
+sum              40.292          1.928          1.741          1.579         17.094
+prod             40.124         40.261          1.751          1.571         19.928
+all              47.654          4.533          1.885          2.467        111.198
+any              47.165          6.681          2.006          2.545        108.718
+amin             40.512         40.560         14.385          1.658         12.645
+amax             42.273         42.001         14.391          1.608         12.467
+mean               ----          2.790          1.906          1.671         12.490
+std                ----          6.346          2.185          1.843         54.299
+var                ----          6.268          2.271          1.911         54.295
+first              ----          2.764          1.817          1.496         12.879
+last               ----          1.924          1.513          1.446         14.221
+nansum             ----          7.139         14.209          2.577         13.631
+nanmin             ----         37.304         29.455          2.729         13.494
+nanmax             ----         38.506         29.435          2.719         13.593
+nanmean            ----          7.055         15.916          2.572         13.548
+nanvar             ----         10.028         28.750          2.794         55.848
+nanstd             ----         10.167         28.813          2.848         55.497
+nanfirst           ----          7.049         14.955          2.391         15.502
+nanlast            ----          6.956         14.838          2.369         16.602
+anynan           41.590          3.252          1.915          2.403         77.032
+allnan           40.689          5.337          1.827          2.397         77.342
+Linux(x86_64), Python 2.7.12, Numpy 1.11.1
 ```
 
 The `grouploop` implementation shown here uses `aggregate_numpy.py`'s generic function menchanism, which groups `a` by `group_idx`, and then loops over each group, applying the specified function (in this case it is a numpy function such as `np.add`). `grouploop` is only included for reference, note that the output from this function is considered to be the "correct" answer when used in testing.
@@ -226,4 +226,4 @@ The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enoug
 
 Maybe at some point a version of `aggregate` will make its way into `numpy` itself (or at least `scipy`).
 
-This project was started by @ml31415 and the `scipy.weave` implementation is by him. The pure python and `numpy` implementations were written by @d1manson. 
+This project was started by @ml31415 and the `scipy.weave` implementation is by him. The pure python and `numpy` implementations were written by @d1manson.
