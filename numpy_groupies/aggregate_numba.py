@@ -91,11 +91,11 @@ class AggregateOp(object):
         if _2pass is None:
             return loop
 
-        _2pass = nb.njit(_2pass)
+        _2pass = nb.njit(_2pass, nogil=True, cache=True)
         def _loop_2pass(group_idx, a, ret, counter, mean, fill_value, ddof):
             loop(group_idx, a, ret, counter, mean, fill_value, ddof)
             _2pass(ret, counter, mean, fill_value, ddof)
-        return nb.njit(_loop_2pass)
+        return nb.njit(_loop_2pass, nogil=True, cache=True)
 
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
@@ -135,8 +135,7 @@ class All(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
         counter[ri] = 0
-        if val == 0:
-            ret[ri] = 0
+        ret[ri] &= bool(val)
 
 
 class Any(AggregateOp):
@@ -145,8 +144,7 @@ class Any(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
         counter[ri] = 0
-        if val != 0:
-            ret[ri] = 1
+        ret[ri] |= bool(val)
 
 
 class Last(AggregateOp):
@@ -165,8 +163,7 @@ class AllNan(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
         counter[ri] = 0
-        if val == val:
-            ret[ri] = 0
+        ret[ri] &= val == val
 
 
 class AnyNan(AggregateOp):
@@ -175,27 +172,22 @@ class AnyNan(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
         counter[ri] = 0
-        if val != val:
-            ret[ri] = 1
+        ret[ri] |= val != val
 
 
 class Max(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
-        if counter[ri] == 1:
-            ret[ri] = val
+        if counter[ri] or ret[ri] < val:
             counter[ri] = 0
-        elif ret[ri] < val:
             ret[ri] = val
 
 
 class Min(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
-        if counter[ri] == 1:
-            ret[ri] = val
+        if counter[ri] or ret[ri] > val:
             counter[ri] = 0
-        elif ret[ri] > val:
             ret[ri] = val
 
 
@@ -212,11 +204,11 @@ class Mean(AggregateOp):
     def _2pass(cls):
         _2pass_inner = nb.njit(cls._2pass_inner)
         def _2pass_loop(ret, counter, mean, fill_value, ddof):
-            for i in range(len(ret)):
-                if counter[i] != 0:
-                    ret[i] = _2pass_inner(i, ret, counter, mean, ddof)
+            for ri in range(len(ret)):
+                if not counter[ri]:
+                    ret[ri] = fill_value
                 else:
-                    ret[i] = fill_value
+                    ret[ri] = _2pass_inner(ri, ret, counter, mean, ddof)
         return _2pass_loop
 
     @staticmethod
@@ -276,7 +268,7 @@ aggregate.__doc__ = """
     """ + _doc_str
 
 
-@nb.njit
+@nb.njit(nogil=True, cache=True)
 def step_count(group_idx):
     """ Determine the size of the result array
         for contiguous data
@@ -292,7 +284,7 @@ def step_count(group_idx):
     return steps
 
 
-@nb.njit
+@nb.njit(nogil=True, cache=True)
 def _step_indices_loop(group_idx, indices):
     cmp_pos = 0
     ri = 1

@@ -16,12 +16,21 @@ else:
     from .aggregate_numpy import aggregate
     aggregate_np = aggregate
     from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
-    from .misc_tools_numpy import (multi_arange, multi_cumsum,
+    from .misc_tools_numpy import (multi_arange,
+                                   multi_cumsum,
                                    label_contiguous_1d,
                                    find_contiguous_boundaries,
                                    relabel_groups_masked,
                                    relabel_groups_unique,
                                    unpack)
+
+
+try:
+    import numba
+except ImportError:
+    aggregate_nb = None
+else:
+    from .aggregate_numba import aggregate as aggregate_nb
 
 
 try:
@@ -31,14 +40,3 @@ except ImportError:
 else:
     from .aggregate_weave import aggregate as aggregate_wv, step_indices, step_count
     aggregate = aggregate_wv
-
-try:
-    import numba
-except ImportError:
-    aggregate_nb = None
-else:
-    from .aggregate_numba import aggregate as aggregate_nb
-    aggregate = aggregate_nb
-
-
-

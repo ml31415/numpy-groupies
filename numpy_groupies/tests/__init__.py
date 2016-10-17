@@ -14,10 +14,10 @@ try:
 except ImportError:
     aggregate_pandas = None
 
-
 _implementations = [aggregate_purepy, aggregate_numpy_ufunc, aggregate_numpy,
                     aggregate_numba, aggregate_weave, aggregate_pandas]
 _implementations = [i for i in _implementations if i is not None]
+
 
 def _impl_name(impl):
     if not impl:

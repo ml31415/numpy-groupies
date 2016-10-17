@@ -5,14 +5,8 @@ import timeit
 from operator import itemgetter
 import numpy as np
 
-from numpy_groupies import (aggregate_py,
-                            aggregate_ufunc,
-                            aggregate_np as aggregate_numpy,
-                            aggregate_nb as aggregate_numba,
-                            aggregate_weave,
-                            aggregate_pd as aggregate_pandas)
-
-from numpy_groupies.utils import allnan, anynan, nanfirst, nanlast
+from numpy_groupies.tests import _implementations, aggregate_numpy
+from numpy_groupies.misc_tools_numpy import allnan, anynan, nanfirst, nanlast
 
 
 def aggregate_grouploop(*args, **kwargs):
@@ -25,21 +19,17 @@ def aggregate_grouploop(*args, **kwargs):
     func = extrafuncs.get(func, func)
     if isinstance(func, basestring):
         raise NotImplementedError("Grouploop needs to be called with a function")
-    return aggregate_numpy(*args, func=lambda x: func(x), **kwargs)
+    return aggregate_numpy.aggregate(*args, func=lambda x: func(x), **kwargs)
 
 
-_implementations = ['aggregate_' + impl for impl in "py grouploop numpy numba weave ufunc pandas".split()]
-aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
-
-
-func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.var, np.std, 'first', 'last',
+func_list = (np.sum, np.prod, np.all, np.any, np.min, np.max, np.mean, np.std, np.var, 'first', 'last',
              np.nansum, np.nanmin, np.nanmax, np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',
              'anynan', 'allnan')
 
 
 
 def benchmark(implementations, size=5e5, repeat=3):
-    group_idx = np.random.randint(0, 1e3, size)
+    group_idx = np.random.randint(0, int(1e3), int(size))
     a = np.random.random(group_idx.size)
     a[a > 0.8] = 0
     nana = a.copy()
@@ -47,7 +37,7 @@ def benchmark(implementations, size=5e5, repeat=3):
     nan_share = np.mean(np.isnan(nana))
     assert 0.15 < nan_share < 0.25, "%3f%% nans" % (nan_share * 100)
 
-    print "function" + ''.join(impl.split('_')[1].rjust(15) for impl in implementations)
+    print "function" + ''.join(impl.__name__.rsplit('_', 1)[1].rjust(15) for impl in implementations)
     print "-" * (8 + 15 * len(implementations))
     for func in func_list:
         func_name = getattr(func, '__name__', func)
@@ -56,10 +46,10 @@ def benchmark(implementations, size=5e5, repeat=3):
         used_a = nana if 'nan' in func_name else a
 
         for impl in implementations:
-            aggregatefunc = aggregate_implementations[impl]
-            if aggregatefunc is None:
+            if impl is None:
                 print '----'.rjust(14),
                 continue
+            aggregatefunc = impl.aggregate
 
             try:
                 res = aggregatefunc(group_idx, used_a, func=func)
