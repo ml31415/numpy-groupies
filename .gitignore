@@ -35,6 +35,7 @@ nosetests.xml
 .pydevproject
 .settings/
 .cache/
+__pycache__/
 *~
 
 *.ini
