@@ -35,7 +35,7 @@ class NumpyGroupiesClean(clean):
 
 
 setup(name='numpy_groupies',
-      version='0.9.1',
+      version='0.9.2',
       author="@ml31415 and @d1manson",
       license='BSD',
       description="Optimised tools for group-indexing operations: aggregated sum and more.",
@@ -43,7 +43,8 @@ setup(name='numpy_groupies',
       download_url="https://github.com/ml31415/numpy-groupies/archive/master.zip",
       keywords=[ "accumarray", "aggregate", "groupby", "grouping", "indexing"],
       packages=['numpy_groupies'],
-      tests_require=[''],
+      setup_requires=['pytest-runner'],
+      tests_require=['pytest'],
       requires=[],
       classifiers=['Development Status :: 4 - Beta',
                    'Intended Audience :: Science/Research',

@@ -2,8 +2,9 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-from .utils import (check_dtype, allnan, anynan, _no_separate_nan_version,
+from .utils import (check_dtype, _no_separate_nan_version,
                     _doc_str, isstr)
+from .misc_tools_numpy import allnan, anynan
 from .aggregate_numpy import _aggregate_base
 
 
@@ -24,8 +25,7 @@ def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
     return ret
 
 _supported_funcs = 'min max sum prod mean var std first last all any'.split()
-_impl_dict = dict(**{fn: partial(_wrapper, func=fn)
-                     for fn in _supported_funcs})
+_impl_dict = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
 _impl_dict.update(('nan' + fn, partial(_wrapper, func=fn))
                   for fn in _supported_funcs
                   if fn not in _no_separate_nan_version)
@@ -35,9 +35,10 @@ _impl_dict.update(allnan=partial(_wrapper, func=allnan),
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
               dtype=None, axis=None, **kwargs):
+    nansqueeze = isstr(func) and func.startswith('nan')
     return _aggregate_base(group_idx, a, size=size, fill_value=fill_value,
                            order=order, dtype=dtype, func=func, axis=axis,
-                           _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
+                           _impl_dict=_impl_dict, _nansqueeze=nansqueeze, **kwargs)
 
 
 aggregate.__doc__ = """

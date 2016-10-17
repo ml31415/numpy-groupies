@@ -213,8 +213,8 @@ def step_indices(group_idx):
     inline(c_step_indices, ['group_idx', 'indices'], define_macros=c_macros)
     return indices
 
-        
-def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C', 
+
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
              dtype=None, axis=None, **kwargs):
     func = get_func(func, aliasing, optimized_funcs)
     if not isstr(func):

@@ -1,265 +1,307 @@
-import logging
+from __future__ import division
+import numba as nb
 import numpy as np
-from numba import jit, double
 
-logging.captureWarnings(True)
-
-from .utils import check_group_idx, _doc_str, isstr
-from .aggregate_numpy import aggregate as aggregate_np
+from .utils import (aliasing, get_func, input_validation, check_dtype,
+                    _doc_str, isstr, check_fill_value, _no_separate_nan_version)
 
 
-@jit
-def _iter_sum(wi, val, res, counter, tmp):
-    res[wi] += val
+class AggregateOp(object):
+    forced_fill_value = None
+    counter_fill_value = 1
+    counter_dtype = bool
+    mean_fill_value = None
+    reverse = False
+    nans = False
 
-@jit
-def _iter_prod(wi, val, res, counter, tmp):
-    res[wi] *= val
+    def __init__(self, func=None, **kwargs):
+        if func is None:
+            func = type(self).__name__.lower()
+        self.func = func
+        self.__dict__.update(kwargs)
+        # Cache the compiled functions, so they don't have to be recompiled on every call
+        self._jit_scalar = self.callable(self.nans, self.reverse, scalar=True)
+        self._jit_non_scalar = self.callable(self.nans, self.reverse, scalar=False)
 
-@jit
-def _iter_min(wi, val, res, counter, tmp):
-    if val < res[wi]:
-        res[wi] = val
+    def __call__(self, group_idx, a, size=None, fill_value=0, order='C',
+                 dtype=None, axis=None, ddof=0):
+        iv = input_validation(group_idx, a, size=size, order=order, axis=axis)
+        group_idx, a, flat_size, ndim_idx, size = iv
 
-@jit
-def _iter_max(wi, val, res, counter, tmp):
-    if val > res[wi]:
-        res[wi] = val
+        # TODO: The typecheck should be done by the class itself, not by check_dtype
+        dtype = check_dtype(dtype, self.func, a, len(group_idx))
+        check_fill_value(fill_value, dtype)
+        ret, counter, mean = self._initialize(flat_size, fill_value, dtype)
+        group_idx = np.ascontiguousarray(group_idx)
 
-@jit
-def _iter_all(wi, val, res, counter, tmp):
-    if counter[wi] == 0:
-        res[wi] = 1
-    counter[wi] = 1
-    if not val:
-        res[wi] = 0
-
-@jit
-def _iter_any(wi, val, res, counter, tmp):
-    if counter[wi] == 0:
-        res[wi] = 0
-    counter[wi] = 1
-    if val:
-        res[wi] = 1
-
-@jit
-def _iter_allnan(wi, val, res, counter, tmp):
-    if counter[wi] == 0:
-        res[wi] = 1
-    counter[wi] = 1
-    if val == val:
-        res[wi] = 0
-
-@jit
-def _iter_anynan(wi, val, res, counter, tmp):
-    if counter[wi] == 0:
-        res[wi] = 0
-    counter[wi] = 1
-    if val != val:
-        res[wi] = 1
-
-@jit
-def _iter_mean(wi, val, res, counter, tmp):
-    counter[wi] += 1
-    res[wi] += val
-
-@jit
-def _iter_std(wi, val, res, counter, tmp):
-    counter[wi] += 1
-    tmp[wi] += val
-    res[wi] += val * val
-
-@jit
-def _finish_mean(res, counter, tmp, fillvalue):
-    for i in range(len(res)):
-        if counter[i]:
-            res[i] /= counter[i]
+        if not np.isscalar(a):
+            a = np.ascontiguousarray(a)
+            jitfunc = self._jit_non_scalar
         else:
-            res[i] = fillvalue
+            jitfunc = self._jit_scalar
+        jitfunc(group_idx, a, ret, counter, mean, fill_value, ddof)
+        self._finalize(ret, counter, mean, fill_value)
 
-@jit(locals=dict(mean=double))
-def _finish_std(res, counter, tmp, fillvalue):
-    for i in range(len(res)):
-        if counter[i]:
-            mean = tmp[i] / counter[i]
-            res[i] = np.sqrt(res[i] / counter[i] - mean * mean)
+        # deal with ndimensional indexing
+        if ndim_idx > 1:
+            ret = ret.reshape(size, order=order)
+        return ret
+
+    @classmethod
+    def _initialize(cls, flat_size, fill_value, dtype):
+        if cls.forced_fill_value is None:
+            ret = np.full(flat_size, fill_value, dtype=dtype)
         else:
-            res[i] = fillvalue
+            ret = np.full(flat_size, cls.forced_fill_value, dtype=dtype)
+        counter = np.full_like(ret, cls.counter_fill_value, dtype=cls.counter_dtype)
+        if cls.mean_fill_value is not None:
+            mean = np.full_like(ret, cls.mean_fill_value, dtype=ret.dtype)
+        else:
+            mean = None
+        return ret, counter, mean
 
-@jit
-def _count_steps(group_idx):
-    cmp_pos = 0
-    res_len = 0
-    for i in range(len(group_idx)):
-        if group_idx[i] != group_idx[cmp_pos]:
-            cmp_pos = i
-            res_len += 1
-    return res_len
+    @classmethod
+    def callable(cls, nans=False, reverse=False, scalar=False):
+        """ Compile a jitted function doing the hard part of the job """
+        inner = _inner = nb.njit(cls._inner)
+        if nans:
+            def _nan_inner(ri, val, ret, counter, mean):
+                if val == val:
+                    _inner(ri, val, ret, counter, mean)
+            # Make sure the reference to inner never creates a recursion to itself
+            # within the closure, i.e. keep inner and _inner separate!
+            inner = nb.njit(_nan_inner)
 
-@jit
-def _maxval(group_idx):
-    m = group_idx[0]
-    for i in group_idx:
-        if i > m:
-            m = i
-    return m
+        if scalar:
+            def _valgetter(a, i):
+                return a
+        else:
+            def _valgetter(a, i):
+                return a[i]
+        valgetter = nb.njit(_valgetter)
 
+        def _loop(group_idx, a, ret, counter, mean, fill_value, ddof):
+            rng = range(len(group_idx) - 1, -1 , -1) if reverse else range(len(group_idx))
+            for i in rng:
+                val = valgetter(a, i)
+                inner(group_idx[i], val, ret, counter, mean)
+        loop = nb.njit(_loop)
 
-iter_funcs = {'sum': _iter_sum, 'prod': _iter_prod,
-              'min': _iter_min, 'max': _iter_max,
-              'amin': _iter_min, 'amax': _iter_max,
-              'mean': _iter_mean, 'std':_iter_std,
-              'nansum': _iter_sum, 'nanprod': _iter_prod,
-              'nanmin': _iter_min, 'nanmax': _iter_max,
-              'nanmean': _iter_mean, 'nanstd': _iter_std,
-              'all': _iter_all, 'any': _iter_any,
-              'allnan': _iter_allnan, 'anynan': _iter_anynan}
+        _2pass = cls._2pass()
+        if _2pass is None:
+            return loop
 
-finish_funcs = {_iter_std: _finish_std, _iter_mean: _finish_mean}
+        _2pass = nb.njit(_2pass, nogil=True, cache=True)
+        def _loop_2pass(group_idx, a, ret, counter, mean, fill_value, ddof):
+            loop(group_idx, a, ret, counter, mean, fill_value, ddof)
+            _2pass(ret, counter, mean, fill_value, ddof)
+        return nb.njit(_loop_2pass, nogil=True, cache=True)
 
-dtype_by_func = {list: 'object',
-                 tuple: 'object',
-                 sorted: 'object',
-                 np.array: 'object',
-                 np.sort: 'object',
-                 np.mean: 'float',
-                 np.std: 'float',
-                 np.all: 'bool',
-                 np.any: 'bool',
-                 all: 'bool',
-                 any: 'bool',
-                 'mean': 'float',
-                 'std': 'float',
-                 'nanmean': 'float',
-                 'nanstd': 'float',
-                 'all': 'bool',
-                 'any': 'bool',
-                 'allnan': 'bool',
-                 'anynan': 'bool',
-                 }
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        raise NotImplementedError("subclasses need to overwrite _inner")
 
+    @classmethod
+    def _2pass(cls):
+        return
 
-@jit
-def _loop_contiguous(iter_func, group_idx, a, res, counter, tmp, nanskip, fillvalue):
-    wi = 0
-    cmp_pos = 0
-    for i in range(len(group_idx)):
-        if group_idx[i] != group_idx[cmp_pos]:
-            cmp_pos = i
-            wi += 1
-        if nanskip and a[i] != a[i]:
-            continue
-        iter_func(wi, a[i], res, counter, tmp)
+    @classmethod
+    def _finalize(cls, ret, counter, mean, fill_value):
+        if cls.forced_fill_value is not None and fill_value != cls.forced_fill_value:
+            ret[counter] = fill_value
 
 
-@jit
-def _loop_incontiguous(iter_func, group_idx, a, res, counter, tmp, nanskip, fillvalue):
-    wi = 0
-    for i in range(len(group_idx)):
-        wi = group_idx[i]
-        if nanskip and a[i] != a[i]:
-            continue
-        iter_func(wi, a[i], res, counter, tmp)
+class Sum(AggregateOp):
+    forced_fill_value = 0
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        counter[ri] = 0
+        ret[ri] += val
 
 
-def aggregate(group_idx, a, func='sum', dtype=None, fillvalue=0):
-    """ For most common cases, operates like usual matlab aggregatearray
-        http://www.mathworks.com/help/matlab/ref/aggregatearray.html
-    
-        group_idx and a are generally treated as flattened arrays.
-        
-        Contiguous:
-        Same values within group_idx can be expected to be grouped
-        or be treated as new values starting a new group, in 
-        case they should appear another time
-        E.g. group_idx = [1 1 2 2 2 1 1 3 3] with contiguous set will 
-        be treated the same way as [0 0 1 1 1 2 2 3 3]
-        That way, feeding data through np.unique, maintaining order
-        etc. can be omitted. It also gives a nice speed boost, as
-        np.argsort of group_idx can also be omitted.
-    """
+class Prod(AggregateOp):
+    forced_fill_value = 1
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        counter[ri] = 0
+        ret[ri] *= val
+
+
+class All(AggregateOp):
+    forced_fill_value = 1
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        counter[ri] = 0
+        ret[ri] &= bool(val)
+
+
+class Any(AggregateOp):
+    forced_fill_value = 0
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        counter[ri] = 0
+        ret[ri] |= bool(val)
+
+
+class Last(AggregateOp):
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        ret[ri] = val
+
+
+class First(Last):
+    reverse = True
+
+
+class AllNan(AggregateOp):
+    forced_fill_value = 1
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        counter[ri] = 0
+        ret[ri] &= val == val
+
+
+class AnyNan(AggregateOp):
+    forced_fill_value = 0
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        counter[ri] = 0
+        ret[ri] |= val != val
+
+
+class Max(AggregateOp):
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        if counter[ri] or ret[ri] < val:
+            counter[ri] = 0
+            ret[ri] = val
+
+
+class Min(AggregateOp):
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        if counter[ri] or ret[ri] > val:
+            counter[ri] = 0
+            ret[ri] = val
+
+
+class Mean(AggregateOp):
+    counter_fill_value = 0
+    counter_dtype = int
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        counter[ri] += 1
+        ret[ri] += val
+
+    @classmethod
+    def _2pass(cls):
+        _2pass_inner = nb.njit(cls._2pass_inner)
+        def _2pass_loop(ret, counter, mean, fill_value, ddof):
+            for ri in range(len(ret)):
+                if not counter[ri]:
+                    ret[ri] = fill_value
+                else:
+                    ret[ri] = _2pass_inner(ri, ret, counter, mean, ddof)
+        return _2pass_loop
+
+    @staticmethod
+    def _2pass_inner(ri, ret, counter, mean, ddof):
+        return ret[ri] / counter[ri]
+
+
+class Std(Mean):
+    mean_fill_value = 0
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        counter[ri] += 1
+        mean[ri] += val
+        ret[ri] += val * val
+
+    @staticmethod
+    def _2pass_inner(ri, ret, counter, mean, ddof):
+        mean2 = mean[ri] * mean[ri]
+        return np.sqrt((ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof))
+
+
+class Var(Std):
+    @staticmethod
+    def _2pass_inner(ri, ret, counter, mean, ddof):
+        mean2 = mean[ri] * mean[ri]
+        return (ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof)
+
+
+
+def get_funcs():
+    funcs = dict()
+    for op in (Sum, Prod, All, Any, Last, First, AllNan, AnyNan, Min, Max, Mean, Std, Var):
+        funcname = op.__name__.lower()
+        funcs[funcname] = op(funcname)
+        if funcname not in _no_separate_nan_version:
+            funcname = 'nan' + funcname
+            funcs[funcname] = op(funcname, nans=True)
+    return funcs
+
+
+_impl_dict = get_funcs()
+
+def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
+              dtype=None, axis=None, **kwargs):
+    func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
-        if getattr(func, '__name__', None) in iter_funcs:
-            func = func.__name__
-        else:
-            # Fall back to acuum_np if no optimized version is available
-            return aggregate_np(group_idx, a, func=func, dtype=dtype,
-                            fillvalue=fillvalue)
-    if func not in iter_funcs:
-        raise ValueError("No optimized function %s available" % func)
-
-    check_group_idx(group_idx, a, check_min=False)
-
-    iter_func = iter_funcs[func]
-    nanskip = isinstance(a.dtype, np.float) and func.startswith('nan')
-    dtype = dtype or dtype_by_func.get(func, a.dtype)
-    res = np.zeros(_count_steps(group_idx), dtype=dtype)
-    if fillvalue != 0 and iter_func not in {_iter_mean, _iter_std}:
-        res.fill(fillvalue)
-
-    if iter_func in {_iter_min, _iter_max, _iter_sum, _iter_prod}:
-        counter = 0
-        tmp = 0
-    elif iter_func == _iter_std:
-        counter = np.zeros_like(res, dtype=int)
-        tmp = np.zeros_like(res)
+        raise NotImplementedError("generic functions not supported in numba"
+                                  " implementation of aggregate.")
     else:
-        counter = np.zeros_like(res, dtype=int)
-        tmp = 0
+        func = _impl_dict[func]
+        return func(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
 
-    _loop_incontiguous(iter_func, group_idx, a, res, counter, tmp, nanskip, fillvalue)
+aggregate.__doc__ = """
+    This is the numba implementation of aggregate.
 
-    try:
-        finish_func = finish_funcs[iter_func]
-    except KeyError:
-        pass
-    else:
-        finish_func(res, counter, tmp, fillvalue)
+    """ + _doc_str
 
-    return res
-    
-aggregate.__doc__ = _doc_str
 
-@jit
-def unpack(group_idx, res):
-    """ Take an aggregate packed array and uncompress it to the size of group_idx. 
-        This is equivalent to res[group_idx], but gives a more than 
-        3-fold speedup.
+@nb.njit(nogil=True, cache=True)
+def step_count(group_idx):
+    """ Determine the size of the result array
+        for contiguous data
     """
-    check_group_idx(group_idx)
-    unpacked = np.zeros_like(group_idx, dtype=res.dtype)
-
-    res_len = len(res)
+    cmp_pos = 0
+    steps = 1
+    if len(group_idx) < 1:
+        return 0
     for i in range(len(group_idx)):
-        if group_idx[i] >= 0 and group_idx[i] < res_len:
-            unpacked[i] = res[group_idx[i]]
-    return unpacked
+        if group_idx[cmp_pos] != group_idx[i]:
+            cmp_pos = i
+            steps += 1
+    return steps
 
-@jit
+
+@nb.njit(nogil=True, cache=True)
+def _step_indices_loop(group_idx, indices):
+    cmp_pos = 0
+    ri = 1
+    for i in range(1, len(group_idx)):
+        if group_idx[cmp_pos] != group_idx[i]:
+            cmp_pos = i
+            indices[ri] = i
+            ri += 1
+
+
 def step_indices(group_idx):
     """ Get the edges of areas within group_idx, which are filled 
         with the same value
     """
-    ilen = _count_steps(group_idx) + 1
+    ilen = step_count(group_idx) + 1
     indices = np.empty(ilen, int)
     indices[0] = 0
     indices[-1] = group_idx.size
-
-    cmp_pos = 0
-    wi = 1
-    for i in range(1, len(group_idx)):
-        if group_idx[cmp_pos] != group_idx[i]:
-            cmp_pos = i
-            indices[wi] = i
-            wi += 1
-
+    _step_indices_loop(group_idx, indices)
     return indices
-
-
-# if __name__ == '__main__':
-#    group_idx = np.array([4, 4, 4, 1, 1, 1, 2, 2, 2])
-#    a = np.arange(group_idx.size, dtype=float)
-#    mode = 'contiguous'
-#    for fn in (np.mean, np.std, 'allnan', 'anynan'):
-#        res = aggregate(group_idx, a, mode=mode, func=fn)
-#        print res

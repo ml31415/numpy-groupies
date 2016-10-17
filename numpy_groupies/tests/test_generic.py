@@ -1,36 +1,18 @@
-"""
-Implementation of tests, that are run against all implemented versions of aggregate.
-"""
+""" Tests, that are run against all implemented versions of aggregate. """
 
 import itertools
 import numpy as np
 import pytest
 
-from .. import (aggregate_py, aggregate_ufunc, aggregate_np as aggregate_numpy,
-                aggregate_weave, aggregate_pd as aggregate_pandas)
+from . import _implementations, _impl_name, _wrap_notimplemented_xfail
 
 
-_implementations = ['aggregate_' + impl for impl in "py ufunc numpy weave pandas".split()]
-aggregate_implementations = dict((impl, globals()[impl]) for impl in _implementations)
-
-def wrap_aggregate_xfail(impl, name=None):
-    def aggregate_xfail(*args, **kwargs):
-        """ Some implementations lack some functionality. That's ok, let's xfail that instead of raising errors. """
-        try:
-            return impl(*args, **kwargs)
-        except NotImplementedError:
-            raise pytest.xfail("Functionality not implemented")
-    if name:
-        aggregate_xfail.__name__ = name
-    return aggregate_xfail
-
-
-@pytest.fixture(params=_implementations, ids=lambda x: x.split('_')[1])
+@pytest.fixture(params=_implementations, ids=_impl_name)
 def aggregate_all(request):
-    impl = aggregate_implementations[request.param]
+    impl = request.param
     if impl is None:
         pytest.xfail("Implementation not available")
-    return wrap_aggregate_xfail(impl, request.param)
+    return _wrap_notimplemented_xfail(impl.aggregate, 'aggregate_' + _impl_name(impl))
 
 
 def test_preserve_missing(aggregate_all):
@@ -146,7 +128,7 @@ def test_first_last(aggregate_all, first_last):
     np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.parametrize(["first_last", "nanoffset"], itertools.product(["nanfirst", "nanlast"], [2, 0, 4]))
+@pytest.mark.parametrize(["first_last", "nanoffset"], itertools.product(["nanfirst", "nanlast"], [0, 2, 4]))
 def test_nan_first_last(aggregate_all, first_last, nanoffset):
     group_idx = np.arange(0, 100, 2, dtype=int).repeat(5)
     a = np.arange(group_idx.size, dtype=float)

@@ -6,7 +6,8 @@ import numpy as np
 
 
 from numpy_groupies.utils import aliasing
-from numpy_groupies import aggregate_py, aggregate_np, aggregate_ufunc, aggregate_pd
+from numpy_groupies import aggregate_py, aggregate_np, aggregate_ufunc
+from numpy_groupies.aggregate_pandas import aggregate as aggregate_pd
 
 
 def aggregate_group_loop(*args, **kwargs):
@@ -38,8 +39,8 @@ print ""
 print "---------testing--------------"
 print "compare against group-and-loop with numpy"
 testable_funcs = {aliasing[f]: f for f in (np.sum, np.prod, np.any, np.all, np.min, np.max, np.std, np.var, np.mean)}
-test_group_idx = np.random.randint(0, 1e3, 1e5)
-test_a = np.random.rand(1e5) * 100 - 50
+test_group_idx = np.random.randint(0, int(1e3), int(1e5))
+test_a = np.random.rand(int(1e5)) * 100 - 50
 test_a[test_a > 25] = 0  # for use with bool functions
 for name, f in testable_funcs.items():
     numpy_loop_group = aggregate_group_loop(test_group_idx, test_a, func=f)
