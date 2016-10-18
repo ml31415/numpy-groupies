@@ -39,3 +39,7 @@ except ImportError:
 else:
     from .aggregate_weave import aggregate as aggregate_wv, step_indices, step_count
     aggregate = aggregate_wv
+
+
+def uaggregate(group_idx, a, **kwargs):
+    return unpack(group_idx, aggregate(group_idx, a, **kwargs))
