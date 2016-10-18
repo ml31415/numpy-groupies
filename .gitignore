@@ -36,6 +36,7 @@ nosetests.xml
 .settings/
 .cache/
 __pycache__/
+.eggs/
 *~
 
 *.ini
