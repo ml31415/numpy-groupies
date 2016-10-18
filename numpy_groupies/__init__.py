@@ -1,5 +1,3 @@
-# TODO: It shouldn't be tried to import weave, numba or pandas, if not explicitly requested
-
 def dummy_no_impl(*args, **kwargs):
     raise NotImplementedError("You may need to install another package (numpy, "
                               "weave, or numba) to access a working implementation.")
@@ -31,6 +29,7 @@ except ImportError:
     aggregate_nb = None
 else:
     from .aggregate_numba import aggregate as aggregate_nb
+    aggregate = aggregate_nb
 
 
 try:

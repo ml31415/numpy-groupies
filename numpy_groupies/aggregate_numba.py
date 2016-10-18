@@ -42,20 +42,25 @@ class AggregateOp(object):
         jitfunc(group_idx, a, ret, counter, mean, fill_value, ddof)
         self._finalize(ret, counter, mean, fill_value)
 
-        # deal with ndimensional indexing
+        if self.nans:
+            ret = ret[1:]
+
+        # Deal with ndimensional indexing
         if ndim_idx > 1:
             ret = ret.reshape(size, order=order)
         return ret
 
-    @classmethod
-    def _initialize(cls, flat_size, fill_value, dtype):
-        if cls.forced_fill_value is None:
+    def _initialize(self, flat_size, fill_value, dtype):
+        if self.nans:
+            # For avoiding branches
+            flat_size += 1
+        if self.forced_fill_value is None:
             ret = np.full(flat_size, fill_value, dtype=dtype)
         else:
-            ret = np.full(flat_size, cls.forced_fill_value, dtype=dtype)
-        counter = np.full_like(ret, cls.counter_fill_value, dtype=cls.counter_dtype)
-        if cls.mean_fill_value is not None:
-            mean = np.full_like(ret, cls.mean_fill_value, dtype=ret.dtype)
+            ret = np.full(flat_size, self.forced_fill_value, dtype=dtype)
+        counter = np.full_like(ret, self.counter_fill_value, dtype=self.counter_dtype)
+        if self.mean_fill_value is not None:
+            mean = np.full_like(ret, self.mean_fill_value, dtype=ret.dtype)
         else:
             mean = None
         return ret, counter, mean
@@ -63,15 +68,6 @@ class AggregateOp(object):
     @classmethod
     def callable(cls, nans=False, reverse=False, scalar=False):
         """ Compile a jitted function doing the hard part of the job """
-        inner = _inner = nb.njit(cls._inner)
-        if nans:
-            def _nan_inner(ri, val, ret, counter, mean):
-                if val == val:
-                    _inner(ri, val, ret, counter, mean)
-            # Make sure the reference to inner never creates a recursion to itself
-            # within the closure, i.e. keep inner and _inner separate!
-            inner = nb.njit(_nan_inner)
-
         if scalar:
             def _valgetter(a, i):
                 return a
@@ -80,22 +76,38 @@ class AggregateOp(object):
                 return a[i]
         valgetter = nb.njit(_valgetter)
 
+        if nans:
+            def _ri_redir(i, val):
+                """ Redirect any write access to the output array to it's 
+                    first field, if we encounter a nan value. This first field
+                    was reserved in advance for dummy access. Shift the index
+                    by 1, if we don't have a nan value.
+                """
+                return (i + 1) * (val == val)
+        else:
+            def _ri_redir(i, val):
+                return i
+        ri_redir = nb.njit(_ri_redir)
+
+        inner = _inner = nb.njit(cls._inner)
+
         def _loop(group_idx, a, ret, counter, mean, fill_value, ddof):
             rng = range(len(group_idx) - 1, -1 , -1) if reverse else range(len(group_idx))
             for i in rng:
                 val = valgetter(a, i)
-                inner(group_idx[i], val, ret, counter, mean)
-        loop = nb.njit(_loop)
+                ri = ri_redir(group_idx[i], val)
+                inner(ri, val, ret, counter, mean)
+        loop = nb.njit(_loop, nogil=True, cache=True)
 
         _2pass = cls._2pass()
         if _2pass is None:
             return loop
 
         _2pass = nb.njit(_2pass, nogil=True, cache=True)
-        def _loop_2pass(group_idx, a, ret, counter, mean, fill_value, ddof):
+        def loop_2pass(group_idx, a, ret, counter, mean, fill_value, ddof):
             loop(group_idx, a, ret, counter, mean, fill_value, ddof)
             _2pass(ret, counter, mean, fill_value, ddof)
-        return nb.njit(_loop_2pass, nogil=True, cache=True)
+        return loop_2pass
 
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
@@ -178,17 +190,19 @@ class AnyNan(AggregateOp):
 class Max(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
-        if counter[ri] or ret[ri] < val:
-            counter[ri] = 0
-            ret[ri] = val
+        cp = (ret[ri] < val) | counter[ri]
+        ncp = bool(not cp)
+        counter[ri] &= ncp
+        ret[ri] = cp * val + ncp * ret[ri]
 
 
 class Min(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
-        if counter[ri] or ret[ri] > val:
-            counter[ri] = 0
-            ret[ri] = val
+        cp = (ret[ri] > val) | counter[ri]
+        ncp = bool(not cp)
+        counter[ri] &= ncp
+        ret[ri] = cp * val + ncp * ret[ri]
 
 
 class Mean(AggregateOp):
@@ -205,10 +219,10 @@ class Mean(AggregateOp):
         _2pass_inner = nb.njit(cls._2pass_inner)
         def _2pass_loop(ret, counter, mean, fill_value, ddof):
             for ri in range(len(ret)):
-                if not counter[ri]:
-                    ret[ri] = fill_value
-                else:
+                if counter[ri]:
                     ret[ri] = _2pass_inner(ri, ret, counter, mean, ddof)
+                else:
+                    ret[ri] = fill_value
         return _2pass_loop
 
     @staticmethod

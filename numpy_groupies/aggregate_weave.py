@@ -29,19 +29,16 @@ def c_size(varname):
 def c_init(varnames):
     return '    ' + ''.join(c_size(varname) for varname in varnames).lstrip() + """
 
-    long write_idx = 0;
+    long ri = 0;
     long cmp_pos = 0;"""
 
-def c_nan_iter(c_iter):
-    return r"""
-        if (a[i] == a[i]) {%s
-        }""" % '\n'.join('    ' + line for line in c_iter.splitlines())
-
+c_nanskip = """if (a[i] != a[i]) continue;"""
 
 c_base = r"""%(init)s
 
     for (long i=0; i<Lgroup_idx; i++) {
-        write_idx = group_idx[i];
+        %(nanskip)s
+        ri = group_idx[i];
         %(iter)s
     }
     %(finish)s
@@ -50,64 +47,65 @@ c_base = r"""%(init)s
 c_base_reverse = r"""%(init)s
 
     for (long i=Lgroup_idx-1; i>=0; i--) {
-        write_idx = group_idx[i];
+        %(nanskip)s
+        ri = group_idx[i];
         %(iter)s
     }
     %(finish)s
     """
 
 c_iter['sum'] = r"""
-        counter[write_idx] = 0;
-        ret[write_idx] += a[i];"""
+        counter[ri] = 0;
+        ret[ri] += a[i];"""
 
 c_iter_scalar['sum'] = r"""
-        counter[write_idx] = 0;
-        ret[write_idx] += a;"""
+        counter[ri] = 0;
+        ret[ri] += a;"""
 
 c_iter['prod'] = r"""
-        counter[write_idx] = 0;
-        ret[write_idx] *= a[i];"""
+        counter[ri] = 0;
+        ret[ri] *= a[i];"""
 
 c_iter_scalar['prod'] = r"""
-        counter[write_idx] = 0;
-        ret[write_idx] *= a;"""
+        counter[ri] = 0;
+        ret[ri] *= a;"""
 
 c_iter['all'] = r"""
-        counter[write_idx] = 0;
-        if (a[i] == 0) ret[write_idx] = 0;"""
+        counter[ri] = 0;
+        ret[ri] &= (a[i] != 0);"""
 
 c_iter['any'] = r"""
-        counter[write_idx] = 0;
-        if (a[i] != 0) ret[write_idx] = 1;"""
+        counter[ri] = 0;
+        ret[ri] |= (a[i] != 0);"""
 
 c_iter['last'] = r"""
-        ret[write_idx] = a[i];"""
+        ret[ri] = a[i];"""
 
 c_iter['allnan'] = r"""
-        counter[write_idx] = 0;
-        if (a[i] == a[i]) ret[write_idx] = 0;"""
+        counter[ri] = 0;
+        ret[ri] &= (a[i] == a[i]);"""
 
 c_iter['anynan'] = r"""
-        counter[write_idx] = 0;
-        if (a[i] != a[i]) ret[write_idx] = 1;"""
+        counter[ri] = 0;
+        ret[ri] |= (a[i] == a[i]);"""
 
 c_iter['max'] = r"""
-        if (counter[write_idx] == 1) {
-            ret[write_idx] = a[i];
-            counter[write_idx] = 0;
+        if (counter[ri] == 1) {
+            ret[ri] = a[i];
+            counter[ri] = 0;
         } 
-        else if (ret[write_idx] < a[i]) ret[write_idx] = a[i];"""
+        else if (ret[ri] < a[i]) ret[ri] = a[i];"""
 
 c_iter['min'] = r"""
-        if (counter[write_idx] == 1) {
-            ret[write_idx] = a[i];
-            counter[write_idx] = 0;
+        if (counter[ri] == 1) {
+            ret[ri] = a[i];
+            counter[ri] = 0;
         } 
-        else if (ret[write_idx] > a[i]) ret[write_idx] = a[i];"""
+        else if (ret[ri] > a[i]) ret[ri] = a[i];"""
 
 c_iter['mean'] = r"""
-        counter[write_idx]++;
-        ret[write_idx] += a[i];"""
+        counter[ri]++;
+        ret[ri] += a[i];"""
 
 c_finish['mean'] = r"""
     for (long i=0; i<Lret; i++) {
@@ -116,9 +114,9 @@ c_finish['mean'] = r"""
     }"""
 
 c_iter['std'] = r"""
-        counter[write_idx]++;
-        means[write_idx] += a[i];
-        ret[write_idx] += a[i] * a[i];"""
+        counter[ri]++;
+        means[ri] += a[i];
+        ret[ri] += a[i] * a[i];"""
 
 c_finish['std'] = r"""
     double mean2 = 0;
@@ -148,12 +146,12 @@ def c_func(funcname, reverse=False, nans=False, scalar=False):
     """ Fill c_funcs with constructed code from the templates """
     varnames = ['group_idx', 'a', 'ret', 'counter']
     codebase = c_base_reverse if reverse else c_base
-    iterbase = c_iter_scalar[funcname] if scalar else c_iter[funcname]
-    iteration = c_nan_iter(iterbase) if nans else iterbase
+    iteration = c_iter_scalar[funcname] if scalar else c_iter[funcname]
     if scalar:
         varnames.remove('a')
     return codebase % dict(init=c_init(varnames), iter=iteration,
-                           finish=c_finish.get(funcname, ''))
+                           finish=c_finish.get(funcname, ''),
+                           nanskip=(c_nanskip if nans else ''))
 
 def get_cfuncs():
     c_funcs = dict()
@@ -194,11 +192,11 @@ def step_count(group_idx):
 
 c_step_indices = c_size('group_idx') + r"""
     long cmp_pos = 0;
-    long write_idx = 1; 
+    long ri = 1; 
     for (long i=1; i<Lgroup_idx; i++) {
         if (group_idx[cmp_pos] != group_idx[i]) {
             cmp_pos = i;
-            indices[write_idx++] = i;
+            indices[ri++] = i;
         }
     }"""
 
