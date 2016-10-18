@@ -32,13 +32,13 @@ def c_init(varnames):
     long ri = 0;
     long cmp_pos = 0;"""
 
-c_nanskip = """if (a[i] != a[i]) continue;"""
+c_ri = """ri = group_idx[i];"""
+c_ri_redir = """ri = (group_idx[i] + 1) * (a[i] == a[i]);"""
 
 c_base = r"""%(init)s
 
     for (long i=0; i<Lgroup_idx; i++) {
-        %(nanskip)s
-        ri = group_idx[i];
+        %(ri_redir)s
         %(iter)s
     }
     %(finish)s
@@ -47,8 +47,7 @@ c_base = r"""%(init)s
 c_base_reverse = r"""%(init)s
 
     for (long i=Lgroup_idx-1; i>=0; i--) {
-        %(nanskip)s
-        ri = group_idx[i];
+        %(ri_redir)s
         %(iter)s
     }
     %(finish)s
@@ -90,14 +89,14 @@ c_iter['anynan'] = r"""
         ret[ri] |= (a[i] == a[i]);"""
 
 c_iter['max'] = r"""
-        if (counter[ri] == 1) {
+        if (counter[ri]) {
             ret[ri] = a[i];
             counter[ri] = 0;
         } 
         else if (ret[ri] < a[i]) ret[ri] = a[i];"""
 
 c_iter['min'] = r"""
-        if (counter[ri] == 1) {
+        if (counter[ri]) {
             ret[ri] = a[i];
             counter[ri] = 0;
         } 
@@ -108,9 +107,9 @@ c_iter['mean'] = r"""
         ret[ri] += a[i];"""
 
 c_finish['mean'] = r"""
-    for (long i=0; i<Lret; i++) {
-        if (counter[i] != 0) ret[i] = ret[i] / counter[i];
-        else ret[i] = fill_value;
+    for (long ri=0; ri<Lret; ri++) {
+        if (counter[ri]) ret[ri] = ret[ri] / counter[ri];
+        else ret[ri] = fill_value;
     }"""
 
 c_iter['std'] = r"""
@@ -120,26 +119,25 @@ c_iter['std'] = r"""
 
 c_finish['std'] = r"""
     double mean2 = 0;
-    for (long i=0; i<Lret; i++) {
-        if (counter[i] != 0) {
-            mean2 = means[i] * means[i];
-            ret[i] = sqrt((ret[i] - mean2 / counter[i]) / (counter[i] - ddof));
+    for (long ri=0; ri<Lret; ri++) {
+        if (counter[ri]) {
+            mean2 = means[ri] * means[ri];
+            ret[ri] = sqrt((ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof));
         }
-        else ret[i] = fill_value;
+        else ret[ri] = fill_value;
     }"""
 
 c_iter['var'] = c_iter['std']
 
 c_finish['var'] = r"""
     double mean2 = 0;
-    for (long i=0; i<Lret; i++) {
-        if (counter[i] != 0) {
-            mean2 = means[i] * means[i];
-            ret[i] = (ret[i] - mean2 / counter[i]) / (counter[i] - ddof);
+    for (long ri=0; ri<Lret; ri++) {
+        if (counter[ri]) {
+            mean2 = means[ri] * means[ri];
+            ret[ri] = (ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof);
         }
-        else ret[i] = fill_value;
+        else ret[ri] = fill_value;
     }"""
-
 
 
 def c_func(funcname, reverse=False, nans=False, scalar=False):
@@ -151,7 +149,7 @@ def c_func(funcname, reverse=False, nans=False, scalar=False):
         varnames.remove('a')
     return codebase % dict(init=c_init(varnames), iter=iteration,
                            finish=c_finish.get(funcname, ''),
-                           nanskip=(c_nanskip if nans else ''))
+                           ri_redir=(c_ri_redir if nans else c_ri))
 
 def get_cfuncs():
     c_funcs = dict()
@@ -227,6 +225,10 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
                                                                axis=axis)
     dtype = check_dtype(dtype, func, a, len(group_idx))
     check_fill_value(fill_value, dtype)
+    nans = func.startswith('nan')
+
+    if nans:
+        flat_size += 1
 
     if func in ('sum', 'any', 'anynan', 'nansum'):
         ret = np.zeros(flat_size, dtype=dtype)
@@ -262,7 +264,11 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
     elif func in ('prod', 'all', 'allnan', 'nanprod') and fill_value != 1:
         ret[counter] = fill_value
 
-    # deal with ndimensional indexing
+    if nans:
+        # Restore the shifted return array
+        ret = ret[1:]
+
+    # Deal with ndimensional indexing
     if ndim_idx > 1:
         ret = ret.reshape(size, order=order)
     return ret
