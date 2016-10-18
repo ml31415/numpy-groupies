@@ -35,7 +35,7 @@ class NumpyGroupiesClean(clean):
 
 
 setup(name='numpy_groupies',
-      version='0.9.2',
+      version='0.9.3',
       author="@ml31415 and @d1manson",
       license='BSD',
       description="Optimised tools for group-indexing operations: aggregated sum and more.",
