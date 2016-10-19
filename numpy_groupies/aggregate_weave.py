@@ -18,8 +18,9 @@ c_iter_scalar = dict()
 c_finish = dict()
 
 # Set this for testing, to fail deprecated C-API calls
-# c_macros = [('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION')]
+#c_macros = [('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION')]
 c_macros = []
+c_args = ['-Wno-cpp']  # Suppress the deprecation warnings created by weave
 
 def c_size(varname):
     return r"""
@@ -185,7 +186,7 @@ def step_count(group_idx):
     """ Determine the size of the result array
         for contiguous data
     """
-    return inline(c_step_count, ['group_idx'], define_macros=c_macros)
+    return inline(c_step_count, ['group_idx'], define_macros=c_macros, extra_compile_args=c_args)
 
 
 c_step_indices = c_size('group_idx') + r"""
@@ -206,7 +207,7 @@ def step_indices(group_idx):
     indices = np.empty(ilen, int)
     indices[0] = 0
     indices[-1] = group_idx.size
-    inline(c_step_indices, ['group_idx', 'indices'], define_macros=c_macros)
+    inline(c_step_indices, ['group_idx', 'indices'], define_macros=c_macros, extra_compile_args=c_args)
     return indices
 
 
@@ -239,9 +240,8 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
 
     # In case we should get some ugly fortran arrays, convert them
     inline_vars = dict(group_idx=np.ascontiguousarray(group_idx), a=np.ascontiguousarray(a),
-                      ret=ret, fill_value=fill_value)
+                       ret=ret, fill_value=fill_value)
     # TODO: Have this fixed by proper raveling
-    # inline_vars = dict(group_idx=group_idx, a=a, ret=ret, fill_value=fill_value)
     if func in ('std', 'var', 'nanstd', 'nanvar'):
         counter = np.zeros_like(ret, dtype=int)
         inline_vars['means'] = np.zeros_like(ret)
@@ -256,7 +256,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
     if np.isscalar(a):
         func += 'scalar'
         inline_vars['a'] = a
-    inline(c_funcs[func], inline_vars.keys(), local_dict=inline_vars, define_macros=c_macros, extra_compile_args=['-O3'])
+    inline(c_funcs[func], inline_vars.keys(), local_dict=inline_vars, define_macros=c_macros, extra_compile_args=c_args)
 
     # Postprocessing
     if func in ('sum', 'any', 'anynan', 'nansum') and fill_value != 0:
