@@ -24,13 +24,15 @@ def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
     ret[grouped.index] = grouped
     return ret
 
-_supported_funcs = 'min max sum prod mean var std first last all any'.split()
+_supported_funcs = 'sum prod all any min max mean var std first last'.split()
 _impl_dict = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
 _impl_dict.update(('nan' + fn, partial(_wrapper, func=fn))
                   for fn in _supported_funcs
                   if fn not in _no_separate_nan_version)
 _impl_dict.update(allnan=partial(_wrapper, func=allnan),
-                  anynan=partial(_wrapper, func=anynan))
+                  anynan=partial(_wrapper, func=anynan),
+                  len=partial(_wrapper, func='count'),
+                  nanlen=partial(_wrapper, func='count'))
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',

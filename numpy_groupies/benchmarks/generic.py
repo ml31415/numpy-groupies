@@ -22,9 +22,10 @@ def aggregate_grouploop(*args, **kwargs):
     return aggregate_numpy.aggregate(*args, func=lambda x: func(x), **kwargs)
 
 
-func_list = (np.sum, np.prod, np.min, np.max, np.all, np.any, 'anynan', 'allnan',
+func_list = (np.sum, np.prod, np.min, np.max, len, np.all, np.any, 'anynan', 'allnan',
              np.mean, np.std, np.var, 'first', 'last',
-             np.nansum, np.nanmin, np.nanmax, np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',)
+             np.nansum, np.nanprod, np.nanmin, np.nanmax, 'nanlen', 'nanall', 'nanany',
+             np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',)
 
 
 

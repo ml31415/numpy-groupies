@@ -9,14 +9,14 @@ import numpy as np
 import pytest
 
 from . import (aggregate_purepy, aggregate_numpy_ufunc, aggregate_numpy,
-               aggregate_weave, aggregate_pandas,
+               aggregate_weave, aggregate_numba, aggregate_pandas,
                _wrap_notimplemented_xfail, _impl_name)
 
 class AttrDict(dict):
     __getattr__ = dict.__getitem__
 
 
-@pytest.fixture(params=['np/py', 'weave/np', 'ufunc/np', 'pandas/np'], scope='module')
+@pytest.fixture(params=['np/py', 'weave/np', 'ufunc/np', 'numba/np', 'pandas/np'], scope='module')
 def aggregate_cmp(request):
     if request.param == 'np/py':
         # Some functions in purepy are not implemented
@@ -28,10 +28,12 @@ def aggregate_cmp(request):
         func_ref = aggregate_numpy.aggregate
         if 'ufunc' in request.param:
             impl = aggregate_numpy_ufunc
-        elif 'pandas' in request.param:
-            impl = aggregate_pandas
+        elif 'numba' in request.param:
+            impl = aggregate_numba
         elif 'weave' in request.param:
             impl = aggregate_weave
+        elif 'pandas' in request.param:
+            impl = aggregate_pandas
         else:
             impl = None
 
@@ -65,8 +67,8 @@ def func_preserve_order(iterator):
         tmp += x ** i
     return tmp
 
-func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std,
-             np.nansum, np.nanmin, np.nanmax, np.nanmean, np.nanstd,
+func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std, len,
+             np.nansum, np.nanprod, np.nanmin, np.nanmax, np.nanmean, np.nanstd, 'nanlen',
              'anynan', 'allnan', func_arbitrary, func_preserve_order)
 
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))

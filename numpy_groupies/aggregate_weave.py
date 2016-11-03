@@ -6,9 +6,9 @@ from .utils import (_no_separate_nan_version, get_func, check_dtype,
 from .aggregate_numpy import aggregate as aggregate_np
 
 
-optimized_funcs = {'sum', 'min', 'max', 'amin', 'amax', 'mean', 'var', 'std', 'prod',
-                   'nansum', 'nanmin', 'nanmax', 'nanmean', 'nanvar', 'nanstd', 'nanprod',
-                   'all', 'any', 'allnan', 'anynan',
+optimized_funcs = {'sum', 'min', 'max', 'amin', 'amax', 'mean', 'var', 'std', 'prod', 'len',
+                   'nansum', 'nanmin', 'nanmax', 'nanmean', 'nanvar', 'nanstd', 'nanprod', 'nanlen',
+                   'all', 'any', 'nanall', 'nanany', 'allnan', 'anynan',
                    'first', 'last', 'nanfirst', 'nanlast'}
 
 # c_funcs will contain all generated c code, so it can be read easily for debugging
@@ -69,6 +69,14 @@ c_iter['prod'] = r"""
 c_iter_scalar['prod'] = r"""
         counter[ri] = 0;
         ret[ri] *= a;"""
+
+c_iter['len'] = r"""
+        counter[ri] = 0;
+        ret[ri] += 1;"""
+
+c_iter_scalar['len'] = r"""
+        counter[ri] = 0;
+        ret[ri] += 1;"""
 
 c_iter['all'] = r"""
         counter[ri] = 0;
@@ -231,7 +239,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
     if nans:
         flat_size += 1
 
-    if func in ('sum', 'any', 'anynan', 'nansum'):
+    if func in ('sum', 'any', 'len', 'anynan', 'nansum', 'nanlen'):
         ret = np.zeros(flat_size, dtype=dtype)
     elif func in ('prod', 'all', 'allnan', 'nanprod'):
         ret = np.ones(flat_size, dtype=dtype)

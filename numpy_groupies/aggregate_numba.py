@@ -141,6 +141,15 @@ class Prod(AggregateOp):
         ret[ri] *= val
 
 
+class Len(AggregateOp):
+    forced_fill_value = 0
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        counter[ri] = 0
+        ret[ri] += 1
+
+
 class All(AggregateOp):
     forced_fill_value = 1
 
@@ -255,7 +264,7 @@ class Var(Std):
 
 def get_funcs():
     funcs = dict()
-    for op in (Sum, Prod, All, Any, Last, First, AllNan, AnyNan, Min, Max, Mean, Std, Var):
+    for op in (Sum, Prod, Len, All, Any, Last, First, AllNan, AnyNan, Min, Max, Mean, Std, Var):
         funcname = op.__name__.lower()
         funcs[funcname] = op(funcname)
         if funcname not in _no_separate_nan_version:

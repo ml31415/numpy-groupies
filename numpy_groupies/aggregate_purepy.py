@@ -5,7 +5,7 @@ import operator
 from .utils import (_no_separate_nan_version, aliasing_purepy, get_func,
                     _doc_str, isstr)
 
-        
+
 # min - builtin
 # max - builtin
 # sum - builtin
@@ -63,18 +63,19 @@ def _allnan(x):
 def _argmax(x_and_idx):
     # TODO: this doesn't seem to handle equal maxima correctly
     return max(x_and_idx, key=operator.itemgetter(1))[0]
-_argmax.x_and_idx = True # tell aggregate what to use as first arg
+_argmax.x_and_idx = True  # tell aggregate what to use as first arg
 
 def _argmin(x_and_idx):
     # TODO: this doesn't seem to handle equal minima correctly
     return min(x_and_idx, key=operator.itemgetter(1))[0]
-    
-_argmin.x_and_idx = True # tell aggregate what to use as first arg
-    
+
+_argmin.x_and_idx = True  # tell aggregate what to use as first arg
+
 _impl_dict = dict(min=min, max=max, sum=sum, prod=_prod, last=_last,
                   first=_first, all=all, any=any, mean=_mean, std=_std,
                   var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
-                  rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin)
+                  rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin,
+                  len=len)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in _no_separate_nan_version)
 
@@ -83,7 +84,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
               dtype=None, axis=None, **kwargs):
     if axis is not None:
         raise NotImplementedError("axis arg not supported in purepy implementation.")
-        
+
     # Check for 2d group_idx
     if size is None:
         size = 1 + max(group_idx)
@@ -104,15 +105,15 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
                 raise NotImplementedError("pure python implementation doesn't "
                                           "accept ndim indexed input.")
 
+    func = get_func(func, aliasing_purepy, _impl_dict)
     if isinstance(a, (int, float)):
-        if func not in ("sum", "prod"):
-            raise ValueError("scalar inputs are supported only for 'sum' and "
-                             "'prod'")
+        if func not in ("sum", "prod", "len"):
+            raise ValueError("scalar inputs are supported only for 'sum', "
+                             "'prod' and 'len'")
         a = [a] * len(group_idx)
     elif len(group_idx) != len(a):
         raise ValueError("group_idx and a must be of the same length")
 
-    func = get_func(func, aliasing_purepy, _impl_dict)
     if isstr(func):
         if func.startswith('nan'):
             func = func[3:]
@@ -125,14 +126,14 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
     # sort data and evaluate function on groups
     ret = [fill_value] * size
     if not getattr(func, 'x_and_idx', False):
-        data = sorted(zip(group_idx, a), key=operator.itemgetter(0))    
+        data = sorted(zip(group_idx, a), key=operator.itemgetter(0))
         for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
             ret[ix] = func(tuple(val for _, val in group), **kwargs)
     else:
         data = sorted(zip(range(len(a)), group_idx, a), key=operator.itemgetter(1))
         for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
             ret[ix] = func(tuple((val_idx, val) for val_idx, _, val in group), **kwargs)
-        
+
     return ret
 
 aggregate.__doc__ = """

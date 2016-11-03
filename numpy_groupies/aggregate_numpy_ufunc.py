@@ -4,7 +4,7 @@ from .utils import (minimum_dtype, minimum_dtype_scalar, check_boolean,
                     get_func, aliasing, _doc_str, isstr)
 from .aggregate_numpy import _aggregate_base
 
-       
+
 def _anynan(group_idx, a, size, fill_value, dtype=None):
     return _any(group_idx, np.isnan(a), size, fill_value=fill_value,
                 dtype=dtype)
@@ -42,6 +42,10 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
+def _len(group_idx, a, size, fill_value, dtype=None):
+    return _sum(group_idx, 1, size, fill_value, dtype=int)
+
+
 def _prod(group_idx, a, size, fill_value, dtype=None):
     """Same as aggregate_numpy.py"""
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
@@ -77,7 +81,7 @@ def _max(group_idx, a, size, fill_value, dtype=None):
 
 
 _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, all=_all, any=_any,
-                  allnan=_allnan, anynan=_anynan)
+                  allnan=_allnan, anynan=_anynan, len=_len)
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',

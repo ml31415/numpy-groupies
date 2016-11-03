@@ -117,6 +117,39 @@ def test_ndim_indexing(aggregate_all, ndim, order, outsize=10):
     assert res.shape == outshape
 
 
+def test_len(aggregate_all, group_size=5):
+    group_idx = np.arange(0, 100, 2, dtype=int).repeat(group_size)
+    a = np.arange(group_idx.size)
+    res = aggregate_all(group_idx, a, func='len')
+    ref = aggregate_all(group_idx, 1, func='sum')
+    if isinstance(res, np.ndarray):
+        assert issubclass(res.dtype.type, np.integer)
+    else:
+        assert isinstance(res[0], int)
+    np.testing.assert_array_equal(res, ref)
+    group_idx = np.arange(0, 100, dtype=int).repeat(group_size)
+    a = np.arange(group_idx.size)
+    res = aggregate_all(group_idx, a, func=len)
+    if isinstance(res, np.ndarray):
+        assert np.all(res == group_size)
+    else:
+        assert all(x == group_size for x in res)
+
+
+def test_nan_len(aggregate_all):
+    group_idx = np.arange(0, 20, 2, dtype=int).repeat(5)
+    a = np.random.random(group_idx.size)
+    a[::4] = np.nan
+    a[::5] = np.nan
+    res = aggregate_all(group_idx, a, func='nanlen')
+    ref = aggregate_all(group_idx[~np.isnan(a)], 1, func='sum')
+    if isinstance(res, np.ndarray):
+        assert issubclass(res.dtype.type, np.integer)
+    else:
+        assert isinstance(res[0], int)
+    np.testing.assert_array_equal(res, ref)
+
+
 @pytest.mark.parametrize("first_last", ["first", "last"])
 def test_first_last(aggregate_all, first_last):
     group_idx = np.arange(0, 100, 2, dtype=int).repeat(5)
@@ -170,7 +203,7 @@ def test_scalar_input(aggregate_all, func):
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std" , "all", "any"])
 def test_nan_input(aggregate_all, func, groups=100):
     if aggregate_all.__name__.endswith('pandas'):
-        pytest.skip("pandas seems to automatically skip nan values")
+        pytest.skip("pandas automatically skip nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(5)
     a = np.random.random(group_idx.size)
     a[::2] = np.nan
@@ -180,4 +213,15 @@ def test_nan_input(aggregate_all, func, groups=100):
     else:
         ref = np.full(groups, np.nan, dtype=float)
     res = aggregate_all(group_idx, a, func=func)
+    np.testing.assert_array_equal(res, ref)
+
+
+def test_nan_input_len(aggregate_all, groups=100, group_size=5):
+    if aggregate_all.__name__.endswith('pandas'):
+        pytest.skip("pandas automatically skip nan values")
+    group_idx = np.arange(0, groups, dtype=int).repeat(group_size)
+    a = np.random.random(len(group_idx))
+    a[::2] = np.nan
+    ref = np.full(groups, group_size, dtype=int)
+    res = aggregate_all(group_idx, a, func=len)
     np.testing.assert_array_equal(res, ref)

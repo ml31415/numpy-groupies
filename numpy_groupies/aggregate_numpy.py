@@ -67,6 +67,10 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
+def _len(group_idx, a, size, fill_value, dtype=None):
+    return _sum(group_idx, 1, size, fill_value, dtype=int)
+
+
 def _last(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     if fill_value == 0:
@@ -232,7 +236,8 @@ def _generic_callable(group_idx, a, size, fill_value, dtype=None,
 _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last,
                   first=_first, all=_all, any=_any, mean=_mean, std=_std,
                   var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
-                  rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin)
+                  rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin,
+                  len=_len)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in _no_separate_nan_version)
 

@@ -52,7 +52,7 @@ _doc_str = """
         (see above).
 """
 
-_funcs_common = 'first last mean var std allnan anynan max min argmax argmin'.split()
+_funcs_common = 'first last len mean var std allnan anynan max min argmax argmin'.split()
 _no_separate_nan_version = {'sort', 'rsort', 'array', 'allnan', 'anynan'}
 
 
@@ -60,6 +60,7 @@ _alias_str = {
     'or': 'any',
     'and': 'all',
     'add': 'sum',
+    'count': 'len',
     'plus': 'sum',
     'multiply': 'prod',
     'product': 'prod',
@@ -81,6 +82,7 @@ _alias_str = {
 _alias_builtin = {
     all: 'all',
     any: 'any',
+    len: 'len',
     max: 'max',
     min: 'min',
     sum: 'sum',
@@ -174,6 +176,7 @@ else:
         np.asarray: 'array',
         np.sort: 'sort',
         np.nansum: 'nansum',
+        np.nanprod: 'nanprod',
         np.nanmean: 'nanmean',
         np.nanvar: 'nanvar',
         np.nanmax: 'nanmax',
@@ -260,6 +263,10 @@ else:
         'array': np.object,
         'all': np.bool_,
         'any': np.bool_,
+        'nanall': np.bool_,
+        'nanany': np.bool_,
+        'len': np.int64,
+        'nanlen': np.int64,
         'allnan': np.bool_,
         'anynan': np.bool_,
     }
@@ -270,9 +277,9 @@ else:
 
     def check_dtype(dtype, func_str, a, n):
         if np.isscalar(a) or not a.shape:
-            if func_str not in ("sum", "prod"):
-                raise ValueError("scalar inputs are supported only for 'sum' "
-                                 "and 'prod'")
+            if func_str not in ("sum", "prod", "len"):
+                raise ValueError("scalar inputs are supported only for 'sum', "
+                                 "'prod' and 'len'")
             a_dtype = np.dtype(type(a))
         else:
             a_dtype = a.dtype
@@ -284,6 +291,8 @@ else:
                     not('all' in func_str or 'any' in func_str):
                 raise TypeError("function %s requires a more complex datatype "
                                 "than bool" % func_str)
+            if not np.issubdtype(dtype, np.integer) and func_str in ('len', 'nanlen'):
+                raise TypeError("function %s requires an integer datatype" % func_str)
             # TODO: Maybe have some more checks here
             return np.dtype(dtype)
         else:
