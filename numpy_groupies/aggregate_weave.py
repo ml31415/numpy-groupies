@@ -1,5 +1,8 @@
 import numpy as np
-from scipy.weave import inline
+try:
+    from weave import inline
+except ImportError:
+    from scipy.weave import inline
 
 from .utils import (_no_separate_nan_version, get_func, check_dtype,
                     aliasing, check_fill_value, input_validation, _doc_str, isstr)

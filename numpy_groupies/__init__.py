@@ -33,7 +33,10 @@ else:
 
 
 try:
-    from scipy import weave
+    try:
+        import weave
+    except ImportError:
+        from scipy import weave
 except ImportError:
     aggregate_wv = None
 else:
