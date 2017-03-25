@@ -156,7 +156,6 @@ def _argmax(group_idx, a, size, fill_value, dtype=None):
 
 def _argmin(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or int)
-    print dtype
     dmax = np.iinfo(a.dtype).max if issubclass(a.dtype.type, np.integer)\
         else np.finfo(a.dtype).max
     group_min = _min(group_idx, a, size, dmax)
