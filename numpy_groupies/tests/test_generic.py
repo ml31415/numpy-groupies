@@ -37,7 +37,7 @@ def test_float_enforcement(aggregate_all, floatfunc):
     res = aggregate_all(group_idx, a, floatfunc)
     if not isinstance(res, list):
         assert 'float' in res.dtype.name
-    assert np.all(res > 0)
+    assert np.all(np.array(res) > 0)
 
 
 def test_start_with_offset_prod(aggregate_all):

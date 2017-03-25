@@ -14,7 +14,7 @@ def aggregate_nb_wv(request):
 
 def test_step_indices_length(aggregate_nb_wv):
     group_idx = np.array([1, 1, 1, 2, 2, 3, 3, 4, 4, 2, 2], dtype=int)
-    for _ in xrange(20):
+    for _ in range(20):
         np.random.shuffle(group_idx)
         step_cnt_ref = np.count_nonzero(np.diff(group_idx))
         assert aggregate_nb_wv.step_count(group_idx) == step_cnt_ref + 1

@@ -90,20 +90,24 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
         size = 1 + max(group_idx)
 
     for i in group_idx:
-        if isinstance(i, int):
+        try:
+            i = int(i)
+        except (TypeError, ValueError):
+            if isinstance(i, (list, tuple)):
+                raise NotImplementedError("pure python implementation doesn't"
+                                          " accept ndim idx input.")
+            else:
+                try:
+                    len(i)
+                except TypeError:
+                    raise ValueError("invalid value found in group_idx: %s" % i)
+                else:
+                    raise NotImplementedError("pure python implementation doesn't "
+                                              "accept ndim indexed input.")
+        else:
             if i < 0:
                 raise ValueError("group_idx contains negative value")
-        elif isinstance(i, (list, tuple)):
-            raise NotImplementedError("pure python implementation doesn't"
-                                      " accept ndim idx input.")
-        else:
-            try:
-                len(i)
-            except TypeError:
-                raise ValueError("invalid value found in group_idx: %s" % i)
-            else:
-                raise NotImplementedError("pure python implementation doesn't "
-                                          "accept ndim indexed input.")
+
 
     func = get_func(func, aliasing_purepy, _impl_dict)
     if isinstance(a, (int, float)):

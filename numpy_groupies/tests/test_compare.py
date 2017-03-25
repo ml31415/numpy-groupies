@@ -39,7 +39,7 @@ def aggregate_cmp(request):
 
         if not impl:
             pytest.xfail("Implementation not available")
-        func = _wrap_notimplemented_xfail(impl.aggregate, 'aggregate_' + _impl_name(impl))
+        func = _wrap_notimplemented_xfail(impl.aggregate, name='aggregate_' + _impl_name(impl))
 
     # Gives 100000 duplicates of size 10 each
     group_idx = np.repeat(np.arange(group_cnt), 2)
