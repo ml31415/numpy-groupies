@@ -72,10 +72,14 @@ def benchmark(implementations, size=5e5, repeat=3):
             sys.stdout.flush()
         print()
 
+    implementation_names = [impl.__name__.rsplit('_', 1)[1] for impl in implementations]
     postfix = ''
-    if 'numba' in [impl.__name__.rsplit('_', 1)[1] for impl in implementations]:
+    if 'numba' in implementation_names:
         import numba
-        postfix = ', Numba %s' % numba.__version__
+        postfix += ', Numba %s' % numba.__version__
+    if 'pandas' in implementation_names:
+        import pandas
+        postfix += ', Pandas %s' % pandas.__version__
     print("%s(%s), Python %s, Numpy %s%s" % (platform.system(), platform.machine(), sys.version.split()[0], np.version.version, postfix))
 
 if __name__ == '__main__':
