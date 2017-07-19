@@ -21,7 +21,7 @@ def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
 
     dtype = check_dtype(dtype, getattr(func, '__name__', func), a, size)
     ret = np.full(size, fill_value, dtype=dtype)
-    ret[grouped.index] = grouped
+    ret[grouped.index] = grouped.as_matrix()[:, 0]
     return ret
 
 _supported_funcs = 'sum prod all any min max mean var std first last'.split()
