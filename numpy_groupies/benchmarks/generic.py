@@ -72,7 +72,11 @@ def benchmark(implementations, size=5e5, repeat=3):
             sys.stdout.flush()
         print()
 
-    print("%s(%s), Python %s, Numpy %s" % (platform.system(), platform.machine(), sys.version.split()[0], np.version.version))
+    postfix = ''
+    if 'numba' in [impl.__name__.rsplit('_', 1)[1] for impl in implementations]:
+        import numba
+        postfix = ', Numba %s' % numba.__version__
+    print("%s(%s), Python %s, Numpy %s%s" % (platform.system(), platform.machine(), sys.version.split()[0], np.version.version, postfix))
 
 if __name__ == '__main__':
     implementations = _implementations if '--purepy' in sys.argv else _implementations[1:]
