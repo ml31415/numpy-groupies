@@ -199,19 +199,21 @@ class AnyNan(AggregateOp):
 class Max(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
-        cp = (ret[ri] < val) | counter[ri]
-        ncp = bool(not cp)
-        counter[ri] &= ncp
-        ret[ri] = cp * val + ncp * ret[ri]
+        if counter[ri]:
+            ret[ri] = val
+            counter[ri] = 0
+        elif ret[ri] < val:
+            ret[ri] = val
 
 
 class Min(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
-        cp = (ret[ri] > val) | counter[ri]
-        ncp = bool(not cp)
-        counter[ri] &= ncp
-        ret[ri] = cp * val + ncp * ret[ri]
+        if counter[ri]:
+            ret[ri] = val
+            counter[ri] = 0
+        elif ret[ri] > val:
+            ret[ri] = val
 
 
 class Mean(AggregateOp):
