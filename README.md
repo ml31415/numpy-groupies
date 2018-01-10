@@ -193,37 +193,34 @@ The benchmarking results are given in ms for an i7-5500U running at 2.40GHz:
 ```text
 function         ufunc         numpy         numba         weave        pandas
 ------------------------------------------------------------------------------
-sum             30.535         1.453         1.311         1.167         9.857
-prod            30.660        30.674         1.353         1.138         9.498
-amin            31.359        31.290         2.182         1.141         9.551
-amax            31.250        31.251         2.145         1.224         9.484
-len             30.486         1.257         1.207         1.039         9.401
-all             35.606         3.144         1.307         1.030        88.624
-any             35.742         4.638         1.324         1.078        88.926
-anynan          30.367         2.186         1.242         0.987        66.870
-allnan          31.919         3.613         1.274         1.013        67.154
-mean              ----         1.792         1.285         1.048         8.331
-std               ----         3.584         1.531         1.215        44.593
-var               ----         3.691         1.584         1.239        44.358
-first             ----         1.932         1.300         0.961         8.744
-last              ----         1.279         0.991         0.876         8.681
-nansum            ----         4.642         1.316         1.213         9.423
-nanprod           ----        29.239         1.317         1.186         9.384
-nanmin            ----        29.461         2.427         1.193         9.369
-nanmax            ----        29.510         2.429         1.273         9.495
-nanlen            ----         4.624         1.328         1.124        10.528
-nanall            ----         6.335         1.504         1.244        88.795
-nanany            ----         7.711         1.535         1.236        90.018
-nanmean           ----         5.343         1.498         2.257         8.947
-nanvar            ----         7.294         1.728         1.546        49.640
-nanstd            ----         6.826         1.670         1.458        46.820
-nanfirst          ----         5.362         1.440         1.137        11.195
-nanlast           ----         4.811         1.126         1.039        11.121
-Linux(x86_64), Python 2.7.12, Numpy 1.13.1, Numba 0.34.0, Pandas 0.20.3
+sum             29.495         1.410         1.331         1.156         9.554
+prod            29.236        29.220         1.170         0.996         8.428
+amin            29.726        29.606         1.244         0.996         8.345
+amax            29.683        29.799         1.300         1.046         8.396
+len             28.477         1.101         1.120         0.923         7.997
+all             33.637         3.025         1.311         1.027        85.379
+any             32.858         4.580         1.306         1.020        82.934
+anynan          28.520         2.166         1.238         0.996        68.865
+allnan          29.441         3.535         1.232         1.002        68.942
+mean              ----         1.777         1.248         1.009         8.276
+std               ----         3.535         1.512         2.075        43.364
+var               ----         3.544         1.526         1.190        43.126
+first             ----         1.891         1.283         0.987         8.572
+last              ----         1.249         0.984         0.888         8.596
+nansum            ----         4.565         1.964         1.168         9.254
+nanprod           ----        26.824         1.971         1.178         9.199
+nanmin            ----        27.175         2.015         1.172         9.141
+nanmax            ----        27.311         2.058         1.219         9.220
+nanlen            ----         4.490         1.923         1.113        10.369
+nanall            ----         6.131         2.076         1.217        83.319
+nanany            ----         7.362         2.065         1.212        83.134
+nanmean           ----         5.048         1.992         1.251         9.284
+nanvar            ----         6.485         2.183         1.453        44.448
+nanstd            ----         6.440         2.180         1.460        44.627
+nanfirst          ----         5.067         2.126         1.139        10.780
+nanlast           ----         4.631         1.768         1.019        10.698
+Linux(x86_64), Python 2.7.12, Numpy 1.14.0, Numba 0.36.2, Pandas 0.22.0
 ```
-
-The `grouploop` implementation shown here uses `aggregate_numpy.py`'s generic function menchanism, which groups `a` by `group_idx`, and then loops over each group, applying the specified function (in this case it is a numpy function such as `np.add`). `grouploop` is only included for reference, note that the output from this function is considered to be the "correct" answer when used in testing.
-
 
 
 ### Development
