@@ -25,7 +25,7 @@ class AggregateOp(object):
 
     def __call__(self, group_idx, a, size=None, fill_value=0, order='C',
                  dtype=None, axis=None, ddof=0):
-        iv = input_validation(group_idx, a, size=size, order=order, axis=axis)
+        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False)
         group_idx, a, flat_size, ndim_idx, size = iv
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
@@ -81,10 +81,15 @@ class AggregateOp(object):
 
         def _loop(group_idx, a, ret, counter, mean, fill_value, ddof):
             # fill_value and ddof need to be present for being exchangeable with loop_2pass
+            size = len(ret)
             rng = range(len(group_idx) - 1, -1 , -1) if reverse else range(len(group_idx))
             for i in rng:
-                val = valgetter(a, i)
                 ri = group_idx[i]
+                if ri < 0:
+                    raise ValueError("negative indices not supported")
+                if ri >= size:
+                    raise ValueError("one or more indices in group_idx are too large")
+                val = valgetter(a, i)
                 inner(ri, val, ret, counter, mean)
         loop = nb.njit(_loop, nogil=True, cache=True)
 

@@ -47,7 +47,10 @@ def test_start_with_offset_prod(aggregate_all):
 
 
 def test_no_negative_indices(aggregate_all):
-    pytest.raises(ValueError, aggregate_all, np.arange(-10, 10), np.arange(20))
+    for pos in (0, 10, -1):
+        group_idx = np.arange(5).repeat(5)
+        group_idx[pos] = -1
+        pytest.raises(ValueError, aggregate_all, group_idx, np.arange(len(group_idx)))
 
 
 def test_parameter_missing(aggregate_all):
