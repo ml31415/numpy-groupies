@@ -24,15 +24,6 @@ else:
 
 
 try:
-    import numba
-except ImportError:
-    aggregate_nb = None
-else:
-    from .aggregate_numba import aggregate as aggregate_nb
-    aggregate = aggregate_nb
-
-
-try:
     try:
         import weave
     except ImportError:
@@ -42,6 +33,15 @@ except ImportError:
 else:
     from .aggregate_weave import aggregate as aggregate_wv, step_indices, step_count
     aggregate = aggregate_wv
+
+
+try:
+    import numba
+except ImportError:
+    aggregate_nb = None
+else:
+    from .aggregate_numba import aggregate as aggregate_nb, step_indices, step_count
+    aggregate = aggregate_nb
 
 
 def uaggregate(group_idx, a, **kwargs):
