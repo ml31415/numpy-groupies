@@ -9,10 +9,10 @@ If you have `pip`, then simply:
 ```
 pip install numpy_groupies
 ```
-Note that `numpy_groupies` doesn't have any compulsorary dependencies (even `numpy`
+Note that `numpy_groupies` doesn't have any compulsory dependencies (even `numpy`
 is optional) so you should be able to install it fairly easily even without a package
-manager.  If you just want one particular implementation of `aggregate` (e.g. `aggregate_numpy.py`), you can
-download that one file, and copy-paste the contents of `utils.py` into the top
+manager.  If you just want one particular implementation of `aggregate` (e.g. `aggregate_numpy.py`), 
+you can download that one file, and copy-paste the contents of `utils.py` into the top
 of that file (replacing the `from .utils import (...)` line).
 
 
@@ -66,7 +66,7 @@ The function accepts various different combinations of inputs, producing various
 * `func='sum'` - the function to use for aggregation.  See the section below for nore details.
 * `size=None` - the shape of the output array. If `None`, the maximum value in `group_idx` will set the size of the output.
 * `fill_value=0` - value to use for output groups that do not appear anywhere in the `group_idx` input array.
-* `order='C'` - for multimensional output, this controls the layout in memory, can be `'F'` for fortran-style.
+* `order='C'` - for multidimensional output, this controls the layout in memory, can be `'F'` for fortran-style.
 * `dtype=None` - the`dtype` of the output. `None` means choose a sensible type for the given `a`, `func`, and `fill_value`.
 * `axis=None` - explained below.
 * `ddof=0` - passed through into calculations of variance and standard deviation (see section on functions).
@@ -93,8 +93,8 @@ By default, `aggregate` assumes you want to sum the values within each group, ho
 * `'max'` - maximum value of items within each group.
 * `'first'` - first item in `a` from each group.
 * `'last'` - last item in `a` from each group.
-* ``argmax`` - the index in `a` of the maximum value in each group.
-* ``argmin`` - the index in `a` of the minimum value in each group.
+* `'argmax'` - the index in `a` of the maximum value in each group.
+* `'argmin'` - the index in `a` of the minimum value in each group.
 
 The above functions also have a `nan-` form, which skip the `nan` values instead of propagating them to the result of the calculation:
 * `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, ``nanargmax``, ``nanargmin``
@@ -102,8 +102,8 @@ The above functions also have a `nan-` form, which skip the `nan` values instead
 The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
 * `'all'` - `True` if all items within a group are truethy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truethy.
 * `'any'` - `True` if any items within a group are truethy.
-* `allnan` - `True` if all items within a group are `nan`.
-* `anynan` - `True` if any items within a gorup are `nan`.
+* `'allnan'` - `True` if all items within a group are `nan`.
+* `'anynan'` - `True` if any items within a gorup are `nan`.
 
 Finally, there are three functions which don't reduce each group to a single value, instead they return the full set of items within the group:
 * `'array'` - simply returns the grouped items, using the same order as appeared in `a`.
