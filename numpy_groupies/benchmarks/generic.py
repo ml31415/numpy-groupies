@@ -24,7 +24,7 @@ def aggregate_grouploop(*args, **kwargs):
 
 
 func_list = (np.sum, np.prod, np.min, np.max, len, np.all, np.any, 'anynan', 'allnan',
-             np.mean, np.std, np.var, 'first', 'last',
+             np.mean, np.std, np.var, 'first', 'last', 'argmax', 'argmin',
              np.nansum, np.nanprod, np.nanmin, np.nanmax, 'nanlen', 'nanall', 'nanany',
              np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',)
 
@@ -84,4 +84,5 @@ def benchmark(implementations, size=5e5, repeat=3):
 
 if __name__ == '__main__':
     implementations = _implementations if '--purepy' in sys.argv else _implementations[1:]
+    implementations = implementations if '--pandas' in sys.argv else implementations[:-1]
     benchmark(implementations)
