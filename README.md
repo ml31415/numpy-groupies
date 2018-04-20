@@ -1,22 +1,22 @@
 # numpy-groupies
 
-This package consists of a small library of optimised tools for doing things
-that can roughly be considered "group-indexing operations".  The most prominent
-tool is `aggregate`, which is descibed in detail further down the page.
+This package consists of a small library of optimised tools for doing things that can roughly 
+be considered "group-indexing operations". The most prominent tool is `aggregate`, which is 
+descibed in detail further down the page.
 
 #### Installation
 If you have `pip`, then simply:
 ```
 pip install numpy_groupies
 ```
-Note that `numpy_groupies` doesn't have any compulsory dependencies (even `numpy`
-is optional) so you should be able to install it fairly easily even without a package
-manager.  If you just want one particular implementation of `aggregate` (e.g. `aggregate_numpy.py`), 
-you can download that one file, and copy-paste the contents of `utils.py` into the top
-of that file (replacing the `from .utils import (...)` line).
+Note that `numpy_groupies` doesn't have any compulsory dependencies (even `numpy` is optional) 
+so you should be able to install it fairly easily even without a package manager.  If you just 
+want one particular implementation of `aggregate` (e.g. `aggregate_numpy.py`), you can download 
+that one file, and copy-paste the contents of `utils.py` into the top of that file (replacing 
+the `from .utils import (...)` line).
 
 
-# Overview of tools
+## Functions overview
 #### aggregate
 
 ![aggregate_diagram](/diagrams/aggregate.png)
@@ -28,11 +28,14 @@ a = np.array([13.2,3.5,3.5,-8.2,3.0,13.4,99.2,-7.1,0.0,53.7])
 npg.aggregate(group_idx, a, func='sum', fill_value=0)
 # >>> array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
 ```
-`aggregate` takes an array of values, and an array giving the group number for each of those values. It then returns the sum (or mean, or std, or any, ...etc.)  of the values in each group.  You have probably come across this idea before - see [Matlab's `accumarray` function](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true), or
+`aggregate` takes an array of values, and an array giving the group number for each of those values. 
+It then returns the sum (or mean, or std, or any, ...etc.) of the values in each group. You have 
+probably come across this idea before - see [Matlab's `accumarray` function](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true), or
  [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), or
  [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce), or simply the [basic histogram](https://en.wikipedia.org/wiki/Histogram).
 
-This is the most complex and mature of the functions in this package.  See further down the page for more details of the inputs, examples, and benchmarks.
+This is the most complex and mature of the functions in this package. See further down the page for 
+more details of the inputs, examples, and benchmarks.
 
 #### multi_cumsum [alpha]
 ![multicumsum_diagram](/diagrams/multi_cumsum.png)
@@ -56,10 +59,12 @@ This is the most complex and mature of the functions in this package.  See furth
 ```
 
 
-# aggregate - full documentation
+## aggregate
 
-### Full description of inputs
-The function accepts various different combinations of inputs, producing various different shapes of output. We give a brief description of the general meaning of the inputs and then go over the different combinations in more detail:
+### Description of inputs
+The function accepts various different combinations of inputs, producing various different shapes of output. 
+We give a brief description of the general meaning of the inputs and then go over the different combinations 
+in more detail:
 
 * `group_idx` - array of non-negative integers to be used as the "labels" with which to group the values in `a`.
 * `a` - array of values to be aggregated.
@@ -82,7 +87,9 @@ The function accepts various different combinations of inputs, producing various
 **Note on performance.** The `order` of the output is unlikely to affect performance of `aggregate` (although it may affect your downstream usage of that output), however the order of multidimensional `a` or `group_idx` can affect performance:  in Form 4 it is best if columns are contiguous in memory within `group_idx`, i.e. `group_idx[:, 99]` corresponds to a contiguous chunk of memory; in Form 3 it's best if all the data in `a` for `group_idx[i]` is contiguous, e.g. if `axis=1` then we want `a[:, 55]` to be contiguous.
 
 ### Available functions
-By default, `aggregate` assumes you want to sum the values within each group, however you can specify another function using the `func` kwarg.  This `func` can be any custom callable, however in normal use you will probably want one of the following optimized functions:
+By default, `aggregate` assumes you want to sum the values within each group, however you can specify another 
+function using the `func` kwarg.  This `func` can be any custom callable, however in normal use you will 
+probably want one of the following optimized functions:
 
 * `'sum'` - sum of items within each group (see example above).
 * `'prod'` - product of items within each group
@@ -168,22 +175,31 @@ x = aggregate(group_idx, a, axis=1)
 ```
 
 
-### Multiple implementations - explanation and benchmark results
-There are multiple implementations of `aggregate` provided. For most users, the `aggregate_numpy.py` implementation is probably the easiest to install and offers fairly reasonable speed for the majority of aggregation functions. If you simply use `from numpy_groupies import aggregate`, the best available implementation will automatically be selected. Otherwise you can pick a specific version directly like `from numpy_groupies import aggregate_nb as aggregate` or by importing aggregate from the implementing package `from numpy_groupies.aggregate_weave import aggregate`.
+### Multiple implementations
+There are multiple implementations of `aggregate` provided. If you use `from numpy_groupies import aggregate`, 
+the best available implementation will automatically be selected. Otherwise you can pick a specific version directly 
+like `from numpy_groupies import aggregate_nb as aggregate` or by importing aggregate from the implementing module 
+`from numpy_groupies.aggregate_weave import aggregate`.
 
 Currently the following implementations exist:
-* **numpy** - This implementation uses plain `numpy`, mainly relying on `np.bincount` and basic indexing magic. It comes without other dependencies except `numpy` and shows reasonable performance for the occasional usage.
-* **numba** - *Use, if you have numba available.* This is the most performant implementation for most of the optimized functions.
-* **weave** - *Use, if you have a working GCC setup and no numba.* `weave` compiles C-code on demand at runtime, producing (and caching) binaries that get executed from within python.
-* **pure python** - *Use only if you don't have numpy installed*. This has no dependencies, instead making use of the grouping and sorting functionality provided by the python language itself plus the standard library.
-* **numpy ufunc** - *Only used for benchmarking.*  This impelmentation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for perfoming excactly the same calculation that `aggregate` executes, however the numpy implementation is rather slow (as of `v1.14.0`). A [numpy issue](https://github.com/numpy/numpy/issues/5922) has been created to address this performance issue. Also, note that some of the desired functions do not have suitable `ufunc.at` analogues (e.g. `mean`, `var`).
-* **pandas** - *Only used for reference.*  As mentioned at the top of this page, pandas' `groupby` concept is the same as the task performed by `aggregate`. Note however, that `pandas` is not actually any faster than the default `numpy` implementation. Also, note that there may be room for improvement in the way that `pandas` is utilized here. Most notably, when computing multiple aggregations of the same data (e.g. `'min'` and `'max'`) pandas could potentially be used more efficiently.
+* **numpy** - This is the default implementation. It uses plain `numpy`, mainly relying on `np.bincount` and basic indexing magic. It comes without other dependencies except `numpy` and shows reasonable performance for the occasional usage.
+* **numba** - This is the most performant implementation in average, based on jit compilation provided by numba and LLVM.
+* **weave** - `weave` compiles C-code on demand at runtime, producing (and caching) binaries that get executed from within python. The performance is comparable to the numba implementation.
+* **pure python** - This implementation has no dependencies and uses only the standard library. It's horribly slow and should only be used, if there is no numpy available.
+* **numpy ufunc** - *Only for benchmarking.*  This impelmentation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for perfoming excactly the same calculation that `aggregate` executes, however the numpy implementation is rather incomplete and slow (as of `v1.14.0`). A [numpy issue](https://github.com/numpy/numpy/issues/5922) has been created to address this issue.
+* **pandas** - *Only for reference.*  The pandas' `groupby` concept is the same as the task performed by `aggregate`. However, `pandas` is not actually faster than the default `numpy` implementation. Also, note that there may be room for improvement in the way that `pandas` is utilized here. Most notably, when computing multiple aggregations of the same data (e.g. `'min'` and `'max'`) pandas could potentially be used more efficiently.
 
-All implementations have the same calling syntax and produce the same outputs, to within some floating-point error. However some implementations only support a subset of the valid inputs and will sometimes throw `NotImplementedError`.
+All implementations have the same calling syntax and produce the same outputs, to within some floating-point error. 
+However some implementations only support a subset of the valid inputs and will sometimes throw `NotImplementedError`.
 
-Scripts for testing and benchmarking are included in this repository. For benchmarking, run `python -m numpy_groupies.benchmarks.generic` from the root of this repository.
 
-Below we are using `500,000` indices uniformly picked from `[0, 1000)`. The values of `a` are uniformly picked from the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). For `nan-` operations another 20% of the values are set to nan, leaving the remainder on the interval `[0.2,0.8)`.
+### Benchmarks
+Scripts for testing and benchmarking are included in this repository. For benchmarking, run `python -m numpy_groupies.benchmarks.generic` 
+from the root of this repository.
+
+Below we are using `500,000` indices uniformly picked from `[0, 1000)`. The values of `a` are uniformly picked from 
+the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). 
+For `nan-` operations another 20% of the values are set to nan, leaving the remainder on the interval `[0.2,0.8)`.
 
 The benchmarking results are given in ms for an i7-7560U running at 2.40GHz:
 ```text
@@ -220,8 +236,11 @@ Linux(x86_64), Python 2.7.12, Numpy 1.14.0, Numba 0.36.2, Pandas 0.22.0
 ```
 
 ### Development
-The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation of individual functions will become unneccessary. However even if that does happen, there may still be a role for the `aggregate` function as a light-weight wrapper around those functions.
+This project was started by @ml31415 and the `numba` and `weave` implementations are by him. The pure 
+python and `numpy` implementations were written by @d1manson.
+
+The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation
+of individual functions will become unneccessary. However even if that does happen, there may still be a 
+role for the `aggregate` function as a light-weight wrapper around those functions.
 
 Maybe at some point a version of `aggregate` will make its way into `numpy` itself (or at least `scipy`).
-
-This project was started by @ml31415 and the `weave` implementation is by him. The pure python and `numpy` implementations were written by @d1manson.
