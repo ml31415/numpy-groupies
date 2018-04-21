@@ -17,7 +17,7 @@ class AttrDict(dict):
 
 
 @pytest.fixture(params=['np/py', 'weave/np', 'ufunc/np', 'numba/np', 'pandas/np'], scope='module')
-def aggregate_cmp(request):
+def aggregate_cmp(request, seed=100):
     if request.param == 'np/py':
         # Some functions in purepy are not implemented
         func_ref = _wrap_notimplemented_xfail(aggregate_purepy.aggregate)
@@ -41,12 +41,14 @@ def aggregate_cmp(request):
             pytest.xfail("Implementation not available")
         func = _wrap_notimplemented_xfail(impl.aggregate, name='aggregate_' + _impl_name(impl))
 
+    rnd = np.random.RandomState(seed=seed)
+
     # Gives 100000 duplicates of size 10 each
     group_idx = np.repeat(np.arange(group_cnt), 2)
-    np.random.shuffle(group_idx)
+    rnd.shuffle(group_idx)
     group_idx = np.repeat(group_idx, 10)
 
-    a = np.random.randn(group_idx.size)
+    a = rnd.randn(group_idx.size)
     nana = a.copy()
     nana[::3] = np.nan
     somea = a.copy()

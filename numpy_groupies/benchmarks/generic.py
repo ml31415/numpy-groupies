@@ -30,9 +30,10 @@ func_list = (np.sum, np.prod, np.min, np.max, len, np.all, np.any, 'anynan', 'al
 
 
 
-def benchmark(implementations, size=5e5, repeat=3):
-    group_idx = np.random.randint(0, int(1e3), int(size))
-    a = np.random.random(group_idx.size)
+def benchmark(implementations, size=5e5, repeat=3, seed=100):
+    rnd = np.random.RandomState(seed=seed)
+    group_idx = rnd.randint(0, int(1e3), int(size))
+    a = rnd.random_sample(group_idx.size)
     a[a > 0.8] = 0
     nana = a.copy()
     nana[(nana < 0.2) & (nana != 0)] = np.nan
