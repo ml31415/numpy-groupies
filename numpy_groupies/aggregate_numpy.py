@@ -73,10 +73,7 @@ def _len(group_idx, a, size, fill_value, dtype=None):
 
 def _last(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
-    if fill_value == 0:
-        ret = np.zeros(size, dtype=dtype)
-    else:
-        ret = np.full(size, fill_value, dtype=dtype)
+    ret = np.full(size, fill_value, dtype=dtype)
     # repeated indexing gives last value, see:
     # the phrase "leaving behind the last value"  on this page:
     # http://wiki.scipy.org/Tentative_NumPy_Tutorial
@@ -86,10 +83,7 @@ def _last(group_idx, a, size, fill_value, dtype=None):
 
 def _first(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
-    if fill_value == 0:
-        ret = np.zeros(size, dtype=dtype)
-    else:
-        ret = np.full(size, fill_value, dtype=dtype)
+    ret = np.full(size, fill_value, dtype=dtype)
     ret[group_idx[::-1]] = a[::-1]  # same trick as _last, but in reverse
     return ret
 
@@ -142,6 +136,7 @@ def _max(group_idx, a, size, fill_value, dtype=None):
     np.maximum.at(ret, group_idx, a)
     return ret
 
+
 def _argmax(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or int)
     dmin = np.iinfo(a.dtype).min if issubclass(a.dtype.type, np.integer)\
@@ -154,6 +149,7 @@ def _argmax(group_idx, a, size, fill_value, dtype=None):
     ret[group_idx_max[::-1]] = argmax[::-1]  # reverse to ensure first value for each group wins
     return ret
 
+
 def _argmin(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or int)
     dmax = np.iinfo(a.dtype).max if issubclass(a.dtype.type, np.integer)\
@@ -165,6 +161,7 @@ def _argmin(group_idx, a, size, fill_value, dtype=None):
     argmin, = is_min.nonzero()
     ret[group_idx_min[::-1]] = argmin[::-1]  # reverse to ensure first value for each group wins
     return ret
+
 
 def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if np.ndim(a) == 0:

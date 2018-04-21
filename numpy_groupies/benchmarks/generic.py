@@ -18,7 +18,7 @@ def aggregate_grouploop(*args, **kwargs):
                   'nanfirst': nanfirst, 'nanlast': nanlast}
     func = kwargs.pop('func')
     func = extrafuncs.get(func, func)
-    if isinstance(func, basestring):
+    if isinstance(func, str):
         raise NotImplementedError("Grouploop needs to be called with a function")
     return aggregate_numpy.aggregate(*args, func=lambda x: func(x), **kwargs)
 

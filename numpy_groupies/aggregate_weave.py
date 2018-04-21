@@ -226,7 +226,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
              dtype=None, axis=None, **kwargs):
     func = get_func(func, aliasing, optimized_funcs)
     if not isstr(func):
-        # Fall back to acuum_np if no optimized C version is available
+        # Fall back to aggregate_np if no optimized C version is available
         return aggregate_np(group_idx, a, func=func, dtype=dtype,
                             axis=axis, fill_value=fill_value)
 
@@ -285,7 +285,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
     return ret
 
 aggregate.__doc__ = """
-    This is the scipy.weave implementation of aggregate.
+    This is the weave based implementation of aggregate.
 
     **NOTE:** If weave is installed but fails to run (probably because you
     have not setup a suitable compiler) then you can manually select the numpy

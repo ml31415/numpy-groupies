@@ -61,15 +61,18 @@ def func_arbitrary(iterator):
         tmp += x * x
     return tmp
 
+
 def func_preserve_order(iterator):
     tmp = 0
     for i, x in enumerate(iterator, 1):
         tmp += x ** i
     return tmp
 
-func_list = (np.sum, np.min, np.max, np.prod, np.all, np.any, np.mean, np.std, len,
-             np.nansum, np.nanprod, np.nanmin, np.nanmax, np.nanmean, np.nanstd, 'nanlen',
-             'anynan', 'allnan', func_arbitrary, func_preserve_order)
+
+func_list = ('sum', 'prod', 'min', 'max', 'all', 'any', 'mean', 'std', 'len',
+             'argmin', 'argmax', 'anynan', 'allnan',
+             'nansum', 'nanprod', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanlen',
+             func_arbitrary, func_preserve_order)
 
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
 def test_cmp(aggregate_cmp, func, decimal=14):

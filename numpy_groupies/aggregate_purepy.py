@@ -132,11 +132,11 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
     if not getattr(func, 'x_and_idx', False):
         data = sorted(zip(group_idx, a), key=operator.itemgetter(0))
         for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
-            ret[ix] = func(tuple(val for _, val in group), **kwargs)
+            ret[ix] = func(list(val for _, val in group), **kwargs)
     else:
         data = sorted(zip(range(len(a)), group_idx, a), key=operator.itemgetter(1))
         for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
-            ret[ix] = func(tuple((val_idx, val) for val_idx, _, val in group), **kwargs)
+            ret[ix] = func(list((val_idx, val) for val_idx, _, val in group), **kwargs)
 
     return ret
 

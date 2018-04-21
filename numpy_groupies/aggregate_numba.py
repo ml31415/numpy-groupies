@@ -11,6 +11,7 @@ class AggregateOp(object):
     counter_fill_value = 1
     counter_dtype = bool
     mean_fill_value = None
+    mean_dtype = np.float64
     reverse = False
     nans = False
 
@@ -31,7 +32,8 @@ class AggregateOp(object):
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
         check_fill_value(fill_value, dtype)
-        ret, counter, mean = self._initialize(flat_size, fill_value, dtype)
+        input_dtype = type(a) if np.isscalar(a) else a.dtype
+        ret, counter, mean = self._initialize(flat_size, fill_value, dtype, input_dtype)
         group_idx = np.ascontiguousarray(group_idx)
 
         if not np.isscalar(a):
@@ -47,27 +49,28 @@ class AggregateOp(object):
             ret = ret.reshape(size, order=order)
         return ret
 
-    def _initialize(self, flat_size, fill_value, dtype):
+    def _initialize(self, flat_size, fill_value, dtype, input_dtype):
         if self.forced_fill_value is None:
             ret = np.full(flat_size, fill_value, dtype=dtype)
         else:
             ret = np.full(flat_size, self.forced_fill_value, dtype=dtype)
         counter = np.full_like(ret, self.counter_fill_value, dtype=self.counter_dtype)
         if self.mean_fill_value is not None:
-            mean = np.full_like(ret, self.mean_fill_value, dtype=ret.dtype)
+            dtype = self.mean_dtype if self.mean_dtype else input_dtype
+            mean = np.full_like(ret, self.mean_fill_value, dtype=dtype)
         else:
             mean = None
         return ret, counter, mean
 
     @classmethod
+    def _finalize(cls, ret, counter, mean, fill_value):
+        if cls.forced_fill_value is not None and fill_value != cls.forced_fill_value:
+            ret[counter] = fill_value
+
+    @classmethod
     def callable(cls, nans=False, reverse=False, scalar=False):
         """ Compile a jitted function doing the hard part of the job """
-        if scalar:
-            def _valgetter(a, i):
-                return a
-        else:
-            def _valgetter(a, i):
-                return a[i]
+        _valgetter = cls._valgetter_scalar if scalar else cls._valgetter
         valgetter = nb.njit(_valgetter)
 
         _cls_inner = nb.njit(cls._inner)
@@ -104,17 +107,20 @@ class AggregateOp(object):
         return nb.njit(loop_2pass)
 
     @staticmethod
+    def _valgetter(a, i):
+        return a[i]
+
+    @staticmethod
+    def _valgetter_scalar(a, i):
+        return a
+
+    @staticmethod
     def _inner(ri, val, ret, counter, mean):
         raise NotImplementedError("subclasses need to overwrite _inner")
 
     @classmethod
     def _2pass(cls):
         return
-
-    @classmethod
-    def _finalize(cls, ret, counter, mean, fill_value):
-        if cls.forced_fill_value is not None and fill_value != cls.forced_fill_value:
-            ret[counter] = fill_value
 
 
 class Sum(AggregateOp):
@@ -210,6 +216,38 @@ class Min(AggregateOp):
             ret[ri] = val
 
 
+class ArgMax(AggregateOp):
+    mean_fill_value = np.nan
+
+    @staticmethod
+    def _valgetter(a, i):
+        return a[i], i
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        cmp_val, arg = val
+        if counter[ri]:
+            mean[ri] = cmp_val
+            ret[ri] = arg
+            counter[ri] = 0
+        elif mean[ri] < cmp_val:
+            mean[ri] = cmp_val
+            ret[ri] = arg
+
+
+class ArgMin(ArgMax):
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean):
+        cmp_val, arg = val
+        if counter[ri]:
+            mean[ri] = cmp_val
+            ret[ri] = arg
+            counter[ri] = 0
+        elif mean[ri] > cmp_val:
+            mean[ri] = cmp_val
+            ret[ri] = arg
+
+
 class Mean(AggregateOp):
     counter_fill_value = 0
     counter_dtype = int
@@ -257,10 +295,10 @@ class Var(Std):
         return (ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof)
 
 
-
 def get_funcs():
     funcs = dict()
-    for op in (Sum, Prod, Len, All, Any, Last, First, AllNan, AnyNan, Min, Max, Mean, Std, Var):
+    for op in (Sum, Prod, Len, All, Any, Last, First, AllNan, AnyNan, Min, Max,
+               ArgMin, ArgMax, Mean, Std, Var):
         funcname = op.__name__.lower()
         funcs[funcname] = op(funcname)
         if funcname not in _no_separate_nan_version:

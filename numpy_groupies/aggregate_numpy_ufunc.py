@@ -94,10 +94,10 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
                            _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
 
 aggregate.__doc__ = """
-    Unlike the ``accumarray_numpy.py``, which in most cases does some custom
+    Unlike ``aggregate_numpy``, which in most cases does some custom
     optimisations, this version simply uses ``numpy``'s ``ufunc.at``.
 
-    As of version 1.9 this gives fairly poor performance.  There should
+    As of version 1.9 this gives fairly poor performance. There should
     normally be no need to use this version, it is intended to be used in
     testing and benchmarking only.
     """ + _doc_str

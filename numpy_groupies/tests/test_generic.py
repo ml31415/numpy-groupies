@@ -228,3 +228,14 @@ def test_nan_input_len(aggregate_all, groups=100, group_size=5):
     ref = np.full(groups, group_size, dtype=int)
     res = aggregate_all(group_idx, a, func=len)
     np.testing.assert_array_equal(res, ref)
+
+
+def test_argmin_argmax(aggregate_all):
+    group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
+    a = np.array([4, 3, 2, 1, 10, 9, 8, 11])
+
+    res = aggregate_all(group_idx, a, func="argmax", fill_value=-1)
+    np.testing.assert_array_equal(res, [0, -1, -1, 7])
+
+    res = aggregate_all(group_idx, a, func="argmin", fill_value=-1)
+    np.testing.assert_array_equal(res, [3, -1, -1, 6])

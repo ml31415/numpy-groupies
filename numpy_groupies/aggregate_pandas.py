@@ -32,7 +32,9 @@ _impl_dict.update(('nan' + fn, partial(_wrapper, func=fn))
 _impl_dict.update(allnan=partial(_wrapper, func=allnan),
                   anynan=partial(_wrapper, func=anynan),
                   len=partial(_wrapper, func='count'),
-                  nanlen=partial(_wrapper, func='count'))
+                  nanlen=partial(_wrapper, func='count'),
+                  argmax=partial(_wrapper, func='idxmax'),
+                  argmin=partial(_wrapper, func='idxmin'))
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',

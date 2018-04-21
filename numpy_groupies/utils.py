@@ -269,6 +269,8 @@ else:
         'nanlen': np.int64,
         'allnan': np.bool_,
         'anynan': np.bool_,
+        'argmax': np.int64,
+        'argmin': np.int64,
     }
     _forced_float_types = {'mean', 'var', 'std', 'nanmean', 'nanvar', 'nanstd'}
     _forced_same_type = {'min', 'max', 'first', 'last', 'nanmin', 'nanmax',
