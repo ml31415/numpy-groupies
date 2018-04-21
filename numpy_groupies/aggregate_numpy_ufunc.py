@@ -97,7 +97,7 @@ aggregate.__doc__ = """
     Unlike ``aggregate_numpy``, which in most cases does some custom
     optimisations, this version simply uses ``numpy``'s ``ufunc.at``.
 
-    As of version 1.9 this gives fairly poor performance. There should
+    As of version 1.14 this gives fairly poor performance. There should
     normally be no need to use this version, it is intended to be used in
     testing and benchmarking only.
     """ + _doc_str

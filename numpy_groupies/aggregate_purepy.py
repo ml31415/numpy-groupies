@@ -63,12 +63,10 @@ def _allnan(x):
     return all(math.isnan(xx) for xx in x)
 
 def _argmax(x_and_idx):
-    # TODO: this doesn't seem to handle equal maxima correctly
     return max(x_and_idx, key=operator.itemgetter(1))[0]
 _argmax.x_and_idx = True  # tell aggregate what to use as first arg
 
 def _argmin(x_and_idx):
-    # TODO: this doesn't seem to handle equal minima correctly
     return min(x_and_idx, key=operator.itemgetter(1))[0]
 
 _argmin.x_and_idx = True  # tell aggregate what to use as first arg

@@ -25,6 +25,7 @@ def aggregate_grouploop(*args, **kwargs):
 
 func_list = (np.sum, np.prod, np.min, np.max, len, np.all, np.any, 'anynan', 'allnan',
              np.mean, np.std, np.var, 'first', 'last', 'argmax', 'argmin',
+             'cumsum', 'cumprod', 'cummax', 'cummin',
              np.nansum, np.nanprod, np.nanmin, np.nanmax, 'nanlen', 'nanall', 'nanany',
              np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',)
 

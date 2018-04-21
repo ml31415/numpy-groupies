@@ -23,6 +23,7 @@ class AggregateOp(object):
     counter_dtype = bool
     mean_fill_value = None
     mean_dtype = np.float64
+    outer = None
     reverse = False
     nans = False
 
@@ -44,7 +45,7 @@ class AggregateOp(object):
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
         check_fill_value(fill_value, dtype)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
-        ret, counter, mean = self._initialize(flat_size, fill_value, dtype, input_dtype)
+        ret, counter, mean, outer = self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
         group_idx = np.ascontiguousarray(group_idx)
 
         if not np.isscalar(a):
@@ -52,8 +53,11 @@ class AggregateOp(object):
             jitfunc = self._jit_non_scalar
         else:
             jitfunc = self._jit_scalar
-        jitfunc(group_idx, a, ret, counter, mean, fill_value, ddof)
+        jitfunc(group_idx, a, ret, counter, mean, outer, fill_value, ddof)
         self._finalize(ret, counter, fill_value)
+
+        if self.outer:
+            return outer
 
         # Deal with ndimensional indexing
         if ndim_idx > 1:
@@ -61,18 +65,22 @@ class AggregateOp(object):
         return ret
 
     @classmethod
-    def _initialize(cls, flat_size, fill_value, dtype, input_dtype):
+    def _initialize(cls, flat_size, fill_value, dtype, input_dtype, input_size):
         if cls.forced_fill_value is None:
             ret = np.full(flat_size, fill_value, dtype=dtype)
         else:
             ret = np.full(flat_size, cls.forced_fill_value, dtype=dtype)
-        counter = np.full_like(ret, cls.counter_fill_value, dtype=cls.counter_dtype)
+
+        counter = mean = outer = None
+        if cls.counter_fill_value is not None:
+            counter = np.full_like(ret, cls.counter_fill_value, dtype=cls.counter_dtype)
         if cls.mean_fill_value is not None:
             dtype = cls.mean_dtype if cls.mean_dtype else input_dtype
             mean = np.full_like(ret, cls.mean_fill_value, dtype=dtype)
-        else:
-            mean = None
-        return ret, counter, mean
+        if cls.outer:
+            outer = np.full(input_size, fill_value, dtype=dtype)
+
+        return ret, counter, mean, outer
 
     @classmethod
     def _finalize(cls, ret, counter, fill_value):
@@ -94,7 +102,7 @@ class AggregateOp(object):
         else:
             inner = _cls_inner
 
-        def _loop(group_idx, a, ret, counter, mean, fill_value, ddof):
+        def _loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # fill_value and ddof need to be present for being exchangeable with loop_2pass
             size = len(ret)
             rng = range(len(group_idx) - 1, -1 , -1) if reverse else range(len(group_idx))
@@ -121,12 +129,12 @@ class AggregateOp(object):
         raise NotImplementedError("subclasses need to overwrite _inner")
 
 
-class AggregateOp2pass(AggregateOp):
+class Aggregate2pass(AggregateOp):
     @classmethod
     def callable(cls, nans=False, reverse=False, scalar=False):
         # Careful, cls needs to be passed, so that the overwritten methods remain available in
         # AggregateOp.callable
-        loop = super(AggregateOp2pass, cls).callable(nans=nans, reverse=reverse, scalar=scalar)
+        loop = super(Aggregate2pass, cls).callable(nans=nans, reverse=reverse, scalar=scalar)
 
         _2pass_inner = nb.njit(cls._2pass_inner)
         def _loop2(ret, counter, mean, fill_value, ddof):
@@ -137,8 +145,8 @@ class AggregateOp2pass(AggregateOp):
                     ret[ri] = fill_value
         loop2 = nb.njit(_loop2)
 
-        def _loop_2pass(group_idx, a, ret, counter, mean, fill_value, ddof):
-            loop(group_idx, a, ret, counter, mean, fill_value, ddof)
+        def _loop_2pass(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
+            loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof)
             loop2(ret, counter, mean, fill_value, ddof)
         return nb.njit(_loop_2pass)
 
@@ -150,6 +158,41 @@ class AggregateOp2pass(AggregateOp):
     def _finalize(cls, ret, counter, fill_value):
         """Copying the fill value is already in in the 2nd pass"""
         pass
+
+
+class AggregateNtoN(AggregateOp):
+    outer = True
+
+    @classmethod
+    def callable(cls, nans=False, reverse=False, scalar=False):
+        """ Compile a jitted function doing the hard part of the job """
+        _valgetter = cls._valgetter_scalar if scalar else cls._valgetter
+        valgetter = nb.njit(_valgetter)
+
+        _cls_inner = nb.njit(cls._inner)
+        if nans:
+            def _inner(ri, val, ret, counter, mean):
+                if not np.isnan(val):
+                    _cls_inner(ri, val, ret, counter, mean)
+            inner = nb.njit(_inner)
+        else:
+            inner = _cls_inner
+
+        def _loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
+            # fill_value and ddof need to be present for being exchangeable with loop_2pass
+            size = len(ret)
+            rng = range(len(group_idx) - 1, -1 , -1) if reverse else range(len(group_idx))
+            for i in rng:
+                ri = group_idx[i]
+                if ri < 0:
+                    raise ValueError("negative indices not supported")
+                if ri >= size:
+                    raise ValueError("one or more indices in group_idx are too large")
+                val = valgetter(a, i)
+                inner(ri, val, ret, counter, mean)
+                outer[i] = ret[ri]
+
+        return nb.njit(_loop, nogil=True, cache=True)
 
 
 class Sum(AggregateOp):
@@ -198,6 +241,8 @@ class Any(AggregateOp):
 
 
 class Last(AggregateOp):
+    counter_fill_value = None
+
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
         ret[ri] = val
@@ -277,7 +322,7 @@ class ArgMin(ArgMax):
             ret[ri] = arg
 
 
-class Mean(AggregateOp2pass):
+class Mean(Aggregate2pass):
     counter_fill_value = 0
     counter_dtype = int
 
@@ -313,10 +358,27 @@ class Var(Std):
         return (ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof)
 
 
+class CumSum(AggregateNtoN, Sum):
+    pass
+
+
+class CumProd(AggregateNtoN, Prod):
+    pass
+
+
+class CumMax(AggregateNtoN, Max):
+    pass
+
+
+class CumMin(AggregateNtoN, Min):
+    pass
+
+
 def get_funcs():
     funcs = dict()
     for op in (Sum, Prod, Len, All, Any, Last, First, AllNan, AnyNan, Min, Max,
-               ArgMin, ArgMax, Mean, Std, Var):
+               ArgMin, ArgMax, Mean, Std, Var,
+               CumSum, CumProd, CumMax, CumMin):
         funcname = op.__name__.lower()
         funcs[funcname] = op(funcname)
         if funcname not in _no_separate_nan_version:
@@ -339,7 +401,6 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
 
 aggregate.__doc__ = """
     This is the numba implementation of aggregate.
-
     """ + _doc_str
 
 

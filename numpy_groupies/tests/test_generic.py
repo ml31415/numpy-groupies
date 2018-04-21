@@ -233,13 +233,13 @@ def test_nan_input_len(aggregate_all, groups=100, group_size=5):
 
 def test_argmin_argmax(aggregate_all):
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
-    a = np.array([4, 3, 2, 1, 10, 9, 8, 11])
+    a = np.array([4, 4, 3, 1, 10, 9, 9, 11])
 
     res = aggregate_all(group_idx, a, func="argmax", fill_value=-1)
     np.testing.assert_array_equal(res, [0, -1, -1, 7])
 
     res = aggregate_all(group_idx, a, func="argmin", fill_value=-1)
-    np.testing.assert_array_equal(res, [3, -1, -1, 6])
+    np.testing.assert_array_equal(res, [3, -1, -1, 5])
 
 
 def test_mean(aggregate_all):
@@ -248,3 +248,21 @@ def test_mean(aggregate_all):
 
     res = aggregate_all(group_idx, a, func="mean")
     np.testing.assert_array_equal(res, [1.5, 0, 0, 5.5])
+
+
+def test_cumsum(aggregate_all):
+    group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
+    a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
+    ref = np.array([ 3,  4,  5,  6, 15,  9, 15, 22,  7,  0, 15, 17,  6, 14, 31, 39])
+
+    res = aggregate_all(group_idx, a, func="cumsum")
+    np.testing.assert_array_equal(res, ref)
+
+
+def test_cummax(aggregate_all):
+    group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
+    a =         np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
+    ref =       np.array([3, 4, 4, 3, 9, 9, 9, 9, 7, 0, 8, 9, 4, 8, 9, 9])
+
+    res = aggregate_all(group_idx, a, func="cummax")
+    np.testing.assert_array_equal(res, ref)

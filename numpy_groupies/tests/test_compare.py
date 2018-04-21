@@ -73,12 +73,12 @@ def func_preserve_order(iterator):
 
 
 func_list = ('sum', 'prod', 'min', 'max', 'all', 'any', 'mean', 'std', 'len',
-             'argmin', 'argmax', 'anynan', 'allnan',
+             'argmin', 'argmax', 'anynan', 'allnan', 'cumsum',
              'nansum', 'nanprod', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanlen',
              func_arbitrary, func_preserve_order)
 
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
-def test_cmp(aggregate_cmp, func, decimal=14):
+def test_cmp(aggregate_cmp, func, decimal=12):
     a = aggregate_cmp.nana if 'nan' in getattr(func, '__name__', func) else aggregate_cmp.a
     res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func)
     ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func)

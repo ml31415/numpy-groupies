@@ -15,9 +15,7 @@ else:
     aggregate_np = aggregate
     from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
     from .misc_tools_numpy import (multi_arange,
-                                   multi_cumsum,
                                    label_contiguous_1d,
-                                   find_contiguous_boundaries,
                                    relabel_groups_masked,
                                    relabel_groups_unique,
                                    unpack)

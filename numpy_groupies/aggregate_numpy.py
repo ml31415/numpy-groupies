@@ -229,11 +229,40 @@ def _generic_callable(group_idx, a, size, fill_value, dtype=None,
             ret[i] = func(grp)
     return ret
 
+
+def _cumsum(group_idx, a, size, fill_value=None, dtype=None):
+    '''
+    N -> N aggregate operation of cumsum. Perform cumulative sum for each group.
+    Example:
+    group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
+    a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
+    Returns:
+    array([ 3,  4,  5,  6, 15,  9, 15, 22,  7,  0, 15, 17,  6, 14, 31, 39])
+    '''
+    sortidx = np.argsort(group_idx, kind='mergesort')
+    invsortidx = np.argsort(sortidx, kind='mergesort')
+    group_idx_srt = group_idx[sortidx]
+
+    a_srt = a[sortidx]
+    a_srt_cumsum = np.cumsum(a_srt, dtype=dtype)
+
+    increasing = np.arange(len(a), dtype=int)
+    group_starts = _min(group_idx_srt, increasing, size, fill_value=0)[group_idx_srt]
+    a_srt_cumsum += -a_srt_cumsum[group_starts] + a_srt[group_starts]
+    return a_srt_cumsum[invsortidx]
+
+
+def _nancumsum(group_idx, a, size, fill_value=None, dtype=None):
+    a_nonans = np.where(np.isnan(a), 0, a)
+    group_idx_nonans = np.where(np.isnan(group_idx), np.nanmax(group_idx) + 1, group_idx)
+    return _cumsum(group_idx_nonans, a_nonans, size, fill_value=fill_value, dtype=dtype)
+
+
 _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last,
                   first=_first, all=_all, any=_any, mean=_mean, std=_std,
                   var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
                   rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin,
-                  len=_len)
+                  len=_len, cumsum=_cumsum)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in _no_separate_nan_version)
 

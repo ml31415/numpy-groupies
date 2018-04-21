@@ -52,7 +52,7 @@ _doc_str = """
         (see above).
 """
 
-_funcs_common = 'first last len mean var std allnan anynan max min argmax argmin'.split()
+_funcs_common = 'first last len mean var std allnan anynan max min argmax argmin cumsum cumprod cummax cummin'.split()
 _no_separate_nan_version = {'sort', 'rsort', 'array', 'allnan', 'anynan'}
 
 
@@ -183,7 +183,9 @@ else:
         np.nanmin: 'nanmin',
         np.nanstd: 'nanstd',
         np.nanargmax: 'nanargmax',
-        np.nanargmin: 'nanargmin'
+        np.nanargmin: 'nanargmin',
+        np.cumsum: 'cumsum',
+        np.cumprod: 'cumprod',
     }
 
     try:

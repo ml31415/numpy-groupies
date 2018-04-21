@@ -9,8 +9,9 @@ from .aggregate_numpy import _aggregate_base
 
 
 def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
+    funcname = func.__name__ if callable(func) else func
     kwargs = dict()
-    if func in ('var', 'std'):
+    if funcname in ('var', 'std'):
         kwargs['ddof'] = ddof
     if isstr(func):
         grouped = getattr(pd.DataFrame({'group_idx': group_idx, 'a': a})
@@ -19,12 +20,16 @@ def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
         grouped = pd.DataFrame({'group_idx': group_idx, 'a': a})\
                     .groupby('group_idx').aggregate(func, **kwargs)
 
-    dtype = check_dtype(dtype, getattr(func, '__name__', func), a, size)
-    ret = np.full(size, fill_value, dtype=dtype)
-    ret[grouped.index] = grouped.as_matrix()[:, 0]
+    dtype = check_dtype(dtype, getattr(func, '__name__', funcname), a, size)
+    if not funcname.startswith('cum'):
+        ret = np.full(size, fill_value, dtype=dtype)
+        ret[grouped.index] = grouped.as_matrix()[:, 0]
+    else:
+        ret = grouped.as_matrix()[:, 0]
     return ret
 
-_supported_funcs = 'sum prod all any min max mean var std first last'.split()
+
+_supported_funcs = 'sum prod all any min max mean var std first last cumsum cumprod cummax cummin'.split()
 _impl_dict = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
 _impl_dict.update(('nan' + fn, partial(_wrapper, func=fn))
                   for fn in _supported_funcs
@@ -46,7 +51,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
 
 
 aggregate.__doc__ = """
-    This function makes use of `pandas`'s groupby machienery, it is slightly
-    faster than the numpy implementation for `max`, `min`, and `prod`, but
-    slower for other functions.
+    This is the pandas implementation of aggregate. It makes use of 
+    `pandas`'s groupby machienery and is mainly used for reference
+    and benchmarking.
     """ + _doc_str

@@ -50,48 +50,6 @@ def multi_arange(n):
     return np.cumsum(ret)[:-1]
 
 
-def multi_cumsum(X, L, invalid=np.nan):
-    """    
-    WARNING: API for this function is not liable to change!!!
-    
-    By example:
-
-        X=     [3   5 8  9 1  2    5    8 5  4  9   2]
-        L=     [0   1 1  2 2  0    0    1 1  1  0   5]
-        result=[NaN 5 13 9 10 NaN  NaN  8 13 17 NaN 2]
-
-    That is we calculate the cumsum for each section of `X`
-    where the sections are defined by contiguous blocks of
-    labels in `L`. Where `L==0`, the output is set to `invalid`     
-    """
-
-    L, X = L.ravel(), X.ravel()  # TODO: be consistent with other functions in this module
-
-    if len(L) != len(X):
-        raise ValueError('The two inputs should be vectors of the same length.')
-
-    # Do the full cumulative sum
-    X[np.isnan(X)] = 0
-    S = np.cumsum(X)
-
-    mask = L.astype(bool)
-
-    # Lookup the cumulative value just before the start of each segment
-    is_start = mask.copy()
-    is_start[1:] &= (L[:-1] != L[1:])
-    start_inds, = is_start.nonzero()
-    S_starts = S[start_inds - 1] if start_inds[0] != 0 else  np.insert(S[start_inds[1:] - 1], 0, 0)
-
-    # Subtract off the excess values (i.e. the ones obtained above)
-    L_safe = np.cumsum(is_start)  # we do this in case the labels in L were not sorted integers
-    S[mask] = S[mask] - S_starts[L_safe[mask] - 1]
-
-    # Put NaNs in the false blocks
-    S[L == 0] = invalid
-
-    return S
-
-
 def label_contiguous_1d(X):
     """ 
     WARNING: API for this function is not liable to change!!!    
@@ -181,24 +139,3 @@ def relabel_groups_masked(group_idx, keep_group):
     relabel = np.zeros(keep_group.size, dtype=group_idx.dtype)
     relabel[keep_group] = np.arange(np.count_nonzero(keep_group))
     return relabel[group_idx]
-
-
-def find_contiguous_boundaries(X):
-    """
-            0 1 2 3 4 5 6 7 8 9 10 11
-        X: [4 0 1 1 1 0 3 3 4 4  4  0]
-        starts: [0 2 6 8]
-        ends: [0 4 7 10]
-        
-    """
-    change_idx, = (X[:-1] != X[1:]).nonzero()
-    M = X.astype(bool, copy=False)
-    end_idx = change_idx[M[change_idx]]
-    if X[-1]:
-        end_idx = np.append(end_idx, len(X) - 1)
-    change_idx += 1
-    start_idx = change_idx[M[change_idx]]
-    if X[0]:
-        start_idx = np.insert(start_idx, 0, 0)
-
-    return start_idx, end_idx
