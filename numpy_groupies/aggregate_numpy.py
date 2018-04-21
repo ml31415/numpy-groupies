@@ -178,7 +178,7 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
         sums = np.bincount(group_idx, weights=a,
                            minlength=size).astype(dtype)
 
-    with np.errstate(divide='ignore'):
+    with np.errstate(divide='ignore', invalid='ignore'):
         ret = sums.astype(dtype) / counts
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value

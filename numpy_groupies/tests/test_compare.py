@@ -39,7 +39,8 @@ def aggregate_cmp(request, seed=100):
 
         if not impl:
             pytest.xfail("Implementation not available")
-        func = _wrap_notimplemented_xfail(impl.aggregate, name='aggregate_' + _impl_name(impl))
+        name = _impl_name(impl)
+        func = _wrap_notimplemented_xfail(impl.aggregate, 'aggregate_' + name)
 
     rnd = np.random.RandomState(seed=seed)
 

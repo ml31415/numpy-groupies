@@ -7,6 +7,17 @@ from .utils import (aliasing, get_func, input_validation, check_dtype,
 
 
 class AggregateOp(object):
+    """
+    Every subclass of AggregateOp handles a different aggregation operation. There are
+    several private class methods that need to be overwritten by the subclasses
+    in order to implement different functionality.
+
+    On object instantiation, all necessary static methods are compiled together into
+    two jitted callables, one for scalar arguments, and one for arrays. Calling the
+    instantiated object picks the right cached callable, does some further preprocessing
+    and then executes the actual aggregation operation.
+    """
+
     forced_fill_value = None
     counter_fill_value = 1
     counter_dtype = bool
@@ -42,28 +53,29 @@ class AggregateOp(object):
         else:
             jitfunc = self._jit_scalar
         jitfunc(group_idx, a, ret, counter, mean, fill_value, ddof)
-        self._finalize(ret, counter, mean, fill_value)
+        self._finalize(ret, counter, fill_value)
 
         # Deal with ndimensional indexing
         if ndim_idx > 1:
             ret = ret.reshape(size, order=order)
         return ret
 
-    def _initialize(self, flat_size, fill_value, dtype, input_dtype):
-        if self.forced_fill_value is None:
+    @classmethod
+    def _initialize(cls, flat_size, fill_value, dtype, input_dtype):
+        if cls.forced_fill_value is None:
             ret = np.full(flat_size, fill_value, dtype=dtype)
         else:
-            ret = np.full(flat_size, self.forced_fill_value, dtype=dtype)
-        counter = np.full_like(ret, self.counter_fill_value, dtype=self.counter_dtype)
-        if self.mean_fill_value is not None:
-            dtype = self.mean_dtype if self.mean_dtype else input_dtype
-            mean = np.full_like(ret, self.mean_fill_value, dtype=dtype)
+            ret = np.full(flat_size, cls.forced_fill_value, dtype=dtype)
+        counter = np.full_like(ret, cls.counter_fill_value, dtype=cls.counter_dtype)
+        if cls.mean_fill_value is not None:
+            dtype = cls.mean_dtype if cls.mean_dtype else input_dtype
+            mean = np.full_like(ret, cls.mean_fill_value, dtype=dtype)
         else:
             mean = None
         return ret, counter, mean
 
     @classmethod
-    def _finalize(cls, ret, counter, mean, fill_value):
+    def _finalize(cls, ret, counter, fill_value):
         if cls.forced_fill_value is not None and fill_value != cls.forced_fill_value:
             ret[counter] = fill_value
 
@@ -94,17 +106,7 @@ class AggregateOp(object):
                     raise ValueError("one or more indices in group_idx are too large")
                 val = valgetter(a, i)
                 inner(ri, val, ret, counter, mean)
-        loop = nb.njit(_loop, nogil=True, cache=True)
-
-        _2pass = cls._2pass()
-        if _2pass is None:
-            return loop
-
-        _2pass = nb.njit(_2pass, nogil=True, cache=True)
-        def loop_2pass(group_idx, a, ret, counter, mean, fill_value, ddof):
-            loop(group_idx, a, ret, counter, mean, fill_value, ddof)
-            _2pass(ret, counter, mean, fill_value, ddof)
-        return nb.njit(loop_2pass)
+        return nb.njit(_loop, nogil=True, cache=True)
 
     @staticmethod
     def _valgetter(a, i):
@@ -118,9 +120,36 @@ class AggregateOp(object):
     def _inner(ri, val, ret, counter, mean):
         raise NotImplementedError("subclasses need to overwrite _inner")
 
+
+class AggregateOp2pass(AggregateOp):
     @classmethod
-    def _2pass(cls):
-        return
+    def callable(cls, nans=False, reverse=False, scalar=False):
+        # Careful, cls needs to be passed, so that the overwritten methods remain available in
+        # AggregateOp.callable
+        loop = super(AggregateOp2pass, cls).callable(nans=nans, reverse=reverse, scalar=scalar)
+
+        _2pass_inner = nb.njit(cls._2pass_inner)
+        def _loop2(ret, counter, mean, fill_value, ddof):
+            for ri in range(len(ret)):
+                if counter[ri]:
+                    ret[ri] = _2pass_inner(ri, ret, counter, mean, ddof)
+                else:
+                    ret[ri] = fill_value
+        loop2 = nb.njit(_loop2)
+
+        def _loop_2pass(group_idx, a, ret, counter, mean, fill_value, ddof):
+            loop(group_idx, a, ret, counter, mean, fill_value, ddof)
+            loop2(ret, counter, mean, fill_value, ddof)
+        return nb.njit(_loop_2pass)
+
+    @staticmethod
+    def _2pass_inner(ri, ret, counter, mean, ddof):
+        raise NotImplementedError("subclasses need to overwrite _2pass_inner")
+
+    @classmethod
+    def _finalize(cls, ret, counter, fill_value):
+        """Copying the fill value is already in in the 2nd pass"""
+        pass
 
 
 class Sum(AggregateOp):
@@ -248,7 +277,7 @@ class ArgMin(ArgMax):
             ret[ri] = arg
 
 
-class Mean(AggregateOp):
+class Mean(AggregateOp2pass):
     counter_fill_value = 0
     counter_dtype = int
 
@@ -256,17 +285,6 @@ class Mean(AggregateOp):
     def _inner(ri, val, ret, counter, mean):
         counter[ri] += 1
         ret[ri] += val
-
-    @classmethod
-    def _2pass(cls):
-        _2pass_inner = nb.njit(cls._2pass_inner)
-        def _2pass_loop(ret, counter, mean, fill_value, ddof):
-            for ri in range(len(ret)):
-                if counter[ri]:
-                    ret[ri] = _2pass_inner(ri, ret, counter, mean, ddof)
-                else:
-                    ret[ri] = fill_value
-        return _2pass_loop
 
     @staticmethod
     def _2pass_inner(ri, ret, counter, mean, ddof):

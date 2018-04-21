@@ -12,7 +12,8 @@ def aggregate_all(request):
     impl = request.param
     if impl is None:
         pytest.xfail("Implementation not available")
-    return _wrap_notimplemented_xfail(impl.aggregate, 'aggregate_' + _impl_name(impl))
+    name = _impl_name(impl)
+    return _wrap_notimplemented_xfail(impl.aggregate, 'aggregate_' + name)
 
 
 def test_preserve_missing(aggregate_all):
@@ -239,3 +240,11 @@ def test_argmin_argmax(aggregate_all):
 
     res = aggregate_all(group_idx, a, func="argmin", fill_value=-1)
     np.testing.assert_array_equal(res, [3, -1, -1, 6])
+
+
+def test_mean(aggregate_all):
+    group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
+    a = np.arange(len(group_idx))
+
+    res = aggregate_all(group_idx, a, func="mean")
+    np.testing.assert_array_equal(res, [1.5, 0, 0, 5.5])
