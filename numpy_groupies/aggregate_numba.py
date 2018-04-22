@@ -23,7 +23,7 @@ class AggregateOp(object):
     counter_dtype = bool
     mean_fill_value = None
     mean_dtype = np.float64
-    outer = None
+    outer = False
     reverse = False
     nans = False
 
@@ -92,6 +92,7 @@ class AggregateOp(object):
         """ Compile a jitted function doing the hard part of the job """
         _valgetter = cls._valgetter_scalar if scalar else cls._valgetter
         valgetter = nb.njit(_valgetter)
+        outersetter = nb.njit(cls._outersetter)
 
         _cls_inner = nb.njit(cls._inner)
         if nans:
@@ -114,6 +115,7 @@ class AggregateOp(object):
                     raise ValueError("one or more indices in group_idx are too large")
                 val = valgetter(a, i)
                 inner(ri, val, ret, counter, mean)
+                outersetter(outer, i, ret[ri])
         return nb.njit(_loop, nogil=True, cache=True)
 
     @staticmethod
@@ -127,6 +129,10 @@ class AggregateOp(object):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
         raise NotImplementedError("subclasses need to overwrite _inner")
+
+    @staticmethod
+    def _outersetter(outer, i, val):
+        pass
 
 
 class Aggregate2pass(AggregateOp):
@@ -156,43 +162,16 @@ class Aggregate2pass(AggregateOp):
 
     @classmethod
     def _finalize(cls, ret, counter, fill_value):
-        """Copying the fill value is already in in the 2nd pass"""
+        """Copying the fill value is already done in the 2nd pass"""
         pass
 
 
 class AggregateNtoN(AggregateOp):
     outer = True
 
-    @classmethod
-    def callable(cls, nans=False, reverse=False, scalar=False):
-        """ Compile a jitted function doing the hard part of the job """
-        _valgetter = cls._valgetter_scalar if scalar else cls._valgetter
-        valgetter = nb.njit(_valgetter)
-
-        _cls_inner = nb.njit(cls._inner)
-        if nans:
-            def _inner(ri, val, ret, counter, mean):
-                if not np.isnan(val):
-                    _cls_inner(ri, val, ret, counter, mean)
-            inner = nb.njit(_inner)
-        else:
-            inner = _cls_inner
-
-        def _loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
-            # fill_value and ddof need to be present for being exchangeable with loop_2pass
-            size = len(ret)
-            rng = range(len(group_idx) - 1, -1 , -1) if reverse else range(len(group_idx))
-            for i in rng:
-                ri = group_idx[i]
-                if ri < 0:
-                    raise ValueError("negative indices not supported")
-                if ri >= size:
-                    raise ValueError("one or more indices in group_idx are too large")
-                val = valgetter(a, i)
-                inner(ri, val, ret, counter, mean)
-                outer[i] = ret[ri]
-
-        return nb.njit(_loop, nogil=True, cache=True)
+    @staticmethod
+    def _outersetter(outer, i, val):
+        outer[i] = val
 
 
 class Sum(AggregateOp):

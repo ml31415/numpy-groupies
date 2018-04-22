@@ -4,7 +4,8 @@ This package consists of a small library of optimised tools for doing things tha
 be considered "group-indexing operations". The most prominent tool is `aggregate`, which is 
 descibed in detail further down the page.
 
-#### Installation
+
+## Installation
 If you have `pip`, then simply:
 ```
 pip install numpy_groupies
@@ -16,17 +17,16 @@ that one file, and copy-paste the contents of `utils.py` into the top of that fi
 the `from .utils import (...)` line).
 
 
-## Functions overview
-#### aggregate
+## aggregate
 
 ![aggregate_diagram](/diagrams/aggregate.png)
 ```python
 import numpy as np
 import numpy_groupies as npg
-group_idx = np.array([3,0,0,1,0,3,5,5,0,4])
-a = np.array([13.2,3.5,3.5,-8.2,3.0,13.4,99.2,-7.1,0.0,53.7])
+group_idx = np.array([   3,   0,   0,   1,   0,   3,   5,   5,   0,   4])
+a =         np.array([13.2, 3.5, 3.5,-8.2, 3.0,13.4,99.2,-7.1, 0.0,53.7])
 npg.aggregate(group_idx, a, func='sum', fill_value=0)
-# >>> array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
+# >>>          array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
 ```
 `aggregate` takes an array of values, and an array giving the group number for each of those values. 
 It then returns the sum (or mean, or std, or any, ...etc.) of the values in each group. You have 
@@ -34,34 +34,18 @@ probably come across this idea before - see [Matlab's `accumarray` function](htt
  [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), or
  [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce), or simply the [basic histogram](https://en.wikipedia.org/wiki/Histogram).
 
-This is the most complex and mature of the functions in this package. See further down the page for 
-more details of the inputs, examples, and benchmarks.
+A couple of implemented functions does not reduce the data, instead it calculates values cumulatively
+while iterating over the data or permutates them. The output size matches the input size.
 
-#### multi_cumsum [alpha]
-![multicumsum_diagram](/diagrams/multi_cumsum.png)
-**Warning:** the API for this function has not be stabilized yet and is liable to change.
 ```python
-#TODO: give code example as with aggregate
-```
-
-#### multi_arange [alpha]
-![multicumsum_diagram](/diagrams/multi_arange.png)
-**Warning:** the API for this function has not be stabilized yet and is liable to change.
-```python
-#TODO: give code example as with aggregate
-```
-
-#### label_contiguous_1d [alpha]
-![label_contiguous_1d](/diagrams/label_contiguous_1d.png)
-**Warning:** the API for this function has not be stabilized yet and is liable to change.
-```python
-#TODO: give code example as with aggregate
+group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
+a =         np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
+npg.aggregate(group_idx, a, func='cumsum')
+# >>>          array([3, 4, 5, 6,15, 9,15,22, 7, 0,15,17, 6,14,31,39])
 ```
 
 
-## aggregate
-
-### Description of inputs
+### Inputs
 The function accepts various different combinations of inputs, producing various different shapes of output. 
 We give a brief description of the general meaning of the inputs and then go over the different combinations 
 in more detail:
@@ -86,10 +70,11 @@ in more detail:
 
 **Note on performance.** The `order` of the output is unlikely to affect performance of `aggregate` (although it may affect your downstream usage of that output), however the order of multidimensional `a` or `group_idx` can affect performance:  in Form 4 it is best if columns are contiguous in memory within `group_idx`, i.e. `group_idx[:, 99]` corresponds to a contiguous chunk of memory; in Form 3 it's best if all the data in `a` for `group_idx[i]` is contiguous, e.g. if `axis=1` then we want `a[:, 55]` to be contiguous.
 
+
 ### Available functions
 By default, `aggregate` assumes you want to sum the values within each group, however you can specify another 
-function using the `func` kwarg.  This `func` can be any custom callable, however in normal use you will 
-probably want one of the following optimized functions:
+function using the `func` kwarg.  This `func` can be any custom callable, however you will likely want one of
+the following optimized functions. Note that not all functions might be provided by all implementations.
 
 * `'sum'` - sum of items within each group (see example above).
 * `'prod'` - product of items within each group
@@ -112,16 +97,20 @@ The following functions are slightly different in that they always return boolea
 * `'allnan'` - `True` if all items within a group are `nan`.
 * `'anynan'` - `True` if any items within a gorup are `nan`.
 
+The following functions don't reduce the data, but instead produce an output matching the size of the input:
+* `cumsum` - cumulative sum of items within each group.
+* `cumprod` - cumulative product of items within each group. (numba only)
+* `cummin` - cumulative minimum of items within each group. (numba only)
+* `cummax` - cumulative maximum of items within each group. (numba only)
+
 Finally, there are three functions which don't reduce each group to a single value, instead they return the full set of items within the group:
-* `'array'` - simply returns the grouped items, using the same order as appeared in `a`.
-* `'sort'` - like `'array'`, above, but the items within each group are now sorted in ascending order.
-* `'rsort'` - same as `'sort'`, but in reverse, i.e. descending order.
+* `'array'` - simply returns the grouped items, using the same order as appeared in `a`. (numpy only)
+* `'sort'` - like `'array'`, above, but the items within each group are now sorted in ascending order. (numpy only)
+* `'rsort'` - same as `'sort'`, but in reverse, i.e. descending order. (numpy only)
+
 
 ### Examples
-See the example at the top of the page for a super-simple introduction.
-
-
-* Compute sums of consecutive integers, and then compute products of those consecutive integers. (Form 1)
+Compute sums of consecutive integers, and then compute products of those consecutive integers.
 ```python
 group_idx = np.arange(5).repeat(3)
 # group_idx: array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
@@ -133,18 +122,17 @@ x = aggregate(group_idx, a, 'prod')
 # x: array([ 0, 60, 336, 990, 2184])
 ```
 
-* Get variance ignoring nans, but set all-nan groups to `nan` rather than `fill_value`. (Form 1)
+Get variance ignoring nans, setting all-nan groups to `nan`.
 ```python
-x = aggregate(group_idx, a, func='nanvar', fill_value=0)
-x[aggregate(group_idx, a, func='allnan')] = nan
+x = aggregate(group_idx, a, func='nanvar', fill_value=nan)
 ```
 
-* Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, indeed that is how the numpy implementation does it. (Form 2)
+Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, indeed that is how the numpy implementation does it.
 ```python
 x = aggregate(group_idx, 1)
 ```
 
-* Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions have the same size, but that doesn't have to be the case. (Form 4)
+Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions have the same size, but that doesn't have to be the case.
 ```python
 group_idx = np.random.randint(0, 15, size=(3, 1000))
 a = np.random.random(group_idx.shape[1])
@@ -153,7 +141,7 @@ x = aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
 # np.isfortran(x): True
 ```
 
-* Use a custom function to generate some strings. (Form 1)
+Use a custom function to generate some strings.
 ```python
 group_idx = array([1, 0,  1,  4,  1])
 a = array([12.0, 3.2, -15, 88, 12.9])
@@ -162,7 +150,7 @@ x = aggregate(group_idx, a,
 # x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
 
-* Use the `axis` arg in order to do a sum-aggregation on three rows simultaneously. (Form 3)
+Use the `axis` arg in order to do a sum-aggregation on three rows simultaneously.
 ```python
 a = array([[99, 2,  11, 14,  20],
 	   	   [33, 76, 12, 100, 71],
@@ -205,37 +193,42 @@ The benchmarking results are given in ms for an i7-7560U running at 2.40GHz:
 ```text
 function         ufunc         numpy         numba         weave        pandas
 ------------------------------------------------------------------------------
-sum             29.308         1.416         0.924         1.188        15.953
-prod            29.496        29.677         0.956         1.211        16.009
-amin            29.886        29.878         0.988         1.206        16.151
-amax            30.458        29.874         1.049         1.223        15.830
-len             28.864         1.285         0.767         1.029        16.148
-all             33.666         3.444         0.999         1.238        95.153
-any             33.243         5.069         1.060         1.248        92.841
-anynan          28.856         2.456         1.005         1.955        82.437
-allnan          29.870         3.981         0.992         1.195        75.098
-mean              ----         2.064         1.034         1.245         9.615
-std               ----         4.162         1.029         1.262        43.459
-var               ----         3.524         1.028         1.219        43.006
-first             ----         1.498         0.976         0.972         8.806
-last              ----         1.238         0.695         0.866         8.559
-argmax            ----        29.623         0.911          ----       140.707
-argmin            ----        32.769         0.874          ----       142.033
-nansum            ----         4.644         1.671         1.171         9.447
-nanprod           ----        26.808         1.652         1.288         9.331
-nanmin            ----        27.204         1.820         1.233         9.055
-nanmax            ----        27.154         1.848         1.249         9.166
-nanlen            ----         4.598         1.587         1.155        10.536
-nanall            ----         6.484         1.756         1.249        80.396
-nanany            ----         8.058         1.741         1.237        83.062
-nanmean           ----         5.153         1.681         1.316         9.251
-nanvar            ----         6.718         1.822         1.477        49.998
-nanstd            ----         6.683         1.825         1.476        44.898
-nanfirst          ----         4.973         1.858         1.140        11.018
-nanlast           ----         4.823         1.672         1.037        10.743
+sum             29.939         1.452         0.912         1.186        16.274
+prod            30.729        30.353         0.909         1.188        16.016
+amin            29.871        29.899         0.969         1.179        16.470
+amax            30.023        29.806         1.018         1.257        15.815
+len             28.982         1.262         0.781         1.085        16.378
+all             33.745         3.421         0.987         1.250        93.688
+any             33.027         5.097         1.033         1.225        93.393
+anynan          29.499         2.473         0.989         1.195        84.557
+allnan          30.067         4.068         0.978         1.215        74.876
+mean              ----         2.110         0.983         1.205         9.522
+std               ----         4.709         1.038         1.219        43.495
+var               ----         3.546         1.026         1.224        43.093
+first             ----         1.529         0.997         0.987         8.602
+last              ----         1.267         0.692         0.879         9.038
+argmax            ----        29.894         0.906          ----       141.851
+argmin            ----        32.924         0.868          ----       138.898
+cumsum            ----       129.279         1.169          ----         7.830
+cumprod           ----          ----         1.268          ----         7.990
+cummax            ----          ----         1.198          ----         8.385
+cummin            ----          ----         1.147          ----         8.286
+nansum            ----         4.592         1.662         1.180         9.431
+nanprod           ----        27.126         1.701         1.184         9.256
+nanmin            ----        27.436         1.834         1.220         9.171
+nanmax            ----        27.510         1.891         1.263         9.264
+nanlen            ----         4.650         1.588         1.158        10.634
+nanall            ----         6.790         1.781         1.279        79.503
+nanany            ----         7.900         1.721         1.249        83.260
+nanmean           ----         5.163         1.689         1.316         9.286
+nanvar            ----         6.729         1.890         1.517        44.632
+nanstd            ----         7.091         1.882         1.484        44.752
+nanfirst          ----         4.844         1.884         1.098        11.124
+nanlast           ----         4.857         1.589         1.041        11.132
 Linux(x86_64), Python 2.7.12, Numpy 1.14.1, Numba 0.37.0, Pandas 0.22.0
 
 ```
+
 
 ## Development
 This project was started by @ml31415 and the `numba` and `weave` implementations are by him. The pure 

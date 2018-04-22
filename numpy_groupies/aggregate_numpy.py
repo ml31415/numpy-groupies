@@ -5,45 +5,6 @@ from .utils import (check_boolean, _no_separate_nan_version, get_func,
                     check_dtype, minimum_dtype_scalar, _doc_str, isstr)
 
 
-def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
-    if np.iscomplexobj(a):
-        raise NotImplementedError("a must be real, could use np.lexsort or "
-                                  "sort with recarray for complex.")
-    if not (np.isscalar(fill_value) or len(fill_value) == 0):
-        raise ValueError("fill_value must be scalar or an empty sequence")
-    if reversed_:
-        order_group_idx = np.argsort(group_idx + -1j * a, kind='mergesort')
-    else:
-        order_group_idx = np.argsort(group_idx + 1j * a, kind='mergesort')
-    counts = np.bincount(group_idx, minlength=size)
-    if np.ndim(a) == 0:
-        a = np.full(size, a, dtype=type(a))
-    ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
-    ret = np.asarray(ret, dtype=object)
-    if np.isscalar(fill_value):
-        fill_untouched(group_idx, ret, fill_value)
-    return ret
-
-
-def _rsort(group_idx, a, size, fill_value, dtype=None):
-    return _sort(group_idx, a, size, fill_value, dtype=None, reversed_=True)
-
-
-def _array(group_idx, a, size, fill_value, dtype=None):
-    """groups a into separate arrays, keeping the order intact."""
-    if fill_value is not None and not (np.isscalar(fill_value) or
-                                       len(fill_value) == 0):
-        raise ValueError("fill_value must be None, a scalar or an empty "
-                         "sequence")
-    order_group_idx = np.argsort(group_idx, kind='mergesort')
-    counts = np.bincount(group_idx, minlength=size)
-    ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
-    ret = np.asanyarray(ret)
-    if fill_value is None or np.isscalar(fill_value):
-        fill_untouched(group_idx, ret, fill_value)
-    return ret
-
-
 def _sum(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
 
@@ -67,6 +28,15 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
+def _prod(group_idx, a, size, fill_value, dtype=None):
+    dtype = minimum_dtype_scalar(fill_value, dtype, a)
+    ret = np.full(size, fill_value, dtype=dtype)
+    if fill_value != 1:
+        ret[group_idx] = 1  # product starts from 1
+    np.multiply.at(ret, group_idx, a)
+    return ret
+
+
 def _len(group_idx, a, size, fill_value, dtype=None):
     return _sum(group_idx, 1, size, fill_value, dtype=int)
 
@@ -85,15 +55,6 @@ def _first(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     ret = np.full(size, fill_value, dtype=dtype)
     ret[group_idx[::-1]] = a[::-1]  # same trick as _last, but in reverse
-    return ret
-
-
-def _prod(group_idx, a, size, fill_value, dtype=None):
-    dtype = minimum_dtype_scalar(fill_value, dtype, a)
-    ret = np.full(size, fill_value, dtype=dtype)
-    if fill_value != 1:
-        ret[group_idx] = 1  # product starts from 1
-    np.multiply.at(ret, group_idx, a)
     return ret
 
 
@@ -217,6 +178,45 @@ def _anynan(group_idx, a, size, fill_value, dtype=bool):
                 dtype=dtype)
 
 
+def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
+    if np.iscomplexobj(a):
+        raise NotImplementedError("a must be real, could use np.lexsort or "
+                                  "sort with recarray for complex.")
+    if not (np.isscalar(fill_value) or len(fill_value) == 0):
+        raise ValueError("fill_value must be scalar or an empty sequence")
+    if reversed_:
+        order_group_idx = np.argsort(group_idx + -1j * a, kind='mergesort')
+    else:
+        order_group_idx = np.argsort(group_idx + 1j * a, kind='mergesort')
+    counts = np.bincount(group_idx, minlength=size)
+    if np.ndim(a) == 0:
+        a = np.full(size, a, dtype=type(a))
+    ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
+    ret = np.asarray(ret, dtype=object)
+    if np.isscalar(fill_value):
+        fill_untouched(group_idx, ret, fill_value)
+    return ret
+
+
+def _rsort(group_idx, a, size, fill_value, dtype=None):
+    return _sort(group_idx, a, size, fill_value, dtype=None, reversed_=True)
+
+
+def _array(group_idx, a, size, fill_value, dtype=None):
+    """groups a into separate arrays, keeping the order intact."""
+    if fill_value is not None and not (np.isscalar(fill_value) or
+                                       len(fill_value) == 0):
+        raise ValueError("fill_value must be None, a scalar or an empty "
+                         "sequence")
+    order_group_idx = np.argsort(group_idx, kind='mergesort')
+    counts = np.bincount(group_idx, minlength=size)
+    ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
+    ret = np.asanyarray(ret)
+    if fill_value is None or np.isscalar(fill_value):
+        fill_untouched(group_idx, ret, fill_value)
+    return ret
+
+
 def _generic_callable(group_idx, a, size, fill_value, dtype=None,
                       func=lambda g: g):
     """groups a by inds, and then applies foo to each group in turn, placing
@@ -231,14 +231,14 @@ def _generic_callable(group_idx, a, size, fill_value, dtype=None,
 
 
 def _cumsum(group_idx, a, size, fill_value=None, dtype=None):
-    '''
-    N -> N aggregate operation of cumsum. Perform cumulative sum for each group.
-    Example:
+    """
+    N to N aggregate operation of cumsum. Perform cumulative sum for each group.
+
     group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
     a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
-    Returns:
-    array([ 3,  4,  5,  6, 15,  9, 15, 22,  7,  0, 15, 17,  6, 14, 31, 39])
-    '''
+    _cumsum(group_idx, a, np.max(group_idx) + 1)
+    >>> array([ 3,  4,  5,  6, 15,  9, 15, 22,  7,  0, 15, 17,  6, 14, 31, 39])
+    """
     sortidx = np.argsort(group_idx, kind='mergesort')
     invsortidx = np.argsort(sortidx, kind='mergesort')
     group_idx_srt = group_idx[sortidx]
