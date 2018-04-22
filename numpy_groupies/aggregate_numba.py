@@ -136,6 +136,7 @@ class AggregateOp(object):
 
 
 class Aggregate2pass(AggregateOp):
+    """Base class for everything that needs to process the data twice like mean, var and std."""
     @classmethod
     def callable(cls, nans=False, reverse=False, scalar=False):
         # Careful, cls needs to be passed, so that the overwritten methods remain available in
@@ -167,11 +168,62 @@ class Aggregate2pass(AggregateOp):
 
 
 class AggregateNtoN(AggregateOp):
+    """Base class for cumulative functions, where the output size matches the input size."""
     outer = True
 
     @staticmethod
     def _outersetter(outer, i, val):
         outer[i] = val
+
+
+class AggregateGeneric(AggregateOp):
+    """Base class for jitting arbitrary functions."""
+    counter_fill_value = None
+
+    def __init__(self, func, **kwargs):
+        self.func = func
+        self.__dict__.update(kwargs)
+        self._jitfunc = self.callable(self.nans)
+
+    def __call__(self, group_idx, a, size=None, fill_value=0, order='C',
+                 dtype=None, axis=None, ddof=0):
+        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False)
+        group_idx, a, flat_size, ndim_idx, size = iv
+
+        # TODO: The typecheck should be done by the class itself, not by check_dtype
+        dtype = check_dtype(dtype, self.func, a, len(group_idx))
+        check_fill_value(fill_value, dtype)
+        input_dtype = type(a) if np.isscalar(a) else a.dtype
+        ret, _, _, _= self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
+        group_idx = np.ascontiguousarray(group_idx)
+
+        sortidx = np.argsort(group_idx, kind='mergesort')
+        self._jitfunc(sortidx, group_idx, a, ret)
+
+        # Deal with ndimensional indexing
+        if ndim_idx > 1:
+            ret = ret.reshape(size, order=order)
+        return ret
+
+    def callable(self, nans=False):
+        """Compile a jitted function and loop it over the sorted data."""
+        jitfunc = nb.njit(self.func, nogil=True, cache=True)
+
+        def _loop(sortidx, group_idx, a, ret):
+            size = len(ret)
+            group_idx_srt = group_idx[sortidx]
+            a_srt = a[sortidx]
+
+            indices = step_indices(group_idx_srt)
+            for i in range(len(indices) - 1):
+                start_idx, stop_idx =  indices[i], indices[i + 1]
+                ri = group_idx_srt[start_idx]
+                if ri < 0:
+                    raise ValueError("negative indices not supported")
+                if ri >= size:
+                    raise ValueError("one or more indices in group_idx are too large")
+                ret[ri] = jitfunc(a_srt[start_idx:stop_idx])
+        return nb.njit(_loop, nogil=True, cache=True)
 
 
 class Sum(AggregateOp):
@@ -367,13 +419,19 @@ def get_funcs():
 
 
 _impl_dict = get_funcs()
+_default_cache = {}
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
-              dtype=None, axis=None, **kwargs):
+              dtype=None, axis=None, cache=None, **kwargs):
     func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
-        raise NotImplementedError("generic functions not supported in numba"
-                                  " implementation of aggregate.")
+        if cache in (None, False):
+            aggregate_op = AggregateGeneric(func)
+        else:
+            if cache is True:
+                cache = _default_cache
+            aggregate_op = cache.setdefault(func, AggregateGeneric(func))
+        return aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
     else:
         func = _impl_dict[func]
         return func(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
@@ -385,9 +443,7 @@ aggregate.__doc__ = """
 
 @nb.njit(nogil=True, cache=True)
 def step_count(group_idx):
-    """ Determine the size of the result array
-        for contiguous data
-    """
+    """Return the amount of index changes within group_idx."""
     cmp_pos = 0
     steps = 1
     if len(group_idx) < 1:
@@ -400,23 +456,17 @@ def step_count(group_idx):
 
 
 @nb.njit(nogil=True, cache=True)
-def _step_indices_loop(group_idx, indices):
+def step_indices(group_idx):
+    """Return the edges of areas within group_idx, which are filled with the same value."""
+    ilen = step_count(group_idx) + 1
+    indices = np.empty(ilen, np.int64)
+    indices[0] = 0
+    indices[-1] = group_idx.size
     cmp_pos = 0
     ri = 1
-    for i in range(1, len(group_idx)):
+    for i in range(len(group_idx)):
         if group_idx[cmp_pos] != group_idx[i]:
             cmp_pos = i
             indices[ri] = i
             ri += 1
-
-
-def step_indices(group_idx):
-    """ Get the edges of areas within group_idx, which are filled 
-        with the same value
-    """
-    ilen = step_count(group_idx) + 1
-    indices = np.empty(ilen, int)
-    indices[0] = 0
-    indices[-1] = group_idx.size
-    _step_indices_loop(group_idx, indices)
     return indices

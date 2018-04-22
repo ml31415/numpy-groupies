@@ -23,12 +23,18 @@ def aggregate_grouploop(*args, **kwargs):
     return aggregate_numpy.aggregate(*args, func=lambda x: func(x), **kwargs)
 
 
+def arbitrary(iterator):
+    tmp = 0
+    for i, x in enumerate(iterator, 1):
+        tmp += x ** i
+    return tmp
+
+
 func_list = (np.sum, np.prod, np.min, np.max, len, np.all, np.any, 'anynan', 'allnan',
              np.mean, np.std, np.var, 'first', 'last', 'argmax', 'argmin',
-             'cumsum', 'cumprod', 'cummax', 'cummin',
              np.nansum, np.nanprod, np.nanmin, np.nanmax, 'nanlen', 'nanall', 'nanany',
-             np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',)
-
+             np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',
+             'cumsum', 'cumprod', 'cummax', 'cummin', arbitrary)
 
 
 def benchmark(implementations, size=5e5, repeat=3, seed=100):
@@ -42,10 +48,10 @@ def benchmark(implementations, size=5e5, repeat=3, seed=100):
     assert 0.15 < nan_share < 0.25, "%3f%% nans" % (nan_share * 100)
 
     print("function" + ''.join(impl.__name__.rsplit('_', 1)[1].rjust(14) for impl in implementations))
-    print("-" * (8 + 14 * len(implementations)))
+    print("-" * (9 + 14 * len(implementations)))
     for func in func_list:
         func_name = getattr(func, '__name__', func)
-        print(func_name.ljust(8), end='')
+        print(func_name.ljust(9), end='')
         results = []
         used_a = nana if 'nan' in func_name else a
 
@@ -56,7 +62,7 @@ def benchmark(implementations, size=5e5, repeat=3, seed=100):
             aggregatefunc = impl.aggregate
 
             try:
-                res = aggregatefunc(group_idx, used_a, func=func)
+                res = aggregatefunc(group_idx, used_a, func=func, cache=True)
             except NotImplementedError:
                 print('----'.rjust(14), end='')
                 continue
@@ -69,7 +75,7 @@ def benchmark(implementations, size=5e5, repeat=3, seed=100):
                 except AssertionError:
                     print('FAIL'.rjust(14), end='')
                 else:
-                    t0 = min(timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func)).repeat(repeat=repeat, number=1))
+                    t0 = min(timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func, cache=True)).repeat(repeat=repeat, number=1))
                     print(("%.3f" % (t0 * 1000)).rjust(14), end='')
             sys.stdout.flush()
         print()

@@ -26,10 +26,10 @@ def _impl_name(impl):
 
 
 _not_implemented_by_impl_name = {
-    'numpy': [],
-    'purepy': ['cumsum'],
-    'numba': ('array', 'list', '<lambda>', 'func_preserve_order', 'func_arbitrary'),
-    'pandas': ('array', 'list', '<lambda>', 'func_preserve_order', 'func_arbitrary'),
+    'numpy': ['cumprod','cummax', 'cummin'],
+    'purepy': ['cumprod','cummax', 'cummin'],
+    'numba': ('array', 'list'),
+    'pandas': ('array', 'list'),
     'weave':  ('argmin', 'argmax', 'array', 'list', 'cumsum',
                '<lambda>', 'func_preserve_order', 'func_arbitrary')}
 

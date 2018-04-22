@@ -8,7 +8,7 @@ from .misc_tools_numpy import allnan, anynan
 from .aggregate_numpy import _aggregate_base
 
 
-def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0):
+def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0, **kwargs):
     funcname = func.__name__ if callable(func) else func
     kwargs = dict()
     if funcname in ('var', 'std'):
@@ -39,7 +39,8 @@ _impl_dict.update(allnan=partial(_wrapper, func=allnan),
                   len=partial(_wrapper, func='count'),
                   nanlen=partial(_wrapper, func='count'),
                   argmax=partial(_wrapper, func='idxmax'),
-                  argmin=partial(_wrapper, func='idxmin'))
+                  argmin=partial(_wrapper, func='idxmin'),
+                  generic=_wrapper)
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',

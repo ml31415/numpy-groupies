@@ -218,11 +218,11 @@ def _array(group_idx, a, size, fill_value, dtype=None):
 
 
 def _generic_callable(group_idx, a, size, fill_value, dtype=None,
-                      func=lambda g: g):
+                      func=lambda g: g, **kwargs):
     """groups a by inds, and then applies foo to each group in turn, placing
     the results in an array."""
-    groups = _array(group_idx, a, size, (), dtype=dtype)
-    ret = np.full(size, fill_value, dtype=object)
+    groups = _array(group_idx, a, size, ())
+    ret = np.full(size, fill_value, dtype=dtype or np.float64)
 
     for i, grp in enumerate(groups):
         if np.ndim(grp) == 1 and len(grp) > 0:
@@ -262,20 +262,20 @@ _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last,
                   first=_first, all=_all, any=_any, mean=_mean, std=_std,
                   var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
                   rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin,
-                  len=_len, cumsum=_cumsum)
+                  len=_len, cumsum=_cumsum, generic=_generic_callable)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in _no_separate_nan_version)
 
 
 def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                     order='C', dtype=None, axis=None, _impl_dict=_impl_dict,
-                    _nansqueeze=False, **kwargs):
+                    _nansqueeze=False, cache=None, **kwargs):
     group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
                                              size=size, order=order, axis=axis)
     func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
         # do simple grouping and execute function in loop
-        ret = _generic_callable(group_idx, a, flat_size, fill_value, func=func,
+        ret = _impl_dict.get('generic', _generic_callable)(group_idx, a, flat_size, fill_value, func=func,
                                 dtype=dtype, **kwargs)
     else:
         # deal with nans and find the function

@@ -226,9 +226,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
              dtype=None, axis=None, **kwargs):
     func = get_func(func, aliasing, optimized_funcs)
     if not isstr(func):
-        # Fall back to aggregate_np if no optimized C version is available
-        return aggregate_np(group_idx, a, func=func, dtype=dtype,
-                            axis=axis, fill_value=fill_value)
+        raise NotImplementedError("generic functions not supported, in the weave implementation of aggregate")
 
     # Preparations for optimized processing
     group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,

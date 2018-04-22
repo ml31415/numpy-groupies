@@ -24,7 +24,7 @@ def aggregate_cmp(request, seed=100):
         func = aggregate_numpy.aggregate
         group_cnt = 100
     else:
-        group_cnt = 3000
+        group_cnt = 1000
         func_ref = aggregate_numpy.aggregate
         if 'ufunc' in request.param:
             impl = aggregate_numpy_ufunc
@@ -78,11 +78,13 @@ func_list = ('sum', 'prod', 'min', 'max', 'all', 'any', 'mean', 'std', 'len',
              func_arbitrary, func_preserve_order)
 
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
-def test_cmp(aggregate_cmp, func, decimal=12):
+def test_cmp(aggregate_cmp, func, decimal=10):
     a = aggregate_cmp.nana if 'nan' in getattr(func, '__name__', func) else aggregate_cmp.a
     res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func)
     ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func)
-    np.testing.assert_array_almost_equal(res, ref, decimal=decimal)
+    if isinstance(ref, np.ndarray):
+        assert res.dtype == ref.dtype
+    np.testing.assert_allclose(res, ref, rtol=10**-decimal)
 
 
 @pytest.mark.parametrize(["ndim", "order"], itertools.product([2, 3], ["C", "F"]))
