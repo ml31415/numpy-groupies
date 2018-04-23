@@ -16,7 +16,7 @@ considered "group-indexing operations". The most prominent tool is `aggregate`.
 
 `aggregate` takes an array of values, and an array giving the group number for each of those 
 values. It then returns the sum (or mean, or std, or any, ...etc.) of the values in each group. 
-You have probably come across this idea before, using `matlab`s accumarray, `pandas` groupby, 
+You have probably come across this idea before, using `matlab` accumarray, `pandas` groupby, 
 or generally MapReduce algorithms and histograms.
 
 There are different implementations of `aggregate` provided, based on plain `numpy`, `numba`
