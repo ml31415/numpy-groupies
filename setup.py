@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import versioneer
 from setuptools import setup
 from distutils import log
 from distutils.command.clean import clean
@@ -35,7 +36,7 @@ class NumpyGroupiesClean(clean):
 
 
 setup(name='numpy_groupies',
-      version='0.9.7',
+      version=versioneer.get_version(),
       author="@ml31415 and @d1manson",
       license='BSD',
       description="Optimised tools for group-indexing operations: aggregated sum and more.",
@@ -43,9 +44,9 @@ setup(name='numpy_groupies',
       download_url="https://github.com/ml31415/numpy-groupies/archive/master.zip",
       keywords=[ "accumarray", "aggregate", "groupby", "grouping", "indexing"],
       packages=['numpy_groupies'],
+      install_requires=[],
       setup_requires=['pytest-runner'],
-      tests_require=['pytest'],
-      requires=[],
+      tests_require=['pytest', 'numpy', 'numba'],
       classifiers=['Development Status :: 4 - Beta',
                    'Intended Audience :: Science/Research',
                    'Programming Language :: Python :: 2',
@@ -56,5 +57,6 @@ setup(name='numpy_groupies',
                    'Programming Language :: Python :: 3.6',
                    'Programming Language :: Python :: 3.7',
                    ],
-      cmdclass=dict(clean=NumpyGroupiesClean)
-      )
+      cmdclass=dict(clean=NumpyGroupiesClean,
+                    versioneer=versioneer.get_cmdclass()),
+)

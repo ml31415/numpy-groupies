@@ -44,3 +44,7 @@ else:
 
 def uaggregate(group_idx, a, **kwargs):
     return unpack(group_idx, aggregate(group_idx, a, **kwargs))
+
+from ._version import get_versions
+__version__ = get_versions()['version']
+del get_versions
