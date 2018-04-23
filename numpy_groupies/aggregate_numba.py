@@ -2,8 +2,8 @@ from __future__ import division
 import numba as nb
 import numpy as np
 
-from .utils import (aliasing, get_func, input_validation, check_dtype,
-                    _doc_str, isstr, check_fill_value, _no_separate_nan_version)
+from .utils import get_func, isstr, aggregate_common_doc, funcs_no_separate_nan
+from .utils_numpy import aliasing, input_validation, check_dtype, check_fill_value
 
 
 class AggregateOp(object):
@@ -412,7 +412,7 @@ def get_funcs():
                CumSum, CumProd, CumMax, CumMin):
         funcname = op.__name__.lower()
         funcs[funcname] = op(funcname)
-        if funcname not in _no_separate_nan_version:
+        if funcname not in funcs_no_separate_nan:
             funcname = 'nan' + funcname
             funcs[funcname] = op(funcname, nans=True)
     return funcs
@@ -438,7 +438,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
 
 aggregate.__doc__ = """
     This is the numba implementation of aggregate.
-    """ + _doc_str
+    """ + aggregate_common_doc
 
 
 @nb.njit(nogil=True, cache=True)

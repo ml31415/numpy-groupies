@@ -69,22 +69,6 @@ def test_create_lists(aggregate_all):
     np.testing.assert_array_equal(np.array(res[3]), np.array([103, 105]))
 
 
-@pytest.mark.parametrize("sort_order", ["normal", "reverse"])
-def test_stable_sort(aggregate_all, sort_order):
-    group_idx = np.repeat(np.arange(5), 4)
-    a = np.arange(group_idx.size)
-    if sort_order == "reverse":
-        a = a[::-1]
-    ref = a[:4]
-
-    try:
-        res = aggregate_all(group_idx, a, func=list)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    else:
-        np.testing.assert_array_equal(np.array(res[0]), ref)
-
-
 def test_item_counting(aggregate_all):
     group_idx = np.array([0, 1, 2, 3, 3, 3, 3, 4, 5, 5, 5, 6, 5, 4, 3, 8, 8])
     a = np.arange(group_idx.size)
@@ -252,8 +236,8 @@ def test_mean(aggregate_all):
 
 def test_cumsum(aggregate_all):
     group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
-    a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
-    ref = np.array([ 3,  4,  5,  6, 15,  9, 15, 22,  7,  0, 15, 17,  6, 14, 31, 39])
+    a =         np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
+    ref =       np.array([3, 4, 5, 6,15, 9,15,22, 7, 0,15,17, 6,14,31,39])
 
     res = aggregate_all(group_idx, a, func="cumsum")
     np.testing.assert_array_equal(res, ref)
@@ -265,4 +249,33 @@ def test_cummax(aggregate_all):
     ref =       np.array([3, 4, 4, 3, 9, 9, 9, 9, 7, 0, 8, 9, 4, 8, 9, 9])
 
     res = aggregate_all(group_idx, a, func="cummax")
+    np.testing.assert_array_equal(res, ref)
+
+
+@pytest.mark.parametrize("order", ["normal", "reverse"])
+def test_list_ordering(aggregate_all, order):
+    group_idx = np.repeat(np.arange(5), 4)
+    a = np.arange(group_idx.size)
+    if order == "reverse":
+        a = a[::-1]
+    ref = a[:4]
+
+    try:
+        res = aggregate_all(group_idx, a, func=list)
+    except NotImplementedError:
+        pytest.xfail("Function not yet implemented")
+    else:
+        np.testing.assert_array_equal(np.array(res[0]), ref)
+
+
+@pytest.mark.parametrize("order", ["normal", "reverse"])
+def test_sort(aggregate_all, order):
+    group_idx =   np.array([3, 3, 3, 2, 2, 2, 1, 1, 1])
+    a =           np.array([3, 2, 1, 3, 4, 5, 5,10, 1])
+    ref_normal =  np.array([1, 2, 3, 3, 4, 5, 1, 5,10])
+    ref_reverse = np.array([3, 2, 1, 5, 4, 3,10, 5, 1])
+    reverse = order == "reverse"
+    ref = ref_reverse if reverse else ref_normal
+
+    res = aggregate_all(group_idx, a, func="sort", reverse=reverse)
     np.testing.assert_array_equal(res, ref)

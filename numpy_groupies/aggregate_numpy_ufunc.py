@@ -1,7 +1,8 @@
 import numpy as np
 
-from .utils import (minimum_dtype, minimum_dtype_scalar, check_boolean,
-                    get_func, aliasing, _doc_str, isstr)
+
+from .utils import get_func, check_boolean, isstr, aggregate_common_doc
+from .utils_numpy import aliasing, minimum_dtype, minimum_dtype_scalar
 from .aggregate_numpy import _aggregate_base
 
 
@@ -100,4 +101,4 @@ aggregate.__doc__ = """
     As of version 1.14 this gives fairly poor performance. There should
     normally be no need to use this version, it is intended to be used in
     testing and benchmarking only.
-    """ + _doc_str
+    """ + aggregate_common_doc

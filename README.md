@@ -102,11 +102,10 @@ The following functions don't reduce the data, but instead produce an output mat
 * `cumprod` - cumulative product of items within each group. (numba only)
 * `cummin` - cumulative minimum of items within each group. (numba only)
 * `cummax` - cumulative maximum of items within each group. (numba only)
+* `'sort'` - sort the items within each group in ascending order, use reverse=True to invert the order.
 
 Finally, there are three functions which don't reduce each group to a single value, instead they return the full set of items within the group:
 * `'array'` - simply returns the grouped items, using the same order as appeared in `a`. (numpy only)
-* `'sort'` - like `'array'`, above, but the items within each group are now sorted in ascending order. (numpy only)
-* `'rsort'` - same as `'sort'`, but in reverse, i.e. descending order. (numpy only)
 
 
 ### Examples

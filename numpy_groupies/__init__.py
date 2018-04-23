@@ -14,11 +14,11 @@ else:
     from .aggregate_numpy import aggregate
     aggregate_np = aggregate
     from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
-    from .misc_tools_numpy import (multi_arange,
-                                   label_contiguous_1d,
-                                   relabel_groups_masked,
-                                   relabel_groups_unique,
-                                   unpack)
+    from .utils_numpy import (multi_arange,
+                              label_contiguous_1d,
+                              relabel_groups_masked,
+                              relabel_groups_unique,
+                              unpack)
 
 
 try:

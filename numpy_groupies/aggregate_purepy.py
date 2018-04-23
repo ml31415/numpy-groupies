@@ -4,8 +4,8 @@ import math
 import itertools
 import operator
 
-from .utils import (_no_separate_nan_version, aliasing_purepy, get_func,
-                    _doc_str, isstr)
+from .utils import (get_func, aliasing, funcs_no_separate_nan,
+                    aggregate_common_doc, isstr)
 
 
 # min - builtin
@@ -25,14 +25,6 @@ def _first(x):
 
 def _array(x):
     return x
-
-
-def _sort(x):
-    return sorted(x)
-
-
-def _rsort(x):
-    return sorted(x, reverse=True)
 
 
 def _mean(x):
@@ -62,22 +54,33 @@ def _anynan(x):
 def _allnan(x):
     return all(math.isnan(xx) for xx in x)
 
+
 def _argmax(x_and_idx):
     return max(x_and_idx, key=operator.itemgetter(1))[0]
 _argmax.x_and_idx = True  # tell aggregate what to use as first arg
 
+
 def _argmin(x_and_idx):
     return min(x_and_idx, key=operator.itemgetter(1))[0]
-
 _argmin.x_and_idx = True  # tell aggregate what to use as first arg
+
+
+def _sort(group_idx, a, reverse=False):
+    def _argsort(unordered):
+        return sorted(range(len(unordered)), key=lambda k: unordered[k])
+
+    sortidx = _argsort(list((gi, aj) for gi, aj in zip(group_idx, -a if reverse else a)))
+    revidx = _argsort(_argsort(group_idx))
+    a_srt = [a[si] for si in sortidx]
+    return [a_srt[ri] for ri in revidx]
+
 
 _impl_dict = dict(min=min, max=max, sum=sum, prod=_prod, last=_last,
                   first=_first, all=all, any=any, mean=_mean, std=_std,
                   var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
-                  rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin,
-                  len=len)
+                  array=_array, argmax=_argmax, argmin=_argmin, len=len)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
-                  if k not in _no_separate_nan_version)
+                  if k not in funcs_no_separate_nan)
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
@@ -108,8 +111,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
             if i < 0:
                 raise ValueError("group_idx contains negative value")
 
-
-    func = get_func(func, aliasing_purepy, _impl_dict)
+    func = get_func(func, aliasing, _impl_dict)
     if isinstance(a, (int, float)):
         if func not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', "
@@ -126,6 +128,8 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
                                  if not math.isnan(val)))
 
         func = _impl_dict[func]
+    if func is _sort:
+        return _sort(group_idx, a, reverse=kwargs.get('reverse', False))
 
     # sort data and evaluate function on groups
     ret = [fill_value] * size
@@ -140,7 +144,8 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
 
     return ret
 
+
 aggregate.__doc__ = """
     This is the pure python implementation of aggregate. It is terribly slow.
     Using the numpy version is highly recommended.
-    """ + _doc_str
+    """ + aggregate_common_doc

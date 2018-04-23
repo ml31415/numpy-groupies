@@ -1,8 +1,8 @@
 import numpy as np
 
-from .utils import (check_boolean, _no_separate_nan_version, get_func,
-                    aliasing, fill_untouched, minimum_dtype, input_validation,
-                    check_dtype, minimum_dtype_scalar, _doc_str, isstr)
+from .utils import check_boolean, funcs_no_separate_nan, get_func, aggregate_common_doc, isstr
+from .utils_numpy import (aliasing, minimum_dtype, input_validation,
+                          check_dtype, minimum_dtype_scalar)
 
 
 def _sum(group_idx, a, size, fill_value, dtype=None):
@@ -24,7 +24,7 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
                               minlength=size).astype(dtype)
 
     if fill_value != 0:
-        fill_untouched(group_idx, ret, fill_value)
+        _fill_untouched(group_idx, ret, fill_value)
     return ret
 
 
@@ -178,28 +178,11 @@ def _anynan(group_idx, a, size, fill_value, dtype=bool):
                 dtype=dtype)
 
 
-def _sort(group_idx, a, size, fill_value, dtype=None, reversed_=False):
-    if np.iscomplexobj(a):
-        raise NotImplementedError("a must be real, could use np.lexsort or "
-                                  "sort with recarray for complex.")
-    if not (np.isscalar(fill_value) or len(fill_value) == 0):
-        raise ValueError("fill_value must be scalar or an empty sequence")
-    if reversed_:
-        order_group_idx = np.argsort(group_idx + -1j * a, kind='mergesort')
-    else:
-        order_group_idx = np.argsort(group_idx + 1j * a, kind='mergesort')
-    counts = np.bincount(group_idx, minlength=size)
-    if np.ndim(a) == 0:
-        a = np.full(size, a, dtype=type(a))
-    ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
-    ret = np.asarray(ret, dtype=object)
-    if np.isscalar(fill_value):
-        fill_untouched(group_idx, ret, fill_value)
-    return ret
-
-
-def _rsort(group_idx, a, size, fill_value, dtype=None):
-    return _sort(group_idx, a, size, fill_value, dtype=None, reversed_=True)
+def _sort(group_idx, a, size=None, fill_value=None, dtype=None, reverse=False):
+    sortidx = np.lexsort((-a if reverse else a, group_idx))
+    # Reverse sorting back to into grouped order, but preserving groupwise sorting
+    revidx = np.argsort(np.argsort(group_idx, kind='mergesort'), kind='mergesort')
+    return a[sortidx][revidx]
 
 
 def _array(group_idx, a, size, fill_value, dtype=None):
@@ -213,7 +196,7 @@ def _array(group_idx, a, size, fill_value, dtype=None):
     ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
     ret = np.asanyarray(ret)
     if fill_value is None or np.isscalar(fill_value):
-        fill_untouched(group_idx, ret, fill_value)
+        _fill_untouched(group_idx, ret, fill_value)
     return ret
 
 
@@ -261,10 +244,10 @@ def _nancumsum(group_idx, a, size, fill_value=None, dtype=None):
 _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last,
                   first=_first, all=_all, any=_any, mean=_mean, std=_std,
                   var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
-                  rsort=_rsort, array=_array, argmax=_argmax, argmin=_argmin,
-                  len=_len, cumsum=_cumsum, generic=_generic_callable)
+                  array=_array, argmax=_argmax, argmin=_argmin, len=_len,
+                  cumsum=_cumsum, generic=_generic_callable)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
-                  if k not in _no_separate_nan_version)
+                  if k not in funcs_no_separate_nan)
 
 
 def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
@@ -306,4 +289,12 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
 
 aggregate.__doc__ = """
     This is the pure numpy implementation of aggregate.
-    """ + _doc_str
+    """ + aggregate_common_doc
+
+
+
+def _fill_untouched(idx, ret, fill_value):
+    """any elements of ret not indexed by idx are set to fill_value."""
+    untouched = np.ones_like(ret, dtype=bool)
+    untouched[idx] = False
+    ret[untouched] = fill_value

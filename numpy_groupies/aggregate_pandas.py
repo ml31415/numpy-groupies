@@ -2,9 +2,8 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-from .utils import (check_dtype, _no_separate_nan_version,
-                    _doc_str, isstr)
-from .misc_tools_numpy import allnan, anynan
+from .utils import isstr, aggregate_common_doc, funcs_no_separate_nan
+from .utils_numpy import allnan, anynan, check_dtype
 from .aggregate_numpy import _aggregate_base
 
 
@@ -13,19 +12,18 @@ def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0, **k
     kwargs = dict()
     if funcname in ('var', 'std'):
         kwargs['ddof'] = ddof
-    if isstr(func):
-        grouped = getattr(pd.DataFrame({'group_idx': group_idx, 'a': a})
-                          .groupby('group_idx'), func)(**kwargs)
+    df = pd.DataFrame({'group_idx': group_idx, 'a': a})
+    if func == "sort":
+        grouped = df.groupby('group_idx', sort=True)
     else:
-        grouped = pd.DataFrame({'group_idx': group_idx, 'a': a})\
-                    .groupby('group_idx').aggregate(func, **kwargs)
+        grouped = df.groupby('group_idx', sort=False).aggregate(func, **kwargs)
 
     dtype = check_dtype(dtype, getattr(func, '__name__', funcname), a, size)
-    if not funcname.startswith('cum'):
+    if funcname.startswith('cum'):
+        ret = grouped.as_matrix()[:, 0]
+    else:
         ret = np.full(size, fill_value, dtype=dtype)
         ret[grouped.index] = grouped.as_matrix()[:, 0]
-    else:
-        ret = grouped.as_matrix()[:, 0]
     return ret
 
 
@@ -33,7 +31,7 @@ _supported_funcs = 'sum prod all any min max mean var std first last cumsum cump
 _impl_dict = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
 _impl_dict.update(('nan' + fn, partial(_wrapper, func=fn))
                   for fn in _supported_funcs
-                  if fn not in _no_separate_nan_version)
+                  if fn not in funcs_no_separate_nan)
 _impl_dict.update(allnan=partial(_wrapper, func=allnan),
                   anynan=partial(_wrapper, func=anynan),
                   len=partial(_wrapper, func='count'),
@@ -55,4 +53,4 @@ aggregate.__doc__ = """
     This is the pandas implementation of aggregate. It makes use of 
     `pandas`'s groupby machienery and is mainly used for reference
     and benchmarking.
-    """ + _doc_str
+    """ + aggregate_common_doc

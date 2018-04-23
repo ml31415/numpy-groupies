@@ -4,9 +4,8 @@ try:
 except ImportError:
     from scipy.weave import inline
 
-from .utils import (_no_separate_nan_version, get_func, check_dtype,
-                    aliasing, check_fill_value, input_validation, _doc_str, isstr)
-from .aggregate_numpy import aggregate as aggregate_np
+from .utils import get_func, isstr, funcs_no_separate_nan, aggregate_common_doc
+from .utils_numpy import check_dtype, aliasing, check_fill_value, input_validation
 
 
 optimized_funcs = {'sum', 'min', 'max', 'amin', 'amax', 'mean', 'var', 'std', 'prod', 'len',
@@ -167,7 +166,7 @@ def get_cfuncs():
     c_funcs = dict()
     for funcname in c_iter:
         c_funcs[funcname] = c_func(funcname)
-        if funcname not in _no_separate_nan_version:
+        if funcname not in funcs_no_separate_nan:
             c_funcs['nan' + funcname] = c_func(funcname, nans=True)
     for funcname in c_iter_scalar:
         c_funcs[funcname + 'scalar'] = c_func(funcname, scalar=True)
@@ -295,4 +294,4 @@ aggregate.__doc__ = """
         npg.aggregate_np(...)
 
 
-    """ + _doc_str
+    """ + aggregate_common_doc
