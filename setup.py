@@ -54,6 +54,7 @@ class NumpyGroupiesClean(clean):
 setup(name='numpy_groupies',
       version=versioneer.get_version(),
       author="@ml31415 and @d1manson",
+      author_email="npgroupies@occam.com.ua",
       license='BSD',
       description="Optimised tools for group-indexing operations: aggregated sum and more.",
       long_desctiption=long_description,
