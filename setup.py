@@ -9,6 +9,22 @@ from distutils.dir_util import remove_tree
 
 base_path = os.path.dirname(os.path.abspath(__file__))
 
+
+long_description = """
+This package consists of a couple of optimised tools for doing things that can roughly be 
+considered "group-indexing operations". The most prominent tool is `aggregate`.
+
+`aggregate` takes an array of values, and an array giving the group number for each of those 
+values. It then returns the sum (or mean, or std, or any, ...etc.) of the values in each group. 
+You have probably come across this idea before, using `matlab`s accumarray, `pandas` groupby, 
+or generally MapReduce algorithms and histograms.
+
+There are different implementations of `aggregate` provided, based on plain `numpy`, `numba`
+and `weave`. Performance is a main concern, and so far we comfortably beat similar 
+implementations in other packages (check the benchmarks).
+"""
+
+
 class NumpyGroupiesClean(clean):
     """Custom clean command to tidy up the project root."""
     def run(self):
@@ -40,6 +56,7 @@ setup(name='numpy_groupies',
       author="@ml31415 and @d1manson",
       license='BSD',
       description="Optimised tools for group-indexing operations: aggregated sum and more.",
+      long_desctiption=long_description,
       url="https://github.com/ml31415/numpy-groupies",
       download_url="https://github.com/ml31415/numpy-groupies/archive/master.zip",
       keywords=[ "accumarray", "aggregate", "groupby", "grouping", "indexing"],

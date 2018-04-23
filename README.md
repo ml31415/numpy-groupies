@@ -34,7 +34,7 @@ probably come across this idea before - see [Matlab's `accumarray` function](htt
  [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), or
  [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce), or simply the [basic histogram](https://en.wikipedia.org/wiki/Histogram).
 
-A couple of implemented functions does not reduce the data, instead it calculates values cumulatively
+A couple of implemented functions do not reduce the data, instead it calculates values cumulatively
 while iterating over the data or permutates them. The output size matches the input size.
 
 ```python
