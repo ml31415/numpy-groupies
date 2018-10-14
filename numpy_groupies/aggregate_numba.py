@@ -116,7 +116,7 @@ class AggregateOp(object):
                 val = valgetter(a, i)
                 inner(ri, val, ret, counter, mean)
                 outersetter(outer, i, ret[ri])
-        return nb.njit(_loop, nogil=True, cache=True)
+        return nb.njit(_loop, nogil=True)
 
     @staticmethod
     def _valgetter(a, i):
@@ -207,7 +207,7 @@ class AggregateGeneric(AggregateOp):
 
     def callable(self, nans=False):
         """Compile a jitted function and loop it over the sorted data."""
-        jitfunc = nb.njit(self.func, nogil=True, cache=True)
+        jitfunc = nb.njit(self.func, nogil=True)
 
         def _loop(sortidx, group_idx, a, ret):
             size = len(ret)
@@ -223,7 +223,7 @@ class AggregateGeneric(AggregateOp):
                 if ri >= size:
                     raise ValueError("one or more indices in group_idx are too large")
                 ret[ri] = jitfunc(a_srt[start_idx:stop_idx])
-        return nb.njit(_loop, nogil=True, cache=True)
+        return nb.njit(_loop, nogil=True)
 
 
 class Sum(AggregateOp):

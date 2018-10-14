@@ -20,10 +20,10 @@ def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0, **k
 
     dtype = check_dtype(dtype, getattr(func, '__name__', funcname), a, size)
     if funcname.startswith('cum'):
-        ret = grouped.as_matrix()[:, 0]
+        ret = grouped.values[:, 0]
     else:
         ret = np.full(size, fill_value, dtype=dtype)
-        ret[grouped.index] = grouped.as_matrix()[:, 0]
+        ret[grouped.index] = grouped.values[:, 0]
     return ret
 
 
