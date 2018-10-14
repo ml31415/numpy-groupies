@@ -34,10 +34,10 @@ func_list = (np.sum, np.prod, np.min, np.max, len, np.all, np.any, 'anynan', 'al
              np.mean, np.std, np.var, 'first', 'last', 'argmax', 'argmin',
              np.nansum, np.nanprod, np.nanmin, np.nanmax, 'nanlen', 'nanall', 'nanany',
              np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',
-             'cumsum', 'cumprod', 'cummax', 'cummin', arbitrary)
+             'cumsum', 'cumprod', 'cummax', 'cummin', arbitrary, 'sort')
 
 
-def benchmark(implementations, size=5e5, repeat=3, seed=100):
+def benchmark(implementations, size=5e5, repeat=5, seed=100):
     rnd = np.random.RandomState(seed=seed)
     group_idx = rnd.randint(0, int(1e3), int(size))
     a = rnd.random_sample(group_idx.size)
