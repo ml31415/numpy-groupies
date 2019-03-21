@@ -85,6 +85,9 @@ def benchmark(implementations, size=5e5, repeat=5, seed=100):
     if 'numba' in implementation_names:
         import numba
         postfix += ', Numba %s' % numba.__version__
+    if 'weave' in implementation_names:
+        import weave
+        postfix += ', Weave %s' % weave.__version__
     if 'pandas' in implementation_names:
         import pandas
         postfix += ', Pandas %s' % pandas.__version__
