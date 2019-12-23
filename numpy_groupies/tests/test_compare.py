@@ -4,7 +4,7 @@ results are compared against the results of the other implementations. Implement
 may throw NotImplementedError in order to show missing functionality without throwing
 test errors. 
 """
-import itertools
+from itertools import product
 import numpy as np
 import pytest
 
@@ -18,7 +18,8 @@ class AttrDict(dict):
 
 @pytest.fixture(params=['np/py', 'weave/np', 'ufunc/np', 'numba/np', 'pandas/np'], scope='module')
 def aggregate_cmp(request, seed=100):
-    if request.param == 'np/py':
+    test_pair = request.param
+    if test_pair == 'np/py':
         # Some functions in purepy are not implemented
         func_ref = _wrap_notimplemented_xfail(aggregate_purepy.aggregate)
         func = aggregate_numpy.aggregate
@@ -72,22 +73,34 @@ def func_preserve_order(iterator):
     return tmp
 
 
-func_list = ('sum', 'prod', 'min', 'max', 'all', 'any', 'mean', 'std', 'len',
-             'argmin', 'argmax', 'anynan', 'allnan', 'cumsum',
-             'nansum', 'nanprod', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanlen',
-             func_arbitrary, func_preserve_order)
+func_list = ('sum', 'prod', 'min', 'max', 'all', 'any', 'mean', 'std', 'var', 'len',
+             'argmin', 'argmax', 'anynan', 'allnan', 'cumsum', func_arbitrary, func_preserve_order,
+             'nansum', 'nanprod', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanvar','nanlen')
 
-@pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
-def test_cmp(aggregate_cmp, func, decimal=10):
+
+@pytest.mark.parametrize(["func", "fill_value"], product(func_list, [0, 1, np.nan]),
+                         ids=lambda x: getattr(x, '__name__', x))
+def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
     a = aggregate_cmp.nana if 'nan' in getattr(func, '__name__', func) else aggregate_cmp.a
-    res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func)
-    ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func)
-    if isinstance(ref, np.ndarray):
-        assert res.dtype == ref.dtype
-    np.testing.assert_allclose(res, ref, rtol=10**-decimal)
+    try:
+        ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
+    except ValueError:
+        with pytest.raises(ValueError):
+            aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
+    else:
+        try:
+            res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
+        except ValueError:
+            if np.isnan(fill_value) and aggregate_cmp.test_pair.endswith('py'):
+                pytest.skip("pure python version uses lists and does not raise ValueErrors when inserting nan into integers")
+            else:
+                raise
+        if isinstance(ref, np.ndarray):
+            assert res.dtype == ref.dtype
+        np.testing.assert_allclose(res, ref, rtol=10**-decimal)
 
 
-@pytest.mark.parametrize(["ndim", "order"], itertools.product([2, 3], ["C", "F"]))
+@pytest.mark.parametrize(["ndim", "order"], product([2, 3], ["C", "F"]))
 def test_cmp_ndim(aggregate_cmp, ndim, order, outsize=100, decimal=14):
     nindices = int(outsize ** ndim)
     outshape = tuple([outsize] * ndim)

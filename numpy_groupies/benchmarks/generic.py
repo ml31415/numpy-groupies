@@ -36,8 +36,7 @@ func_list = (np.sum, np.prod, np.min, np.max, len, np.all, np.any, 'anynan', 'al
              np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',
              'cumsum', 'cumprod', 'cummax', 'cummin', arbitrary, 'sort')
 
-
-def benchmark(implementations, size=5e5, repeat=5, seed=100):
+def benchmark_data(size=5e5, seed=100):
     rnd = np.random.RandomState(seed=seed)
     group_idx = rnd.randint(0, int(1e3), int(size))
     a = rnd.random_sample(group_idx.size)
@@ -46,6 +45,11 @@ def benchmark(implementations, size=5e5, repeat=5, seed=100):
     nana[(nana < 0.2) & (nana != 0)] = np.nan
     nan_share = np.mean(np.isnan(nana))
     assert 0.15 < nan_share < 0.25, "%3f%% nans" % (nan_share * 100)
+    return a, nana, group_idx
+
+
+def benchmark(implementations, repeat=5, size=5e5, seed=100):
+    a, nana, group_idx = benchmark_data(size=size, seed=seed)
 
     print("function" + ''.join(impl.__name__.rsplit('_', 1)[1].rjust(14) for impl in implementations))
     print("-" * (9 + 14 * len(implementations)))

@@ -4,7 +4,7 @@ try:
 except ImportError:
     from scipy.weave import inline
 
-from .utils import get_func, isstr, funcs_no_separate_nan, aggregate_common_doc
+from .utils import get_func, isstr, funcs_no_separate_nan, aggregate_common_doc, check_boolean
 from .utils_numpy import check_dtype, aliasing, check_fill_value, input_validation
 
 
@@ -175,7 +175,7 @@ def get_cfuncs():
     return c_funcs
 
 
-c_funcs = get_cfuncs()
+c_funcs.update(get_cfuncs())
 
 
 c_step_count = c_size('group_idx') + r"""
@@ -221,6 +221,9 @@ def step_indices(group_idx):
     return indices
 
 
+_force_fill_0 = frozenset({'sum', 'any', 'len', 'anynan', 'mean', 'std', 'var', 'nansum', 'nanlen', 'nanmean', 'nanstd', 'nanvar'})
+_force_fill_1 = frozenset({'prod', 'all', 'allnan', 'nanprod'})
+
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
              dtype=None, axis=None, **kwargs):
     func = get_func(func, aliasing, optimized_funcs)
@@ -233,15 +236,15 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
                                                                order=order,
                                                                axis=axis)
     dtype = check_dtype(dtype, func, a, len(group_idx))
-    check_fill_value(fill_value, dtype)
+    check_fill_value(fill_value, dtype, func=func)
     nans = func.startswith('nan')
 
     if nans:
         flat_size += 1
 
-    if func in ('sum', 'any', 'len', 'anynan', 'nansum', 'nanlen'):
+    if func in _force_fill_0:
         ret = np.zeros(flat_size, dtype=dtype)
-    elif func in ('prod', 'all', 'allnan', 'nanprod'):
+    elif func in _force_fill_1:
         ret = np.ones(flat_size, dtype=dtype)
     else:
         ret = np.full(flat_size, fill_value, dtype=dtype)
@@ -250,14 +253,14 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
     inline_vars = dict(group_idx=np.ascontiguousarray(group_idx), a=np.ascontiguousarray(a),
                        ret=ret, fill_value=fill_value)
     # TODO: Have this fixed by proper raveling
-    if func in ('std', 'var', 'nanstd', 'nanvar'):
+    if func in {'std', 'var', 'nanstd', 'nanvar'}:
         counter = np.zeros_like(ret, dtype=int)
         inline_vars['means'] = np.zeros_like(ret)
         inline_vars['ddof'] = kwargs.pop('ddof', 0)
-    elif func in ('mean', 'nanmean'):
+    elif func in {'mean', 'nanmean'}:
         counter = np.zeros_like(ret, dtype=int)
     else:
-        # Using inverse logic, marking anyting touched with zero for later removal
+        # Using inverse logic, marking anything touched with zero for later removal
         counter = np.ones_like(ret, dtype=bool)
     inline_vars['counter'] = counter
 
@@ -267,10 +270,11 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
     inline(c_funcs[func], inline_vars.keys(), local_dict=inline_vars, define_macros=c_macros, extra_compile_args=c_args)
 
     # Postprocessing
-    if func in ('sum', 'any', 'anynan', 'nansum') and fill_value != 0:
-        ret[counter] = fill_value
-    elif func in ('prod', 'all', 'allnan', 'nanprod') and fill_value != 1:
-        ret[counter] = fill_value
+    if func in _force_fill_0 and fill_value != 0 or func in _force_fill_1 and fill_value != 1:
+        if counter.dtype == np.bool_:
+            ret[counter] = fill_value
+        else:
+            ret[~counter.astype(bool)] = fill_value
 
     if nans:
         # Restore the shifted return array

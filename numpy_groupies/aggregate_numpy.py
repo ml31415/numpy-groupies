@@ -2,7 +2,7 @@ import numpy as np
 
 from .utils import check_boolean, funcs_no_separate_nan, get_func, aggregate_common_doc, isstr
 from .utils_numpy import (aliasing, minimum_dtype, input_validation,
-                          check_dtype, minimum_dtype_scalar)
+                          check_dtype, check_fill_value, minimum_dtype_scalar)
 
 
 def _sum(group_idx, a, size, fill_value, dtype=None):
@@ -271,6 +271,7 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                 group_idx = group_idx[good]
 
         dtype = check_dtype(dtype, func, a, flat_size)
+        check_fill_value(fill_value, dtype, func=func)
         func = _impl_dict[func]
         ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype,
                    **kwargs)

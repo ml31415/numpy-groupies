@@ -43,7 +43,7 @@ class AggregateOp(object):
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
-        check_fill_value(fill_value, dtype)
+        check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
         ret, counter, mean, outer = self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
         group_idx = np.ascontiguousarray(group_idx)
@@ -85,7 +85,10 @@ class AggregateOp(object):
     @classmethod
     def _finalize(cls, ret, counter, fill_value):
         if cls.forced_fill_value is not None and fill_value != cls.forced_fill_value:
-            ret[counter] = fill_value
+            if cls.counter_dtype == bool:
+                ret[counter] = fill_value
+            else:
+                ret[~counter.astype(bool)] = fill_value
 
     @classmethod
     def callable(cls, nans=False, reverse=False, scalar=False):
@@ -192,7 +195,7 @@ class AggregateGeneric(AggregateOp):
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
-        check_fill_value(fill_value, dtype)
+        check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
         ret, _, _, _= self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
         group_idx = np.ascontiguousarray(group_idx)
@@ -354,6 +357,7 @@ class ArgMin(ArgMax):
 
 
 class Mean(Aggregate2pass):
+    forced_fill_value = 0
     counter_fill_value = 0
     counter_dtype = int
 

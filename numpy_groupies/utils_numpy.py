@@ -1,7 +1,7 @@
 """Common helper functions for typing and general numpy tools."""
 import numpy as np
 
-from .utils import get_aliasing
+from .utils import get_aliasing, check_boolean
 
 _alias_numpy = {
     np.add: 'sum',
@@ -168,12 +168,15 @@ def check_dtype(dtype, func_str, a, n):
                         return a_dtype
 
 
-def check_fill_value(fill_value, dtype):
-    try:
-        return dtype.type(fill_value)
-    except ValueError:
-        raise ValueError("fill_value must be convertible into %s"
-                         % dtype.type.__name__)
+def check_fill_value(fill_value, dtype, func=None):
+    if func in ('all', 'any', 'allnan', 'anynan'):
+        check_boolean(fill_value)
+    else:
+        try:
+            return dtype.type(fill_value)
+        except ValueError:
+            raise ValueError("fill_value must be convertible into %s"
+                             % dtype.type.__name__)
 
 
 def check_group_idx(group_idx, a=None, check_min=True):

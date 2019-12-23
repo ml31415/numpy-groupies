@@ -206,7 +206,7 @@ def test_nan_input(aggregate_all, func, groups=100):
 
 def test_nan_input_len(aggregate_all, groups=100, group_size=5):
     if aggregate_all.__name__.endswith('pandas'):
-        pytest.skip("pandas automatically skip nan values")
+        pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(group_size)
     a = np.random.random(len(group_idx))
     a[::2] = np.nan
