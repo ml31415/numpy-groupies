@@ -1,2 +1,6 @@
+include README.md
+include LICENSE.txt
+graft numpy_groupies
+recursive-exclude * *.py[co]
 include versioneer.py
 include numpy_groupies/_versioneer.py
