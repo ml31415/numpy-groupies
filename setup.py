@@ -51,9 +51,6 @@ class NumpyGroupiesClean(clean):
                         log.info("removing '%s'", fpath)
 
 
-cmdclass = versioneer.get_cmdclass()
-cmdclass.update(clean=NumpyGroupiesClean)
-
 setup(name='numpy_groupies',
       version=versioneer.get_version(),
       author="@ml31415 and @d1manson",
@@ -78,5 +75,5 @@ setup(name='numpy_groupies',
                    'Programming Language :: Python :: 3.6',
                    'Programming Language :: Python :: 3.7',
                    ],
-      cmdclass=cmdclass,
+      cmdclass=dict(clean=NumpyGroupiesClean, **versioneer.get_cmdclass()),
 )
