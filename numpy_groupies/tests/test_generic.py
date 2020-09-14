@@ -23,6 +23,15 @@ def test_preserve_missing(aggregate_all):
         assert 'int' in res.dtype.name
 
 
+@pytest.mark.parametrize("group_idx_type", [int, "uint32", "uint64"])
+def test_uint_group_idx(aggregate_all, group_idx_type):
+    group_idx = np.array([1, 1, 2, 2, 2, 2, 4, 4], dtype=group_idx_type)
+    res = aggregate_all(group_idx, np.ones(group_idx.size), dtype=int)
+    np.testing.assert_array_equal(res, np.array([0, 2, 4, 0, 2]))
+    if not isinstance(res, list):
+        assert 'int' in res.dtype.name
+
+
 def test_start_with_offset(aggregate_all):
     group_idx = np.array([1, 1, 2, 2, 2, 2, 4, 4])
     res = aggregate_all(group_idx, np.ones(group_idx.size), dtype=int)

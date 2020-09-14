@@ -233,7 +233,7 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
             # Create the broadcast-ready multidimensional indexing.
             # Note the user could do this themselves, so this is
             # very much just a convenience.
-            size_in = np.max(group_idx) + 1 if size is None else size
+            size_in = int(np.max(group_idx)) + 1 if size is None else size
             group_idx_in = group_idx
             group_idx = []
             size = []
@@ -253,7 +253,7 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
 
     if ndim_idx == 1:
         if size is None:
-            size = np.max(group_idx) + 1
+            size = int(np.max(group_idx)) + 1
         else:
             if not np.isscalar(size):
                 raise ValueError("output size must be scalar or None")
@@ -263,7 +263,7 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
         flat_size = size
     else:
         if size is None:
-            size = np.max(group_idx, axis=1) + 1
+            size = int(np.max(group_idx, axis=1)) + 1
         elif np.isscalar(size):
             raise ValueError("output size must be of length %d"
                              % len(group_idx))

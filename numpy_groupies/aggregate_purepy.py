@@ -90,7 +90,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
 
     # Check for 2d group_idx
     if size is None:
-        size = 1 + max(group_idx)
+        size = 1 + int(max(group_idx))
 
     for i in group_idx:
         try:
