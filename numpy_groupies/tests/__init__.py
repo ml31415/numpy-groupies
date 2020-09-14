@@ -4,7 +4,7 @@ from .. import aggregate_purepy, aggregate_numpy_ufunc, aggregate_numpy
 try:
     from .. import aggregate_numba
 except ImportError:
-    aggregate_numby = None
+    aggregate_numba = None
 try:
     from .. import aggregate_weave
 except ImportError:
