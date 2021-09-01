@@ -263,7 +263,7 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
         flat_size = size
     else:
         if size is None:
-            size = int(np.max(group_idx, axis=1)) + 1
+            size = np.max(group_idx, axis=1).astype(int) + 1
         elif np.isscalar(size):
             raise ValueError("output size must be of length %d"
                              % len(group_idx))
