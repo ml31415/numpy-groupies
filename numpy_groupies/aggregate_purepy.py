@@ -90,7 +90,11 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order=None,
 
     # Check for 2d group_idx
     if size is None:
-        size = 1 + int(max(group_idx))
+        try:
+            size = 1 + int(max(group_idx))
+        except (TypeError, ValueError):
+            raise NotImplementedError("pure python implementation doesn't"
+                                      " accept ndim idx input.")
 
     for i in group_idx:
         try:

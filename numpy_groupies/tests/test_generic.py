@@ -99,6 +99,12 @@ def test_array_ordering(aggregate_all, order, size=10):
     assert aggregate_all(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(range(size))
 
 
+@pytest.mark.parametrize("size", [None, (10, 2)])
+def test_ndim_group_idx(aggregate_all, size):
+    group_idx = np.vstack((np.repeat(np.arange(10), 10), np.repeat([0, 1], 50)))
+    aggregate_all(group_idx, 1, size=size)
+
+
 @pytest.mark.parametrize(["ndim", "order"], itertools.product([1, 2, 3], ["C", "F"]))
 def test_ndim_indexing(aggregate_all, ndim, order, outsize=10):
     nindices = int(outsize ** ndim)
