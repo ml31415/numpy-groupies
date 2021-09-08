@@ -98,15 +98,15 @@ def minimum_dtype_scalar(x, dtype, a):
 
 
 _forced_types = {
-    'array': np.object,
-    'all': np.bool_,
-    'any': np.bool_,
-    'nanall': np.bool_,
-    'nanany': np.bool_,
+    'array': object,
+    'all': bool,
+    'any': bool,
+    'nanall': bool,
+    'nanany': bool,
     'len': np.int64,
     'nanlen': np.int64,
-    'allnan': np.bool_,
-    'anynan': np.bool_,
+    'allnan': bool,
+    'anynan': bool,
     'argmax': np.int64,
     'argmin': np.int64,
 }

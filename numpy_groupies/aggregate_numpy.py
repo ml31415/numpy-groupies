@@ -194,7 +194,7 @@ def _array(group_idx, a, size, fill_value, dtype=None):
     order_group_idx = np.argsort(group_idx, kind='mergesort')
     counts = np.bincount(group_idx, minlength=size)
     ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
-    ret = np.asanyarray(ret)
+    ret = np.asanyarray(ret, dtype="object")
     if fill_value is None or np.isscalar(fill_value):
         _fill_untouched(group_idx, ret, fill_value)
     return ret
