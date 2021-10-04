@@ -189,6 +189,28 @@ def check_group_idx(group_idx, a=None, check_min=True):
         raise ValueError("group_idx contains negative indices")
 
 
+def _ravel_group_idx(group_idx, a, axis, size, order):
+    ndim_a = a.ndim
+    # Create the broadcast-ready multidimensional indexing.
+    # Note the user could do this themselves, so this is
+    # very much just a convenience.
+    size_in = int(np.max(group_idx)) + 1 if size is None else size
+    group_idx_in = group_idx
+    group_idx = []
+    size = []
+    for ii, s in enumerate(a.shape):
+        ii_idx = group_idx_in if ii == axis else np.arange(s)
+        ii_shape = [1] * ndim_a
+        ii_shape[ii] = s
+        group_idx.append(ii_idx.reshape(ii_shape))
+        size.append(size_in if ii == axis else s)
+    # Use the indexing, and return. It's a bit simpler than
+    # using trying to keep all the logic below happy
+    group_idx = np.ravel_multi_index(group_idx, size, order=order,
+                                     mode='raise')
+    return group_idx, size
+
+
 def input_validation(group_idx, a, size=None, order='C', axis=None,
                      ravel_group_idx=True, check_bounds=True):
     """ Do some fairly extensive checking of group_idx and a, trying to
@@ -230,23 +252,7 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
             raise NotImplementedError("when using axis arg, size must be"
                                       "None or scalar.")
         else:
-            # Create the broadcast-ready multidimensional indexing.
-            # Note the user could do this themselves, so this is
-            # very much just a convenience.
-            size_in = int(np.max(group_idx)) + 1 if size is None else size
-            group_idx_in = group_idx
-            group_idx = []
-            size = []
-            for ii, s in enumerate(a.shape):
-                ii_idx = group_idx_in if ii == axis else np.arange(s)
-                ii_shape = [1] * ndim_a
-                ii_shape[ii] = s
-                group_idx.append(ii_idx.reshape(ii_shape))
-                size.append(size_in if ii == axis else s)
-            # Use the indexing, and return. It's a bit simpler than
-            # using trying to keep all the logic below happy
-            group_idx = np.ravel_multi_index(group_idx, size, order=order,
-                                             mode='raise')
+            group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order)
             flat_size = np.prod(size)
             ndim_idx = ndim_a
             return group_idx.ravel(), a.ravel(), flat_size, ndim_idx, size
