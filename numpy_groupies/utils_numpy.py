@@ -235,7 +235,7 @@ def offset_labels(group_idx, inshape, axis, order, size):
     return group_idx.reshape(inshape).ravel()
 
 def input_validation(group_idx, a, size=None, order='C', axis=None,
-                     ravel_group_idx=True, check_bounds=True, method="ravel"):
+                     ravel_group_idx=True, check_bounds=True, method="ravel", func=None):
     """ Do some fairly extensive checking of group_idx and a, trying to
     give the user as much help as possible with what is wrong. Also,
     convert ndim-indexing to 1d indexing.
@@ -275,10 +275,14 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
             raise NotImplementedError("when using axis arg, size must be"
                                       "None or scalar.")
         else:
+            is_form_3 = group_idx.ndim == 1 and a.ndim > 1 and axis is not None
+            unravel_shape = a.shape if is_form_3 else group_idx.shape
+
             group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order, method=method)
             flat_size = np.prod(size)
             ndim_idx = ndim_a
-            return group_idx.ravel(), a.ravel(), flat_size, ndim_idx, size
+            size = unravel_shape if is_form_3 and not callable(func) and "cum" in func else size
+            return group_idx.ravel(), a.ravel(), flat_size, ndim_idx, size, unravel_shape
 
     if ndim_idx == 1:
         if size is None:
@@ -309,7 +313,7 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
         raise ValueError("group_idx and a must be of the same length, or a"
                          " can be scalar")
 
-    return group_idx, a, flat_size, ndim_idx, size
+    return group_idx, a, flat_size, ndim_idx, size, None
 
 
 ### General tools ###

@@ -340,8 +340,6 @@ def test_agg_along_axis(aggregate_all, size, func, axis):
 
     # TODO: These xfails need to be fixed...
     if len(size) > 1:
-        if func == "cumsum":
-            pytest.xfail()
         if func == "allnan":
             # This only fails for numba
             pytest.xfail()

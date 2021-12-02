@@ -254,11 +254,9 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                     order='C', dtype=None, axis=None, _impl_dict=_impl_dict,
                     _nansqueeze=False, cache=None, **kwargs):
 
-    needs_unravel = group_idx.ndim == 1 and a.ndim > 1 and "arg" in func and axis is not None
-    if needs_unravel:
-        orig_shape = a.shape
-    group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
-                                             size=size, order=order, axis=axis)
+    is_argreduction = not callable(func) and "arg" in func
+    group_idx, a, flat_size, ndim_idx, size, unravel_shape = input_validation(group_idx, a,
+                                                               size=size, order=order, axis=axis, func=func)
     if group_idx.dtype == np.dtype("uint64"):
         # Force conversion to signed int, to avoid issues with bincount etc later
         group_idx = group_idx.astype(int)
@@ -284,11 +282,10 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
         ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype,
                    **kwargs)
 
-    if needs_unravel:
-        ret = np.unravel_index(ret, orig_shape)[axis]
-
     # deal with ndimensional indexing
     if ndim_idx > 1:
+        if is_argreduction and axis is not None:
+            ret = np.unravel_index(ret, unravel_shape)[axis]
         ret = ret.reshape(size, order=order)
     return ret
 
