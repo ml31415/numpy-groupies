@@ -253,8 +253,8 @@ _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
 def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                     order='C', dtype=None, axis=None, _impl_dict=_impl_dict,
                     _nansqueeze=False, cache=None, **kwargs):
-    group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
-                                                               size=size, order=order, axis=axis, func=func)
+    group_idx, a, flat_size, ndim_idx, size, unravel_shape = input_validation(group_idx, a,
+                                                                              size=size, order=order, axis=axis, func=func)
 
     if group_idx.dtype == np.dtype("uint64"):
         # Force conversion to signed int, to avoid issues with bincount etc later
