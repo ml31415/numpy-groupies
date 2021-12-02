@@ -112,6 +112,7 @@ def get_aliasing(*extra):
             alias[key] = key
     return alias
 
+
 aliasing = get_aliasing()
 
 
@@ -141,6 +142,7 @@ def check_boolean(x):
 
 try:
     basestring  # Attempt to evaluate basestring
+
     def isstr(s):
         return isinstance(s, basestring)
 except NameError:
