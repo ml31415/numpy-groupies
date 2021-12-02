@@ -276,12 +276,16 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
                                       "None or scalar.")
         else:
             is_form_3 = group_idx.ndim == 1 and a.ndim > 1 and axis is not None
-            unravel_shape = a.shape if is_form_3 else group_idx.shape
+            orig_shape = a.shape if is_form_3 else group_idx.shape
+            if "arg" in func:
+                unravel_shape = orig_shape
+            else:
+                unravel_shape = None
 
             group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order, method=method)
             flat_size = np.prod(size)
             ndim_idx = ndim_a
-            size = unravel_shape if is_form_3 and not callable(func) and "cum" in func else size
+            size = orig_shape if is_form_3 and not callable(func) and "cum" in func else size
             return group_idx.ravel(), a.ravel(), flat_size, ndim_idx, size, unravel_shape
 
     if ndim_idx == 1:

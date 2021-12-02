@@ -38,7 +38,6 @@ class AggregateOp(object):
 
     def __call__(self, group_idx, a, size=None, fill_value=0, order='C',
                  dtype=None, axis=None, ddof=0):
-        is_argreduction = "arg" in self.func
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=self.func)
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
@@ -62,7 +61,8 @@ class AggregateOp(object):
 
         # Deal with ndimensional indexing
         if ndim_idx > 1:
-            if is_argreduction and axis is not None:
+            if unravel_shape is not None:
+                # argreductions only
                 ret = np.unravel_index(ret, unravel_shape)[axis]
             ret = ret.reshape(size, order=order)
         return ret
