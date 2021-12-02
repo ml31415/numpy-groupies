@@ -152,7 +152,7 @@ def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64),
         raise ValueError("cannot take variance with scalar a")
     counts = np.bincount(group_idx, minlength=size)
     sums = np.bincount(group_idx, weights=a, minlength=size)
-    with np.errstate(divide='ignore'):
+    with np.errstate(divide='ignore', invalid='ignore'):
         means = sums.astype(dtype) / counts
         ret = np.bincount(group_idx, (a - means[group_idx]) ** 2,
                           minlength=size) / (counts - ddof)

@@ -10,7 +10,7 @@ import pytest
 
 from . import (aggregate_purepy, aggregate_numpy_ufunc, aggregate_numpy,
                aggregate_weave, aggregate_numba, aggregate_pandas,
-               _wrap_notimplemented_xfail, _impl_name)
+               _wrap_notimplemented_xfail, _impl_name, func_list)
 
 class AttrDict(dict):
     __getattr__ = dict.__getitem__
@@ -71,13 +71,6 @@ def func_preserve_order(iterator):
     for i, x in enumerate(iterator, 1):
         tmp += x ** i
     return tmp
-
-
-func_list = ('sum', 'prod', 'min', 'max', 'all', 'any', 'mean', 'std', 'var', 'len',
-             'argmin', 'argmax', 'anynan', 'allnan', 'cumsum', func_arbitrary, func_preserve_order,
-             'nansum', 'nanprod', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanvar','nanlen')
-
-
 @pytest.mark.parametrize(["func", "fill_value"], product(func_list, [0, 1, np.nan]),
                          ids=lambda x: getattr(x, '__name__', x))
 def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
