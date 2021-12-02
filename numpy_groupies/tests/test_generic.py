@@ -358,5 +358,5 @@ def test_argreduction_nD_array_1D_idx(aggregate_all):
     labels = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
     array = np.array([[1] * 12, [1] * 12])
     actual = aggregate_all(labels, array, axis=-1, func="argmax")
-    expected = np.array([[0,5,2], [0,5,2]])
+    expected = np.array([[0, 5, 2], [0, 5, 2]])
     np.testing.assert_equal(actual, expected)
