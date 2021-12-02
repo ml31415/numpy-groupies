@@ -109,7 +109,7 @@ class AggregateOp(object):
         def _loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # fill_value and ddof need to be present for being exchangeable with loop_2pass
             size = len(ret)
-            rng = range(len(group_idx) - 1, -1 , -1) if reverse else range(len(group_idx))
+            rng = range(len(group_idx) - 1, -1, -1) if reverse else range(len(group_idx))
             for i in rng:
                 ri = group_idx[i]
                 if ri < 0:
@@ -147,6 +147,7 @@ class Aggregate2pass(AggregateOp):
         loop = super(Aggregate2pass, cls).callable(nans=nans, reverse=reverse, scalar=scalar)
 
         _2pass_inner = nb.njit(cls._2pass_inner)
+
         def _loop2(ret, counter, mean, fill_value, ddof):
             for ri in range(len(ret)):
                 if counter[ri]:
@@ -197,7 +198,7 @@ class AggregateGeneric(AggregateOp):
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
-        ret, _, _, _= self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
+        ret, _, _, _ = self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
         group_idx = np.ascontiguousarray(group_idx)
 
         sortidx = np.argsort(group_idx, kind='mergesort')
@@ -219,7 +220,7 @@ class AggregateGeneric(AggregateOp):
 
             indices = step_indices(group_idx_srt)
             for i in range(len(indices) - 1):
-                start_idx, stop_idx =  indices[i], indices[i + 1]
+                start_idx, stop_idx = indices[i], indices[i + 1]
                 ri = group_idx_srt[start_idx]
                 if ri < 0:
                     raise ValueError("negative indices not supported")
@@ -425,6 +426,7 @@ def get_funcs():
 _impl_dict = get_funcs()
 _default_cache = {}
 
+
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
               dtype=None, axis=None, cache=None, **kwargs):
     func = get_func(func, aliasing, _impl_dict)
@@ -439,6 +441,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
     else:
         func = _impl_dict[func]
         return func(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+
 
 aggregate.__doc__ = """
     This is the numba implementation of aggregate.

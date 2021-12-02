@@ -16,9 +16,9 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
         if np.iscomplexobj(a):
             ret = np.empty(size, dtype=dtype)
             ret.real = np.bincount(group_idx, weights=a.real,
-                              minlength=size)
+                                   minlength=size)
             ret.imag = np.bincount(group_idx, weights=a.imag,
-                              minlength=size)
+                                   minlength=size)
         else:
             ret = np.bincount(group_idx, weights=a,
                               minlength=size).astype(dtype)
@@ -254,16 +254,16 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                     order='C', dtype=None, axis=None, _impl_dict=_impl_dict,
                     _nansqueeze=False, cache=None, **kwargs):
     group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
-                                             size=size, order=order, axis=axis)
+                                                               size=size, order=order, axis=axis)
     if group_idx.dtype == np.dtype("uint64"):
         # Force conversion to signed int, to avoid issues with bincount etc later
         group_idx = group_idx.astype(int)
-        
+
     func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
         # do simple grouping and execute function in loop
         ret = _impl_dict.get('generic', _generic_callable)(group_idx, a, flat_size, fill_value, func=func,
-                                dtype=dtype, **kwargs)
+                                                           dtype=dtype, **kwargs)
     else:
         # deal with nans and find the function
         if func.startswith('nan'):
@@ -292,10 +292,10 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
                            order=order, dtype=dtype, func=func, axis=axis,
                            _impl_dict=_impl_dict, _nansqueeze=True, **kwargs)
 
+
 aggregate.__doc__ = """
     This is the pure numpy implementation of aggregate.
     """ + aggregate_common_doc
-
 
 
 def _fill_untouched(idx, ret, fill_value):
