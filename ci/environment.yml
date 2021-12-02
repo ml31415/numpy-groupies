@@ -1,0 +1,10 @@
+name: npg-tests
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - numpy
+  - pandas
+  - numba
+  - pytest
+  - numpy_groupies

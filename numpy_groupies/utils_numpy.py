@@ -92,8 +92,7 @@ def minimum_dtype(x, dtype=np.bool_):
 
 def minimum_dtype_scalar(x, dtype, a):
     if dtype is None:
-        dtype = np.dtype(type(a)) if isinstance(a, (int, float))\
-                                  else a.dtype
+        dtype = np.dtype(type(a)) if isinstance(a, (int, float)) else a.dtype
     return minimum_dtype(x, dtype)
 
 
@@ -214,6 +213,7 @@ def _ravel_group_idx(group_idx, a, axis, size, order, method="ravel"):
         group_idx = offset_labels(group_idx_in, a.shape, axis, order, size_in)
     return group_idx, size
 
+
 def offset_labels(group_idx, inshape, axis, order, size):
     """
     Offset group labels by dimension. This is used when we
@@ -233,6 +233,7 @@ def offset_labels(group_idx, inshape, axis, order, size):
         * size
     )
     return group_idx.reshape(inshape).ravel()
+
 
 def input_validation(group_idx, a, size=None, order='C', axis=None,
                      ravel_group_idx=True, check_bounds=True, method="ravel", func=None):
@@ -324,7 +325,7 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
 
 
 def unpack(group_idx, ret):
-    """ Take an aggregate packed array and uncompress it to the size of group_idx. 
+    """ Take an aggregate packed array and uncompress it to the size of group_idx.
         This is equivalent to ret[group_idx].
     """
     return ret[group_idx]
@@ -348,17 +349,17 @@ def nanlast(x):
 
 def multi_arange(n):
     """By example:
-    
+
         #    0  1  2  3  4  5  6  7  8
         n = [0, 0, 3, 0, 0, 2, 0, 2, 1]
         res = [0, 1, 2, 0, 1, 0, 1, 0]
 
     That is it is equivalent to something like this :
-    
+
         hstack((arange(n_i) for n_i in n))
-        
+
     This version seems quite a bit faster, at least for some
-    possible inputs, and at any rate it encapsulates a task 
+    possible inputs, and at any rate it encapsulates a task
     in a function.
     """
     if n.ndim != 1:
@@ -373,24 +374,24 @@ def multi_arange(n):
 
 
 def label_contiguous_1d(X):
-    """ 
-    WARNING: API for this function is not liable to change!!!    
-    
+    """
+    WARNING: API for this function is not liable to change!!!
+
     By example:
 
         X =      [F T T F F T F F F T T T]
         result = [0 1 1 0 0 2 0 0 0 3 3 3]
-    
+
     Or:
         X =      [0 3 3 0 0 5 5 5 1 1 0 2]
         result = [0 1 1 0 0 2 2 2 3 3 0 4]
-    
+
     The ``0`` or ``False`` elements of ``X`` are labeled as ``0`` in the output. If ``X``
     is a boolean array, each contiguous block of ``True`` is given an integer
     label, if ``X`` is not boolean, then each contiguous block of identical values
     is given an integer label. Integer labels are 1, 2, 3,..... (i.e. start a 1
     and increase by 1 for each block with no skipped numbers.)
-    
+
     """
 
     if X.ndim != 1:
@@ -415,10 +416,10 @@ def label_contiguous_1d(X):
 def relabel_groups_unique(group_idx):
     """
     See also ``relabel_groups_masked``.
-    
+
     keep_group:  [0 3 3 3 0 2 5 2 0 1 1 0 3 5 5]
     ret:         [0 3 3 3 0 2 4 2 0 1 1 0 3 4 4]
-    
+
     Description of above: unique groups in input was ``1,2,3,5``, i.e.
     ``4`` was missing, so group 5 was relabled to be ``4``.
     Relabeling maintains order, just "compressing" the higher numbers
@@ -434,24 +435,24 @@ def relabel_groups_unique(group_idx):
 def relabel_groups_masked(group_idx, keep_group):
     """
     group_idx: [0 3 3 3 0 2 5 2 0 1 1 0 3 5 5]
-   
+
                  0 1 2 3 4 5
     keep_group: [0 1 0 1 1 1]
-    
+
     ret:       [0 2 2 2 0 0 4 0 0 1 1 0 2 4 4]
-    
+
     Description of above in words: remove group 2, and relabel group 3,4, and 5
     to be 2, 3 and 4 respecitvely, in order to fill the gap.  Note that group 4 was never used
     in the input group_idx, but the user supplied mask said to keep group 4, so group
     5 is only moved up by one place to fill the gap created by removing group 2.
-    
+
     That is, the mask describes which groups to remove,
     the remaining groups are relabled to remove the gaps created by the falsy
     elements in ``keep_group``.  Note that ``keep_group[0]`` has no particular meaning because it refers
     to the zero group which cannot be "removed".
 
     ``keep_group`` should be bool and ``group_idx`` int.
-    Values in ``group_idx`` can be any order, and 
+    Values in ``group_idx`` can be any order, and
     """
 
     keep_group = keep_group.astype(bool, copy=not keep_group[0])

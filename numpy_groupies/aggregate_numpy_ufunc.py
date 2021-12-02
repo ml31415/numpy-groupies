@@ -94,6 +94,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
                            order=order, dtype=dtype, func=func, axis=axis,
                            _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
 
+
 aggregate.__doc__ = """
     Unlike ``aggregate_numpy``, which in most cases does some custom
     optimisations, this version simply uses ``numpy``'s ``ufunc.at``.

@@ -1,8 +1,12 @@
+from ._version import get_versions
+from .aggregate_purepy import aggregate as aggregate_py
+
+
 def dummy_no_impl(*args, **kwargs):
     raise NotImplementedError("You may need to install another package (numpy, "
                               "weave, or numba) to access a working implementation.")
 
-from .aggregate_purepy import aggregate as aggregate_py
+
 aggregate = aggregate_py
 
 try:
@@ -45,6 +49,6 @@ else:
 def uaggregate(group_idx, a, **kwargs):
     return unpack(group_idx, aggregate(group_idx, a, **kwargs))
 
-from ._version import get_versions
+
 __version__ = get_versions()['version']
 del get_versions
