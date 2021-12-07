@@ -53,3 +53,8 @@ def _wrap_notimplemented_xfail(impl, name=None):
     else:
         _try_xfail.__name__ = impl.__name__
     return _try_xfail
+
+
+func_list = ('sum', 'prod', 'min', 'max', 'all', 'any', 'mean', 'std', 'var', 'len',
+             'argmin', 'argmax', 'anynan', 'allnan', 'cumsum',
+             'nansum', 'nanprod', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanvar','nanlen')

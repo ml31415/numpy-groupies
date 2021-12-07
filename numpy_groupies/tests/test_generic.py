@@ -4,7 +4,7 @@ import itertools
 import numpy as np
 import pytest
 
-from . import _implementations, _impl_name, _wrap_notimplemented_xfail
+from . import _implementations, _impl_name, _wrap_notimplemented_xfail, func_list
 
 
 @pytest.fixture(params=_implementations, ids=_impl_name)
@@ -294,3 +294,69 @@ def test_sort(aggregate_all, order):
 
     res = aggregate_all(group_idx, a, func="sort", reverse=reverse)
     np.testing.assert_array_equal(res, ref)
+
+
+@pytest.mark.parametrize("axis", (0, 1))
+@pytest.mark.parametrize("size", ((12,), (12, 5)))
+@pytest.mark.parametrize("func", func_list)
+def test_agg_along_axis(aggregate_all, size, func, axis):
+    if len(size) == axis:
+        pytest.skip()
+
+    group_idx = np.zeros(size[axis], dtype=int)
+    array = np.random.randn(*size)
+
+    # add some NaNs to test out nan-skipping
+    if "nan" in func and "nanarg" not in func:
+        array[[1, 4, 5], ...] = np.nan
+    elif "nanarg" in func and array.ndim > 1:
+        array[[1, 4, 5], 1] = np.nan
+    if func in ["any", "all"]:
+        array = array > 0.5
+
+    # construct expected values for all cases
+    if func == "len":
+        expected = np.array(size[axis])
+    elif func == "nanlen":
+        expected = np.array((~np.isnan(array)).sum(axis=axis))
+    elif func == "anynan":
+        expected = np.isnan(array).any(axis=axis)
+    elif func == "allnan":
+        expected = np.isnan(array).all(axis=axis)
+    else:
+        with np.errstate(invalid="ignore", divide="ignore"):
+            expected = getattr(np, func)(array, axis=axis)
+
+    # The default fill_value is 0, the following makes the output
+    # match numpy
+    fill_values = {
+        "nanprod": 1,
+        "nanvar": np.nan,
+        "nanstd": np.nan,
+        "nanmax": np.nan,
+        "nanmin": np.nan,
+        "nanmean": np.nan,
+    }
+
+    # TODO: These xfails need to be fixed...
+    if len(size) > 1:
+        if func == "allnan":
+            # This only fails for numba
+            pytest.xfail()
+
+    actual = aggregate_all(
+        group_idx, array, axis=axis, func=func, fill_value=fill_values.get(func, 0)
+    )
+    assert actual.ndim == array.ndim
+
+    # argmin, argmax don't support keepdims so we can't use that to construct expected
+    # instead we squeeze out the extra dims in actual.
+    np.testing.assert_allclose(actual.squeeze(), expected)
+
+def test_argreduction_nD_array_1D_idx(aggregate_all):
+    # regression test for GH41
+    labels = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
+    array = np.array([[1] * 12, [1] * 12])
+    actual = aggregate_all(labels, array, axis=-1, func="argmax")
+    expected = np.array([[0, 5, 2], [0, 5, 2]])
+    np.testing.assert_equal(actual, expected)

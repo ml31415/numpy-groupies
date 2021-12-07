@@ -38,8 +38,8 @@ class AggregateOp(object):
 
     def __call__(self, group_idx, a, size=None, fill_value=0, order='C',
                  dtype=None, axis=None, ddof=0):
-        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False)
-        group_idx, a, flat_size, ndim_idx, size = iv
+        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=self.func)
+        group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
@@ -57,10 +57,13 @@ class AggregateOp(object):
         self._finalize(ret, counter, fill_value)
 
         if self.outer:
-            return outer
+            ret = outer
 
         # Deal with ndimensional indexing
         if ndim_idx > 1:
+            if unravel_shape is not None:
+                # argreductions only
+                ret = np.unravel_index(ret, unravel_shape)[axis]
             ret = ret.reshape(size, order=order)
         return ret
 
@@ -192,7 +195,7 @@ class AggregateGeneric(AggregateOp):
     def __call__(self, group_idx, a, size=None, fill_value=0, order='C',
                  dtype=None, axis=None, ddof=0):
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False)
-        group_idx, a, flat_size, ndim_idx, size = iv
+        group_idx, a, flat_size, ndim_idx, size, _ = iv
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))

@@ -152,7 +152,7 @@ def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64),
         raise ValueError("cannot take variance with scalar a")
     counts = np.bincount(group_idx, minlength=size)
     sums = np.bincount(group_idx, weights=a, minlength=size)
-    with np.errstate(divide='ignore'):
+    with np.errstate(divide='ignore', invalid='ignore'):
         means = sums.astype(dtype) / counts
         ret = np.bincount(group_idx, (a - means[group_idx]) ** 2,
                           minlength=size) / (counts - ddof)
@@ -253,8 +253,9 @@ _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
 def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                     order='C', dtype=None, axis=None, _impl_dict=_impl_dict,
                     _nansqueeze=False, cache=None, **kwargs):
-    group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
-                                                               size=size, order=order, axis=axis)
+    group_idx, a, flat_size, ndim_idx, size, unravel_shape = input_validation(group_idx, a,
+                                                                              size=size, order=order, axis=axis, func=func)
+
     if group_idx.dtype == np.dtype("uint64"):
         # Force conversion to signed int, to avoid issues with bincount etc later
         group_idx = group_idx.astype(int)
@@ -282,6 +283,8 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
 
     # deal with ndimensional indexing
     if ndim_idx > 1:
+        if unravel_shape is not None:
+            ret = np.unravel_index(ret, unravel_shape)[axis]
         ret = ret.reshape(size, order=order)
     return ret
 
