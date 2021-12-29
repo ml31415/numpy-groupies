@@ -241,9 +241,10 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
     give the user as much help as possible with what is wrong. Also,
     convert ndim-indexing to 1d indexing.
     """
-    if not isinstance(a, (int, float, complex)):
+    if not isinstance(a, (int, float, complex)) and not is_duck_array(a):
         a = np.asanyarray(a)
-    group_idx = np.asanyarray(group_idx)
+    if not is_duck_array(group_idx):
+        group_idx = np.asanyarray(group_idx)
 
     if not np.issubdtype(group_idx.dtype, np.integer):
         raise TypeError("group_idx must be of integer type")
@@ -462,3 +463,19 @@ def relabel_groups_masked(group_idx, keep_group):
     relabel = np.zeros(keep_group.size, dtype=group_idx.dtype)
     relabel[keep_group] = np.arange(np.count_nonzero(keep_group))
     return relabel[group_idx]
+
+
+def is_duck_array(value) -> bool:
+    """
+    This function was copied from xarray/core/utils.py under the terms
+    of Xarray's Apache-2 license
+    """
+    if isinstance(value, np.ndarray):
+        return True
+    return (
+        hasattr(value, "ndim")
+        and hasattr(value, "shape")
+        and hasattr(value, "dtype")
+        and hasattr(value, "__array_function__")
+        and hasattr(value, "__array_ufunc__")
+    )
