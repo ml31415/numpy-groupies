@@ -1,8 +1,8 @@
 import numpy as np
 
 from .utils import aggregate_common_doc, check_boolean, funcs_no_separate_nan, get_func, isstr
-from .utils_numpy import (aliasing, check_dtype, check_fill_value, input_validation, minimum_dtype,
-                          minimum_dtype_scalar)
+from .utils_numpy import (aliasing, check_dtype, check_fill_value, input_validation, iscomplexobj,
+                          minimum_dtype, minimum_dtype_scalar)
 
 
 def _sum(group_idx, a, size, fill_value, dtype=None):
@@ -13,7 +13,7 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
         if a != 1:
             ret *= a
     else:
-        if np.iscomplexobj(a):
+        if iscomplexobj(a):
             ret = np.empty(size, dtype=dtype)
             ret.real = np.bincount(group_idx, weights=a.real,
                                    minlength=size)
@@ -128,7 +128,7 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if np.ndim(a) == 0:
         raise ValueError("cannot take mean with scalar a")
     counts = np.bincount(group_idx, minlength=size)
-    if np.iscomplexobj(a):
+    if iscomplexobj(a):
         dtype = a.dtype  # TODO: this is a bit clumsy
         sums = np.empty(size, dtype=dtype)
         sums.real = np.bincount(group_idx, weights=a.real,
