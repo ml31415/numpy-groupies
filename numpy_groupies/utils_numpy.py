@@ -479,3 +479,16 @@ def is_duck_array(value) -> bool:
         and hasattr(value, "__array_function__")
         and hasattr(value, "__array_ufunc__")
     )
+
+
+def iscomplexobj(x):
+    """
+    Copied from np.iscomplexobj so that we place fewer requirements
+    on duck array types.
+    """
+    try:
+        dtype = x.dtype
+        type_ = dtype.type
+    except AttributeError:
+        type_ = np.asarray(x).dtype.type
+    return issubclass(type_, np.complexfloating)
