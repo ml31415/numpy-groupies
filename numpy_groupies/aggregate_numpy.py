@@ -1,8 +1,8 @@
 import numpy as np
 
-from .utils import check_boolean, funcs_no_separate_nan, get_func, aggregate_common_doc, isstr
-from .utils_numpy import (aliasing, minimum_dtype, input_validation,
-                          check_dtype, check_fill_value, minimum_dtype_scalar, iscomplexobj)
+from .utils import aggregate_common_doc, check_boolean, funcs_no_separate_nan, get_func, isstr
+from .utils_numpy import (aliasing, check_dtype, check_fill_value, input_validation, iscomplexobj,
+                          minimum_dtype, minimum_dtype_scalar)
 
 
 def _sum(group_idx, a, size, fill_value, dtype=None):

@@ -1,12 +1,12 @@
 import numpy as np
+
 try:
     from weave import inline
 except ImportError:
     from scipy.weave import inline
 
-from .utils import get_func, isstr, funcs_no_separate_nan, aggregate_common_doc, check_boolean
-from .utils_numpy import check_dtype, aliasing, check_fill_value, input_validation
-
+from .utils import aggregate_common_doc, check_boolean, funcs_no_separate_nan, get_func, isstr
+from .utils_numpy import aliasing, check_dtype, check_fill_value, input_validation
 
 optimized_funcs = {'sum', 'min', 'max', 'amin', 'amax', 'mean', 'var', 'std', 'prod', 'len',
                    'nansum', 'nanmin', 'nanmax', 'nanmean', 'nanvar', 'nanstd', 'nanprod', 'nanlen',

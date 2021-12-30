@@ -1,10 +1,11 @@
 from functools import partial
+
 import numpy as np
 import pandas as pd
 
-from .utils import isstr, aggregate_common_doc, funcs_no_separate_nan
-from .utils_numpy import allnan, anynan, check_dtype
 from .aggregate_numpy import _aggregate_base
+from .utils import aggregate_common_doc, funcs_no_separate_nan, isstr
+from .utils_numpy import allnan, anynan, check_dtype
 
 
 def _wrapper(group_idx, a, size, fill_value, func='sum', dtype=None, ddof=0, **kwargs):
