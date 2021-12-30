@@ -1,9 +1,10 @@
 from __future__ import division
+
 import numba as nb
 import numpy as np
 
-from .utils import get_func, isstr, aggregate_common_doc, funcs_no_separate_nan
-from .utils_numpy import aliasing, input_validation, check_dtype, check_fill_value
+from .utils import aggregate_common_doc, funcs_no_separate_nan, get_func, isstr
+from .utils_numpy import aliasing, check_dtype, check_fill_value, input_validation
 
 
 class AggregateOp(object):

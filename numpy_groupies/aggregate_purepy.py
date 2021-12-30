@@ -1,12 +1,10 @@
 from __future__ import division
 
-import math
 import itertools
+import math
 import operator
 
-from .utils import (get_func, aliasing, funcs_no_separate_nan,
-                    aggregate_common_doc, isstr)
-
+from .utils import aggregate_common_doc, aliasing, funcs_no_separate_nan, get_func, isstr
 
 # min - builtin
 # max - builtin

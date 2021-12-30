@@ -18,11 +18,8 @@ else:
     from .aggregate_numpy import aggregate
     aggregate_np = aggregate
     from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
-    from .utils_numpy import (multi_arange,
-                              label_contiguous_1d,
-                              relabel_groups_masked,
-                              relabel_groups_unique,
-                              unpack)
+    from .utils_numpy import (label_contiguous_1d, multi_arange, relabel_groups_masked,
+                              relabel_groups_unique, unpack)
 
 
 try:
@@ -33,7 +30,7 @@ try:
 except ImportError:
     aggregate_wv = None
 else:
-    from .aggregate_weave import aggregate as aggregate_wv, step_indices, step_count
+    from .aggregate_weave import aggregate as aggregate_wv, step_count, step_indices
     aggregate = aggregate_wv
 
 
@@ -42,7 +39,7 @@ try:
 except ImportError:
     aggregate_nb = None
 else:
-    from .aggregate_numba import aggregate as aggregate_nb, step_indices, step_count
+    from .aggregate_numba import aggregate as aggregate_nb, step_count, step_indices
     aggregate = aggregate_nb
 
 
