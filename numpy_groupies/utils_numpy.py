@@ -223,7 +223,7 @@ def offset_labels(group_idx, inshape, axis, order, size):
     https://stackoverflow.com/questions/46256279/bin-elements-per-row-vectorized-2d-bincount-for-numpy
     """
     if axis not in (-1, len(inshape) - 1):
-        newshape = (s for idx, s in enumerate(inshape) if idx != axis) + (inshape[axis],)
+        newshape = tuple(s for idx, s in enumerate(inshape) if idx != axis) + (inshape[axis],)
     else:
         newshape = inshape
     group_idx = np.broadcast_to(group_idx, newshape)
