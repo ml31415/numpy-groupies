@@ -1,9 +1,8 @@
 import numpy as np
 
-
-from .utils import get_func, check_boolean, isstr, aggregate_common_doc
-from .utils_numpy import aliasing, minimum_dtype, minimum_dtype_scalar
 from .aggregate_numpy import _aggregate_base
+from .utils import aggregate_common_doc, check_boolean, get_func, isstr
+from .utils_numpy import aliasing, minimum_dtype, minimum_dtype_scalar
 
 
 def _anynan(group_idx, a, size, fill_value, dtype=None):

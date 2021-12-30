@@ -1,7 +1,7 @@
 """Common helper functions for typing and general numpy tools."""
 import numpy as np
 
-from .utils import get_aliasing, check_boolean
+from .utils import check_boolean, get_aliasing
 
 _alias_numpy = {
     np.add: 'sum',
