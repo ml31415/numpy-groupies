@@ -361,14 +361,15 @@ def test_argreduction_nD_array_1D_idx(aggregate_all):
     expected = np.array([[0, 5, 2], [0, 5, 2]])
     np.testing.assert_equal(actual, expected)
 
-@pytest.mark.xfail(reason="naninds[1] fails for aggregate_numba")
-@pytest.mark.parametrize("nan_inds", (tuple([[1, 4, 5], Ellipsis]), tuple((1,(0, 1, 2, 3)))))
+
+@pytest.mark.parametrize("nan_inds", (None,  tuple([[1, 4, 5], Ellipsis]), tuple((1,(0, 1, 2, 3)))))
 @pytest.mark.parametrize("ddof", (0, 1))
 def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds):
     array = np.ones((12, 5))
     labels = np.zeros(array.shape[-1:], dtype=int)
 
-    array[nan_inds] = np.nan
+    if nan_inds is not None:
+        array[nan_inds] = np.nan
 
     actual = aggregate_all(
         labels, array, axis=-1, fill_value=np.nan, func="nanvar", ddof=ddof
