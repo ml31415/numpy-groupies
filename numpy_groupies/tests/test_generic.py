@@ -360,3 +360,13 @@ def test_argreduction_nD_array_1D_idx(aggregate_all):
     actual = aggregate_all(labels, array, axis=-1, func="argmax")
     expected = np.array([[0, 5, 2], [0, 5, 2]])
     np.testing.assert_equal(actual, expected)
+
+def test_var_with_nan_fill_value(aggregate_all):
+    array = np.ones((12, 5))
+    labels = np.zeros(array.shape[-1:], dtype=int)
+    array[[1, 4, 5], ...] = np.nan
+    actual = aggregate_all(
+        labels, array, axis=-1, fill_value=np.nan, func="nanvar", ddof=1
+    )
+    expected = np.nanvar(array, keepdims=True, axis=-1, ddof=1)
+    np.testing.assert_equal(actual, expected)
