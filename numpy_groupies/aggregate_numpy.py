@@ -158,7 +158,7 @@ def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64),
                           minlength=size) / (counts - ddof)
     if sqrt:
         ret = np.sqrt(ret)  # this is now std not var
-    ret[counts == 0] = fill_value
+    ret[counts <= ddof] = fill_value
     return ret
 
 
