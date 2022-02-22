@@ -410,7 +410,7 @@ class Mean(Aggregate2pass):
         ret[ri] += val
 
     @staticmethod
-    def _2pass_inner(ri, ret, counter, mean):
+    def _2pass_inner(ri, ret, counter, mean, ddof):
         return ret[ri] / counter[ri]
 
 
