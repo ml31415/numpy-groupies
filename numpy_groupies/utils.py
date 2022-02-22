@@ -52,7 +52,7 @@ aggregate_common_doc = """
         (see above).
 """
 
-funcs_common = 'first last len mean var std allnan anynan max min argmax argmin cumsum cumprod cummax cummin'.split()
+funcs_common = 'first last len mean var std allnan anynan max min argmax argmin cumsum cumprod cummax cummin trapz'.split()
 funcs_no_separate_nan = frozenset(['sort', 'rsort', 'array', 'allnan', 'anynan'])
 
 

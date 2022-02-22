@@ -38,7 +38,7 @@ class AggregateOp(object):
         self._jit_non_scalar = self.callable(self.nans, self.reverse, scalar=False)
 
     def __call__(self, group_idx, a, size=None, fill_value=0, order='C',
-                 dtype=None, axis=None, ddof=0):
+                 dtype=None, axis=None, ddof=0, x=None):
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=self.func)
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
@@ -54,7 +54,7 @@ class AggregateOp(object):
             jitfunc = self._jit_non_scalar
         else:
             jitfunc = self._jit_scalar
-        jitfunc(group_idx, a, ret, counter, mean, outer, fill_value, ddof)
+        jitfunc(group_idx, a, ret, counter, mean, outer, fill_value, ddof, x)
         self._finalize(ret, counter, fill_value)
 
         if self.outer:
@@ -121,7 +121,7 @@ class AggregateOp(object):
                 if ri >= size:
                     raise ValueError("one or more indices in group_idx are too large")
                 val = valgetter(a, i)
-                inner(ri, val, ret, counter, mean)
+                inner(ri, val, ret, counter, mean, ddof)
                 outersetter(outer, i, ret[ri])
         return nb.njit(_loop, nogil=True)
 
@@ -173,6 +173,44 @@ class Aggregate2pass(AggregateOp):
     def _finalize(cls, ret, counter, fill_value):
         """Copying the fill value is already done in the 2nd pass"""
         pass
+
+
+class AggregateTrapz(AggregateOp):
+    """Base class for the trapezoidal rule."""
+    @classmethod
+    def callable(cls, nans=False, reverse=False, scalar=False):
+        """ Compile a jitted function doing the hard part of the job """
+        _valgetter = cls._valgetter_scalar if scalar else cls._valgetter
+        valgetter = nb.njit(_valgetter)
+        outersetter = nb.njit(cls._outersetter)
+
+        _cls_inner = nb.njit(cls._inner)
+        if nans:
+            def _inner(ri, val, ret, counter, mean):
+                if not np.isnan(val):
+                    _cls_inner(ri, val, ret, counter, mean)
+            inner = nb.njit(_inner)
+        else:
+            inner = _cls_inner
+
+        def _loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof, x):
+            # fill_value and ddof need to be present for being exchangeable with loop_2pass
+            size = len(ret)
+            rng = range(len(group_idx) - 2, -1, -1) if reverse else range(len(group_idx) - 1)
+            for i in rng:
+                ri = group_idx[i]
+                # If both this index and next index are in same group:
+                if group_idx[i] == group_idx[i+1]:
+                    if ri < 0:
+                        raise ValueError("negative indices not supported")
+                    if ri >= size:
+                        raise ValueError("one or more indices in group_idx are too large")
+                    avg_y = (valgetter(a, i) + valgetter(a, i + 1)) / 2
+                    dx = valgetter(x, i + 1) - valgetter(x, i)
+                    val = avg_y * dx
+                    inner(ri, val, ret, counter, mean, ddof)
+                    outersetter(outer, i, ret[ri])
+        return nb.njit(_loop, nogil=True)
 
 
 class AggregateNtoN(AggregateOp):
@@ -367,7 +405,7 @@ class Mean(Aggregate2pass):
     counter_dtype = int
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, ddof):
         counter[ri] += 1
         ret[ri] += val
 
@@ -380,7 +418,7 @@ class Std(Mean):
     mean_fill_value = 0
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, ddof):
         counter[ri] += 1
         mean[ri] += val
         ret[ri] += val * val
@@ -396,6 +434,14 @@ class Var(Std):
     def _2pass_inner(ri, ret, counter, mean, ddof):
         mean2 = mean[ri] * mean[ri]
         return (ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof)
+
+
+class Trapz(AggregateTrapz):
+    mean_fill_value = 0
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean, ddof):
+        ret[ri] += val
 
 
 class CumSum(AggregateNtoN, Sum):
@@ -417,7 +463,7 @@ class CumMin(AggregateNtoN, Min):
 def get_funcs():
     funcs = dict()
     for op in (Sum, Prod, Len, All, Any, Last, First, AllNan, AnyNan, Min, Max,
-               ArgMin, ArgMax, Mean, Std, Var,
+               ArgMin, ArgMax, Mean, Std, Var, Trapz,
                CumSum, CumProd, CumMax, CumMin):
         funcname = op.__name__.lower()
         funcs[funcname] = op(funcname)
