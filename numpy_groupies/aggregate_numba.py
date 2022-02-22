@@ -405,12 +405,12 @@ class Mean(Aggregate2pass):
     counter_dtype = int
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean, ddof):
+    def _inner(ri, val, ret, counter, mean):
         counter[ri] += 1
         ret[ri] += val
 
     @staticmethod
-    def _2pass_inner(ri, ret, counter, mean, ddof):
+    def _2pass_inner(ri, ret, counter, mean):
         return ret[ri] / counter[ri]
 
 
