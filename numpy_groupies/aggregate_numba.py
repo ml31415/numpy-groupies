@@ -121,7 +121,7 @@ class AggregateOp(object):
                 if ri >= size:
                     raise ValueError("one or more indices in group_idx are too large")
                 val = valgetter(a, i)
-                inner(ri, val, ret, counter, mean, ddof)
+                inner(ri, val, ret, counter, mean)
                 outersetter(outer, i, ret[ri])
         return nb.njit(_loop, nogil=True)
 
@@ -418,7 +418,7 @@ class Std(Mean):
     mean_fill_value = 0
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean, ddof):
+    def _inner(ri, val, ret, counter, mean):
         counter[ri] += 1
         mean[ri] += val
         ret[ri] += val * val
