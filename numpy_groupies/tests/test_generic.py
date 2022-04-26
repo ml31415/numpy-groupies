@@ -364,7 +364,8 @@ def test_argreduction_nD_array_1D_idx(aggregate_all):
 
 @pytest.mark.parametrize("nan_inds", (None,  tuple([[1, 4, 5], Ellipsis]), tuple((1,(0, 1, 2, 3)))))
 @pytest.mark.parametrize("ddof", (0, 1))
-def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds):
+@pytest.mark.parametrize("func", ("nanvar", "nanstd"))
+def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds, func):
     array = np.ones((12, 5))
     labels = np.zeros(array.shape[-1:], dtype=int)
 
@@ -372,7 +373,7 @@ def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds):
         array[nan_inds] = np.nan
 
     actual = aggregate_all(
-        labels, array, axis=-1, fill_value=np.nan, func="nanvar", ddof=ddof
+        labels, array, axis=-1, fill_value=np.nan, func=func, ddof=ddof
     )
-    expected = np.nanvar(array, keepdims=True, axis=-1, ddof=ddof)
+    expected = getattr(np, func)(array, keepdims=True, axis=-1, ddof=ddof)
     np.testing.assert_equal(actual, expected)

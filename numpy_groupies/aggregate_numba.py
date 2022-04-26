@@ -154,7 +154,7 @@ class Aggregate2pass(AggregateOp):
 
         def _loop2(ret, counter, mean, fill_value, ddof):
             for ri in range(len(ret)):
-                if counter[ri]:
+                if counter[ri] > ddof:
                     ret[ri] = _2pass_inner(ri, ret, counter, mean, ddof)
                 else:
                     ret[ri] = fill_value
