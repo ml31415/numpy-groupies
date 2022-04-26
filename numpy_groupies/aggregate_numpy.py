@@ -154,8 +154,9 @@ def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64),
     sums = np.bincount(group_idx, weights=a, minlength=size)
     with np.errstate(divide='ignore', invalid='ignore'):
         means = sums.astype(dtype) / counts
+        counts = np.where(counts > ddof, counts - ddof, 0)
         ret = np.bincount(group_idx, (a - means[group_idx]) ** 2,
-                          minlength=size) / (counts - ddof)
+                          minlength=size) / counts
     if sqrt:
         ret = np.sqrt(ret)  # this is now std not var
     if not np.isnan(fill_value):
