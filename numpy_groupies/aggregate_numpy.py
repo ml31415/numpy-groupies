@@ -285,7 +285,11 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
     # deal with ndimensional indexing
     if ndim_idx > 1:
         if unravel_shape is not None:
+            # A negative fill_value cannot, and should not, be unraveled.
+            mask = ret == fill_value
+            ret[mask] = 0
             ret = np.unravel_index(ret, unravel_shape)[axis]
+            ret[mask] = fill_value
         ret = ret.reshape(size, order=order)
     return ret
 

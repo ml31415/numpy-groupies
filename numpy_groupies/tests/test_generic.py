@@ -361,6 +361,14 @@ def test_argreduction_nD_array_1D_idx(aggregate_all):
     expected = np.array([[0, 5, 2], [0, 5, 2]])
     np.testing.assert_equal(actual, expected)
 
+@pytest.mark.xfail(reason="fails for numba, pandas")
+def test_argreduction_negative_fill_value(aggregate_all):
+    labels = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
+    array = np.array([[1] * 12, [np.nan] * 12])
+    actual = aggregate_all(labels, array, axis=-1, fill_value=-1, func="argmax")
+    expected = np.array([[0, 5, 2], [-1, -1, -1]])
+    np.testing.assert_equal(actual, expected)
+
 
 @pytest.mark.parametrize("nan_inds", (None,  tuple([[1, 4, 5], Ellipsis]), tuple((1,(0, 1, 2, 3)))))
 @pytest.mark.parametrize("ddof", (0, 1))

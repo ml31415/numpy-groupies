@@ -64,7 +64,10 @@ class AggregateOp(object):
         if ndim_idx > 1:
             if unravel_shape is not None:
                 # argreductions only
+                mask = ret == fill_value
+                ret[mask] = 0
                 ret = np.unravel_index(ret, unravel_shape)[axis]
+                ret[mask] = fill_value
             ret = ret.reshape(size, order=order)
         return ret
 
