@@ -10,6 +10,10 @@ on:
     - cron: "0 0 * * *" # Daily “At 00:00”
   workflow_dispatch: # allows you to trigger manually
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build (${{ matrix.python-version }}, ${{ matrix.os }})
@@ -21,22 +25,24 @@ jobs:
       fail-fast: false
       matrix:
         os: ["ubuntu-latest"]
-        python-version: ["3.7", "3.8", "3.9"]
+        python-version: ["3.7", "3.10"]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0 # Fetch all history for all branches and tags.
       - name: Set environment variables
         run: |
           echo "CONDA_ENV_FILE=ci/environment.yml" >> $GITHUB_ENV
           echo "PYTHON_VERSION=${{ matrix.python-version }}" >> $GITHUB_ENV
+
       - name: Cache conda
-        uses: actions/cache@v2
+        id: cache-conda
+        uses: actions/cache@v3
         with:
           path: ~/conda_pkgs_dir
-          key:
-            ${{ runner.os }}-conda-py${{ matrix.python-version }}-${{
+          key: ${{ runner.os }}-conda-py${{ matrix.python-version }}-${{
             hashFiles('ci/**.yml') }}
+
       - uses: conda-incubator/setup-miniconda@v2
         with:
           channels: conda-forge
@@ -47,9 +53,18 @@ jobs:
           python-version: ${{ matrix.python-version }}
           use-only-tar-bz2: true
 
+      - name: Cache conda env
+        id: cache-env
+        uses: actions/cache@v3
+        with:
+          path: /usr/share/miniconda/envs/
+          key: ${{ runner.os }}-conda-py${{ matrix.python-version }}-${{
+            hashFiles('ci/**.yml') }}
+
       - name: Install conda dependencies
         run: |
           mamba env update -f $CONDA_ENV_FILE
+        if: steps.cache-env.outputs.cache-hit != 'true'
 
       - name: Set up conda environment
         shell: bash -l {0}
