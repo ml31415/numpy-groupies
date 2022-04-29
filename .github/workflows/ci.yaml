@@ -53,14 +53,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
           use-only-tar-bz2: true
 
-      - name: Cache conda env
-        id: cache-env
-        uses: actions/cache@v3
-        with:
-          path: /usr/share/miniconda/envs/
-          key: ${{ runner.os }}-conda-py${{ matrix.python-version }}-${{
-            hashFiles('ci/**.yml') }}
-
       - name: Install conda dependencies
         run: |
           mamba env update -f $CONDA_ENV_FILE
