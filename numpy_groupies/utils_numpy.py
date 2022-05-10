@@ -283,7 +283,7 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
         else:
             is_form_3 = group_idx.ndim == 1 and a.ndim > 1 and axis is not None
             orig_shape = a.shape if is_form_3 else group_idx.shape
-            if "arg" in func:
+            if isinstance(func, str) and "arg" in func:
                 unravel_shape = orig_shape
             else:
                 unravel_shape = None
