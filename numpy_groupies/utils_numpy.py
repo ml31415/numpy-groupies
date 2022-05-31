@@ -240,7 +240,7 @@ def offset_labels(group_idx, inshape, axis, order, size):
 
 
 def input_validation(group_idx, a, size=None, order='C', axis=None,
-                     ravel_group_idx=True, check_bounds=True, method="offset", func=None):
+                     ravel_group_idx=True, check_bounds=True, method="ravel", func=None):
     """ Do some fairly extensive checking of group_idx and a, trying to
     give the user as much help as possible with what is wrong. Also,
     convert ndim-indexing to 1d indexing.
