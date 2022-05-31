@@ -203,7 +203,7 @@ def test_scalar_input(aggregate_all, func):
         np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std" , "all", "any"])
+@pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "all", "any"])
 def test_nan_input(aggregate_all, func, groups=100):
     if aggregate_all.__name__.endswith('pandas'):
         pytest.skip("pandas automatically skip nan values")
@@ -354,6 +354,25 @@ def test_agg_along_axis(aggregate_all, size, func, axis):
     np.testing.assert_allclose(actual.squeeze(), expected)
 
 
+def test_not_last_axis_reduction(aggregate_all):
+    x = np.array([
+        [1., 2.],
+        [4., 4.],
+        [5., 2.],
+        [np.nan, 3.],
+        [8., 7.]]
+    )
+    group_idx = np.array([1, 2, 2, 0, 1])
+    func = 'nanmax'
+    fill_value = np.nan
+    axis = 0
+    actual = aggregate_all(group_idx, x, axis=axis, func=func, fill_value=fill_value)
+    expected = np.array([[np.nan, 3.],
+                         [8., 7.],
+                         [5., 4.]])
+    np.testing.assert_allclose(expected, actual)
+
+
 def test_custom_callable(aggregate_all):
     def sum_(array):
         return array.sum()
@@ -379,6 +398,7 @@ def test_argreduction_nD_array_1D_idx(aggregate_all):
     expected = np.array([[0, 5, 2], [0, 5, 2]])
     np.testing.assert_equal(actual, expected)
 
+
 @pytest.mark.xfail(reason="fails for numba, pandas")
 def test_argreduction_negative_fill_value(aggregate_all):
     labels = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
@@ -388,7 +408,7 @@ def test_argreduction_negative_fill_value(aggregate_all):
     np.testing.assert_equal(actual, expected)
 
 
-@pytest.mark.parametrize("nan_inds", (None,  tuple([[1, 4, 5], Ellipsis]), tuple((1,(0, 1, 2, 3)))))
+@pytest.mark.parametrize("nan_inds", (None, tuple([[1, 4, 5], Ellipsis]), tuple((1, (0, 1, 2, 3)))))
 @pytest.mark.parametrize("ddof", (0, 1))
 @pytest.mark.parametrize("func", ("nanvar", "nanstd"))
 def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds, func):
