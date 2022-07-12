@@ -300,7 +300,7 @@ class AllNan(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
         counter[ri] = 0
-        ret[ri] &= val == val
+        ret[ri] &= val != val
 
 
 class AnyNan(AggregateOp):

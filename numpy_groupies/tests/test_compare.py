@@ -15,7 +15,6 @@ from . import (aggregate_purepy, aggregate_numpy_ufunc, aggregate_numpy,
 class AttrDict(dict):
     __getattr__ = dict.__getitem__
 
-
 @pytest.fixture(params=['np/py', 'weave/np', 'ufunc/np', 'numba/np', 'pandas/np'], scope='module')
 def aggregate_cmp(request, seed=100):
     test_pair = request.param
@@ -53,6 +52,7 @@ def aggregate_cmp(request, seed=100):
     a = rnd.randn(group_idx.size)
     nana = a.copy()
     nana[::3] = np.nan
+    nana[:(len(nana) // 2)] = np.nan
     somea = a.copy()
     somea[somea < 0.3] = 0
     somea[::31] = np.nan

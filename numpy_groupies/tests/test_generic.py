@@ -299,7 +299,7 @@ def test_sort(aggregate_all, order):
 @pytest.mark.parametrize("axis", (0, 1))
 @pytest.mark.parametrize("size", ((12,), (12, 5)))
 @pytest.mark.parametrize("func", func_list)
-def test_agg_along_axis(aggregate_all, size, func, axis):
+def test_along_axis(aggregate_all, size, func, axis):
     if len(size) == axis:
         pytest.skip()
 
@@ -337,12 +337,6 @@ def test_agg_along_axis(aggregate_all, size, func, axis):
         "nanmin": np.nan,
         "nanmean": np.nan,
     }
-
-    # TODO: These xfails need to be fixed...
-    if len(size) > 1:
-        if func == "allnan":
-            # This only fails for numba
-            pytest.xfail()
 
     actual = aggregate_all(
         group_idx, array, axis=axis, func=func, fill_value=fill_values.get(func, 0)
