@@ -227,10 +227,10 @@ def offset_labels(group_idx, inshape, axis, order, size):
     group_idx = np.broadcast_to(np.expand_dims(group_idx, newaxes), inshape)
     if axis not in (-1, len(inshape) - 1):
         group_idx = np.moveaxis(group_idx, axis, -1)
-    newshape = group_idx.shape
+    newshape = group_idx.shape[:-1] + (-1,)
 
     group_idx = (group_idx +
-                 np.arange(np.prod(newshape[:-1]), dtype=int).reshape((*newshape[:-1], -1))
+                 np.arange(np.prod(newshape[:-1]), dtype=int).reshape(newshape)
                  * size
                  )
     if axis not in (-1, len(inshape) - 1):
@@ -469,7 +469,7 @@ def relabel_groups_masked(group_idx, keep_group):
     return relabel[group_idx]
 
 
-def is_duck_array(value) -> bool:
+def is_duck_array(value):
     """
     This function was copied from xarray/core/utils.py under the terms
     of Xarray's Apache-2 license
