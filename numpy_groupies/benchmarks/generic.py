@@ -33,8 +33,8 @@ def arbitrary(iterator):
 func_list = (np.sum, np.prod, np.min, np.max, len, np.all, np.any, 'anynan', 'allnan',
              np.mean, np.std, np.var, 'first', 'last', 'argmax', 'argmin',
              np.nansum, np.nanprod, np.nanmin, np.nanmax, 'nanlen', 'nanall', 'nanany',
-             np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast',
-             'cumsum', 'cumprod', 'cummax', 'cummin', arbitrary, 'sort')
+             np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast', 'nanargmin',
+             'nanargmax', 'cumsum', 'cumprod', 'cummax', 'cummin', arbitrary, 'sort')
 
 def benchmark_data(size=5e5, seed=100):
     rnd = np.random.RandomState(seed=seed)
