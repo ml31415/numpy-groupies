@@ -96,11 +96,11 @@ c_iter['last'] = r"""
 
 c_iter['allnan'] = r"""
         counter[ri] = 0;
-        ret[ri] &= (a[i] == a[i]);"""
+        ret[ri] &= (a[i] != a[i]);"""
 
 c_iter['anynan'] = r"""
         counter[ri] = 0;
-        ret[ri] |= (a[i] == a[i]);"""
+        ret[ri] |= (a[i] != a[i]);"""
 
 c_iter['max'] = r"""
         if (counter[ri]) {
@@ -239,10 +239,9 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
         raise NotImplementedError("generic functions not supported, in the weave implementation of aggregate")
 
     # Preparations for optimized processing
-    group_idx, a, flat_size, ndim_idx, size = input_validation(group_idx, a,
-                                                               size=size,
-                                                               order=order,
-                                                               axis=axis)
+
+    iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
+    group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
     dtype = check_dtype(dtype, func, a, len(group_idx))
     check_fill_value(fill_value, dtype, func=func)
     nans = func.startswith('nan')
@@ -290,6 +289,12 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
 
     # Deal with ndimensional indexing
     if ndim_idx > 1:
+        if unravel_shape is not None:
+            # A negative fill_value cannot, and should not, be unraveled.
+            mask = ret == fill_value
+            ret[mask] = 0
+            ret = np.unravel_index(ret, unravel_shape)[axis]
+            ret[mask] = fill_value
         ret = ret.reshape(size, order=order)
     return ret
 
