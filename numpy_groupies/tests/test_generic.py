@@ -11,7 +11,7 @@ from . import _implementations, _impl_name, _wrap_notimplemented_xfail, func_lis
 def aggregate_all(request):
     impl = request.param
     if impl is None:
-        pytest.xfail("Implementation not available")
+        pytest.skip("Implementation not available")
     name = _impl_name(impl)
     return _wrap_notimplemented_xfail(impl.aggregate, 'aggregate_' + name)
 
@@ -206,7 +206,7 @@ def test_scalar_input(aggregate_all, func):
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "all", "any"])
 def test_nan_input(aggregate_all, func, groups=100):
     if aggregate_all.__name__.endswith('pandas'):
-        pytest.skip("pandas automatically skip nan values")
+        pytest.xfail("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(5)
     a = np.random.random(group_idx.size)
     a[::2] = np.nan
@@ -221,7 +221,7 @@ def test_nan_input(aggregate_all, func, groups=100):
 
 def test_nan_input_len(aggregate_all, groups=100, group_size=5):
     if aggregate_all.__name__.endswith('pandas'):
-        pytest.skip("pandas always skips nan values")
+        pytest.xfail("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(group_size)
     a = np.random.random(len(group_idx))
     a[::2] = np.nan
@@ -239,6 +239,19 @@ def test_argmin_argmax(aggregate_all):
 
     res = aggregate_all(group_idx, a, func="argmin", fill_value=-1)
     np.testing.assert_array_equal(res, [3, -1, -1, 5])
+
+
+def test_nanargmin_nanargmax(aggregate_all):
+    if aggregate_all.__name__.endswith('purepy'):
+        pytest.skip("purepy doesn't handle nan values correctly")
+    group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
+    a = np.array([4, 4, np.nan, 1, np.nan, np.nan, np.nan, np.nan])
+
+    res = aggregate_all(group_idx, a, func="nanargmax", fill_value=-1.0)
+    np.testing.assert_array_equal(res, [0, -1, -1, -1])
+
+    res = aggregate_all(group_idx, a, func="nanargmin", fill_value=-1.0)
+    np.testing.assert_array_equal(res, [3, -1, -1, -1])
 
 
 def test_mean(aggregate_all):
@@ -300,32 +313,32 @@ def test_sort(aggregate_all, order):
 @pytest.mark.parametrize("size", ((12,), (12, 5)))
 @pytest.mark.parametrize("func", func_list)
 def test_along_axis(aggregate_all, size, func, axis):
-    if len(size) == axis:
-        pytest.skip()
+    if axis >= len(size):
+        pytest.skip("No such axis")
 
     group_idx = np.zeros(size[axis], dtype=int)
-    array = np.random.randn(*size)
+    a = np.random.randn(*size)
 
     # add some NaNs to test out nan-skipping
     if "nan" in func and "nanarg" not in func:
-        array[[1, 4, 5], ...] = np.nan
-    elif "nanarg" in func and array.ndim > 1:
-        array[[1, 4, 5], 1] = np.nan
+        a[[1, 4, 5], ...] = np.nan
+    elif "nanarg" in func and a.ndim > 1:
+        a[[1, 4, 5], 1] = np.nan
     if func in ["any", "all"]:
-        array = array > 0.5
+        a = a > 0.5
 
     # construct expected values for all cases
     if func == "len":
         expected = np.array(size[axis])
     elif func == "nanlen":
-        expected = np.array((~np.isnan(array)).sum(axis=axis))
+        expected = np.array((~np.isnan(a)).sum(axis=axis))
     elif func == "anynan":
-        expected = np.isnan(array).any(axis=axis)
+        expected = np.isnan(a).any(axis=axis)
     elif func == "allnan":
-        expected = np.isnan(array).all(axis=axis)
+        expected = np.isnan(a).all(axis=axis)
     else:
         with np.errstate(invalid="ignore", divide="ignore"):
-            expected = getattr(np, func)(array, axis=axis)
+            expected = getattr(np, func)(a, axis=axis)
 
     # The default fill_value is 0, the following makes the output
     # match numpy
@@ -339,9 +352,9 @@ def test_along_axis(aggregate_all, size, func, axis):
     }
 
     actual = aggregate_all(
-        group_idx, array, axis=axis, func=func, fill_value=fill_values.get(func, 0)
+        group_idx, a, axis=axis, func=func, fill_value=fill_values.get(func, 0)
     )
-    assert actual.ndim == array.ndim
+    assert actual.ndim == a.ndim
 
     # argmin, argmax don't support keepdims so we can't use that to construct expected
     # instead we squeeze out the extra dims in actual.

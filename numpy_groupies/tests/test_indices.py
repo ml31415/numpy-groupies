@@ -8,7 +8,7 @@ _implementations = [aggregate_weave, aggregate_numba]
 @pytest.fixture(params=_implementations, ids=_impl_name)
 def aggregate_nb_wv(request):
     if request.param is None:
-        pytest.xfail("Implementation not available")
+        pytest.skip("Implementation not available")
     return request.param
 
 

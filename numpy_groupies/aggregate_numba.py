@@ -104,14 +104,17 @@ class AggregateOp(object):
         valgetter = nb.njit(_valgetter)
         outersetter = nb.njit(cls._outersetter)
 
-        _cls_inner = nb.njit(cls._inner)
-        if nans:
-            def _inner(ri, val, ret, counter, mean):
-                if not np.isnan(val):
-                    _cls_inner(ri, val, ret, counter, mean)
-            inner = nb.njit(_inner)
+        if not nans:
+            inner = nb.njit(cls._inner)
         else:
-            inner = _cls_inner
+            _cls_inner = nb.njit(cls._inner)
+            _cls_nan_check = nb.njit(cls._nan_check)
+
+            def _inner(ri, val, ret, counter, mean):
+                if not _cls_nan_check(val):
+                    _cls_inner(ri, val, ret, counter, mean)
+
+            inner = nb.njit(_inner)
 
         def _loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # fill_value and ddof need to be present for being exchangeable with loop_2pass
@@ -135,6 +138,10 @@ class AggregateOp(object):
     @staticmethod
     def _valgetter_scalar(a, i):
         return a
+
+    @staticmethod
+    def _nan_check(val):
+        return np.isnan(val)
 
     @staticmethod
     def _inner(ri, val, ret, counter, mean):
@@ -338,6 +345,10 @@ class ArgMax(AggregateOp):
     @staticmethod
     def _valgetter(a, i):
         return a[i], i
+
+    @staticmethod
+    def _nan_check(val):
+        return np.isnan(val[0])
 
     @staticmethod
     def _inner(ri, val, ret, counter, mean):

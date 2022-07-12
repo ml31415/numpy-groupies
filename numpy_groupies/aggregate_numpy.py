@@ -272,9 +272,17 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
             if np.ndim(a) == 0:
                 raise ValueError("nan-version not supported for scalar input.")
             if _nansqueeze:
-                good = ~np.isnan(a)
-                a = a[good]
-                group_idx = group_idx[good]
+                if 'arg' in func:
+                    # This is not optimal and will produce wrong results in all-nan groups
+                    bad = np.isnan(a)
+                    if 'min' in func:
+                        a = np.where(bad, np.inf, a)
+                    else:
+                        a = np.where(bad, -np.inf, a)
+                else:
+                    good = ~np.isnan(a)
+                    a = a[good]
+                    group_idx = group_idx[good]
 
         dtype = check_dtype(dtype, func, a, flat_size)
         check_fill_value(fill_value, dtype, func=func)

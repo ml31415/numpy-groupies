@@ -38,7 +38,7 @@ def aggregate_cmp(request, seed=100):
             impl = None
 
         if not impl:
-            pytest.xfail("Implementation not available")
+            pytest.skip("Implementation not available")
         name = _impl_name(impl)
         func = _wrap_notimplemented_xfail(impl.aggregate, 'aggregate_' + name)
 
@@ -74,7 +74,10 @@ def func_preserve_order(iterator):
 @pytest.mark.parametrize(["func", "fill_value"], product(func_list, [0, 1, np.nan]),
                          ids=lambda x: getattr(x, '__name__', x))
 def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
-    a = aggregate_cmp.nana if 'nan' in getattr(func, '__name__', func) else aggregate_cmp.a
+    is_nanfunc = 'nan' in getattr(func, '__name__', func)
+    if is_nanfunc and aggregate_cmp.test_pair.endswith('py'):
+        pytest.xfail("pure python version does not handle nan values")
+    a = aggregate_cmp.nana if is_nanfunc else aggregate_cmp.a
     try:
         ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
     except ValueError:
@@ -85,7 +88,7 @@ def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
             res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
         except ValueError:
             if np.isnan(fill_value) and aggregate_cmp.test_pair.endswith('py'):
-                pytest.skip("pure python version uses lists and does not raise ValueErrors when inserting nan into integers")
+                pytest.xfail("pure python version uses lists and does not raise ValueErrors when inserting nan into integers")
             else:
                 raise
         if isinstance(ref, np.ndarray):
