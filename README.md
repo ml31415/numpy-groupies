@@ -1,3 +1,7 @@
+[![GitHub Workflow CI Status](https://img.shields.io/github/workflow/status/ml31415/numpy-groupies/CI?logo=github&style=flat)](https://github.com/ml31415/numpy-groupies/actions)
+[![PyPI](https://img.shields.io/pypi/v/numpy-groupies.svg?style=flat)](https://pypi.org/project/numpy-groupies/)
+[![Conda-forge](https://img.shields.io/conda/vn/conda-forge/numpy_groupies.svg?style=flat)](https://anaconda.org/conda-forge/numpy_groupies)
+
 # numpy-groupies
 
 This package consists of a small library of optimised tools for doing things that can roughly 
