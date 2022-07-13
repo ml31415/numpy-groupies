@@ -387,6 +387,10 @@ def test_along_axis(aggregate_all, size, func, axis):
         expected = np.isnan(a).any(axis=axis)
     elif func == "allnan":
         expected = np.isnan(a).all(axis=axis)
+    elif func == "sumofsquares":
+        expected = np.sum(a * a, axis=axis)
+    elif func == "nansumofsquares":
+        expected = np.nansum(a * a, axis=axis)
     else:
         with np.errstate(invalid="ignore", divide="ignore"):
             expected = getattr(np, func)(a, axis=axis)

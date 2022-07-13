@@ -52,7 +52,7 @@ aggregate_common_doc = """
         (see above).
 """
 
-funcs_common = 'first last len mean var std allnan anynan max min argmax argmin cumsum cumprod cummax cummin'.split()
+funcs_common = 'first last len mean var std allnan anynan max min argmax argmin sumofsquares cumsum cumprod cummax cummin'.split()
 funcs_no_separate_nan = frozenset(['sort', 'rsort', 'array', 'allnan', 'anynan'])
 
 
@@ -131,7 +131,7 @@ def get_func(func, aliasing, implementations):
             raise ValueError("%s does not have a nan-version".format(func_str[3:]))
         else:
             raise NotImplementedError("No such function available")
-    raise ValueError("func %s is neither a valid function string nor a "
+    raise ValueError("func {} is neither a valid function string nor a "
                      "callable object".format(func))
 
 

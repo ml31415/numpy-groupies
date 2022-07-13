@@ -396,6 +396,15 @@ class ArgMin(ArgMax):
             ret[ri] = fill_value
 
 
+class SumOfSquares(AggregateOp):
+    forced_fill_value = 0
+
+    @staticmethod
+    def _inner(ri, val, ret, counter, mean, fill_value):
+        counter[ri] = 0
+        ret[ri] += val * val
+
+
 class Mean(Aggregate2pass):
     forced_fill_value = 0
     counter_fill_value = 0
@@ -452,7 +461,7 @@ class CumMin(AggregateNtoN, Min):
 def get_funcs():
     funcs = dict()
     for op in (Sum, Prod, Len, All, Any, Last, First, AllNan, AnyNan, Min, Max,
-               ArgMin, ArgMax, Mean, Std, Var,
+               ArgMin, ArgMax, Mean, Std, Var, SumOfSquares,
                CumSum, CumProd, CumMax, CumMin):
         funcname = op.__name__.lower()
         funcs[funcname] = op(funcname)

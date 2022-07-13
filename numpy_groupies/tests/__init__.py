@@ -56,6 +56,6 @@ def _wrap_notimplemented_xfail(impl, name=None):
 
 
 func_list = ('sum', 'prod', 'min', 'max', 'all', 'any', 'mean', 'std', 'var', 'len',
-             'argmin', 'argmax', 'anynan', 'allnan', 'cumsum',
+             'argmin', 'argmax', 'anynan', 'allnan', 'cumsum', 'sumofsquares',
              'nansum', 'nanprod', 'nanmin', 'nanmax', 'nanmean', 'nanstd', 'nanvar','nanlen',
-             'nanargmin', 'nanargmax')
+             'nanargmin', 'nanargmax', 'nansumofsquares')

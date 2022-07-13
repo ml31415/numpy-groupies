@@ -142,6 +142,14 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     return ret
 
 
+def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
+    ret = np.bincount(group_idx, weights=a*a, minlength=size)
+    counts = np.bincount(group_idx, minlength=size)
+    if fill_value != 0:
+        ret[counts == 0] = fill_value
+    return ret
+
+
 def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64),
          sqrt=False, ddof=0):
     if np.ndim(a) == 0:
@@ -242,7 +250,8 @@ _impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last,
                   first=_first, all=_all, any=_any, mean=_mean, std=_std,
                   var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
                   array=_array, argmax=_argmax, argmin=_argmin, len=_len,
-                  cumsum=_cumsum, generic=_generic_callable)
+                  cumsum=_cumsum, sumofsquares=_sum_of_squres,
+                  generic=_generic_callable)
 _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
                   if k not in funcs_no_separate_nan)
 
