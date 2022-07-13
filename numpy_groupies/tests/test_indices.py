@@ -3,6 +3,7 @@ import numpy as np
 
 from . import aggregate_weave, aggregate_numba, _impl_name
 _implementations = [aggregate_weave, aggregate_numba]
+_implementations = [i for i in _implementations if i is not None]
 
 
 @pytest.fixture(params=_implementations, ids=_impl_name)
