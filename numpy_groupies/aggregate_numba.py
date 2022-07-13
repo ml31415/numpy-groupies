@@ -107,16 +107,16 @@ class AggregateOp(object):
         if not nans:
             inner = nb.njit(cls._inner)
         else:
-            _cls_inner = nb.njit(cls._inner)
-            _cls_nan_check = nb.njit(cls._nan_check)
+            cls_inner = nb.njit(cls._inner)
+            cls_nan_check = nb.njit(cls._nan_check)
 
-            def _inner(ri, val, ret, counter, mean, fill_value):
-                if not _cls_nan_check(val):
-                    _cls_inner(ri, val, ret, counter, mean, fill_value)
+            @nb.njit
+            def inner(ri, val, ret, counter, mean, fill_value):
+                if not cls_nan_check(val):
+                    cls_inner(ri, val, ret, counter, mean, fill_value)
 
-            inner = nb.njit(_inner)
-
-        def _loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
+        @nb.njit
+        def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # ddof needs to be present for being exchangeable with loop_2pass
             size = len(ret)
             rng = range(len(group_idx) - 1, -1, -1) if reverse else range(len(group_idx))
@@ -129,7 +129,8 @@ class AggregateOp(object):
                 val = valgetter(a, i)
                 inner(ri, val, ret, counter, mean, fill_value)
                 outersetter(outer, i, ret[ri])
-        return nb.njit(_loop, nogil=True)
+
+        return loop
 
     @staticmethod
     def _valgetter(a, i):
@@ -158,22 +159,24 @@ class Aggregate2pass(AggregateOp):
     def callable(cls, nans=False, reverse=False, scalar=False):
         # Careful, cls needs to be passed, so that the overwritten methods remain available in
         # AggregateOp.callable
-        loop = super(Aggregate2pass, cls).callable(nans=nans, reverse=reverse, scalar=scalar)
+        loop_1st = super(Aggregate2pass, cls).callable(nans=nans, reverse=reverse, scalar=scalar)
 
         _2pass_inner = nb.njit(cls._2pass_inner)
 
-        def _loop2(ret, counter, mean, fill_value, ddof):
+        @nb.njit
+        def loop_2nd(ret, counter, mean, fill_value, ddof):
             for ri in range(len(ret)):
                 if counter[ri] > ddof:
                     ret[ri] = _2pass_inner(ri, ret, counter, mean, ddof)
                 else:
                     ret[ri] = fill_value
-        loop2 = nb.njit(_loop2)
 
-        def _loop_2pass(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
-            loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof)
-            loop2(ret, counter, mean, fill_value, ddof)
-        return nb.njit(_loop_2pass)
+        @nb.njit
+        def loop_2pass(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
+            loop_1st(group_idx, a, ret, counter, mean, outer, fill_value, ddof)
+            loop_2nd(ret, counter, mean, fill_value, ddof)
+
+        return loop_2pass
 
     @staticmethod
     def _2pass_inner(ri, ret, counter, mean, ddof):
@@ -225,9 +228,10 @@ class AggregateGeneric(AggregateOp):
 
     def callable(self, nans=False):
         """Compile a jitted function and loop it over the sorted data."""
-        jitfunc = nb.njit(self.func, nogil=True)
+        func = nb.njit(self.func)
 
-        def _loop(sortidx, group_idx, a, ret):
+        @nb.njit
+        def loop(sortidx, group_idx, a, ret):
             size = len(ret)
             group_idx_srt = group_idx[sortidx]
             a_srt = a[sortidx]
@@ -240,8 +244,9 @@ class AggregateGeneric(AggregateOp):
                     raise ValueError("negative indices not supported")
                 if ri >= size:
                     raise ValueError("one or more indices in group_idx are too large")
-                ret[ri] = jitfunc(a_srt[start_idx:stop_idx])
-        return nb.njit(_loop, nogil=True)
+                ret[ri] = func(a_srt[start_idx:stop_idx])
+
+        return loop
 
 
 class Sum(AggregateOp):
@@ -462,10 +467,11 @@ _default_cache = {}
 
 
 def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
-              dtype=None, axis=None, cache=None, **kwargs):
+              dtype=None, axis=None, cache=True, **kwargs):
     func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
         if cache in (None, False):
+            # Keep None and False in order to accept empty dictionaries
             aggregate_op = AggregateGeneric(func)
         else:
             if cache is True:
@@ -482,7 +488,7 @@ aggregate.__doc__ = """
     """ + aggregate_common_doc
 
 
-@nb.njit(nogil=True, cache=True)
+@nb.njit
 def step_count(group_idx):
     """Return the amount of index changes within group_idx."""
     cmp_pos = 0
@@ -496,7 +502,7 @@ def step_count(group_idx):
     return steps
 
 
-@nb.njit(nogil=True, cache=True)
+@nb.njit
 def step_indices(group_idx):
     """Return the edges of areas within group_idx, which are filled with the same value."""
     ilen = step_count(group_idx) + 1
