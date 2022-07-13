@@ -230,7 +230,7 @@ def test_nan_input_len(aggregate_all, groups=100, group_size=5):
     np.testing.assert_array_equal(res, ref)
 
 
-def test_argmin_argmax(aggregate_all):
+def test_argmin_argmax_nonans(aggregate_all):
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, 3, 1, 10, 9, 9, 11])
 
@@ -241,17 +241,68 @@ def test_argmin_argmax(aggregate_all):
     np.testing.assert_array_equal(res, [3, -1, -1, 5])
 
 
-def test_nanargmin_nanargmax(aggregate_all):
+def test_argmin_argmax_nans(aggregate_all):
     if aggregate_all.__name__.endswith('purepy'):
-        pytest.skip("purepy doesn't handle nan values correctly")
+        pytest.xfail("purepy doesn't handle nan values correctly")
+    if aggregate_all.__name__.endswith('pandas'):
+        pytest.xfail("pandas always ignores nans")
+
+    group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
+    a = np.array([4, 4, 3, 1, np.nan, 1, 2, 3])
+
+    res = aggregate_all(group_idx, a, func="argmax", fill_value=-1)
+    np.testing.assert_array_equal(res, [0, -1, -1, -1])
+
+    res = aggregate_all(group_idx, a, func="argmin", fill_value=-1)
+    np.testing.assert_array_equal(res, [3, -1, -1, -1])
+
+
+
+def test_nanargmin_nanargmax_nans(aggregate_all):
+    if aggregate_all.__name__.endswith('purepy'):
+        pytest.xfail("purepy doesn't handle nan values correctly")
+
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, np.nan, 1, np.nan, np.nan, np.nan, np.nan])
 
-    res = aggregate_all(group_idx, a, func="nanargmax", fill_value=-1.0)
+    res = aggregate_all(group_idx, a, func="nanargmax", fill_value=-1)
     np.testing.assert_array_equal(res, [0, -1, -1, -1])
 
-    res = aggregate_all(group_idx, a, func="nanargmin", fill_value=-1.0)
+    res = aggregate_all(group_idx, a, func="nanargmin", fill_value=-1)
     np.testing.assert_array_equal(res, [3, -1, -1, -1])
+
+
+def test_nanargmin_nanargmax_nonans(aggregate_all):
+    group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
+    a = np.array([4, 4, 3, 1, 10, 9, 9, 11])
+
+    res = aggregate_all(group_idx, a, func="nanargmax", fill_value=-1)
+    np.testing.assert_array_equal(res, [0, -1, -1, 7])
+
+    res = aggregate_all(group_idx, a, func="nanargmin", fill_value=-1)
+    np.testing.assert_array_equal(res, [3, -1, -1, 5])
+
+
+def test_min_max_inf(aggregate_all):
+    # https://github.com/ml31415/numpy-groupies/issues/40
+    res = aggregate_all(np.array([0, 1, 2, 0, 1, 2]),
+                        np.array([-np.inf, 0, -np.inf, -np.inf, 0, 0]), func="max")
+    np.testing.assert_array_equal(res, [-np.inf, 0, 0])
+
+    res = aggregate_all(np.array([0, 1, 2, 0, 1, 2]),
+                        np.array([np.inf, 0, np.inf, np.inf, 0, 0]), func="min")
+    np.testing.assert_array_equal(res, [np.inf, 0, 0])
+
+
+def test_argmin_argmax_inf(aggregate_all):
+    # https://github.com/ml31415/numpy-groupies/issues/40
+    res = aggregate_all(np.array([0, 1, 2, 0, 1, 2]),
+                        np.array([-np.inf, 0, -np.inf, -np.inf, 0, 0]), func="argmax", fill_value=-1)
+    np.testing.assert_array_equal(res, [0, 1, 5])
+
+    res = aggregate_all(np.array([0, 1, 2, 0, 1, 2]),
+                        np.array([np.inf, 0, np.inf, np.inf, 0, 0]), func="argmin", fill_value=-1)
+    np.testing.assert_array_equal(res, [0, 1, 5])
 
 
 def test_mean(aggregate_all):

@@ -2,7 +2,7 @@ import numpy as np
 
 from .aggregate_numpy import _aggregate_base
 from .utils import aggregate_common_doc, check_boolean, get_func, isstr
-from .utils_numpy import aliasing, minimum_dtype, minimum_dtype_scalar
+from .utils_numpy import aliasing, minimum_dtype, minimum_dtype_scalar, minval, maxval
 
 
 def _anynan(group_idx, a, size, fill_value, dtype=None):
@@ -59,8 +59,7 @@ def _prod(group_idx, a, size, fill_value, dtype=None):
 def _min(group_idx, a, size, fill_value, dtype=None):
     """Same as aggregate_numpy.py"""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
-    dmax = np.iinfo(a.dtype).max if issubclass(a.dtype.type, np.integer)\
-        else np.finfo(a.dtype).max
+    dmax = maxval(fill_value, dtype)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != dmax:
         ret[group_idx] = dmax  # min starts from maximum
@@ -71,8 +70,7 @@ def _min(group_idx, a, size, fill_value, dtype=None):
 def _max(group_idx, a, size, fill_value, dtype=None):
     """Same as aggregate_numpy.py"""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
-    dmin = np.iinfo(a.dtype).min if issubclass(a.dtype.type, np.integer)\
-        else np.finfo(a.dtype).min
+    dmin = minval(fill_value, dtype)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != dmin:
         ret[group_idx] = dmin  # max starts from minimum
@@ -91,7 +89,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
         raise NotImplementedError("No such ufunc available")
     return _aggregate_base(group_idx, a, size=size, fill_value=fill_value,
                            order=order, dtype=dtype, func=func, axis=axis,
-                           _impl_dict=_impl_dict, _nansqueeze=False, **kwargs)
+                           _impl_dict=_impl_dict, **kwargs)
 
 
 aggregate.__doc__ = """

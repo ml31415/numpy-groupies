@@ -110,14 +110,14 @@ class AggregateOp(object):
             _cls_inner = nb.njit(cls._inner)
             _cls_nan_check = nb.njit(cls._nan_check)
 
-            def _inner(ri, val, ret, counter, mean):
+            def _inner(ri, val, ret, counter, mean, fill_value):
                 if not _cls_nan_check(val):
-                    _cls_inner(ri, val, ret, counter, mean)
+                    _cls_inner(ri, val, ret, counter, mean, fill_value)
 
             inner = nb.njit(_inner)
 
         def _loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
-            # fill_value and ddof need to be present for being exchangeable with loop_2pass
+            # ddof needs to be present for being exchangeable with loop_2pass
             size = len(ret)
             rng = range(len(group_idx) - 1, -1, -1) if reverse else range(len(group_idx))
             for i in rng:
@@ -127,7 +127,7 @@ class AggregateOp(object):
                 if ri >= size:
                     raise ValueError("one or more indices in group_idx are too large")
                 val = valgetter(a, i)
-                inner(ri, val, ret, counter, mean)
+                inner(ri, val, ret, counter, mean, fill_value)
                 outersetter(outer, i, ret[ri])
         return nb.njit(_loop, nogil=True)
 
@@ -141,10 +141,10 @@ class AggregateOp(object):
 
     @staticmethod
     def _nan_check(val):
-        return np.isnan(val)
+        return val != val
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         raise NotImplementedError("subclasses need to overwrite _inner")
 
     @staticmethod
@@ -248,7 +248,7 @@ class Sum(AggregateOp):
     forced_fill_value = 0
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] = 0
         ret[ri] += val
 
@@ -257,7 +257,7 @@ class Prod(AggregateOp):
     forced_fill_value = 1
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] = 0
         ret[ri] *= val
 
@@ -266,7 +266,7 @@ class Len(AggregateOp):
     forced_fill_value = 0
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] = 0
         ret[ri] += 1
 
@@ -275,7 +275,7 @@ class All(AggregateOp):
     forced_fill_value = 1
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] = 0
         ret[ri] &= bool(val)
 
@@ -284,7 +284,7 @@ class Any(AggregateOp):
     forced_fill_value = 0
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] = 0
         ret[ri] |= bool(val)
 
@@ -293,7 +293,7 @@ class Last(AggregateOp):
     counter_fill_value = None
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         ret[ri] = val
 
 
@@ -305,7 +305,7 @@ class AllNan(AggregateOp):
     forced_fill_value = 1
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] = 0
         ret[ri] &= val != val
 
@@ -314,14 +314,14 @@ class AnyNan(AggregateOp):
     forced_fill_value = 0
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] = 0
         ret[ri] |= val != val
 
 
 class Max(AggregateOp):
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         if counter[ri]:
             ret[ri] = val
             counter[ri] = 0
@@ -331,7 +331,7 @@ class Max(AggregateOp):
 
 class Min(AggregateOp):
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         if counter[ri]:
             ret[ri] = val
             counter[ri] = 0
@@ -348,31 +348,47 @@ class ArgMax(AggregateOp):
 
     @staticmethod
     def _nan_check(val):
-        return np.isnan(val[0])
+        return val[0] != val[0]
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         cmp_val, arg = val
         if counter[ri]:
-            mean[ri] = cmp_val
-            ret[ri] = arg
+            # start of a new group
             counter[ri] = 0
+            mean[ri] = cmp_val
+            if cmp_val == cmp_val:
+                # Don't point on nans
+                ret[ri] = arg
         elif mean[ri] < cmp_val:
+            # larger valid value found
             mean[ri] = cmp_val
             ret[ri] = arg
+        elif cmp_val != cmp_val:
+            # nan found, reset group
+            mean[ri] = cmp_val
+            ret[ri] = fill_value
 
 
 class ArgMin(ArgMax):
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         cmp_val, arg = val
         if counter[ri]:
-            mean[ri] = cmp_val
-            ret[ri] = arg
+            # start of a new group
             counter[ri] = 0
+            mean[ri] = cmp_val
+            if cmp_val == cmp_val:
+                # Don't point on nans
+                ret[ri] = arg
         elif mean[ri] > cmp_val:
+            # larger valid value found
             mean[ri] = cmp_val
             ret[ri] = arg
+        elif cmp_val != cmp_val:
+            # nan found, reset group
+            mean[ri] = cmp_val
+            ret[ri] = fill_value
 
 
 class Mean(Aggregate2pass):
@@ -381,7 +397,7 @@ class Mean(Aggregate2pass):
     counter_dtype = int
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] += 1
         ret[ri] += val
 
@@ -394,7 +410,7 @@ class Std(Mean):
     mean_fill_value = 0
 
     @staticmethod
-    def _inner(ri, val, ret, counter, mean):
+    def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] += 1
         mean[ri] += val
         ret[ri] += val * val

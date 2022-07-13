@@ -48,7 +48,7 @@ def benchmark_data(size=5e5, seed=100):
     return a, nana, group_idx
 
 
-def benchmark(implementations, repeat=5, size=5e5, seed=100):
+def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False):
     a, nana, group_idx = benchmark_data(size=size, seed=seed)
 
     print("function" + ''.join(impl.__name__.rsplit('_', 1)[1].rjust(14) for impl in implementations))
@@ -66,11 +66,13 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100):
             aggregatefunc = impl.aggregate
 
             try:
-                res = aggregatefunc(group_idx, used_a, func=func, cache=True)
+                res = aggregatefunc(group_idx, used_a, func=func)
             except NotImplementedError:
                 print('----'.rjust(14), end='')
                 continue
             except Exception:
+                if raise_errors:
+                    raise
                 print('ERROR'.rjust(14), end='')
             else:
                 results.append(res)
@@ -79,7 +81,7 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100):
                 except AssertionError:
                     print('FAIL'.rjust(14), end='')
                 else:
-                    t0 = min(timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func, cache=True)).repeat(repeat=repeat, number=1))
+                    t0 = min(timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func)).repeat(repeat=repeat, number=1))
                     print(("%.3f" % (t0 * 1000)).rjust(14), end='')
             sys.stdout.flush()
         print()
@@ -100,4 +102,4 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100):
 if __name__ == '__main__':
     implementations = _implementations if '--purepy' in sys.argv else _implementations[1:]
     implementations = implementations if '--pandas' in sys.argv else implementations[:-1]
-    benchmark(implementations)
+    benchmark(implementations, raise_errors=False)

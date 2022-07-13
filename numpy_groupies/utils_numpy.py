@@ -169,6 +169,24 @@ def check_dtype(dtype, func_str, a, n):
                         return a_dtype
 
 
+def minval(fill_value, dtype):
+    dtype = minimum_dtype(fill_value, dtype)
+    if issubclass(dtype.type, np.floating):
+        return -np.inf
+    if issubclass(dtype.type, np.integer):
+        return  np.iinfo(dtype).min
+    return np.finfo(dtype).min
+
+
+def maxval(fill_value, dtype):
+    dtype = minimum_dtype(fill_value, dtype)
+    if issubclass(dtype.type, np.floating):
+        return np.inf
+    if issubclass(dtype.type, np.integer):
+        return  np.iinfo(dtype).max
+    return np.finfo(dtype).max
+
+
 def check_fill_value(fill_value, dtype, func=None):
     if func in ('all', 'any', 'allnan', 'anynan'):
         check_boolean(fill_value)

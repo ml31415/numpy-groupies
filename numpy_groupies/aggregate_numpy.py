@@ -2,7 +2,7 @@ import numpy as np
 
 from .utils import aggregate_common_doc, check_boolean, funcs_no_separate_nan, get_func, isstr
 from .utils_numpy import (aliasing, check_dtype, check_fill_value, input_validation, iscomplexobj,
-                          minimum_dtype, minimum_dtype_scalar)
+                          minimum_dtype, minimum_dtype_scalar, minval, maxval)
 
 
 def _sum(group_idx, a, size, fill_value, dtype=None):
@@ -78,8 +78,7 @@ def _any(group_idx, a, size, fill_value, dtype=None):
 
 def _min(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
-    dmax = np.iinfo(a.dtype).max if issubclass(a.dtype.type, np.integer)\
-        else np.finfo(a.dtype).max
+    dmax = maxval(fill_value, dtype)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != dmax:
         ret[group_idx] = dmax  # min starts from maximum
@@ -89,8 +88,7 @@ def _min(group_idx, a, size, fill_value, dtype=None):
 
 def _max(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
-    dmin = np.iinfo(a.dtype).min if issubclass(a.dtype.type, np.integer)\
-        else np.finfo(a.dtype).min
+    dmin = minval(fill_value, dtype)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != dmin:
         ret[group_idx] = dmin  # max starts from minimum
@@ -98,11 +96,10 @@ def _max(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-def _argmax(group_idx, a, size, fill_value, dtype=None):
-    dtype = minimum_dtype(fill_value, dtype or int)
-    dmin = np.iinfo(a.dtype).min if issubclass(a.dtype.type, np.integer)\
-        else np.finfo(a.dtype).min
-    group_max = _max(group_idx, a, size, dmin)
+def _argmax(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
+    a_ = np.where(np.isnan(a), -np.inf, a) if _nansqueeze else a
+    group_max = _max(group_idx, a_, size, np.nan)
+    # nan should never be maximum, so use a and not a_
     is_max = a == group_max[group_idx]
     ret = np.full(size, fill_value, dtype=dtype)
     group_idx_max = group_idx[is_max]
@@ -111,11 +108,10 @@ def _argmax(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-def _argmin(group_idx, a, size, fill_value, dtype=None):
-    dtype = minimum_dtype(fill_value, dtype or int)
-    dmax = np.iinfo(a.dtype).max if issubclass(a.dtype.type, np.integer)\
-        else np.finfo(a.dtype).max
-    group_min = _min(group_idx, a, size, dmax)
+def _argmin(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
+    a_ = np.where(np.isnan(a), np.inf, a) if _nansqueeze else a
+    group_min = _min(group_idx, a_, size, np.nan)
+    # nan should never be minimum, so use a and not a_
     is_min = a == group_min[group_idx]
     ret = np.full(size, fill_value, dtype=dtype)
     group_idx_min = group_idx[is_min]
@@ -253,7 +249,7 @@ _impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
 
 def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
                     order='C', dtype=None, axis=None, _impl_dict=_impl_dict,
-                    _nansqueeze=False, cache=None, **kwargs):
+                    **kwargs):
     iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
     group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
@@ -271,14 +267,9 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
         if func.startswith('nan'):
             if np.ndim(a) == 0:
                 raise ValueError("nan-version not supported for scalar input.")
-            if _nansqueeze:
+            if 'nan' in func:
                 if 'arg' in func:
-                    # This is not optimal and will produce wrong results in all-nan groups
-                    bad = np.isnan(a)
-                    if 'min' in func:
-                        a = np.where(bad, np.inf, a)
-                    else:
-                        a = np.where(bad, -np.inf, a)
+                    kwargs['_nansqueeze'] = True
                 else:
                     good = ~np.isnan(a)
                     a = a[good]
@@ -306,7 +297,7 @@ def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
               dtype=None, axis=None, **kwargs):
     return _aggregate_base(group_idx, a, size=size, fill_value=fill_value,
                            order=order, dtype=dtype, func=func, axis=axis,
-                           _impl_dict=_impl_dict, _nansqueeze=True, **kwargs)
+                           _impl_dict=_impl_dict, **kwargs)
 
 
 aggregate.__doc__ = """
