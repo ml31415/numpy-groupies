@@ -108,7 +108,8 @@ The following functions don't reduce the data, but instead produce an output mat
 * `cummax` - cumulative maximum of items within each group. (numba only)
 * `'sort'` - sort the items within each group in ascending order, use reverse=True to invert the order.
 
-Finally, there are three functions which don't reduce each group to a single value, instead they return the full set of items within the group:
+Finally, there are three functions which don't reduce each group to a single value, instead they return the full 
+set of items within the group:
 * `'array'` - simply returns the grouped items, using the same order as appeared in `a`. (numpy only)
 
 
@@ -119,47 +120,49 @@ group_idx = np.arange(5).repeat(3)
 # group_idx: array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
 a = np.arange(group_idx.size)
 # a: array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14])
-x = aggregate(group_idx, a) # sum is default
+x = npg.aggregate(group_idx, a) # sum is default
 # x: array([ 3, 12, 21, 30, 39])
-x = aggregate(group_idx, a, 'prod')
+x = npg.aggregate(group_idx, a, 'prod')
 # x: array([ 0, 60, 336, 990, 2184])
 ```
 
 Get variance ignoring nans, setting all-nan groups to `nan`.
 ```python
-x = aggregate(group_idx, a, func='nanvar', fill_value=nan)
+x = npg.aggregate(group_idx, a, func='nanvar', fill_value=nan)
 ```
 
-Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, indeed that is how the numpy implementation does it.
+Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, 
+indeed that is how the numpy implementation does it.
 ```python
-x = aggregate(group_idx, 1)
+x = npg.aggregate(group_idx, 1)
 ```
 
-Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions have the same size, but that doesn't have to be the case.
+Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions 
+have the same size, but that doesn't have to be the case.
 ```python
 group_idx = np.random.randint(0, 15, size=(3, 1000))
 a = np.random.random(group_idx.shape[1])
-x = aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
+x = npg.aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
 # x.shape: (15, 15, 15)
 # np.isfortran(x): True
 ```
 
 Use a custom function to generate some strings.
 ```python
-group_idx = array([1, 0,  1,  4,  1])
-a = array([12.0, 3.2, -15, 88, 12.9])
-x = aggregate(group_idx, a,
+group_idx = np.array([1, 0,  1,  4,  1])
+a = np.array([12.0, 3.2, -15, 88, 12.9])
+x = npg.aggregate(group_idx, a,
               func=lambda g: ' or maybe '.join(str(gg) for gg in g), fill_value='')
 # x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
 
 Use the `axis` arg in order to do a sum-aggregation on three rows simultaneously.
 ```python
-a = array([[99, 2,  11, 14,  20],
+a = np.array([[99, 2,  11, 14,  20],
 	   	   [33, 76, 12, 100, 71],
 		   [67, 10, -8, 1,   9]])
-group_idx = array([[3, 3, 7, 0, 0]])
-x = aggregate(group_idx, a, axis=1)
+group_idx = np.array([[3, 3, 7, 0, 0]])
+x = npg.aggregate(group_idx, a, axis=1)
 # x : [[ 34, 0, 0, 101, 0, 0, 0, 11],
 #      [171, 0, 0, 109, 0, 0, 0, 12],
 #      [ 10, 0, 0,  77, 0, 0, 0, -8]]
@@ -185,8 +188,8 @@ However some implementations only support a subset of the valid inputs and will 
 
 
 ### Benchmarks
-Scripts for testing and benchmarking are included in this repository. For benchmarking, run `python -m numpy_groupies.benchmarks.generic` 
-from the root of this repository.
+Scripts for testing and benchmarking are included in this repository. For benchmarking, run 
+`python -m numpy_groupies.benchmarks.generic` from the root of this repository.
 
 Below we are using `500,000` indices uniformly picked from `[0, 1000)`. The values of `a` are uniformly picked from 
 the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). 
@@ -280,13 +283,12 @@ Linux(x86_64), Python 2.7.18, Numpy 1.16.6, Numba 0.46.0, Weave 0.17.0
 This project was started by @ml31415 and the `numba` and `weave` implementations are by him. The pure 
 python and `numpy` implementations were written by @d1manson.
 
-The authors hope that `numpy`'s `ufunc.at` methods will eventually be fast enough that hand-optimisation
-of individual functions will become unneccessary. However even if that does happen, there may still be a 
-role for the `aggregate` function as a light-weight wrapper around those functions.
+The authors hope that `numpy`'s `ufunc.at` methods or some other implementation of `aggregate` within
+`numpy` or `scipy` will eventually be fast enough, to make this package redundant.
 
-So far `numpy_grpupies` can still be run on python2, mainly because `weave` was never ported to python3.
-Ditching python2 would mean to ditch the `weave` implementation, which is so far the best competitor in
-terms of speed. In order not to lose this benchmarking option, python2 compatibility is likely to stay 
+
+### python2
+So far `numpy_grpupies` can still be run on `python2`, mainly because `weave` was never ported to `python3`.
+Ditching `python2` support would mean to ditch the `weave` implementation, which is so far the best competitor in
+terms of speed. In order not to lose this benchmarking option, `python2` compatibility is likely to stay 
 for now.
-
-Maybe at some point a version of `aggregate` will make its way into `numpy` itself (or at least `scipy`).
