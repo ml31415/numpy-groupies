@@ -17,6 +17,20 @@ def aggregate_all(request):
     return _wrap_notimplemented_xfail(impl.aggregate, 'aggregate_' + name)
 
 
+def _deselect_purepy(aggregate_all, *args, **kwargs):
+    # purepy implementations does not handle nan values and ndim correctly.
+    # So it needs to be excluded from several tests."""
+    return aggregate_all.__name__.endswith('purepy')
+
+
+def _deselect_purepy_and_invalid_axis(aggregate_all, size, axis, *args, **kwargs):
+    if axis >= len(size):
+        return True
+    if aggregate_all.__name__.endswith('purepy'):
+        # purepy does not handle axis parameter
+        return True
+
+
 def test_preserve_missing(aggregate_all):
     res = aggregate_all(np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int))
     np.testing.assert_array_equal(res, np.array([101, 206, 0, 208]))
@@ -100,12 +114,14 @@ def test_array_ordering(aggregate_all, order, size=10):
     assert aggregate_all(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(range(size))
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 @pytest.mark.parametrize("size", [None, (10, 2)])
 def test_ndim_group_idx(aggregate_all, size):
     group_idx = np.vstack((np.repeat(np.arange(10), 10), np.repeat([0, 1], 50)))
     aggregate_all(group_idx, 1, size=size)
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 @pytest.mark.parametrize(["ndim", "order"], itertools.product([1, 2, 3], ["C", "F"]))
 def test_ndim_indexing(aggregate_all, ndim, order, outsize=10):
     nindices = int(outsize ** ndim)
@@ -242,9 +258,8 @@ def test_argmin_argmax_nonans(aggregate_all):
     np.testing.assert_array_equal(res, [3, -1, -1, 5])
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 def test_argmin_argmax_nans(aggregate_all):
-    if aggregate_all.__name__.endswith('purepy'):
-        pytest.xfail("purepy doesn't handle nan values correctly")
     if aggregate_all.__name__.endswith('pandas'):
         pytest.xfail("pandas always ignores nans")
 
@@ -258,9 +273,10 @@ def test_argmin_argmax_nans(aggregate_all):
     np.testing.assert_array_equal(res, [3, -1, -1, -1])
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 def test_nanargmin_nanargmax_nans(aggregate_all):
-    if aggregate_all.__name__.endswith('purepy'):
-        pytest.xfail("purepy doesn't handle nan values correctly")
+    if aggregate_all.__name__.endswith('pandas'):
+        pytest.xfail("pandas doesn't fill indices for all-nan groups with fill_value but with -inf instead")
 
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, np.nan, 1, np.nan, np.nan, np.nan, np.nan])
@@ -339,12 +355,8 @@ def test_list_ordering(aggregate_all, order):
         a = a[::-1]
     ref = a[:4]
 
-    try:
-        res = aggregate_all(group_idx, a, func=list)
-    except NotImplementedError:
-        pytest.xfail("Function not yet implemented")
-    else:
-        np.testing.assert_array_equal(np.array(res[0]), ref)
+    res = aggregate_all(group_idx, a, func=list)
+    np.testing.assert_array_equal(np.array(res[0]), ref)
 
 
 @pytest.mark.parametrize("order", ["normal", "reverse"])
@@ -358,14 +370,6 @@ def test_sort(aggregate_all, order):
 
     res = aggregate_all(group_idx, a, func="sort", reverse=reverse)
     np.testing.assert_array_equal(res, ref)
-
-
-def _deselect_purepy_and_invalid_axis(aggregate_all, func, size, axis):
-    if axis >= len(size):
-        return True
-    if aggregate_all.__name__.endswith('purepy'):
-        # purepy does not handle axis parameter
-        return True
 
 
 @pytest.mark.deselect_if(func=_deselect_purepy_and_invalid_axis)
@@ -424,6 +428,7 @@ def test_along_axis(aggregate_all, func, size, axis):
     np.testing.assert_allclose(actual.squeeze(), expected)
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 def test_not_last_axis_reduction(aggregate_all):
     group_idx = np.array([1, 2, 2, 0, 1])
     a = np.array([
@@ -442,8 +447,9 @@ def test_not_last_axis_reduction(aggregate_all):
     np.testing.assert_allclose(expected, actual)
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 def test_custom_callable(aggregate_all):
-    def sum_(x):
+    def custom_callable(x):
         return x.sum()
 
     size = (10,)
@@ -453,12 +459,13 @@ def test_custom_callable(aggregate_all):
     a = np.random.randn(*size)
 
     expected = a.sum(axis=axis, keepdims=True)
-    actual = aggregate_all(group_idx, a, axis=axis, func=sum_, fill_value=0)
+    actual = aggregate_all(group_idx, a, axis=axis, func=custom_callable, fill_value=0)
     assert actual.ndim == a.ndim
 
     np.testing.assert_allclose(actual, expected)
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 def test_argreduction_nD_array_1D_idx(aggregate_all):
     # https://github.com/ml31415/numpy-groupies/issues/41
     group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
@@ -468,6 +475,7 @@ def test_argreduction_nD_array_1D_idx(aggregate_all):
     np.testing.assert_equal(actual, expected)
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 def test_argreduction_negative_fill_value(aggregate_all):
     if aggregate_all.__name__.endswith('pandas'):
         pytest.xfail("pandas always skips nan values")
@@ -479,6 +487,7 @@ def test_argreduction_negative_fill_value(aggregate_all):
     np.testing.assert_equal(actual, expected)
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 @pytest.mark.parametrize("nan_inds", (None, tuple([[1, 4, 5], Ellipsis]), tuple((1, (0, 1, 2, 3)))))
 @pytest.mark.parametrize("ddof", (0, 1))
 @pytest.mark.parametrize("func", ("nanvar", "nanstd"))

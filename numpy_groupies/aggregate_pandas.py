@@ -39,6 +39,8 @@ _impl_dict.update(allnan=partial(_wrapper, func=allnan),
                   nanlen=partial(_wrapper, func='count'),
                   argmax=partial(_wrapper, func='idxmax'),
                   argmin=partial(_wrapper, func='idxmin'),
+                  nanargmax=partial(_wrapper, func='idxmax'),
+                  nanargmin=partial(_wrapper, func='idxmin'),
                   generic=_wrapper)
 
 

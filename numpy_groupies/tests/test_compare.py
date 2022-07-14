@@ -67,6 +67,18 @@ def aggregate_cmp(request, seed=100):
     return AttrDict(locals())
 
 
+def _deselect_purepy(aggregate_cmp, *args, **kwargs):
+    # purepy implementation does not handle ndim arrays
+    # This is a won't fix and should be deselected instead of skipped
+    return aggregate_cmp.endswith('py')
+
+
+def _deselect_purepy_nanfuncs(aggregate_cmp, func, *args, **kwargs):
+    # purepy implementation does not handle nan values correctly
+    # This is a won't fix and should be deselected instead of skipped
+    return 'nan' in getattr(func, '__name__', func) and aggregate_cmp.endswith('py')
+
+
 def func_arbitrary(iterator):
     tmp = 0
     for x in iterator:
@@ -81,14 +93,10 @@ def func_preserve_order(iterator):
     return tmp
 
 
-def _deselect_purepy_nanfuncs(aggregate_cmp, func, fill_value):
-    # purepy implementation does not handle nan values correctly
-    return 'nan' in getattr(func, '__name__', func) and aggregate_cmp.endswith('py')
-
-
+@pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
 @pytest.mark.deselect_if(func=_deselect_purepy_nanfuncs)
-@pytest.mark.parametrize(["func", "fill_value"], product(func_list, [0, 1, np.nan]),
-                         ids=lambda x: getattr(x, '__name__', x))
+@pytest.mark.parametrize("fill_value", [0, 1, np.nan])
+@pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, '__name__', x))
 def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
     is_nanfunc = 'nan' in getattr(func, '__name__', func)
     a = aggregate_cmp.nana if is_nanfunc else aggregate_cmp.a
@@ -107,9 +115,16 @@ def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
                 raise
         if isinstance(ref, np.ndarray):
             assert res.dtype == ref.dtype
-        np.testing.assert_allclose(res, ref, rtol=10**-decimal)
+        try:
+            np.testing.assert_allclose(res, ref, rtol=10**-decimal)
+        except AssertionError:
+            if 'arg' in func and aggregate_cmp.test_pair.startswith('pandas'):
+                pytest.xfail("pandas doesn't fill indices for all-nan groups with fill_value, but with -inf instead")
+            else:
+                raise
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy)
 @pytest.mark.parametrize(["ndim", "order"], product([2, 3], ["C", "F"]))
 def test_cmp_ndim(aggregate_cmp, ndim, order, outsize=100, decimal=14):
     nindices = int(outsize ** ndim)
