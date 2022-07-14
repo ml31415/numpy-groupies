@@ -1,6 +1,7 @@
 """ Tests, that are run against all implemented versions of aggregate. """
 
 import itertools
+import warnings
 import numpy as np
 import pytest
 
@@ -397,23 +398,25 @@ def test_along_axis(aggregate_all, func, size, axis):
     elif func == "nansumofsquares":
         expected = np.nansum(a * a, axis=axis)
     else:
-        with np.errstate(invalid="ignore", divide="ignore"):
+        with warnings.catch_warnings():
+            # Filter  expected warnings:
+            # - RuntimeWarning: All-NaN slice encountered
+            # - RuntimeWarning: Mean of empty slice
+            # - RuntimeWarning: Degrees of freedom <= 0 for slice.
+            warnings.simplefilter("ignore", RuntimeWarning)
             expected = getattr(np, func)(a, axis=axis)
 
-    # The default fill_value is 0, the following makes the output
-    # match numpy
-    fill_values = {
+    # The default fill_value is 0, the following makes the output match numpy
+    fill_value = {
         "nanprod": 1,
         "nanvar": np.nan,
         "nanstd": np.nan,
         "nanmax": np.nan,
         "nanmin": np.nan,
         "nanmean": np.nan,
-    }
+    }.get(func, 0)
 
-    actual = aggregate_all(
-        group_idx, a, axis=axis, func=func, fill_value=fill_values.get(func, 0)
-    )
+    actual = aggregate_all(group_idx, a, axis=axis, func=func, fill_value=fill_value)
     assert actual.ndim == a.ndim
 
     # argmin, argmax don't support keepdims, so we can't use that to construct expected
@@ -486,8 +489,10 @@ def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds, func):
     if nan_inds is not None:
         a[nan_inds] = np.nan
 
-    actual = aggregate_all(
-        group_idx, a, axis=-1, fill_value=np.nan, func=func, ddof=ddof
-    )
-    expected = getattr(np, func)(a, keepdims=True, axis=-1, ddof=ddof)
+    with warnings.catch_warnings():
+        # Filter RuntimeWarning: Degrees of freedom <= 0 for slice.
+        warnings.simplefilter("ignore", RuntimeWarning)
+        expected = getattr(np, func)(a, keepdims=True, axis=-1, ddof=ddof)
+
+    actual = aggregate_all(group_idx, a, axis=-1, fill_value=np.nan, func=func, ddof=ddof)
     np.testing.assert_equal(actual, expected)
