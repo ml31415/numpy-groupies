@@ -4,6 +4,7 @@ results are compared against the results of the other implementations. Implement
 may throw NotImplementedError in order to show missing functionality without throwing
 test errors. 
 """
+import sys
 from itertools import product
 import numpy as np
 import pytest
@@ -12,10 +13,17 @@ from . import (aggregate_purepy, aggregate_numpy_ufunc, aggregate_numpy,
                aggregate_weave, aggregate_numba, aggregate_pandas,
                _wrap_notimplemented_xfail, _impl_name, func_list)
 
+
 class AttrDict(dict):
     __getattr__ = dict.__getitem__
 
-@pytest.fixture(params=['np/py', 'weave/np', 'ufunc/np', 'numba/np', 'pandas/np'], scope='module')
+
+TEST_PAIRS = ['np/py', 'ufunc/np', 'numba/np', 'pandas/np']
+if sys.version_info.major == 2:
+    TEST_PAIRS.append('weave/np')
+
+
+@pytest.fixture(params=TEST_PAIRS, scope='module')
 def aggregate_cmp(request, seed=100):
     test_pair = request.param
     if test_pair == 'np/py':
@@ -71,12 +79,18 @@ def func_preserve_order(iterator):
     for i, x in enumerate(iterator, 1):
         tmp += x ** i
     return tmp
+
+
+def _deselect_purepy_nanfuncs(aggregate_cmp, func, fill_value):
+    # purepy implementation does not handle nan values correctly
+    return 'nan' in getattr(func, '__name__', func) and aggregate_cmp.endswith('py')
+
+
+@pytest.mark.deselect_if(func=_deselect_purepy_nanfuncs)
 @pytest.mark.parametrize(["func", "fill_value"], product(func_list, [0, 1, np.nan]),
                          ids=lambda x: getattr(x, '__name__', x))
 def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
     is_nanfunc = 'nan' in getattr(func, '__name__', func)
-    if is_nanfunc and aggregate_cmp.test_pair.endswith('py'):
-        pytest.xfail("pure python version does not handle nan values")
     a = aggregate_cmp.nana if is_nanfunc else aggregate_cmp.a
     try:
         ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)

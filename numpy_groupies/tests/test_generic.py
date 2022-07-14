@@ -257,7 +257,6 @@ def test_argmin_argmax_nans(aggregate_all):
     np.testing.assert_array_equal(res, [3, -1, -1, -1])
 
 
-
 def test_nanargmin_nanargmax_nans(aggregate_all):
     if aggregate_all.__name__.endswith('purepy'):
         pytest.xfail("purepy doesn't handle nan values correctly")
@@ -360,13 +359,19 @@ def test_sort(aggregate_all, order):
     np.testing.assert_array_equal(res, ref)
 
 
+def _deselect_purepy_and_invalid_axis(aggregate_all, func, size, axis):
+    if axis >= len(size):
+        return True
+    if aggregate_all.__name__.endswith('purepy'):
+        # purepy does not handle axis parameter
+        return True
+
+
+@pytest.mark.deselect_if(func=_deselect_purepy_and_invalid_axis)
 @pytest.mark.parametrize("axis", (0, 1))
 @pytest.mark.parametrize("size", ((12,), (12, 5)))
 @pytest.mark.parametrize("func", func_list)
-def test_along_axis(aggregate_all, size, func, axis):
-    if axis >= len(size):
-        pytest.skip("No such axis")
-
+def test_along_axis(aggregate_all, func, size, axis):
     group_idx = np.zeros(size[axis], dtype=int)
     a = np.random.randn(*size)
 
@@ -411,24 +416,23 @@ def test_along_axis(aggregate_all, size, func, axis):
     )
     assert actual.ndim == a.ndim
 
-    # argmin, argmax don't support keepdims so we can't use that to construct expected
+    # argmin, argmax don't support keepdims, so we can't use that to construct expected
     # instead we squeeze out the extra dims in actual.
     np.testing.assert_allclose(actual.squeeze(), expected)
 
 
 def test_not_last_axis_reduction(aggregate_all):
-    x = np.array([
+    group_idx = np.array([1, 2, 2, 0, 1])
+    a = np.array([
         [1., 2.],
         [4., 4.],
         [5., 2.],
         [np.nan, 3.],
-        [8., 7.]]
-    )
-    group_idx = np.array([1, 2, 2, 0, 1])
+        [8., 7.]])
     func = 'nanmax'
     fill_value = np.nan
     axis = 0
-    actual = aggregate_all(group_idx, x, axis=axis, func=func, fill_value=fill_value)
+    actual = aggregate_all(group_idx, a, axis=axis, func=func, fill_value=fill_value)
     expected = np.array([[np.nan, 3.],
                          [8., 7.],
                          [5., 4.]])
@@ -436,27 +440,27 @@ def test_not_last_axis_reduction(aggregate_all):
 
 
 def test_custom_callable(aggregate_all):
-    def sum_(array):
-        return array.sum()
+    def sum_(x):
+        return x.sum()
 
     size = (10,)
     axis = -1
 
     group_idx = np.zeros(size, dtype=int)
-    array = np.random.randn(*size)
+    a = np.random.randn(*size)
 
-    expected = array.sum(axis=axis, keepdims=True)
-    actual = aggregate_all(group_idx, array, axis=axis, func=sum_, fill_value=0)
-    assert actual.ndim == array.ndim
+    expected = a.sum(axis=axis, keepdims=True)
+    actual = aggregate_all(group_idx, a, axis=axis, func=sum_, fill_value=0)
+    assert actual.ndim == a.ndim
 
     np.testing.assert_allclose(actual, expected)
 
 
 def test_argreduction_nD_array_1D_idx(aggregate_all):
-    # regression test for GH41
-    labels = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
-    array = np.array([[1] * 12, [1] * 12])
-    actual = aggregate_all(labels, array, axis=-1, func="argmax")
+    # https://github.com/ml31415/numpy-groupies/issues/41
+    group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
+    a = np.array([[1] * 12, [1] * 12])
+    actual = aggregate_all(group_idx, a, axis=-1, func="argmax")
     expected = np.array([[0, 5, 2], [0, 5, 2]])
     np.testing.assert_equal(actual, expected)
 
@@ -465,9 +469,9 @@ def test_argreduction_negative_fill_value(aggregate_all):
     if aggregate_all.__name__.endswith('pandas'):
         pytest.xfail("pandas always skips nan values")
 
-    labels = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
-    array = np.array([[1] * 12, [np.nan] * 12])
-    actual = aggregate_all(labels, array, axis=-1, fill_value=-1, func="argmax")
+    group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
+    a = np.array([[1] * 12, [np.nan] * 12])
+    actual = aggregate_all(group_idx, a, axis=-1, fill_value=-1, func="argmax")
     expected = np.array([[0, 5, 2], [-1, -1, -1]])
     np.testing.assert_equal(actual, expected)
 
@@ -476,14 +480,14 @@ def test_argreduction_negative_fill_value(aggregate_all):
 @pytest.mark.parametrize("ddof", (0, 1))
 @pytest.mark.parametrize("func", ("nanvar", "nanstd"))
 def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds, func):
-    array = np.ones((12, 5))
-    labels = np.zeros(array.shape[-1:], dtype=int)
+    a = np.ones((12, 5))
+    group_idx = np.zeros(a.shape[-1:], dtype=int)
 
     if nan_inds is not None:
-        array[nan_inds] = np.nan
+        a[nan_inds] = np.nan
 
     actual = aggregate_all(
-        labels, array, axis=-1, fill_value=np.nan, func=func, ddof=ddof
+        group_idx, a, axis=-1, fill_value=np.nan, func=func, ddof=ddof
     )
-    expected = getattr(np, func)(array, keepdims=True, axis=-1, ddof=ddof)
+    expected = getattr(np, func)(a, keepdims=True, axis=-1, ddof=ddof)
     np.testing.assert_equal(actual, expected)
