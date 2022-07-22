@@ -2,13 +2,10 @@
 
 import os
 import versioneer
-from setuptools import setup
-from distutils import log
-from distutils.command.clean import clean
-from distutils.dir_util import remove_tree
+from setuptools import setup, Command
+from shutil import rmtree
 
 base_path = os.path.dirname(os.path.abspath(__file__))
-
 
 long_description = """
 This package consists of a couple of optimised tools for doing things that can roughly be 
@@ -25,16 +22,24 @@ implementations in other packages (check the benchmarks).
 """
 
 
-class NumpyGroupiesClean(clean):
-    """Custom clean command to tidy up the project root."""
+class Clean(Command):
+    description = "clean up temporary files from 'build' command"
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
     def run(self):
-        clean.run(self)
-        for folder in ('build', 'numpy_groupies.egg-info'):
+        for folder in ('build', 'dist', 'intnan.egg-info'):
             path = os.path.join(base_path, folder)
             if os.path.isdir(path):
-                remove_tree(path, dry_run=self.dry_run)
-        if not self.dry_run:
-            self._rm_walk()
+                print("removing '{}' (and everything under it)".format(path))
+                if not self.dry_run:
+                    rmtree(path)
+        self._rm_walk()
 
     def _rm_walk(self):
         for path, dirs, files in os.walk(base_path):
@@ -42,13 +47,16 @@ class NumpyGroupiesClean(clean):
                 # Skip hidden directories like the git folder right away
                 continue
             if path.endswith('__pycache__'):
-                remove_tree(path, dry_run=self.dry_run)
+                print("removing '{}' (and everything under it)".format(path))
+                if not self.dry_run:
+                    rmtree(path)
             else:
                 for fname in files:
                     if fname.endswith('.pyc') or fname.endswith('.so'):
                         fpath = os.path.join(path, fname)
-                        os.remove(fpath)
-                        log.info("removing '%s'", fpath)
+                        print("removing '{}'".format(fpath))
+                        if not self.dry_run:
+                            os.remove(fpath)
 
 
 setup(name='numpy_groupies',
@@ -62,15 +70,13 @@ setup(name='numpy_groupies',
       download_url="https://github.com/ml31415/numpy-groupies/archive/master.zip",
       keywords=[ "accumarray", "aggregate", "groupby", "grouping", "indexing"],
       packages=['numpy_groupies'],
-      install_requires=[],
-      setup_requires=['pytest-runner'],
-      tests_require=['pytest', 'numpy', 'numba'],
+      install_requires=['numpy', 'numba'],
+      extras_require={'tests': ['pytest']},
       classifiers=['Development Status :: 4 - Beta',
                    'Intended Audience :: Science/Research',
                    'Programming Language :: Python :: 3.7',
                    'Programming Language :: Python :: 3.8',
                    'Programming Language :: Python :: 3.9',
-                   'Programming Language :: Python :: 3.10',
-                   ],
-      cmdclass=dict(clean=NumpyGroupiesClean, **versioneer.get_cmdclass()),
+                   'Programming Language :: Python :: 3.10'],
+      cmdclass=dict(clean=Clean, **versioneer.get_cmdclass()),
 )
