@@ -300,6 +300,9 @@ def test_nanargmin_nanargmax_nonans(aggregate_all):
 
 
 def test_min_max_inf(aggregate_all):
+    if aggregate_all.__name__.endswith('polars'):
+        pytest.xfail("polars doesn't use -inf as fill-value")
+
     # https://github.com/ml31415/numpy-groupies/issues/40
     res = aggregate_all(np.array([0, 1, 2, 0, 1, 2]),
                         np.array([-np.inf, 0, -np.inf, -np.inf, 0, 0]), func="max")

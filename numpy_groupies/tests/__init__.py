@@ -13,9 +13,13 @@ try:
     from .. import aggregate_pandas
 except ImportError:
     aggregate_pandas = None
+try:
+    from .. import aggregate_polars
+except ImportError:
+    aggregate_polars = None
 
 _implementations = [aggregate_purepy, aggregate_numpy_ufunc, aggregate_numpy,
-                    aggregate_numba, aggregate_weave, aggregate_pandas]
+                    aggregate_numba, aggregate_weave, aggregate_pandas, aggregate_polars]
 _implementations = [i for i in _implementations if i is not None]
 
 
@@ -33,6 +37,7 @@ _not_implemented_by_impl_name = {
     'weave':  ('argmin', 'argmax', 'array', 'list', 'sort', 'cumsum', 'cummax', 'cummin',
                'nanargmin', 'nanargmax', 'sumofsquares', 'nansumofsquares',
                '<lambda>', 'custom_callable'),
+    'polars': 'NO_CHECK',
     'ufunc':  'NO_CHECK'}
 
 

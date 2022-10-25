@@ -36,6 +36,7 @@ func_list = (np.sum, np.prod, np.min, np.max, len, np.all, np.any, 'anynan', 'al
              np.nanmean, np.nanvar, np.nanstd, 'nanfirst', 'nanlast', 'nanargmin',
              'nanargmax', 'cumsum', 'cumprod', 'cummax', 'cummin', arbitrary, 'sort')
 
+
 def benchmark_data(size=5e5, seed=100):
     rnd = np.random.RandomState(seed=seed)
     group_idx = rnd.randint(0, int(1e3), int(size))
@@ -97,9 +98,16 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False)
     if 'pandas' in implementation_names:
         import pandas
         postfix += ', Pandas %s' % pandas.__version__
+    if 'polars' in implementation_names:
+        import polars
+        postfix += ', Polars %s' % polars.__version__
     print("%s(%s), Python %s, Numpy %s%s" % (platform.system(), platform.machine(), sys.version.split()[0], np.version.version, postfix))
 
 if __name__ == '__main__':
-    implementations = _implementations if '--purepy' in sys.argv else _implementations[1:]
-    implementations = implementations if '--pandas' in sys.argv else implementations[:-1]
-    benchmark(implementations, raise_errors=False)
+    used_implementations = _implementations.copy()
+    for impl_name in ("purepy", "pandas", "polars"):
+        # Those implementations should be specified explicitly on the command line
+        if '--' + impl_name not in sys.argv:
+            # Remove them from the chosen implementations, if not found
+            used_implementations = [i for i in used_implementations if impl_name not in i.__name__]
+    benchmark(used_implementations, raise_errors=False)
