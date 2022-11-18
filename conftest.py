@@ -14,9 +14,9 @@ def pytest_collection_modifyitems(config, items):
     removed = []
     kept = []
     for item in items:
-        m = item.get_closest_marker('deselect_if')
+        m = item.get_closest_marker("deselect_if")
         if m:
-            func = m.kwargs['func']
+            func = m.kwargs["func"]
             if func(**item.callspec.params):
                 removed.append(item)
                 continue

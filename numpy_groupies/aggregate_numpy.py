@@ -1,8 +1,23 @@
 import numpy as np
 
-from .utils import aggregate_common_doc, check_boolean, funcs_no_separate_nan, get_func, isstr
-from .utils_numpy import (aliasing, check_dtype, check_fill_value, input_validation, iscomplexobj,
-                          minimum_dtype, minimum_dtype_scalar, minval, maxval)
+from .utils import (
+    aggregate_common_doc,
+    check_boolean,
+    funcs_no_separate_nan,
+    get_func,
+    isstr,
+)
+from .utils_numpy import (
+    aliasing,
+    check_dtype,
+    check_fill_value,
+    input_validation,
+    iscomplexobj,
+    minimum_dtype,
+    minimum_dtype_scalar,
+    minval,
+    maxval,
+)
 
 
 def _sum(group_idx, a, size, fill_value, dtype=None):
@@ -15,13 +30,10 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
     else:
         if iscomplexobj(a):
             ret = np.empty(size, dtype=dtype)
-            ret.real = np.bincount(group_idx, weights=a.real,
-                                   minlength=size)
-            ret.imag = np.bincount(group_idx, weights=a.imag,
-                                   minlength=size)
+            ret.real = np.bincount(group_idx, weights=a.real, minlength=size)
+            ret.imag = np.bincount(group_idx, weights=a.imag, minlength=size)
         else:
-            ret = np.bincount(group_idx, weights=a,
-                              minlength=size).astype(dtype)
+            ret = np.bincount(group_idx, weights=a, minlength=size).astype(dtype)
 
     if fill_value != 0:
         _fill_untouched(group_idx, ret, fill_value)
@@ -103,8 +115,10 @@ def _argmax(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
     is_max = a == group_max[group_idx]
     ret = np.full(size, fill_value, dtype=dtype)
     group_idx_max = group_idx[is_max]
-    argmax, = is_max.nonzero()
-    ret[group_idx_max[::-1]] = argmax[::-1]  # reverse to ensure first value for each group wins
+    (argmax,) = is_max.nonzero()
+    ret[group_idx_max[::-1]] = argmax[
+        ::-1
+    ]  # reverse to ensure first value for each group wins
     return ret
 
 
@@ -115,8 +129,10 @@ def _argmin(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
     is_min = a == group_min[group_idx]
     ret = np.full(size, fill_value, dtype=dtype)
     group_idx_min = group_idx[is_min]
-    argmin, = is_min.nonzero()
-    ret[group_idx_min[::-1]] = argmin[::-1]  # reverse to ensure first value for each group wins
+    (argmin,) = is_min.nonzero()
+    ret[group_idx_min[::-1]] = argmin[
+        ::-1
+    ]  # reverse to ensure first value for each group wins
     return ret
 
 
@@ -127,15 +143,12 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if iscomplexobj(a):
         dtype = a.dtype  # TODO: this is a bit clumsy
         sums = np.empty(size, dtype=dtype)
-        sums.real = np.bincount(group_idx, weights=a.real,
-                                minlength=size)
-        sums.imag = np.bincount(group_idx, weights=a.imag,
-                                minlength=size)
+        sums.real = np.bincount(group_idx, weights=a.real, minlength=size)
+        sums.imag = np.bincount(group_idx, weights=a.imag, minlength=size)
     else:
-        sums = np.bincount(group_idx, weights=a,
-                           minlength=size).astype(dtype)
+        sums = np.bincount(group_idx, weights=a, minlength=size).astype(dtype)
 
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         ret = sums.astype(dtype) / counts
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
@@ -143,24 +156,26 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
 
 
 def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
-    ret = np.bincount(group_idx, weights=a*a, minlength=size)
+    ret = np.bincount(group_idx, weights=a * a, minlength=size)
     counts = np.bincount(group_idx, minlength=size)
     if fill_value != 0:
         ret[counts == 0] = fill_value
     return ret
 
 
-def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64),
-         sqrt=False, ddof=0):
+def _var(
+    group_idx, a, size, fill_value, dtype=np.dtype(np.float64), sqrt=False, ddof=0
+):
     if np.ndim(a) == 0:
         raise ValueError("cannot take variance with scalar a")
     counts = np.bincount(group_idx, minlength=size)
     sums = np.bincount(group_idx, weights=a, minlength=size)
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         means = sums.astype(dtype) / counts
         counts = np.where(counts > ddof, counts - ddof, 0)
-        ret = np.bincount(group_idx, (a - means[group_idx]) ** 2,
-                          minlength=size) / counts
+        ret = (
+            np.bincount(group_idx, (a - means[group_idx]) ** 2, minlength=size) / counts
+        )
     if sqrt:
         ret = np.sqrt(ret)  # this is now std not var
     if not np.isnan(fill_value):
@@ -169,34 +184,29 @@ def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64),
 
 
 def _std(group_idx, a, size, fill_value, dtype=np.dtype(np.float64), ddof=0):
-    return _var(group_idx, a, size, fill_value, dtype=dtype, sqrt=True,
-                ddof=ddof)
+    return _var(group_idx, a, size, fill_value, dtype=dtype, sqrt=True, ddof=ddof)
 
 
 def _allnan(group_idx, a, size, fill_value, dtype=bool):
-    return _all(group_idx, np.isnan(a), size, fill_value=fill_value,
-                dtype=dtype)
+    return _all(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
 
 def _anynan(group_idx, a, size, fill_value, dtype=bool):
-    return _any(group_idx, np.isnan(a), size, fill_value=fill_value,
-                dtype=dtype)
+    return _any(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
 
 def _sort(group_idx, a, size=None, fill_value=None, dtype=None, reverse=False):
     sortidx = np.lexsort((-a if reverse else a, group_idx))
     # Reverse sorting back to into grouped order, but preserving groupwise sorting
-    revidx = np.argsort(np.argsort(group_idx, kind='mergesort'), kind='mergesort')
+    revidx = np.argsort(np.argsort(group_idx, kind="mergesort"), kind="mergesort")
     return a[sortidx][revidx]
 
 
 def _array(group_idx, a, size, fill_value, dtype=None):
     """groups a into separate arrays, keeping the order intact."""
-    if fill_value is not None and not (np.isscalar(fill_value) or
-                                       len(fill_value) == 0):
-        raise ValueError("fill_value must be None, a scalar or an empty "
-                         "sequence")
-    order_group_idx = np.argsort(group_idx, kind='mergesort')
+    if fill_value is not None and not (np.isscalar(fill_value) or len(fill_value) == 0):
+        raise ValueError("fill_value must be None, a scalar or an empty " "sequence")
+    order_group_idx = np.argsort(group_idx, kind="mergesort")
     counts = np.bincount(group_idx, minlength=size)
     ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
     ret = np.asanyarray(ret, dtype="object")
@@ -205,8 +215,9 @@ def _array(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-def _generic_callable(group_idx, a, size, fill_value, dtype=None,
-                      func=lambda g: g, **kwargs):
+def _generic_callable(
+    group_idx, a, size, fill_value, dtype=None, func=lambda g: g, **kwargs
+):
     """groups a by inds, and then applies foo to each group in turn, placing
     the results in an array."""
     groups = _array(group_idx, a, size, ())
@@ -227,8 +238,8 @@ def _cumsum(group_idx, a, size, fill_value=None, dtype=None):
     _cumsum(group_idx, a, np.max(group_idx) + 1)
     >>> array([ 3,  4,  5,  6, 15,  9, 15, 22,  7,  0, 15, 17,  6, 14, 31, 39])
     """
-    sortidx = np.argsort(group_idx, kind='mergesort')
-    invsortidx = np.argsort(sortidx, kind='mergesort')
+    sortidx = np.argsort(group_idx, kind="mergesort")
+    invsortidx = np.argsort(sortidx, kind="mergesort")
     group_idx_srt = group_idx[sortidx]
 
     a_srt = a[sortidx]
@@ -242,23 +253,54 @@ def _cumsum(group_idx, a, size, fill_value=None, dtype=None):
 
 def _nancumsum(group_idx, a, size, fill_value=None, dtype=None):
     a_nonans = np.where(np.isnan(a), 0, a)
-    group_idx_nonans = np.where(np.isnan(group_idx), np.nanmax(group_idx) + 1, group_idx)
+    group_idx_nonans = np.where(
+        np.isnan(group_idx), np.nanmax(group_idx) + 1, group_idx
+    )
     return _cumsum(group_idx_nonans, a_nonans, size, fill_value=fill_value, dtype=dtype)
 
 
-_impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, last=_last,
-                  first=_first, all=_all, any=_any, mean=_mean, std=_std,
-                  var=_var, anynan=_anynan, allnan=_allnan, sort=_sort,
-                  array=_array, argmax=_argmax, argmin=_argmin, len=_len,
-                  cumsum=_cumsum, sumofsquares=_sum_of_squres,
-                  generic=_generic_callable)
-_impl_dict.update(('nan' + k, v) for k, v in list(_impl_dict.items())
-                  if k not in funcs_no_separate_nan)
+_impl_dict = dict(
+    min=_min,
+    max=_max,
+    sum=_sum,
+    prod=_prod,
+    last=_last,
+    first=_first,
+    all=_all,
+    any=_any,
+    mean=_mean,
+    std=_std,
+    var=_var,
+    anynan=_anynan,
+    allnan=_allnan,
+    sort=_sort,
+    array=_array,
+    argmax=_argmax,
+    argmin=_argmin,
+    len=_len,
+    cumsum=_cumsum,
+    sumofsquares=_sum_of_squres,
+    generic=_generic_callable,
+)
+_impl_dict.update(
+    ("nan" + k, v)
+    for k, v in list(_impl_dict.items())
+    if k not in funcs_no_separate_nan
+)
 
 
-def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
-                    order='C', dtype=None, axis=None, _impl_dict=_impl_dict,
-                    **kwargs):
+def _aggregate_base(
+    group_idx,
+    a,
+    func="sum",
+    size=None,
+    fill_value=0,
+    order="C",
+    dtype=None,
+    axis=None,
+    _impl_dict=_impl_dict,
+    **kwargs
+):
     iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
     group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
@@ -269,16 +311,17 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
     func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
         # do simple grouping and execute function in loop
-        ret = _impl_dict.get('generic', _generic_callable)(group_idx, a, flat_size, fill_value, func=func,
-                                                           dtype=dtype, **kwargs)
+        ret = _impl_dict.get("generic", _generic_callable)(
+            group_idx, a, flat_size, fill_value, func=func, dtype=dtype, **kwargs
+        )
     else:
         # deal with nans and find the function
-        if func.startswith('nan'):
+        if func.startswith("nan"):
             if np.ndim(a) == 0:
                 raise ValueError("nan-version not supported for scalar input.")
-            if 'nan' in func:
-                if 'arg' in func:
-                    kwargs['_nansqueeze'] = True
+            if "nan" in func:
+                if "arg" in func:
+                    kwargs["_nansqueeze"] = True
                 else:
                     good = ~np.isnan(a)
                     a = a[good]
@@ -287,8 +330,9 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
         dtype = check_dtype(dtype, func, a, flat_size)
         check_fill_value(fill_value, dtype, func=func)
         func = _impl_dict[func]
-        ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype,
-                   **kwargs)
+        ret = func(
+            group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs
+        )
 
     # deal with ndimensional indexing
     if ndim_idx > 1:
@@ -302,16 +346,37 @@ def _aggregate_base(group_idx, a, func='sum', size=None, fill_value=0,
     return ret
 
 
-def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
-              dtype=None, axis=None, **kwargs):
-    return _aggregate_base(group_idx, a, size=size, fill_value=fill_value,
-                           order=order, dtype=dtype, func=func, axis=axis,
-                           _impl_dict=_impl_dict, **kwargs)
+def aggregate(
+    group_idx,
+    a,
+    func="sum",
+    size=None,
+    fill_value=0,
+    order="C",
+    dtype=None,
+    axis=None,
+    **kwargs
+):
+    return _aggregate_base(
+        group_idx,
+        a,
+        size=size,
+        fill_value=fill_value,
+        order=order,
+        dtype=dtype,
+        func=func,
+        axis=axis,
+        _impl_dict=_impl_dict,
+        **kwargs
+    )
 
 
-aggregate.__doc__ = """
+aggregate.__doc__ = (
+    """
     This is the pure numpy implementation of aggregate.
-    """ + aggregate_common_doc
+    """
+    + aggregate_common_doc
+)
 
 
 def _fill_untouched(idx, ret, fill_value):

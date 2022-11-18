@@ -1,6 +1,7 @@
 [![GitHub Workflow CI Status](https://img.shields.io/github/workflow/status/ml31415/numpy-groupies/CI?logo=github&style=flat)](https://github.com/ml31415/numpy-groupies/actions)
 [![PyPI](https://img.shields.io/pypi/v/numpy-groupies.svg?style=flat)](https://pypi.org/project/numpy-groupies/)
 [![Conda-forge](https://img.shields.io/conda/vn/conda-forge/numpy_groupies.svg?style=flat)](https://anaconda.org/conda-forge/numpy_groupies)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 # numpy-groupies
 

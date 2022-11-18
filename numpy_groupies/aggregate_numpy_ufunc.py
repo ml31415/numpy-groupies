@@ -6,13 +6,11 @@ from .utils_numpy import aliasing, minimum_dtype, minimum_dtype_scalar, minval, 
 
 
 def _anynan(group_idx, a, size, fill_value, dtype=None):
-    return _any(group_idx, np.isnan(a), size, fill_value=fill_value,
-                dtype=dtype)
+    return _any(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
 
 def _allnan(group_idx, a, size, fill_value, dtype=None):
-    return _all(group_idx, np.isnan(a), size, fill_value=fill_value,
-                dtype=dtype)
+    return _all(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
 
 def _any(group_idx, a, size, fill_value, dtype=None):
@@ -78,25 +76,55 @@ def _max(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-_impl_dict = dict(min=_min, max=_max, sum=_sum, prod=_prod, all=_all, any=_any,
-                  allnan=_allnan, anynan=_anynan, len=_len)
+_impl_dict = dict(
+    min=_min,
+    max=_max,
+    sum=_sum,
+    prod=_prod,
+    all=_all,
+    any=_any,
+    allnan=_allnan,
+    anynan=_anynan,
+    len=_len,
+)
 
 
-def aggregate(group_idx, a, func='sum', size=None, fill_value=0, order='C',
-              dtype=None, axis=None, **kwargs):
+def aggregate(
+    group_idx,
+    a,
+    func="sum",
+    size=None,
+    fill_value=0,
+    order="C",
+    dtype=None,
+    axis=None,
+    **kwargs
+):
     func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
         raise NotImplementedError("No such ufunc available")
-    return _aggregate_base(group_idx, a, size=size, fill_value=fill_value,
-                           order=order, dtype=dtype, func=func, axis=axis,
-                           _impl_dict=_impl_dict, **kwargs)
+    return _aggregate_base(
+        group_idx,
+        a,
+        size=size,
+        fill_value=fill_value,
+        order=order,
+        dtype=dtype,
+        func=func,
+        axis=axis,
+        _impl_dict=_impl_dict,
+        **kwargs
+    )
 
 
-aggregate.__doc__ = """
+aggregate.__doc__ = (
+    """
     Unlike ``aggregate_numpy``, which in most cases does some custom
     optimisations, this version simply uses ``numpy``'s ``ufunc.at``.
 
     As of version 1.14 this gives fairly poor performance. There should
     normally be no need to use this version, it is intended to be used in
     testing and benchmarking only.
-    """ + aggregate_common_doc
+    """
+    + aggregate_common_doc
+)

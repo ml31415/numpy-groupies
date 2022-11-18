@@ -4,37 +4,37 @@ import numpy as np
 from .utils import check_boolean, get_aliasing
 
 _alias_numpy = {
-    np.add: 'sum',
-    np.sum: 'sum',
-    np.any: 'any',
-    np.all: 'all',
-    np.multiply: 'prod',
-    np.prod: 'prod',
-    np.amin: 'min',
-    np.min: 'min',
-    np.minimum: 'min',
-    np.amax: 'max',
-    np.max: 'max',
-    np.maximum: 'max',
-    np.argmax: 'argmax',
-    np.argmin: 'argmin',
-    np.mean: 'mean',
-    np.std: 'std',
-    np.var: 'var',
-    np.array: 'array',
-    np.asarray: 'array',
-    np.sort: 'sort',
-    np.nansum: 'nansum',
-    np.nanprod: 'nanprod',
-    np.nanmean: 'nanmean',
-    np.nanvar: 'nanvar',
-    np.nanmax: 'nanmax',
-    np.nanmin: 'nanmin',
-    np.nanstd: 'nanstd',
-    np.nanargmax: 'nanargmax',
-    np.nanargmin: 'nanargmin',
-    np.cumsum: 'cumsum',
-    np.cumprod: 'cumprod',
+    np.add: "sum",
+    np.sum: "sum",
+    np.any: "any",
+    np.all: "all",
+    np.multiply: "prod",
+    np.prod: "prod",
+    np.amin: "min",
+    np.min: "min",
+    np.minimum: "min",
+    np.amax: "max",
+    np.max: "max",
+    np.maximum: "max",
+    np.argmax: "argmax",
+    np.argmin: "argmin",
+    np.mean: "mean",
+    np.std: "std",
+    np.var: "var",
+    np.array: "array",
+    np.asarray: "array",
+    np.sort: "sort",
+    np.nansum: "nansum",
+    np.nanprod: "nanprod",
+    np.nanmean: "nanmean",
+    np.nanvar: "nanvar",
+    np.nanmax: "nanmax",
+    np.nanmin: "nanmin",
+    np.nanstd: "nanstd",
+    np.nanargmax: "nanargmax",
+    np.nanargmin: "nanargmin",
+    np.cumsum: "cumsum",
+    np.cumprod: "cumprod",
 }
 
 aliasing = get_aliasing(_alias_numpy)
@@ -46,14 +46,14 @@ _next_int_dtype = dict(
     uint16=np.int32,
     int16=np.int32,
     uint32=np.int64,
-    int32=np.int64
+    int32=np.int64,
 )
 
 _next_float_dtype = dict(
     float16=np.float32,
     float32=np.float64,
     float64=np.complex64,
-    complex64=np.complex128
+    complex64=np.complex128,
 )
 
 
@@ -97,30 +97,39 @@ def minimum_dtype_scalar(x, dtype, a):
 
 
 _forced_types = {
-    'array': object,
-    'all': bool,
-    'any': bool,
-    'nanall': bool,
-    'nanany': bool,
-    'len': np.int64,
-    'nanlen': np.int64,
-    'allnan': bool,
-    'anynan': bool,
-    'argmax': np.int64,
-    'argmin': np.int64,
-    'nanargmin': np.int64,
-    'nanargmax': np.int64,
+    "array": object,
+    "all": bool,
+    "any": bool,
+    "nanall": bool,
+    "nanany": bool,
+    "len": np.int64,
+    "nanlen": np.int64,
+    "allnan": bool,
+    "anynan": bool,
+    "argmax": np.int64,
+    "argmin": np.int64,
+    "nanargmin": np.int64,
+    "nanargmax": np.int64,
 }
-_forced_float_types = {'mean', 'var', 'std', 'nanmean', 'nanvar', 'nanstd'}
-_forced_same_type = {'min', 'max', 'first', 'last', 'nanmin', 'nanmax',
-                     'nanfirst', 'nanlast'}
+_forced_float_types = {"mean", "var", "std", "nanmean", "nanvar", "nanstd"}
+_forced_same_type = {
+    "min",
+    "max",
+    "first",
+    "last",
+    "nanmin",
+    "nanmax",
+    "nanfirst",
+    "nanlast",
+}
 
 
 def check_dtype(dtype, func_str, a, n):
     if np.isscalar(a) or not a.shape:
         if func_str not in ("sum", "prod", "len"):
-            raise ValueError("scalar inputs are supported only for 'sum', "
-                             "'prod' and 'len'")
+            raise ValueError(
+                "scalar inputs are supported only for 'sum', " "'prod' and 'len'"
+            )
         a_dtype = np.dtype(type(a))
     else:
         a_dtype = a.dtype
@@ -128,11 +137,13 @@ def check_dtype(dtype, func_str, a, n):
     if dtype is not None:
         # dtype set by the user
         # Careful here: np.bool != np.bool_ !
-        if np.issubdtype(dtype, np.bool_) and \
-                not('all' in func_str or 'any' in func_str):
-            raise TypeError("function %s requires a more complex datatype "
-                            "than bool" % func_str)
-        if not np.issubdtype(dtype, np.integer) and func_str in ('len', 'nanlen'):
+        if np.issubdtype(dtype, np.bool_) and not (
+            "all" in func_str or "any" in func_str
+        ):
+            raise TypeError(
+                "function %s requires a more complex datatype " "than bool" % func_str
+            )
+        if not np.issubdtype(dtype, np.integer) and func_str in ("len", "nanlen"):
             raise TypeError("function %s requires an integer datatype" % func_str)
         # TODO: Maybe have some more checks here
         return np.dtype(dtype)
@@ -146,7 +157,7 @@ def check_dtype(dtype, func_str, a, n):
                 else:
                     return np.dtype(np.float64)
             else:
-                if func_str == 'sum':
+                if func_str == "sum":
                     # Try to guess the minimally required int size
                     if np.issubdtype(a_dtype, np.int64):
                         # It's not getting bigger anymore
@@ -174,7 +185,7 @@ def minval(fill_value, dtype):
     if issubclass(dtype.type, np.floating):
         return -np.inf
     if issubclass(dtype.type, np.integer):
-        return  np.iinfo(dtype).min
+        return np.iinfo(dtype).min
     return np.finfo(dtype).min
 
 
@@ -183,25 +194,25 @@ def maxval(fill_value, dtype):
     if issubclass(dtype.type, np.floating):
         return np.inf
     if issubclass(dtype.type, np.integer):
-        return  np.iinfo(dtype).max
+        return np.iinfo(dtype).max
     return np.finfo(dtype).max
 
 
 def check_fill_value(fill_value, dtype, func=None):
-    if func in ('all', 'any', 'allnan', 'anynan'):
+    if func in ("all", "any", "allnan", "anynan"):
         check_boolean(fill_value)
     else:
         try:
             return dtype.type(fill_value)
         except ValueError:
-            raise ValueError("fill_value must be convertible into %s"
-                             % dtype.type.__name__)
+            raise ValueError(
+                "fill_value must be convertible into %s" % dtype.type.__name__
+            )
 
 
 def check_group_idx(group_idx, a=None, check_min=True):
     if a is not None and group_idx.size != a.size:
-        raise ValueError("The size of group_idx must be the same as "
-                         "a.size")
+        raise ValueError("The size of group_idx must be the same as " "a.size")
     if not issubclass(group_idx.dtype.type, np.integer):
         raise TypeError("group_idx must be of integer type")
     if check_min and np.min(group_idx) < 0:
@@ -227,8 +238,7 @@ def _ravel_group_idx(group_idx, a, axis, size, order, method="ravel"):
     # Use the indexing, and return. It's a bit simpler than
     # using trying to keep all the logic below happy
     if method == "ravel":
-        group_idx = np.ravel_multi_index(group_idx, size, order=order,
-                                         mode='raise')
+        group_idx = np.ravel_multi_index(group_idx, size, order=order, mode="raise")
     elif method == "offset":
         group_idx = offset_labels(group_idx_in, a.shape, axis, order, size_in)
     return group_idx, size
@@ -249,19 +259,28 @@ def offset_labels(group_idx, inshape, axis, order, size):
         group_idx = np.moveaxis(group_idx, axis, -1)
     newshape = group_idx.shape[:-1] + (-1,)
 
-    group_idx = (group_idx +
-                 np.arange(np.prod(newshape[:-1]), dtype=int).reshape(newshape)
-                 * size
-                 )
+    group_idx = (
+        group_idx
+        + np.arange(np.prod(newshape[:-1]), dtype=int).reshape(newshape) * size
+    )
     if axis not in (-1, len(inshape) - 1):
         return np.moveaxis(group_idx, -1, axis)
     else:
         return group_idx
 
 
-def input_validation(group_idx, a, size=None, order='C', axis=None,
-                     ravel_group_idx=True, check_bounds=True, method="ravel", func=None):
-    """ Do some fairly extensive checking of group_idx and a, trying to
+def input_validation(
+    group_idx,
+    a,
+    size=None,
+    order="C",
+    axis=None,
+    ravel_group_idx=True,
+    check_bounds=True,
+    method="ravel",
+    func=None,
+):
+    """Do some fairly extensive checking of group_idx and a, trying to
     give the user as much help as possible with what is wrong. Also,
     convert ndim-indexing to 1d indexing.
     """
@@ -284,8 +303,10 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
     # multi-dimensional indexing along the specified axis.
     if axis is None:
         if ndim_a > 1:
-            raise ValueError("a must be scalar or 1 dimensional, use .ravel to"
-                             " flatten. Alternatively specify axis.")
+            raise ValueError(
+                "a must be scalar or 1 dimensional, use .ravel to"
+                " flatten. Alternatively specify axis."
+            )
     elif axis >= ndim_a or axis < -ndim_a:
         raise ValueError("axis arg too large for np.ndim(a)")
     else:
@@ -293,13 +314,15 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
         if ndim_idx > 1:
             # TODO: we could support a sequence of axis values for multiple
             # dimensions of group_idx.
-            raise NotImplementedError("only 1d indexing currently"
-                                      "supported with axis arg.")
+            raise NotImplementedError(
+                "only 1d indexing currently" "supported with axis arg."
+            )
         elif a.shape[axis] != len(group_idx):
             raise ValueError("a.shape[axis] doesn't match length of group_idx.")
         elif size is not None and not np.isscalar(size):
-            raise NotImplementedError("when using axis arg, size must be"
-                                      "None or scalar.")
+            raise NotImplementedError(
+                "when using axis arg, size must be" "None or scalar."
+            )
         else:
             is_form_3 = group_idx.ndim == 1 and a.ndim > 1 and axis is not None
             orig_shape = a.shape if is_form_3 else group_idx.shape
@@ -308,11 +331,24 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
             else:
                 unravel_shape = None
 
-            group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order, method=method)
+            group_idx, size = _ravel_group_idx(
+                group_idx, a, axis, size, order, method=method
+            )
             flat_size = np.prod(size)
             ndim_idx = ndim_a
-            size = orig_shape if is_form_3 and not callable(func) and "cum" in func else size
-            return group_idx.ravel(), a.ravel(), flat_size, ndim_idx, size, unravel_shape
+            size = (
+                orig_shape
+                if is_form_3 and not callable(func) and "cum" in func
+                else size
+            )
+            return (
+                group_idx.ravel(),
+                a.ravel(),
+                flat_size,
+                ndim_idx,
+                size,
+                unravel_shape,
+            )
 
     if ndim_idx == 1:
         if size is None:
@@ -321,27 +357,28 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
             if not np.isscalar(size):
                 raise ValueError("output size must be scalar or None")
             if check_bounds and np.any(group_idx > size - 1):
-                raise ValueError("one or more indices are too large for "
-                                 "size %d" % size)
+                raise ValueError(
+                    "one or more indices are too large for " "size %d" % size
+                )
         flat_size = size
     else:
         if size is None:
             size = np.max(group_idx, axis=1).astype(int) + 1
         elif np.isscalar(size):
-            raise ValueError("output size must be of length %d"
-                             % len(group_idx))
+            raise ValueError("output size must be of length %d" % len(group_idx))
         elif len(size) != len(group_idx):
-            raise ValueError("%d sizes given, but %d output dimensions "
-                             "specified in index" % (len(size),
-                                                     len(group_idx)))
+            raise ValueError(
+                "%d sizes given, but %d output dimensions "
+                "specified in index" % (len(size), len(group_idx))
+            )
         if ravel_group_idx:
-            group_idx = np.ravel_multi_index(group_idx, size, order=order,
-                                             mode='raise')
+            group_idx = np.ravel_multi_index(group_idx, size, order=order, mode="raise")
         flat_size = np.prod(size)
 
     if not (np.ndim(a) == 0 or len(a) == group_idx.size):
-        raise ValueError("group_idx and a must be of the same length, or a"
-                         " can be scalar")
+        raise ValueError(
+            "group_idx and a must be of the same length, or a" " can be scalar"
+        )
 
     return group_idx, a, flat_size, ndim_idx, size, None
 
@@ -350,8 +387,8 @@ def input_validation(group_idx, a, size=None, order='C', axis=None,
 
 
 def unpack(group_idx, ret):
-    """ Take an aggregate packed array and uncompress it to the size of group_idx.
-        This is equivalent to ret[group_idx].
+    """Take an aggregate packed array and uncompress it to the size of group_idx.
+    This is equivalent to ret[group_idx].
     """
     return ret[group_idx]
 
@@ -425,7 +462,7 @@ def label_contiguous_1d(X):
     is_start = np.empty(len(X), dtype=bool)
     is_start[0] = X[0]  # True if X[0] is True or non-zero
 
-    if X.dtype.kind == 'b':
+    if X.dtype.kind == "b":
         is_start[1:] = ~X[:-1] & X[1:]
         M = X
     else:

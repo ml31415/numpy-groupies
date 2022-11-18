@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 
 from . import aggregate_weave, aggregate_numba, _impl_name
+
 _implementations = [aggregate_weave, aggregate_numba]
 _implementations = [i for i in _implementations if i is not None]
 
@@ -25,4 +26,4 @@ def test_step_indices_length(aggregate_nb_wv):
 def test_step_indices_fields(aggregate_nb_wv):
     group_idx = np.array([1, 1, 1, 2, 2, 3, 3, 4, 5, 2, 2], dtype=int)
     steps = aggregate_nb_wv.step_indices(group_idx)
-    np.testing.assert_array_equal(steps, np.array([ 0, 3, 5, 7, 8, 9, 11]))
+    np.testing.assert_array_equal(steps, np.array([0, 3, 5, 7, 8, 9, 11]))

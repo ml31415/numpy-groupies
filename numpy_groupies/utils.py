@@ -52,43 +52,43 @@ aggregate_common_doc = """
         (see above).
 """
 
-funcs_common = 'first last len mean var std allnan anynan max min argmax argmin sumofsquares cumsum cumprod cummax cummin'.split()
-funcs_no_separate_nan = frozenset(['sort', 'rsort', 'array', 'allnan', 'anynan'])
+funcs_common = "first last len mean var std allnan anynan max min argmax argmin sumofsquares cumsum cumprod cummax cummin".split()
+funcs_no_separate_nan = frozenset(["sort", "rsort", "array", "allnan", "anynan"])
 
 
 _alias_str = {
-    'or': 'any',
-    'and': 'all',
-    'add': 'sum',
-    'count': 'len',
-    'plus': 'sum',
-    'multiply': 'prod',
-    'product': 'prod',
-    'times': 'prod',
-    'amax': 'max',
-    'maximum': 'max',
-    'amin': 'min',
-    'minimum': 'min',
-    'split': 'array',
-    'splice': 'array',
-    'sorted': 'sort',
-    'asort': 'sort',
-    'asorted': 'sort',
-    'rsorted': 'sort',
-    'dsort': 'sort',
-    'dsorted': 'rsort',
+    "or": "any",
+    "and": "all",
+    "add": "sum",
+    "count": "len",
+    "plus": "sum",
+    "multiply": "prod",
+    "product": "prod",
+    "times": "prod",
+    "amax": "max",
+    "maximum": "max",
+    "amin": "min",
+    "minimum": "min",
+    "split": "array",
+    "splice": "array",
+    "sorted": "sort",
+    "asort": "sort",
+    "asorted": "sort",
+    "rsorted": "sort",
+    "dsort": "sort",
+    "dsorted": "rsort",
 }
 
 _alias_builtin = {
-    all: 'all',
-    any: 'any',
-    len: 'len',
-    max: 'max',
-    min: 'min',
-    sum: 'sum',
-    sorted: 'sort',
-    slice: 'array',
-    list: 'array',
+    all: "all",
+    any: "any",
+    len: "len",
+    max: "max",
+    min: "min",
+    sum: "sum",
+    sorted: "sort",
+    slice: "array",
+    list: "array",
 }
 
 
@@ -108,7 +108,7 @@ def get_aliasing(*extra):
     # Treat nan-functions as firstclass member and add them directly
     for key in set(alias.values()):
         if key not in funcs_no_separate_nan:
-            key = 'nan' + key
+            key = "nan" + key
             alias[key] = key
     return alias
 
@@ -117,7 +117,7 @@ aliasing = get_aliasing()
 
 
 def get_func(func, aliasing, implementations):
-    """ Return the key of a found implementation or the func itself """
+    """Return the key of a found implementation or the func itself"""
     try:
         func_str = aliasing[func]
     except KeyError:
@@ -126,13 +126,14 @@ def get_func(func, aliasing, implementations):
     else:
         if func_str in implementations:
             return func_str
-        if func_str.startswith('nan') and \
-                func_str[3:] in funcs_no_separate_nan:
+        if func_str.startswith("nan") and func_str[3:] in funcs_no_separate_nan:
             raise ValueError("%s does not have a nan-version".format(func_str[3:]))
         else:
             raise NotImplementedError("No such function available")
-    raise ValueError("func {} is neither a valid function string nor a "
-                     "callable object".format(func))
+    raise ValueError(
+        "func {} is neither a valid function string nor a "
+        "callable object".format(func)
+    )
 
 
 def check_boolean(x):
@@ -145,6 +146,7 @@ try:
 
     def isstr(s):
         return isinstance(s, basestring)
+
 except NameError:
     # Probably Python 3.x
     def isstr(s):
