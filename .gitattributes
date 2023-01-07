@@ -1,1 +1,1 @@
-numpy_groupies/_versioneer.py export-subst
+numpy_groupies/_version.py export-subst
