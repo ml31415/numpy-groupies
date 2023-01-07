@@ -27,7 +27,7 @@ _implementations = [i for i in _implementations if i is not None]
 
 
 def _impl_name(impl):
-    if not impl:
+    if not impl or type(impl).__name__ == 'NotSetType':
         return
     return impl.__name__.rsplit("aggregate_", 1)[1].rsplit("_", 1)[-1]
 
