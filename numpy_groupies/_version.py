@@ -41,7 +41,7 @@ def get_config():
     cfg.VCS = "git"
     cfg.style = "pep440"
     cfg.tag_prefix = "v"
-    cfg.parentdir_prefix = "None"
+    cfg.parentdir_prefix = "numpy_groupies-"
     cfg.versionfile_source = "numpy_groupies/_version.py"
     cfg.verbose = False
     return cfg
