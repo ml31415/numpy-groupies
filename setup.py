@@ -33,7 +33,7 @@ class Clean(Command):
         pass
 
     def run(self):
-        for folder in ("build", "dist", "intnan.egg-info"):
+        for folder in ("build", "dist", "numpy_groupies.egg-info"):
             path = os.path.join(base_path, folder)
             if os.path.isdir(path):
                 print("removing '{}' (and everything under it)".format(path))
