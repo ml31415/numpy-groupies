@@ -35,20 +35,23 @@ jobs:
           echo "CONDA_ENV_FILE=ci/environment.yml" >> $GITHUB_ENV
           echo "PYTHON_VERSION=${{ matrix.python-version }}" >> $GITHUB_ENV
 
-      - uses: conda-incubator/setup-miniconda@v2
+      - name: Setup micromamba
+        uses: mamba-org/provision-with-micromamba@v15
         with:
-          channels: conda-forge
-          channel-priority: strict
-          mamba-version: "*"
-          activate-environment: npg-tests
-          auto-update-conda: false
-          python-version: ${{ matrix.python-version }}
-          use-only-tar-bz2: true
+          environment-file: ${{ env.CONDA_ENV_FILE }}
+          environment-name: xarray-tests
+          cache-env: true
+          cache-env-key: "${{runner.os}}-${{runner.arch}}-py${{matrix.python-version}}-${{hashFiles(env.CONDA_ENV_FILE)}}"
+          extra-specs: |
+            python=${{matrix.python-version}}
+            conda
 
-      - name: Install conda dependencies
+      # We only want to install this on one run, because otherwise we'll have
+      # duplicate annotations.
+      - name: Install error reporter
+        if: ${{ matrix.os }} == 'ubuntu-latest' and ${{ matrix.python-version }} == '3.10'
         run: |
-          mamba env update -f $CONDA_ENV_FILE
-        if: steps.cache-env.outputs.cache-hit != 'true'
+          python -m pip install pytest-github-actions-annotate-failures
 
       - name: Set up conda environment
         shell: bash -l {0}
