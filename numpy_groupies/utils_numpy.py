@@ -277,7 +277,6 @@ def input_validation(
     axis=None,
     ravel_group_idx=True,
     check_bounds=True,
-    method="ravel",
     func=None,
 ):
     """Do some fairly extensive checking of group_idx and a, trying to
@@ -331,6 +330,7 @@ def input_validation(
             else:
                 unravel_shape = None
 
+            method = "offset" if axis == ndim_a - 1 else "ravel"
             group_idx, size = _ravel_group_idx(
                 group_idx, a, axis, size, order, method=method
             )
