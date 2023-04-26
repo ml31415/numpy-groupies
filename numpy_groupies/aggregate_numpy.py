@@ -24,7 +24,7 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
 
     if np.ndim(a) == 0:
-        ret = np.bincount(group_idx, minlength=size).astype(dtype)
+        ret = np.bincount(group_idx, minlength=size).astype(dtype, copy=False)
         if a != 1:
             ret *= a
     else:
@@ -33,7 +33,9 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
             ret.real = np.bincount(group_idx, weights=a.real, minlength=size)
             ret.imag = np.bincount(group_idx, weights=a.imag, minlength=size)
         else:
-            ret = np.bincount(group_idx, weights=a, minlength=size).astype(dtype)
+            ret = np.bincount(group_idx, weights=a, minlength=size).astype(
+                dtype, copy=False
+            )
 
     if fill_value != 0:
         _fill_untouched(group_idx, ret, fill_value)
@@ -146,10 +148,10 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
         sums.real = np.bincount(group_idx, weights=a.real, minlength=size)
         sums.imag = np.bincount(group_idx, weights=a.imag, minlength=size)
     else:
-        sums = np.bincount(group_idx, weights=a, minlength=size).astype(dtype)
+        sums = np.bincount(group_idx, weights=a, minlength=size).astype(dtype, copy=False)
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        ret = sums.astype(dtype) / counts
+        ret = sums.astype(dtype, copy=False) / counts
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
     return ret
@@ -171,7 +173,7 @@ def _var(
     counts = np.bincount(group_idx, minlength=size)
     sums = np.bincount(group_idx, weights=a, minlength=size)
     with np.errstate(divide="ignore", invalid="ignore"):
-        means = sums.astype(dtype) / counts
+        means = sums.astype(dtype, copy=False) / counts
         counts = np.where(counts > ddof, counts - ddof, 0)
         ret = (
             np.bincount(group_idx, (a - means[group_idx]) ** 2, minlength=size) / counts
