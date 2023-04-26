@@ -301,6 +301,7 @@ def _aggregate_base(
     dtype=None,
     axis=None,
     _impl_dict=_impl_dict,
+    is_pandas=False,
     **kwargs
 ):
     iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
@@ -326,7 +327,9 @@ def _aggregate_base(
                     kwargs["_nansqueeze"] = True
                 else:
                     good = ~np.isnan(a)
-                    a = a[good]
+                    if "len" not in func or is_pandas:
+                        # a is not needed for len, nanlen!
+                        a = a[good]
                     group_idx = group_idx[good]
 
         dtype = check_dtype(dtype, func, a, flat_size)
