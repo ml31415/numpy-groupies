@@ -159,8 +159,8 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
 
 def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     ret = np.bincount(group_idx, weights=a * a, minlength=size)
-    counts = np.bincount(group_idx, minlength=size)
     if fill_value != 0:
+        counts = np.bincount(group_idx, minlength=size)
         ret[counts == 0] = fill_value
     return ret
 
