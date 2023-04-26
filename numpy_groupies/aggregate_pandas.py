@@ -69,6 +69,7 @@ def aggregate(
         func=func,
         axis=axis,
         _impl_dict=_impl_dict,
+        is_pandas=True,
         **kwargs
     )
 
