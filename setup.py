@@ -67,6 +67,7 @@ setup(
     license="BSD",
     description="Optimised tools for group-indexing operations: aggregated sum and more.",
     long_description=long_description,
+    long_description_content_type="text/markdown",
     url="https://github.com/ml31415/numpy-groupies",
     download_url="https://github.com/ml31415/numpy-groupies/archive/master.zip",
     keywords=["accumarray", "aggregate", "groupby", "grouping", "indexing"],
