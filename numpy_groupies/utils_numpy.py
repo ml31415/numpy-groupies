@@ -63,8 +63,8 @@ def minimum_dtype(x, dtype=np.bool_):
 
     def check_type(x, dtype):
         try:
-            converted = dtype.type(x)
-        except (ValueError, OverflowError):
+            converted = np.array(x).astype(dtype)
+        except (ValueError, OverflowError, RuntimeWarning):
             return False
         # False if some overflow has happened
         return converted == x or np.isnan(x)
