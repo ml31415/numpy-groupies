@@ -260,6 +260,7 @@ def _nancumsum(group_idx, a, size, fill_value=None, dtype=None):
     )
     return _cumsum(group_idx_nonans, a_nonans, size, fill_value=fill_value, dtype=dtype)
 
+
 def _cumprod(group_idx, a, size, fill_value=None, dtype=None):
     """
     N to N aggregate operation of cumprod. Perform cumulative product for each
@@ -281,7 +282,6 @@ def _cumprod(group_idx, a, size, fill_value=None, dtype=None):
 
     increasing = np.arange(len(a), dtype=int)
     group_starts = _min(group_idx_srt, increasing, size, fill_value=0)[group_idx_srt]
-
     a_srt_cumprod *= a_srt[group_starts] / a_srt_cumprod[group_starts]
     return a_srt_cumprod[invsortidx].astype(dtype)
 
@@ -289,7 +289,7 @@ def _cumprod(group_idx, a, size, fill_value=None, dtype=None):
 def _nancumprod(group_idx, a, size, fill_value=None, dtype=None):
     """
     N to N aggregate operation of cumprod. Perform cumulative product for each
-    group.
+    group. NaNs are converted to 1.
 
     Examples
     --------
@@ -305,6 +305,7 @@ def _nancumprod(group_idx, a, size, fill_value=None, dtype=None):
     return _cumprod(
         group_idx_nonans, a_nonans, size, fill_value=fill_value, dtype=dtype
     )
+
 
 _impl_dict = dict(
     min=_min,
