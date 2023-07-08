@@ -260,6 +260,53 @@ def _nancumsum(group_idx, a, size, fill_value=None, dtype=None):
     )
     return _cumsum(group_idx_nonans, a_nonans, size, fill_value=fill_value, dtype=dtype)
 
+def _cumprod(group_idx, a, size, fill_value=None, dtype=None):
+    """
+    N to N aggregate operation of cumprod. Perform cumulative product for each
+    group.
+
+    Examples
+    --------
+    >>> group_idx = np.array([0, 0, 0, 1, 1, 0, 0])
+    >>> a = np.array([2, 2, 2, 3, 3, 2, 2])
+    >>> npg.aggregate_numpy._cumprod(group_idx, a, np.max(group_idx) + 1)
+    array([ 2.,  4.,  8.,  3.,  9., 16., 32.])
+    """
+    sortidx = np.argsort(group_idx, kind="mergesort")
+    invsortidx = np.argsort(sortidx, kind="mergesort")
+    group_idx_srt = group_idx[sortidx]
+
+    a_srt = a[sortidx]
+    a_srt_cumprod = np.cumprod(a_srt, dtype=np.float64)
+
+    increasing = np.arange(len(a), dtype=int)
+    group_starts = _min(group_idx_srt, increasing, size, fill_value=0)[group_idx_srt]
+
+    increasing = np.arange(len(a), dtype=int)
+    group_starts = _min(group_idx_srt, increasing, size, fill_value=0)[group_idx_srt]
+    a_srt_cumprod *= a_srt[group_starts] / a_srt_cumprod[group_starts]
+    return a_srt_cumprod[invsortidx].astype(dtype)
+
+
+def _nancumprod(group_idx, a, size, fill_value=None, dtype=None):
+    """
+    N to N aggregate operation of cumprod. Perform cumulative product for each
+    group.
+
+    Examples
+    --------
+    >>> group_idx = np.array([0, 0, 0, 0, 1, 1, 0, 0])
+    >>> a = np.array([2, 2, np.nan, 2, 3, 3, 2, 2])
+    >>> npg.aggregate_numpy._nancumprod(group_idx, a, np.max(group_idx) + 1)
+    array([ 2.,  4.,  4.,  8.,  3.,  9., 16., 32.])
+    """
+    a_nonans = np.where(np.isnan(a), 1, a)
+    group_idx_nonans = np.where(
+        np.isnan(group_idx), np.nanmax(group_idx) + 1, group_idx
+    )
+    return _cumprod(
+        group_idx_nonans, a_nonans, size, fill_value=fill_value, dtype=dtype
+    )
 
 _impl_dict = dict(
     min=_min,
@@ -281,6 +328,7 @@ _impl_dict = dict(
     argmin=_argmin,
     len=_len,
     cumsum=_cumsum,
+    cumprod=_cumprod,
     sumofsquares=_sum_of_squres,
     generic=_generic_callable,
 )
