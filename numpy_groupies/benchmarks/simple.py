@@ -1,5 +1,4 @@
 #!/usr/bin/python -B
-# -*- coding: utf-8 -*-
 
 from __future__ import print_function
 
@@ -20,8 +19,6 @@ def aggregate_group_loop(*args, **kwargs):
     return aggregate_np(*args, func=lambda x: func(x), **kwargs)
 
 
-print("TODO: use more extensive tests")
-print("")
 print("-----simple examples----------")
 test_a = np.array([12.0, 3.2, -15, 88, 12.9])
 test_group_idx = np.array([1, 0, 1, 4, 1])
@@ -33,9 +30,9 @@ print(aggregate_np(test_group_idx, test_a))  # group vals by idx and sum
 print("aggregate(test_group_idx, test_a, sz=8, func='min', fill_value=np.nan):")
 print(aggregate_np(test_group_idx, test_a, size=8, func="min", fill_value=np.nan))
 # array([3.2, -15., nan, 88., nan, nan, nan, nan])
-print("aggregate(test_group_idx, test_a, sz=5, func=lambda x: ' + '.join(str(xx) for xx in x),fill_value='')")
+print("aggregate_py(test_group_idx, test_a, sz=5, func=lambda x: ' + '.join(str(xx) for xx in x),fill_value='')")
 print(
-    aggregate_np(
+    aggregate_py(
         test_group_idx,
         test_a,
         size=5,
