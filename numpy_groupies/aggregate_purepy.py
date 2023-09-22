@@ -6,11 +6,7 @@ from .utils import aggregate_common_doc
 from .utils import aliasing_py as aliasing
 from .utils import funcs_no_separate_nan, get_func
 
-# min - builtin
-# max - builtin
-# sum - builtin
-# all - builtin
-# any - builtin
+# min, max, sum, all, any - builtin
 
 
 def _last(x):

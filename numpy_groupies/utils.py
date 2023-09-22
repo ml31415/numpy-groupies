@@ -1,4 +1,4 @@
-"""Common helpers functions."""
+"""Common functionality for all aggregate implementations."""
 
 import numpy as np
 
@@ -133,8 +133,7 @@ _alias_numpy = {
 
 def get_aliasing(*extra):
     """
-    Assembles a dictionary that maps both strings and functions to a list of
-    supported function names.
+    Assembles a dictionary that maps both strings and functions to a list of supported function names.
 
     Examples:
         alias['add'] = 'sum'
@@ -203,8 +202,8 @@ _next_float_dtype = dict(
 
 def minimum_dtype(x, dtype=np.bool_):
     """
-    Returns the "most basic" dtype which represents `x` properly, which
-    provides at least the same value range as the specified dtype.
+    Returns the "most basic" dtype which represents `x` properly, which provides at least the same
+    value range as the specified dtype.
     """
 
     def check_type(x, dtype):
@@ -384,9 +383,8 @@ def _ravel_group_idx(group_idx, a, axis, size, order, method="ravel"):
 
 def offset_labels(group_idx, inshape, axis, order, size):
     """
-    Offset group labels by dimension. This is used when we
-    reduce over a subset of the dimensions of by. It assumes that the reductions
-    dimensions have been flattened in the last dimension
+    Offset group labels by dimension. This is used when we reduce over a subset of the dimensions of
+    group_idx. It assumes that the reductions dimensions have been flattened in the last dimension
     Copied from
     https://stackoverflow.com/questions/46256279/bin-elements-per-row-vectorized-2d-bincount-for-numpy
     """
@@ -414,9 +412,9 @@ def input_validation(
     check_bounds=True,
     func=None,
 ):
-    """Do some fairly extensive checking of group_idx and a, trying to
-    give the user as much help as possible with what is wrong. Also,
-    convert ndim-indexing to 1d indexing.
+    """
+    Do some fairly extensive checking of group_idx and a, trying to give the user as much help as
+    possible with what is wrong. Also, convert ndim-indexing to 1d indexing.
     """
     if not isinstance(a, (int, float, complex)) and not is_duck_array(a):
         a = np.asanyarray(a)
@@ -502,8 +500,9 @@ def input_validation(
 
 
 def unpack(group_idx, ret):
-    """Take an aggregate packed array and uncompress it to the size of group_idx.
-    This is equivalent to ret[group_idx].
+    """
+    Take an aggregate packed array and uncompress it to the size of group_idx. This is equivalent to
+    ret[group_idx].
     """
     return ret[group_idx]
 
@@ -535,9 +534,8 @@ def multi_arange(n):
 
         hstack((arange(n_i) for n_i in n))
 
-    This version seems quite a bit faster, at least for some
-    possible inputs, and at any rate it encapsulates a task
-    in a function.
+    This version seems quite a bit faster, at least for some possible inputs, and at any rate it
+    encapsulates a task in a function.
     """
     if n.ndim != 1:
         raise ValueError("n is supposed to be 1d array.")
@@ -563,12 +561,10 @@ def label_contiguous_1d(X):
         X =      [0 3 3 0 0 5 5 5 1 1 0 2]
         result = [0 1 1 0 0 2 2 2 3 3 0 4]
 
-    The ``0`` or ``False`` elements of ``X`` are labeled as ``0`` in the output. If ``X``
-    is a boolean array, each contiguous block of ``True`` is given an integer
-    label, if ``X`` is not boolean, then each contiguous block of identical values
-    is given an integer label. Integer labels are 1, 2, 3,..... (i.e. start a 1
-    and increase by 1 for each block with no skipped numbers.)
-
+    The ``0`` or ``False`` elements of ``X`` are labeled as ``0`` in the output. If ``X`` is a boolean
+    array, each contiguous block of ``True`` is given an integer label, if ``X`` is not boolean, then
+    each contiguous block of identical values is given an integer label. Integer labels are 1, 2, 3,
+    ..... (i.e. start a 1 and increase by 1 for each block with no skipped numbers.)
     """
 
     if X.ndim != 1:
@@ -618,18 +614,16 @@ def relabel_groups_masked(group_idx, keep_group):
 
     ret:       [0 2 2 2 0 0 4 0 0 1 1 0 2 4 4]
 
-    Description of above in words: remove group 2, and relabel group 3,4, and 5
-    to be 2, 3 and 4 respectively, in order to fill the gap.  Note that group 4 was never used
-    in the input group_idx, but the user supplied mask said to keep group 4, so group
-    5 is only moved up by one place to fill the gap created by removing group 2.
+    Description of above in words: remove group 2, and relabel group 3,4, and 5 to be 2, 3 and 4
+    respectively, in order to fill the gap.  Note that group 4 was never used in the input group_idx,
+    but the user supplied mask said to keep group 4, so group 5 is only moved up by one place to fill
+    the gap created by removing group 2.
 
-    That is, the mask describes which groups to remove,
-    the remaining groups are relabled to remove the gaps created by the falsy
-    elements in ``keep_group``.  Note that ``keep_group[0]`` has no particular meaning because it refers
-    to the zero group which cannot be "removed".
+    That is, the mask describes which groups to remove, the remaining groups are relabled to remove the
+    gaps created by the falsy elements in ``keep_group``. Note that ``keep_group[0]`` has no particular
+    meaning because it refers to the zero group which cannot be "removed".
 
-    ``keep_group`` should be bool and ``group_idx`` int.
-    Values in ``group_idx`` can be any order, and
+    ``keep_group`` should be bool and ``group_idx`` int. Values in ``group_idx`` can be any order.
     """
 
     keep_group = keep_group.astype(bool, copy=not keep_group[0])
@@ -642,10 +636,8 @@ def relabel_groups_masked(group_idx, keep_group):
 
 
 def is_duck_array(value):
-    """
-    This function was copied from xarray/core/utils.py under the terms
-    of Xarray's Apache-2 license
-    """
+    """This function was copied from xarray/core/utils.py under the terms of Xarray's Apache-2 license."""
+
     if isinstance(value, np.ndarray):
         return True
     return (
@@ -658,10 +650,8 @@ def is_duck_array(value):
 
 
 def iscomplexobj(x):
-    """
-    Copied from np.iscomplexobj so that we place fewer requirements
-    on duck array types.
-    """
+    """Copied from np.iscomplexobj so that we place fewer requirements on duck array types."""
+
     try:
         dtype = x.dtype
         type_ = dtype.type
