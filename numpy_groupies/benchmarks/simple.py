@@ -81,7 +81,7 @@ print("----------benchmarking-------------")
 print("Note that the actual observed speedup depends on a variety of properties of the input.")
 print("Here we are using 100,000 indices uniformly picked from [0, 1000).")
 print("Specifically, about 25% of the values are 0 (for use with bool operations),")
-print("the remainder are uniformly distribuited on [-50,25).")
+print("the remainder are uniformly distributed on [-50,25).")
 print("Times are scaled to 10 repetitions (actual number of reps used may not be 10).")
 
 print(

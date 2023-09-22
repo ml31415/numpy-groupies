@@ -19,7 +19,7 @@ else:
 
     aggregate_np = aggregate
     from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
-    from .utils_numpy import (
+    from .utils import (
         label_contiguous_1d,
         multi_arange,
         relabel_groups_masked,

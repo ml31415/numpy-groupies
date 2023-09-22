@@ -3,8 +3,15 @@ from __future__ import division
 import numba as nb
 import numpy as np
 
-from .utils import aggregate_common_doc, funcs_no_separate_nan, get_func, isstr
-from .utils_numpy import aliasing, check_dtype, check_fill_value, input_validation
+from .utils import (
+    aggregate_common_doc,
+    aliasing,
+    check_dtype,
+    check_fill_value,
+    funcs_no_separate_nan,
+    get_func,
+    input_validation,
+)
 
 
 class AggregateOp(object):
@@ -528,7 +535,7 @@ def aggregate(
     group_idx, a, func="sum", size=None, fill_value=0, order="C", dtype=None, axis=None, cache=True, **kwargs
 ):
     func = get_func(func, aliasing, _impl_dict)
-    if not isstr(func):
+    if not isinstance(func, str):
         if cache in (None, False):
             # Keep None and False in order to accept empty dictionaries
             aggregate_op = AggregateGeneric(func)

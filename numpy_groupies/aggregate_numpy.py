@@ -2,15 +2,12 @@ import numpy as np
 
 from .utils import (
     aggregate_common_doc,
-    check_boolean,
-    funcs_no_separate_nan,
-    get_func,
-    isstr,
-)
-from .utils_numpy import (
     aliasing,
+    check_boolean,
     check_dtype,
     check_fill_value,
+    funcs_no_separate_nan,
+    get_func,
     input_validation,
     iscomplexobj,
     maxval,
@@ -294,7 +291,7 @@ def _aggregate_base(
         group_idx = group_idx.astype(int)
 
     func = get_func(func, aliasing, _impl_dict)
-    if not isstr(func):
+    if not isinstance(func, str):
         # do simple grouping and execute function in loop
         ret = _impl_dict.get("generic", _generic_callable)(
             group_idx, a, flat_size, fill_value, func=func, dtype=dtype, **kwargs

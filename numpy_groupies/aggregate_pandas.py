@@ -4,8 +4,13 @@ import numpy as np
 import pandas as pd
 
 from .aggregate_numpy import _aggregate_base
-from .utils import aggregate_common_doc, funcs_no_separate_nan, isstr
-from .utils_numpy import allnan, anynan, check_dtype
+from .utils import (
+    aggregate_common_doc,
+    allnan,
+    anynan,
+    check_dtype,
+    funcs_no_separate_nan,
+)
 
 
 def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **kwargs):

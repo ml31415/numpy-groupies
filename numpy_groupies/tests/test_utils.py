@@ -1,6 +1,6 @@
 import numpy as np
 
-from ..utils_numpy import check_dtype, unpack
+from ..utils import check_dtype, unpack
 
 
 def test_check_dtype():

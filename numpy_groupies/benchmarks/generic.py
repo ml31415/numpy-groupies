@@ -9,7 +9,7 @@ from operator import itemgetter
 import numpy as np
 
 from numpy_groupies.tests import _implementations, aggregate_numpy
-from numpy_groupies.utils_numpy import allnan, anynan, nanfirst, nanlast
+from numpy_groupies.utils import allnan, anynan, nanfirst, nanlast
 
 
 def aggregate_grouploop(*args, **kwargs):

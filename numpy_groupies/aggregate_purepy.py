@@ -4,13 +4,9 @@ import itertools
 import math
 import operator
 
-from .utils import (
-    aggregate_common_doc,
-    aliasing,
-    funcs_no_separate_nan,
-    get_func,
-    isstr,
-)
+from .utils import aggregate_common_doc
+from .utils import aliasing_py as aliasing
+from .utils import funcs_no_separate_nan, get_func
 
 # min - builtin
 # max - builtin
@@ -142,7 +138,7 @@ def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order=None, dty
     elif len(group_idx) != len(a):
         raise ValueError("group_idx and a must be of the same length")
 
-    if isstr(func):
+    if isinstance(func, str):
         if func.startswith("nan"):
             func = func[3:]
             # remove nans
