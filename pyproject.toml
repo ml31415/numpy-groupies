@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "numpy-groupies"
+description = "Optimised tools for group-indexing operations: aggregated sum and more."
+dynamic = ["version"]
+readme = {file = "README.md", content-type = "text/markdown"}
+license = {file = "LICENSE.txt"}
+authors = [
+    {name = "Michael Löffler", email = "ml@occam.com.ua"},
+    {name = "Daniel Manson", email = "danielmanson.uk@gmail.com"}
+]
+maintainers = [
+    {name = "Deepak Cherian", email = "dcherian@ucar.edu"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries",
+    "License :: OSI Approved :: BSD License",
+]
+keywords = ["accumarray", "aggregate", "groupby", "grouping", "indexing"]
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+fast = [
+    "numba",
+]
+dev = [
+    "pytest",
+    "numba",
+    "pandas",
+]
+
+[project.urls]
+source = "https://github.com/ml31415/numpy-groupies"
+tracker = "https://github.com/ml31415/numpy-groupies/issues"
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+honor_noqa = true
+
+[tool.setuptools.packages.find]
+include = ["numpy_groupies*"]
+
+[tool.setuptools_scm]
+write_to = "numpy_groupies/_version.py"

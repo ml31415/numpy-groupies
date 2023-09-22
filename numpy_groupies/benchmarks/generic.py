@@ -1,13 +1,14 @@
 #!/usr/bin/python -B
-from __future__ import print_function
-import sys
+
 import platform
+import sys
 import timeit
 from operator import itemgetter
+
 import numpy as np
 
 from numpy_groupies.tests import _implementations, aggregate_numpy
-from numpy_groupies.utils_numpy import allnan, anynan, nanfirst, nanlast
+from numpy_groupies.utils import allnan, anynan, nanfirst, nanlast
 
 
 def aggregate_grouploop(*args, **kwargs):
@@ -83,17 +84,14 @@ def benchmark_data(size=5e5, seed=100):
     nana = a.copy()
     nana[(nana < 0.2) & (nana != 0)] = np.nan
     nan_share = np.mean(np.isnan(nana))
-    assert 0.15 < nan_share < 0.25, "%3f%% nans" % (nan_share * 100)
+    assert 0.15 < nan_share < 0.25, f"{nan_share * 100:3f}% nans"
     return a, nana, group_idx
 
 
 def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False):
     a, nana, group_idx = benchmark_data(size=size, seed=seed)
 
-    print(
-        "function"
-        + "".join(impl.__name__.rsplit("_", 1)[1].rjust(14) for impl in implementations)
-    )
+    print("function" + "".join(impl.__name__.rsplit("_", 1)[1].rjust(14) for impl in implementations))
     print("-" * (9 + 14 * len(implementations)))
     for func in func_list:
         func_name = getattr(func, "__name__", func)
@@ -124,11 +122,11 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False)
                     print("FAIL".rjust(14), end="")
                 else:
                     t0 = min(
-                        timeit.Timer(
-                            lambda: aggregatefunc(group_idx, used_a, func=func)
-                        ).repeat(repeat=repeat, number=1)
+                        timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func)).repeat(
+                            repeat=repeat, number=1
+                        )
                     )
-                    print(("%.3f" % (t0 * 1000)).rjust(14), end="")
+                    print(f"{t0 * 1000:.3f}".rjust(14), end="")
             sys.stdout.flush()
         print()
 
@@ -137,32 +135,18 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False)
     if "numba" in implementation_names:
         import numba
 
-        postfix += ", Numba %s" % numba.__version__
-    if "weave" in implementation_names:
-        import weave
-
-        postfix += ", Weave %s" % weave.__version__
+        postfix += f", Numba {numba.__version__}"
     if "pandas" in implementation_names:
         import pandas
 
-        postfix += ", Pandas %s" % pandas.__version__
+        postfix += f", Pandas {pandas.__version__}"
     print(
-        "%s(%s), Python %s, Numpy %s%s"
-        % (
-            platform.system(),
-            platform.machine(),
-            sys.version.split()[0],
-            np.version.version,
-            postfix,
-        )
+        f"{platform.system()}({platform.machine()}), Python {sys.version.split()[0]}, Numpy {np.version.version}"
+        f"{postfix}"
     )
 
 
 if __name__ == "__main__":
-    implementations = (
-        _implementations if "--purepy" in sys.argv else _implementations[1:]
-    )
-    implementations = (
-        implementations if "--pandas" in sys.argv else implementations[:-1]
-    )
+    implementations = _implementations if "--purepy" in sys.argv else _implementations[1:]
+    implementations = implementations if "--pandas" in sys.argv else implementations[:-1]
     benchmark(implementations, raise_errors=False)

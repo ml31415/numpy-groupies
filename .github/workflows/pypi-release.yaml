@@ -28,7 +28,7 @@ jobs:
         run: |
           git clean -xdf
           git restore -SW .
-          python setup.py sdist
+          python -m build
       - name: Check built artifacts
         run: |
           python -m twine check --strict dist/*
