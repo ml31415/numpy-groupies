@@ -1,6 +1,4 @@
-from ._version import get_versions
 from .aggregate_purepy import aggregate as aggregate_py
-
 
 def dummy_no_impl(*args, **kwargs):
     raise NotImplementedError(
@@ -57,5 +55,14 @@ def uaggregate(group_idx, a, **kwargs):
     return unpack(group_idx, aggregate(group_idx, a, **kwargs))
 
 
-__version__ = get_versions()["version"]
-del get_versions
+try:
+    # Version is added only when packaged
+    from ._version import __version__
+except ImportError:
+    try:
+        from setuptools_scm import get_version
+    except ImportError:
+        __version__ = "0.0.0"
+    else:
+        __version__ = get_version(root="..", relative_to=__file__)
+        del get_version

@@ -39,6 +39,7 @@ nosetests.xml
 __pycache__/
 .eggs/
 *~
-
 *.ini
 
+# Dynamic versioning
+numpy_groupies/_version.py
