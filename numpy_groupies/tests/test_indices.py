@@ -1,9 +1,9 @@
 import pytest
 import numpy as np
 
-from . import aggregate_weave, aggregate_numba, _impl_name
+from . import aggregate_numba, _impl_name
 
-_implementations = [aggregate_weave, aggregate_numba]
+_implementations = [aggregate_numba]
 _implementations = [i for i in _implementations if i is not None]
 
 

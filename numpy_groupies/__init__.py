@@ -1,9 +1,9 @@
 from .aggregate_purepy import aggregate as aggregate_py
 
+
 def dummy_no_impl(*args, **kwargs):
     raise NotImplementedError(
-        "You may need to install another package (numpy, "
-        "weave, or numba) to access a working implementation."
+        "You may need to install another package (numpy or numba) to access a working implementation."
     )
 
 
@@ -26,19 +26,6 @@ else:
         relabel_groups_unique,
         unpack,
     )
-
-
-try:
-    try:
-        import weave
-    except ImportError:
-        from scipy import weave
-except ImportError:
-    aggregate_wv = None
-else:
-    from .aggregate_weave import aggregate as aggregate_wv, step_count, step_indices
-
-    aggregate = aggregate_wv
 
 
 try:

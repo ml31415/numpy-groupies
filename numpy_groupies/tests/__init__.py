@@ -7,10 +7,6 @@ try:
 except ImportError:
     aggregate_numba = None
 try:
-    from .. import aggregate_weave
-except ImportError:
-    aggregate_weave = None
-try:
     from .. import aggregate_pandas
 except ImportError:
     aggregate_pandas = None
@@ -20,7 +16,6 @@ _implementations = [
     aggregate_numpy_ufunc,
     aggregate_numpy,
     aggregate_numba,
-    aggregate_weave,
     aggregate_pandas,
 ]
 _implementations = [i for i in _implementations if i is not None]
@@ -37,22 +32,6 @@ _not_implemented_by_impl_name = {
     "purepy": ("cumsum", "cumprod", "cummax", "cummin", "sumofsquares"),
     "numba": ("array", "list", "sort"),
     "pandas": ("array", "list", "sort", "sumofsquares", "nansumofsquares"),
-    "weave": (
-        "argmin",
-        "argmax",
-        "array",
-        "list",
-        "sort",
-        "cumsum",
-        "cummax",
-        "cummin",
-        "nanargmin",
-        "nanargmax",
-        "sumofsquares",
-        "nansumofsquares",
-        "<lambda>",
-        "custom_callable",
-    ),
     "ufunc": "NO_CHECK",
 }
 

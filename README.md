@@ -178,8 +178,7 @@ like `from numpy_groupies import aggregate_nb as aggregate` or by importing aggr
 
 Currently the following implementations exist:
 * **numpy** - This is the default implementation. It uses plain `numpy`, mainly relying on `np.bincount` and basic indexing magic. It comes without other dependencies except `numpy` and shows reasonable performance for the occasional usage.
-* **numba** - This is the most performant implementation in average, based on jit compilation provided by numba and LLVM.
-* **weave** - `weave` compiles C-code on demand at runtime, producing binaries that get executed from within python. The performance of this implementation is comparable to the numba implementation.
+* **numba** - This is the most performant implementation, based on jit compilation provided by numba and LLVM.
 * **pure python** - This implementation has no dependencies and uses only the standard library. It's horribly slow and should only be used, if there is no numpy available.
 * **numpy ufunc** - *Only for benchmarking.*  This impelmentation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for perfoming excactly the same calculation that `aggregate` executes, however the numpy implementation is rather incomplete and slow (as of `v1.14.0`). A [numpy issue](https://github.com/numpy/numpy/issues/5922) has been created to address this issue.
 * **pandas** - *Only for reference.*  The pandas' `groupby` concept is the same as the task performed by `aggregate`. However, `pandas` is not actually faster than the default `numpy` implementation. Also, note that there may be room for improvement in the way that `pandas` is utilized here. Most notably, when computing multiple aggregations of the same data (e.g. `'min'` and `'max'`) pandas could potentially be used more efficiently.
@@ -197,99 +196,53 @@ the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to s
 For `nan-` operations another 20% of the values are set to nan, leaving the remainder on the interval `[0.2,0.8)`.
 
 The benchmarking results are given in ms for an i7-7560U running at 2.40GHz:
-```text
-function         ufunc         numpy         numba        pandas
------------------------------------------------------------------
-sum              36.582         1.708         0.859        12.002
-prod             37.559        37.864         0.857        11.507
-amin             34.394        34.254         0.865        11.711
-amax             34.120        33.964         0.899        12.005
-len              31.899         1.382         0.733        11.092
-all              37.062         3.863         1.048        12.519
-any              36.260         5.601         1.048        12.713
-anynan           32.514         2.735         0.936       141.092
-allnan           34.558         5.611         0.932       151.953
-mean               ----         2.603         1.069        12.227
-std                ----         4.373         1.126        11.963
-var                ----         4.331         1.129       122.625
-first              ----         1.946         1.032        11.850
-last               ----         1.532         0.742        11.736
-argmax             ----        35.397         1.172       346.742
-argmin             ----        39.942         1.407       347.679
-nansum             ----         5.716         1.942        13.248
-nanprod            ----        36.224         1.967        12.585
-nanmin             ----        33.229         1.916        13.067
-nanmax             ----        32.935         1.965        13.258
-nanlen             ----         5.277         1.740        14.426
-nanall             ----         7.703         2.201        16.221
-nanany             ----         8.984         2.215        15.968
-nanmean            ----         6.221         2.024        13.243
-nanvar             ----         7.866         1.929       126.689
-nanstd             ----         7.945         1.933        13.062
-nanfirst           ----         6.015         2.284        15.547
-nanlast            ----         5.561         1.675        15.318
-nanargmin          ----        42.110         2.357          ----
-nanargmax          ----        38.085         2.314          ----
-cumsum             ----       106.524         1.313         8.000
-cumprod            ----          ----         1.319        11.149
-cummax             ----          ----         1.288        11.954
-cummin             ----          ----         1.271        11.631
-arbitrary          ----       206.623        50.381       131.928
-sort               ----       171.702          ----          ----
-Linux(x86_64), Python 3.10.4, Numpy 1.22.4, Numba 0.55.2, Pandas 1.4.3
-```
 
-```text
-function         ufunc         numpy         numba         weave
------------------------------------------------------------------
-sum              30.985         1.684         1.116         1.350
-prod             32.553        32.269         0.996         1.172
-amin             34.954        34.837         0.989         2.068
-amax             34.580        34.695         1.023         2.132
-len              30.611         1.342         0.805         1.003
-all              36.724         4.355         1.366         1.407
-any              34.570         7.181         1.373         1.410
-anynan           30.840         2.611         0.986         2.557
-allnan           32.463         6.636         0.982         2.562
-mean               ----         2.248         0.985         1.191
-std                ----         6.532         1.084         1.378
-var                ----         6.590         1.086         1.380
-first              ----         2.126         1.033         1.132
-last               ----         1.592         0.957         1.002
-argmax             ----        34.903         1.018          ----
-argmin             ----        38.538         0.996          ----
-nansum             ----         5.148         1.785         1.335
-nanprod            ----        29.445         1.760         1.334
-nanmin             ----        31.752         1.992         2.747
-nanmax             ----        32.247         2.021         2.802
-nanlen             ----         5.099         1.909         1.267
-nanall             ----         9.637         1.826         1.375
-nanany             ----        10.520         1.830         1.384
-nanmean            ----         5.775         2.018         1.430
-nanvar             ----        10.171         2.145         1.640
-nanstd             ----        10.155         2.163         1.637
-nanfirst           ----         5.640         2.201         1.156
-nanlast            ----         5.218         1.734         1.137
-nanargmin          ----        43.795         1.987          ----
-nanargmax          ----        40.354         2.029          ----
-cumsum             ----       138.660         1.270          ----
-cumprod            ----          ----         1.292          ----
-cummax             ----          ----         1.216          ----
-cummin             ----          ----         1.205          ----
-arbitrary          ----       224.213        80.039          ----
-sort               ----       268.514          ----          ----
-Linux(x86_64), Python 2.7.18, Numpy 1.16.6, Numba 0.46.0, Weave 0.17.0
-```
+| function  | ufunc   | numpy   | numba   | pandas  |
+|-----------|---------|---------|---------|---------|
+| sum       | 1.950   | 1.728   | 0.708   | 11.832  |
+| prod      | 2.279   | 2.349   | 0.709   | 11.649  |
+| min       | 2.472   | 2.489   | 0.716   | 11.686  |
+| max       | 2.457   | 2.480   | 0.745   | 11.598  |
+| len       | 1.481   | 1.270   | 0.635   | 10.932  |
+| all       | 37.186  | 3.054   | 0.892   | 12.587  |
+| any       | 35.278  | 5.157   | 0.890   | 12.845  |
+| anynan    | 5.783   | 2.126   | 0.762   | 144.740 |
+| allnan    | 7.971   | 4.367   | 0.774   | 144.507 |
+| mean      | ----    | 2.500   | 0.825   | 13.284  |
+| std       | ----    | 4.528   | 0.965   | 12.193  |
+| var       | ----    | 4.269   | 0.969   | 12.657  |
+| first     | ----    | 1.847   | 0.811   | 11.584  |
+| last      | ----    | 1.309   | 0.581   | 11.842  |
+| argmax    | ----    | 3.504   | 1.411   | 293.640 |
+| argmin    | ----    | 6.996   | 1.347   | 290.977 |
+| nansum    | ----    | 5.388   | 1.569   | 15.239  |
+| nanprod   | ----    | 5.707   | 1.546   | 15.004  |
+| nanmin    | ----    | 5.831   | 1.700   | 14.292  |
+| nanmax    | ----    | 5.847   | 1.731   | 14.927  |
+| nanlen    | ----    | 3.170   | 1.529   | 14.529  |
+| nanall    | ----    | 6.499   | 1.640   | 15.931  |
+| nanany    | ----    | 8.041   | 1.656   | 15.839  |
+| nanmean   | ----    | 5.636   | 1.583   | 15.185  |
+| nanvar    | ----    | 7.514   | 1.682   | 15.643  |
+| nanstd    | ----    | 7.292   | 1.666   | 15.104  |
+| nanfirst  | ----    | 5.318   | 2.096   | 14.432  |
+| nanlast   | ----    | 4.943   | 1.473   | 14.637  |
+| nanargmin | ----    | 7.977   | 1.779   | 298.911 |
+| nanargmax | ----    | 5.869   | 1.802   | 301.022 |
+| cumsum    | ----    | 71.713  | 1.119   | 8.864   |
+| cumprod   | ----    | ----    | 1.123   | 12.100  |
+| cummax    | ----    | ----    | 1.062   | 12.133  |
+| cummin    | ----    | ----    | 0.973   | 11.908  |
+| arbitrary | ----    | 147.853 | 46.690  | 129.779 |
+| sort      | ----    | 167.699 | ----    | ----    |
+
+_Linux(x86_64), Python 3.10.12, Numpy 1.25.2, Numba 0.58.0, Pandas 2.0.2_
+
 ## Development
 This project was started by @ml31415 and the `numba` and `weave` implementations are by him. The pure 
 python and `numpy` implementations were written by @d1manson.
 
 The authors hope that `numpy`'s `ufunc.at` methods or some other implementation of `aggregate` within
-`numpy` or `scipy` will eventually be fast enough, to make this package redundant.
-
-
-### python2
-So far `numpy_grpupies` can still be run on `python2`, mainly because `weave` was never ported to `python3`.
-Ditching `python2` support would mean to ditch the `weave` implementation, which is so far the best competitor in
-terms of speed. In order not to lose this benchmarking option, `python2` compatibility is likely to stay 
-for now.
+`numpy` or `scipy` will eventually be fast enough, to make this package redundant. Since numpy 1.25 there
+were actually major [improvements on ufunc speed](https://numpy.org/doc/stable/release/1.25.0-notes.html), 
+which reduced the gap between numpy and the numba implementation a lot.

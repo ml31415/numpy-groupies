@@ -13,7 +13,6 @@ from . import (
     aggregate_purepy,
     aggregate_numpy_ufunc,
     aggregate_numpy,
-    aggregate_weave,
     aggregate_numba,
     aggregate_pandas,
     _wrap_notimplemented_xfail,
@@ -27,8 +26,6 @@ class AttrDict(dict):
 
 
 TEST_PAIRS = ["np/py", "ufunc/np", "numba/np", "pandas/np"]
-if sys.version_info.major == 2:
-    TEST_PAIRS.append("weave/np")
 
 
 @pytest.fixture(params=TEST_PAIRS, scope="module")
@@ -46,8 +43,6 @@ def aggregate_cmp(request, seed=100):
             impl = aggregate_numpy_ufunc
         elif "numba" in request.param:
             impl = aggregate_numba
-        elif "weave" in request.param:
-            impl = aggregate_weave
         elif "pandas" in request.param:
             impl = aggregate_pandas
         else:
