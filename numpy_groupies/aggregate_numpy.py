@@ -88,20 +88,24 @@ def _any(group_idx, a, size, fill_value, dtype=None):
 def _min(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmax = maxval(fill_value, dtype)
-    ret = np.full(size, fill_value, dtype=dtype)
+    with np.errstate(invalid="ignore"):
+        ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != dmax:
         ret[group_idx] = dmax  # min starts from maximum
-    np.minimum.at(ret, group_idx, a)
+    with np.errstate(invalid="ignore"):
+        np.minimum.at(ret, group_idx, a)
     return ret
 
 
 def _max(group_idx, a, size, fill_value, dtype=None):
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmin = minval(fill_value, dtype)
-    ret = np.full(size, fill_value, dtype=dtype)
+    with np.errstate(invalid="ignore"):
+        ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != dmin:
         ret[group_idx] = dmin  # max starts from minimum
-    np.maximum.at(ret, group_idx, a)
+    with np.errstate(invalid="ignore"):
+        np.maximum.at(ret, group_idx, a)
     return ret
 
 

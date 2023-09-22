@@ -208,7 +208,8 @@ def minimum_dtype(x, dtype=np.bool_):
 
     def check_type(x, dtype):
         try:
-            converted = np.array(x).astype(dtype)
+            with np.errstate(invalid="ignore"):
+                converted = np.array(x).astype(dtype)
         except (ValueError, OverflowError, RuntimeWarning):
             return False
         # False if some overflow has happened

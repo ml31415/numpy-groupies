@@ -29,7 +29,8 @@ def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **k
         ret = grouped.values[:, 0]
     else:
         ret = np.full(size, fill_value, dtype=dtype)
-        ret[grouped.index] = grouped.values[:, 0]
+        with np.errstate(invalid="ignore"):
+            ret[grouped.index] = grouped.values[:, 0]
     return ret
 
 
