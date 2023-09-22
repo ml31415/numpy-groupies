@@ -94,7 +94,7 @@ the following optimized functions. Note that not all functions might be provided
 * `'argmin'` - the index in `a` of the minimum value in each group.
 
 The above functions also have a `nan`-form, which skip the `nan` values instead of propagating them to the result of the calculation:
-* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, ``nanargmax``, ``nanargmin``
+* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, `'nanargmax'`, `'nanargmin'`
 
 The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
 * `'all'` - `True` if all items within a group are truethy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truethy.
@@ -103,10 +103,10 @@ The following functions are slightly different in that they always return boolea
 * `'anynan'` - `True` if any items within a group are `nan`.
 
 The following functions don't reduce the data, but instead produce an output matching the size of the input:
-* `cumsum` - cumulative sum of items within each group.
-* `cumprod` - cumulative product of items within each group. (numba only)
-* `cummin` - cumulative minimum of items within each group. (numba only)
-* `cummax` - cumulative maximum of items within each group. (numba only)
+* `'cumsum'` - cumulative sum of items within each group.
+* `'cumprod'` - cumulative product of items within each group. (numba only)
+* `'cummin'` - cumulative minimum of items within each group. (numba only)
+* `'cummax'` - cumulative maximum of items within each group. (numba only)
 * `'sort'` - sort the items within each group in ascending order, use reverse=True to invert the order.
 
 Finally, there are three functions which don't reduce each group to a single value, instead they return the full 
@@ -180,7 +180,7 @@ Currently the following implementations exist:
 * **numpy** - This is the default implementation. It uses plain `numpy`, mainly relying on `np.bincount` and basic indexing magic. It comes without other dependencies except `numpy` and shows reasonable performance for the occasional usage.
 * **numba** - This is the most performant implementation, based on jit compilation provided by numba and LLVM.
 * **pure python** - This implementation has no dependencies and uses only the standard library. It's horribly slow and should only be used, if there is no numpy available.
-* **numpy ufunc** - *Only for benchmarking.*  This implementation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for performing exactly the same calculation that `aggregate` executes, however the numpy implementation is rather incomplete and slow (as of `v1.14.0`). A [numpy issue](https://github.com/numpy/numpy/issues/5922) has been created to address this issue.
+* **numpy ufunc** - *Only for benchmarking.*  This implementation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for performing exactly the same calculation that `aggregate` executes, however the numpy implementation is rather incomplete.
 * **pandas** - *Only for reference.*  The pandas' `groupby` concept is the same as the task performed by `aggregate`. However, `pandas` is not actually faster than the default `numpy` implementation. Also, note that there may be room for improvement in the way that `pandas` is utilized here. Most notably, when computing multiple aggregations of the same data (e.g. `'min'` and `'max'`) pandas could potentially be used more efficiently.
 
 All implementations have the same calling syntax and produce the same outputs, to within some floating-point error. 
