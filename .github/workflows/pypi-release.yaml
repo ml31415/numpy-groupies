@@ -33,7 +33,7 @@ jobs:
         run: |
           python -m twine check --strict dist/*
           pwd
-          if [ -f dist/numpy_groupies-0.0.0.tar.gz ]; then
+          if [ -f dist/numpy-groupies-0.0.0.tar.gz ]; then
             echo "❌ INVALID VERSION NUMBER"
             exit 1
           else
