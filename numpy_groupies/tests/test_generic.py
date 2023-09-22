@@ -6,7 +6,7 @@ import warnings
 import numpy as np
 import pytest
 
-from . import _impl_name, _implementations, _wrap_notimplemented_xfail, func_list
+from . import _impl_name, _implementations, _wrap_notimplemented_skip, func_list
 
 
 @pytest.fixture(params=_implementations, ids=_impl_name)
@@ -15,7 +15,7 @@ def aggregate_all(request):
     if impl is None:
         pytest.skip("Implementation not available")
     name = _impl_name(impl)
-    return _wrap_notimplemented_xfail(impl.aggregate, "aggregate_" + name)
+    return _wrap_notimplemented_skip(impl.aggregate, "aggregate_" + name)
 
 
 def _deselect_purepy(aggregate_all, *args, **kwargs):
@@ -229,7 +229,7 @@ def test_scalar_input(aggregate_all, func):
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "all", "any"])
 def test_nan_input(aggregate_all, func, groups=100):
     if aggregate_all.__name__.endswith("pandas"):
-        pytest.xfail("pandas always skips nan values")
+        pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(5)
     a = np.random.random(group_idx.size)
     a[::2] = np.nan
@@ -244,7 +244,7 @@ def test_nan_input(aggregate_all, func, groups=100):
 
 def test_nan_input_len(aggregate_all, groups=100, group_size=5):
     if aggregate_all.__name__.endswith("pandas"):
-        pytest.xfail("pandas always skips nan values")
+        pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(group_size)
     a = np.random.random(len(group_idx))
     a[::2] = np.nan
@@ -267,7 +267,7 @@ def test_argmin_argmax_nonans(aggregate_all):
 @pytest.mark.deselect_if(func=_deselect_purepy)
 def test_argmin_argmax_nans(aggregate_all):
     if aggregate_all.__name__.endswith("pandas"):
-        pytest.xfail("pandas always ignores nans")
+        pytest.skip("pandas always ignores nans")
 
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, 3, 1, np.nan, 1, 2, 3])
@@ -282,7 +282,7 @@ def test_argmin_argmax_nans(aggregate_all):
 @pytest.mark.deselect_if(func=_deselect_purepy)
 def test_nanargmin_nanargmax_nans(aggregate_all):
     if aggregate_all.__name__.endswith("pandas"):
-        pytest.xfail("pandas doesn't fill indices for all-nan groups with fill_value but with -inf instead")
+        pytest.skip("pandas doesn't fill indices for all-nan groups with fill_value but with -inf instead")
 
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, np.nan, 1, np.nan, np.nan, np.nan, np.nan])
@@ -491,7 +491,7 @@ def test_argreduction_nD_array_1D_idx(aggregate_all):
 @pytest.mark.deselect_if(func=_deselect_purepy)
 def test_argreduction_negative_fill_value(aggregate_all):
     if aggregate_all.__name__.endswith("pandas"):
-        pytest.xfail("pandas always skips nan values")
+        pytest.skip("pandas always skips nan values")
 
     group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
     a = np.array([[1] * 12, [np.nan] * 12])

@@ -1,3 +1,5 @@
+from functools import wraps
+
 import pytest
 
 from .. import aggregate_numpy, aggregate_numpy_ufunc, aggregate_purepy
@@ -36,10 +38,11 @@ _not_implemented_by_impl_name = {
 }
 
 
-def _wrap_notimplemented_xfail(impl, name=None):
-    """Some implementations lack some functionality. That's ok, let's xfail that instead of raising errors."""
+def _wrap_notimplemented_skip(impl, name=None):
+    """Some implementations lack some functionality. That's ok, let's skip that instead of raising errors."""
 
-    def try_xfail(*args, **kwargs):
+    @wraps(impl)
+    def try_skip(*args, **kwargs):
         try:
             return impl(*args, **kwargs)
         except NotImplementedError as e:
@@ -49,15 +52,13 @@ def _wrap_notimplemented_xfail(impl, name=None):
                 func = func.__name__
             not_implemented_ok = _not_implemented_by_impl_name.get(impl_name, [])
             if not_implemented_ok == "NO_CHECK" or func in not_implemented_ok:
-                pytest.xfail("Functionality not implemented")
+                pytest.skip("Functionality not implemented")
             else:
                 raise e
 
     if name:
-        try_xfail.__name__ = name
-    else:
-        try_xfail.__name__ = impl.__name__
-    return try_xfail
+        try_skip.__name__ = name
+    return try_skip
 
 
 func_list = (

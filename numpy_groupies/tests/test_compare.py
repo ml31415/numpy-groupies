@@ -12,7 +12,7 @@ import pytest
 
 from . import (
     _impl_name,
-    _wrap_notimplemented_xfail,
+    _wrap_notimplemented_skip,
     aggregate_numba,
     aggregate_numpy,
     aggregate_numpy_ufunc,
@@ -34,7 +34,7 @@ def aggregate_cmp(request, seed=100):
     test_pair = request.param
     if test_pair == "np/py":
         # Some functions in purepy are not implemented
-        func_ref = _wrap_notimplemented_xfail(aggregate_purepy.aggregate)
+        func_ref = _wrap_notimplemented_skip(aggregate_purepy.aggregate)
         func = aggregate_numpy.aggregate
         group_cnt = 100
     else:
@@ -52,7 +52,7 @@ def aggregate_cmp(request, seed=100):
         if not impl:
             pytest.skip("Implementation not available")
         name = _impl_name(impl)
-        func = _wrap_notimplemented_xfail(impl.aggregate, "aggregate_" + name)
+        func = _wrap_notimplemented_skip(impl.aggregate, "aggregate_" + name)
 
     rnd = np.random.RandomState(seed=seed)
 
@@ -114,7 +114,7 @@ def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
             res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
         except ValueError:
             if np.isnan(fill_value) and aggregate_cmp.test_pair.endswith("py"):
-                pytest.xfail(
+                pytest.skip(
                     "pure python version uses lists and does not raise ValueErrors when inserting nan into integers"
                 )
             else:
@@ -125,7 +125,7 @@ def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
             np.testing.assert_allclose(res, ref, rtol=10**-decimal)
         except AssertionError:
             if "arg" in func and aggregate_cmp.test_pair.startswith("pandas"):
-                pytest.xfail("pandas doesn't fill indices for all-nan groups with fill_value, but with -inf instead")
+                pytest.skip("pandas doesn't fill indices for all-nan groups with fill_value, but with -inf instead")
             else:
                 raise
 
