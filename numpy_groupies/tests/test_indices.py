@@ -1,7 +1,7 @@
-import pytest
 import numpy as np
+import pytest
 
-from . import aggregate_numba, _impl_name
+from . import _impl_name, aggregate_numba
 
 _implementations = [aggregate_numba]
 _implementations = [i for i in _implementations if i is not None]

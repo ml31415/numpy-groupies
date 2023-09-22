@@ -127,9 +127,7 @@ _forced_same_type = {
 def check_dtype(dtype, func_str, a, n):
     if np.isscalar(a) or not a.shape:
         if func_str not in ("sum", "prod", "len"):
-            raise ValueError(
-                "scalar inputs are supported only for 'sum', " "'prod' and 'len'"
-            )
+            raise ValueError("scalar inputs are supported only for 'sum', " "'prod' and 'len'")
         a_dtype = np.dtype(type(a))
     else:
         a_dtype = a.dtype
@@ -137,12 +135,8 @@ def check_dtype(dtype, func_str, a, n):
     if dtype is not None:
         # dtype set by the user
         # Careful here: np.bool != np.bool_ !
-        if np.issubdtype(dtype, np.bool_) and not (
-            "all" in func_str or "any" in func_str
-        ):
-            raise TypeError(
-                "function %s requires a more complex datatype " "than bool" % func_str
-            )
+        if np.issubdtype(dtype, np.bool_) and not ("all" in func_str or "any" in func_str):
+            raise TypeError("function %s requires a more complex datatype " "than bool" % func_str)
         if not np.issubdtype(dtype, np.integer) and func_str in ("len", "nanlen"):
             raise TypeError("function %s requires an integer datatype" % func_str)
         # TODO: Maybe have some more checks here
@@ -205,9 +199,7 @@ def check_fill_value(fill_value, dtype, func=None):
         try:
             return dtype.type(fill_value)
         except ValueError:
-            raise ValueError(
-                "fill_value must be convertible into %s" % dtype.type.__name__
-            )
+            raise ValueError("fill_value must be convertible into %s" % dtype.type.__name__)
 
 
 def check_group_idx(group_idx, a=None, check_min=True):
@@ -259,10 +251,7 @@ def offset_labels(group_idx, inshape, axis, order, size):
         group_idx = np.moveaxis(group_idx, axis, -1)
     newshape = group_idx.shape[:-1] + (-1,)
 
-    group_idx = (
-        group_idx
-        + np.arange(np.prod(newshape[:-1]), dtype=int).reshape(newshape) * size
-    )
+    group_idx = group_idx + np.arange(np.prod(newshape[:-1]), dtype=int).reshape(newshape) * size
     if axis not in (-1, len(inshape) - 1):
         return np.moveaxis(group_idx, -1, axis)
     else:
@@ -302,10 +291,7 @@ def input_validation(
     # multi-dimensional indexing along the specified axis.
     if axis is None:
         if ndim_a > 1:
-            raise ValueError(
-                "a must be scalar or 1 dimensional, use .ravel to"
-                " flatten. Alternatively specify axis."
-            )
+            raise ValueError("a must be scalar or 1 dimensional, use .ravel to" " flatten. Alternatively specify axis.")
     elif axis >= ndim_a or axis < -ndim_a:
         raise ValueError("axis arg too large for np.ndim(a)")
     else:
@@ -313,15 +299,11 @@ def input_validation(
         if ndim_idx > 1:
             # TODO: we could support a sequence of axis values for multiple
             # dimensions of group_idx.
-            raise NotImplementedError(
-                "only 1d indexing currently" "supported with axis arg."
-            )
+            raise NotImplementedError("only 1d indexing currently" "supported with axis arg.")
         elif a.shape[axis] != len(group_idx):
             raise ValueError("a.shape[axis] doesn't match length of group_idx.")
         elif size is not None and not np.isscalar(size):
-            raise NotImplementedError(
-                "when using axis arg, size must be" "None or scalar."
-            )
+            raise NotImplementedError("when using axis arg, size must be" "None or scalar.")
         else:
             is_form_3 = group_idx.ndim == 1 and a.ndim > 1 and axis is not None
             orig_shape = a.shape if is_form_3 else group_idx.shape
@@ -331,16 +313,10 @@ def input_validation(
                 unravel_shape = None
 
             method = "offset" if axis == ndim_a - 1 else "ravel"
-            group_idx, size = _ravel_group_idx(
-                group_idx, a, axis, size, order, method=method
-            )
+            group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order, method=method)
             flat_size = np.prod(size)
             ndim_idx = ndim_a
-            size = (
-                orig_shape
-                if is_form_3 and not callable(func) and "cum" in func
-                else size
-            )
+            size = orig_shape if is_form_3 and not callable(func) and "cum" in func else size
             return (
                 group_idx.ravel(),
                 a.ravel(),
@@ -357,9 +333,7 @@ def input_validation(
             if not np.isscalar(size):
                 raise ValueError("output size must be scalar or None")
             if check_bounds and np.any(group_idx > size - 1):
-                raise ValueError(
-                    "one or more indices are too large for " "size %d" % size
-                )
+                raise ValueError("one or more indices are too large for " "size %d" % size)
         flat_size = size
     else:
         if size is None:
@@ -368,22 +342,19 @@ def input_validation(
             raise ValueError("output size must be of length %d" % len(group_idx))
         elif len(size) != len(group_idx):
             raise ValueError(
-                "%d sizes given, but %d output dimensions "
-                "specified in index" % (len(size), len(group_idx))
+                "%d sizes given, but %d output dimensions " "specified in index" % (len(size), len(group_idx))
             )
         if ravel_group_idx:
             group_idx = np.ravel_multi_index(group_idx, size, order=order, mode="raise")
         flat_size = np.prod(size)
 
     if not (np.ndim(a) == 0 or len(a) == group_idx.size):
-        raise ValueError(
-            "group_idx and a must be of the same length, or a" " can be scalar"
-        )
+        raise ValueError("group_idx and a must be of the same length, or a" " can be scalar")
 
     return group_idx, a, flat_size, ndim_idx, size, None
 
 
-### General tools ###
+# General tools
 
 
 def unpack(group_idx, ret):

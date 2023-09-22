@@ -33,7 +33,8 @@ try:
 except ImportError:
     aggregate_nb = None
 else:
-    from .aggregate_numba import aggregate as aggregate_nb, step_count, step_indices
+    from .aggregate_numba import aggregate as aggregate_nb
+    from .aggregate_numba import step_count, step_indices
 
     aggregate = aggregate_nb
 

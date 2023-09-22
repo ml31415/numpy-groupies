@@ -2,7 +2,7 @@ import numpy as np
 
 from .aggregate_numpy import _aggregate_base
 from .utils import aggregate_common_doc, check_boolean, get_func, isstr
-from .utils_numpy import aliasing, minimum_dtype, minimum_dtype_scalar, minval, maxval
+from .utils_numpy import aliasing, maxval, minimum_dtype, minimum_dtype_scalar, minval
 
 
 def _anynan(group_idx, a, size, fill_value, dtype=None):
@@ -89,17 +89,7 @@ _impl_dict = dict(
 )
 
 
-def aggregate(
-    group_idx,
-    a,
-    func="sum",
-    size=None,
-    fill_value=0,
-    order="C",
-    dtype=None,
-    axis=None,
-    **kwargs
-):
+def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order="C", dtype=None, axis=None, **kwargs):
     func = get_func(func, aliasing, _impl_dict)
     if not isstr(func):
         raise NotImplementedError("No such ufunc available")
@@ -113,7 +103,7 @@ def aggregate(
         func=func,
         axis=axis,
         _impl_dict=_impl_dict,
-        **kwargs
+        **kwargs,
     )
 
 

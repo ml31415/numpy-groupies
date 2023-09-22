@@ -31,9 +31,7 @@ def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **k
 _supported_funcs = "sum prod all any min max mean var std first last cumsum cumprod cummax cummin".split()
 _impl_dict = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
 _impl_dict.update(
-    ("nan" + fn, partial(_wrapper, func=fn))
-    for fn in _supported_funcs
-    if fn not in funcs_no_separate_nan
+    ("nan" + fn, partial(_wrapper, func=fn)) for fn in _supported_funcs if fn not in funcs_no_separate_nan
 )
 _impl_dict.update(
     allnan=partial(_wrapper, func=allnan),
@@ -48,17 +46,7 @@ _impl_dict.update(
 )
 
 
-def aggregate(
-    group_idx,
-    a,
-    func="sum",
-    size=None,
-    fill_value=0,
-    order="C",
-    dtype=None,
-    axis=None,
-    **kwargs
-):
+def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order="C", dtype=None, axis=None, **kwargs):
     return _aggregate_base(
         group_idx,
         a,
@@ -70,7 +58,7 @@ def aggregate(
         axis=axis,
         _impl_dict=_impl_dict,
         is_pandas=True,
-        **kwargs
+        **kwargs,
     )
 
 

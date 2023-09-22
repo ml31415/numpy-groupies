@@ -6,17 +6,18 @@ test errors.
 """
 import sys
 from itertools import product
+
 import numpy as np
 import pytest
 
 from . import (
-    aggregate_purepy,
-    aggregate_numpy_ufunc,
-    aggregate_numpy,
-    aggregate_numba,
-    aggregate_pandas,
-    _wrap_notimplemented_xfail,
     _impl_name,
+    _wrap_notimplemented_xfail,
+    aggregate_numba,
+    aggregate_numpy,
+    aggregate_numpy_ufunc,
+    aggregate_pandas,
+    aggregate_purepy,
     func_list,
 )
 
@@ -104,19 +105,13 @@ def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
     is_nanfunc = "nan" in getattr(func, "__name__", func)
     a = aggregate_cmp.nana if is_nanfunc else aggregate_cmp.a
     try:
-        ref = aggregate_cmp.func_ref(
-            aggregate_cmp.group_idx, a, func=func, fill_value=fill_value
-        )
+        ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
     except ValueError:
         with pytest.raises(ValueError):
-            aggregate_cmp.func(
-                aggregate_cmp.group_idx, a, func=func, fill_value=fill_value
-            )
+            aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
     else:
         try:
-            res = aggregate_cmp.func(
-                aggregate_cmp.group_idx, a, func=func, fill_value=fill_value
-            )
+            res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
         except ValueError:
             if np.isnan(fill_value) and aggregate_cmp.test_pair.endswith("py"):
                 pytest.xfail(
@@ -130,9 +125,7 @@ def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
             np.testing.assert_allclose(res, ref, rtol=10**-decimal)
         except AssertionError:
             if "arg" in func and aggregate_cmp.test_pair.startswith("pandas"):
-                pytest.xfail(
-                    "pandas doesn't fill indices for all-nan groups with fill_value, but with -inf instead"
-                )
+                pytest.xfail("pandas doesn't fill indices for all-nan groups with fill_value, but with -inf instead")
             else:
                 raise
 
