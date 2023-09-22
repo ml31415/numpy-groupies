@@ -1,7 +1,5 @@
 #!/usr/bin/python -B
 
-from __future__ import print_function
-
 import timeit
 
 import numpy as np
@@ -113,7 +111,7 @@ for name, f in testable_funcs.items():
             times[ii] = (
                 timeit.Timer(lambda: acc_func(test_group_idx, test_a, func=func)).timeit(number=reps) / reps * 10
             )
-            print(("%.1fms" % ((times[ii] * 1000))).rjust(13), end="")
+            print(f"{times[ii] * 1000:.1f}ms".rjust(13), end="")
         except NotImplementedError:
             print("no-impl".rjust(13), end="")
 

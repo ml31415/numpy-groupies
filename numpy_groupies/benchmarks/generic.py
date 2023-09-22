@@ -1,5 +1,4 @@
 #!/usr/bin/python -B
-from __future__ import print_function
 
 import platform
 import sys
@@ -85,7 +84,7 @@ def benchmark_data(size=5e5, seed=100):
     nana = a.copy()
     nana[(nana < 0.2) & (nana != 0)] = np.nan
     nan_share = np.mean(np.isnan(nana))
-    assert 0.15 < nan_share < 0.25, "%3f%% nans" % (nan_share * 100)
+    assert 0.15 < nan_share < 0.25, f"{nan_share * 100:3f}% nans"
     return a, nana, group_idx
 
 
@@ -127,7 +126,7 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False)
                             repeat=repeat, number=1
                         )
                     )
-                    print(("%.3f" % (t0 * 1000)).rjust(14), end="")
+                    print(f"{t0 * 1000:.3f}".rjust(14), end="")
             sys.stdout.flush()
         print()
 
@@ -136,20 +135,14 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False)
     if "numba" in implementation_names:
         import numba
 
-        postfix += ", Numba %s" % numba.__version__
+        postfix += f", Numba {numba.__version__}"
     if "pandas" in implementation_names:
         import pandas
 
-        postfix += ", Pandas %s" % pandas.__version__
+        postfix += f", Pandas {pandas.__version__}"
     print(
-        "%s(%s), Python %s, Numpy %s%s"
-        % (
-            platform.system(),
-            platform.machine(),
-            sys.version.split()[0],
-            np.version.version,
-            postfix,
-        )
+        f"{platform.system()}({platform.machine()}), Python {sys.version.split()[0]}, Numpy {np.version.version}"
+        f"{postfix}"
     )
 
 

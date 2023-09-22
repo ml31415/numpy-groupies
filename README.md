@@ -243,6 +243,6 @@ This project was started by @ml31415 and the `numba` and `weave` implementations
 python and `numpy` implementations were written by @d1manson.
 
 The authors hope that `numpy`'s `ufunc.at` methods or some other implementation of `aggregate` within
-`numpy` or `scipy` will eventually be fast enough, to make this package redundant. Since numpy 1.25 there
-were actually major [improvements on ufunc speed](https://numpy.org/doc/stable/release/1.25.0-notes.html), 
-which reduced the gap between numpy and the numba implementation a lot.
+`numpy` or `scipy` will eventually be fast enough, to make this package redundant. Numpy 1.25 actually
+contained major [improvements on ufunc speed](https://numpy.org/doc/stable/release/1.25.0-notes.html), 
+which reduced the speed gap between numpy and the numba implementation a lot.

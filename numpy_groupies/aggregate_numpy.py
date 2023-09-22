@@ -194,7 +194,7 @@ def _sort(group_idx, a, size=None, fill_value=None, dtype=None, reverse=False):
 def _array(group_idx, a, size, fill_value, dtype=None):
     """groups a into separate arrays, keeping the order intact."""
     if fill_value is not None and not (np.isscalar(fill_value) or len(fill_value) == 0):
-        raise ValueError("fill_value must be None, a scalar or an empty " "sequence")
+        raise ValueError("fill_value must be None, a scalar or an empty sequence")
     order_group_idx = np.argsort(group_idx, kind="mergesort")
     counts = np.bincount(group_idx, minlength=size)
     ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])

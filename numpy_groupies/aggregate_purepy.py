@@ -1,5 +1,3 @@
-from __future__ import division
-
 import itertools
 import math
 import operator
@@ -111,21 +109,21 @@ def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order=None, dty
         try:
             size = 1 + int(max(group_idx))
         except (TypeError, ValueError):
-            raise NotImplementedError("pure python implementation doesn't" " accept ndim idx input.")
+            raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
 
     for i in group_idx:
         try:
             i = int(i)
         except (TypeError, ValueError):
             if isinstance(i, (list, tuple)):
-                raise NotImplementedError("pure python implementation doesn't" " accept ndim idx input.")
+                raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
             else:
                 try:
                     len(i)
                 except TypeError:
-                    raise ValueError("invalid value found in group_idx: %s" % i)
+                    raise ValueError(f"invalid value found in group_idx: {i}")
                 else:
-                    raise NotImplementedError("pure python implementation doesn't " "accept ndim indexed input.")
+                    raise NotImplementedError("pure python implementation doesn't accept ndim indexed input.")
         else:
             if i < 0:
                 raise ValueError("group_idx contains negative value")
@@ -133,7 +131,7 @@ def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order=None, dty
     func = get_func(func, aliasing, _impl_dict)
     if isinstance(a, (int, float)):
         if func not in ("sum", "prod", "len"):
-            raise ValueError("scalar inputs are supported only for 'sum', " "'prod' and 'len'")
+            raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
         a = [a] * len(group_idx)
     elif len(group_idx) != len(a):
         raise ValueError("group_idx and a must be of the same length")

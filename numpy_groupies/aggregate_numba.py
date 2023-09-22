@@ -1,5 +1,3 @@
-from __future__ import division
-
 import numba as nb
 import numpy as np
 
@@ -184,7 +182,7 @@ class Aggregate2pass(AggregateOp):
     def callable(cls, nans=False, reverse=False, scalar=False):
         # Careful, cls needs to be passed, so that the overwritten methods remain available in
         # AggregateOp.callable
-        loop_1st = super(Aggregate2pass, cls).callable(nans=nans, reverse=reverse, scalar=scalar)
+        loop_1st = super().callable(nans=nans, reverse=reverse, scalar=scalar)
 
         _2pass_inner = nb.njit(cls._2pass_inner)
 
