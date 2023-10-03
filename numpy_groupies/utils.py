@@ -117,6 +117,8 @@ _alias_numpy = {
     np.array: "array",
     np.asarray: "array",
     np.sort: "sort",
+    np.cumsum: "cumsum",
+    np.cumprod: "cumprod",
     np.nansum: "nansum",
     np.nanprod: "nanprod",
     np.nanmean: "nanmean",
@@ -126,8 +128,7 @@ _alias_numpy = {
     np.nanstd: "nanstd",
     np.nanargmax: "nanargmax",
     np.nanargmin: "nanargmin",
-    np.cumsum: "cumsum",
-    np.cumprod: "cumprod",
+    np.nancumsum: "nancumsum",
 }
 
 
@@ -150,7 +151,7 @@ def get_aliasing(*extra):
     alias.update((k, k) for k in set(alias.values()))
     # Treat nan-functions as firstclass member and add them directly
     for key in set(alias.values()):
-        if key not in funcs_no_separate_nan:
+        if key not in funcs_no_separate_nan and not key.startswith("nan"):
             key = "nan" + key
             alias[key] = key
     return alias

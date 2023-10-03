@@ -272,6 +272,7 @@ _impl_dict = dict(
     generic=_generic_callable,
 )
 _impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not in funcs_no_separate_nan)
+_impl_dict["nancumsum"] = _nancumsum
 
 
 def _aggregate_base(
@@ -308,6 +309,8 @@ def _aggregate_base(
             if "nan" in func:
                 if "arg" in func:
                     kwargs["_nansqueeze"] = True
+                elif "cum" in func:
+                    pass
                 else:
                     good = ~np.isnan(a)
                     if "len" not in func or is_pandas:

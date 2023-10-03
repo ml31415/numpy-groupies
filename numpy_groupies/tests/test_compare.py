@@ -4,7 +4,6 @@ results are compared against the results of the other implementations. Implement
 may throw NotImplementedError in order to show missing functionality without throwing
 test errors. 
 """
-import sys
 from itertools import product
 
 import numpy as np

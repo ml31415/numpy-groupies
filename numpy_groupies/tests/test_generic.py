@@ -24,6 +24,12 @@ def _deselect_purepy(aggregate_all, *args, **kwargs):
     return aggregate_all.__name__.endswith("purepy")
 
 
+def _deselect_purepy_and_pandas(aggregate_all, *args, **kwargs):
+    # purepy and pandas implementation handle some nan cases differently.
+    # So they need to be excluded from several tests."""
+    return aggregate_all.__name__.endswith(("pandas", "purepy"))
+
+
 def _deselect_purepy_and_invalid_axis(aggregate_all, size, axis, *args, **kwargs):
     if axis >= len(size):
         return True
@@ -355,6 +361,17 @@ def test_cumsum(aggregate_all):
     ref = np.array([3, 4, 5, 6, 15, 9, 15, 22, 7, 0, 15, 17, 6, 14, 31, 39])
 
     res = aggregate_all(group_idx, a, func="cumsum")
+    np.testing.assert_array_equal(res, ref)
+
+
+@pytest.mark.deselect_if(func=_deselect_purepy_and_pandas)
+def test_nancumsum(aggregate_all):
+    # https://github.com/ml31415/numpy-groupies/issues/79
+    group_idx = [0, 0, 0, 1, 1, 0, 0]
+    a = [2, 2, np.nan, 2, 2, 2, 2]
+    ref = [2., 4., 4., 2., 4., 6., 8.]
+
+    res = aggregate_all(group_idx, a, func="nancumsum")
     np.testing.assert_array_equal(res, ref)
 
 
