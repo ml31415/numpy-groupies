@@ -42,7 +42,7 @@ jobs:
           environment-name: xarray-tests
           cache-environment: true
           cache-environment-key: "${{runner.os}}-${{runner.arch}}-py${{matrix.python-version}}-${{hashFiles(env.CONDA_ENV_FILE)}}"
-          create-args: |
+          create-args: >-
             python=${{matrix.python-version}}
             conda
 
