@@ -3,6 +3,7 @@
 [![Conda-forge](https://img.shields.io/conda/vn/conda-forge/numpy_groupies.svg?style=flat)](https://anaconda.org/conda-forge/numpy_groupies)
 [![Supported Versions](https://img.shields.io/pypi/pyversions/numpy-groupies.svg)](https://pypi.org/project/numpy-groupies)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/numpy-groupies)
 
 # numpy-groupies
 
