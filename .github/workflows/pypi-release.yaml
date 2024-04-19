@@ -1,5 +1,6 @@
-name: Build and Upload numpy-groupies to PyPI
+name: Publish to PyPI
 on:
+  workflow_dispatch:
   release:
     types:
       - published
@@ -14,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
       - uses: actions/setup-python@v5
         name: Install Python
         with:
@@ -40,9 +41,6 @@ jobs:
             echo "✅ Looks good"
           fi
       - uses: actions/upload-artifact@v4
-        with:
-          name: releases
-          path: dist
 
   test-built-dist:
     needs: build-artifacts
@@ -53,9 +51,6 @@ jobs:
         with:
           python-version: "3.11"
       - uses: actions/download-artifact@v4
-        with:
-          name: releases
-          path: dist
       - name: List contents of built dist
         run: |
           ls -ltrh
@@ -79,9 +74,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
-        with:
-          name: releases
-          path: dist
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
