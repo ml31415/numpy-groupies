@@ -91,7 +91,10 @@ def benchmark_data(size=5e5, seed=100):
 def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False):
     a, nana, group_idx = benchmark_data(size=size, seed=seed)
 
-    print("function" + "".join(impl.__name__.rsplit("_", 1)[1].rjust(14) for impl in implementations))
+    print(
+        "function"
+        + "".join(impl.__name__.rsplit("_", 1)[1].rjust(14) for impl in implementations)
+    )
     print("-" * (9 + 14 * len(implementations)))
     for func in func_list:
         func_name = getattr(func, "__name__", func)
@@ -122,9 +125,9 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False)
                     print("FAIL".rjust(14), end="")
                 else:
                     t0 = min(
-                        timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func)).repeat(
-                            repeat=repeat, number=1
-                        )
+                        timeit.Timer(
+                            lambda: aggregatefunc(group_idx, used_a, func=func)
+                        ).repeat(repeat=repeat, number=1)
                     )
                     print(f"{t0 * 1000:.3f}".rjust(14), end="")
             sys.stdout.flush()
@@ -147,6 +150,10 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False)
 
 
 if __name__ == "__main__":
-    implementations = _implementations if "--purepy" in sys.argv else _implementations[1:]
-    implementations = implementations if "--pandas" in sys.argv else implementations[:-1]
+    implementations = (
+        _implementations if "--purepy" in sys.argv else _implementations[1:]
+    )
+    implementations = (
+        implementations if "--pandas" in sys.argv else implementations[:-1]
+    )
     benchmark(implementations, raise_errors=False)
