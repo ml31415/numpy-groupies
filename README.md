@@ -1,8 +1,7 @@
 [![GitHub Workflow CI Status](https://img.shields.io/github/actions/workflow/status/ml31415/numpy-groupies/ci.yaml?branch=master&logo=github&style=flat)](https://github.com/ml31415/numpy-groupies/actions)
 [![PyPI](https://img.shields.io/pypi/v/numpy-groupies.svg?style=flat)](https://pypi.org/project/numpy-groupies/)
 [![Conda-forge](https://img.shields.io/conda/vn/conda-forge/numpy_groupies.svg?style=flat)](https://anaconda.org/conda-forge/numpy_groupies)
-[![Supported Versions](https://img.shields.io/pypi/pyversions/numpy-groupies.svg)](https://pypi.org/project/numpy-groupies)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+![Python Version from PEP 621 TOML](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fml31415%2Fnumpy-groupies%2Fmaster%2Fpyproject.toml)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/numpy-groupies)
 
 # numpy-groupies

@@ -28,7 +28,9 @@ print(aggregate_np(test_group_idx, test_a))  # group vals by idx and sum
 print("aggregate(test_group_idx, test_a, sz=8, func='min', fill_value=np.nan):")
 print(aggregate_np(test_group_idx, test_a, size=8, func="min", fill_value=np.nan))
 # array([3.2, -15., nan, 88., nan, nan, nan, nan])
-print("aggregate_py(test_group_idx, test_a, sz=5, func=lambda x: ' + '.join(str(xx) for xx in x),fill_value='')")
+print(
+    "aggregate_py(test_group_idx, test_a, sz=5, func=lambda x: ' + '.join(str(xx) for xx in x),fill_value='')"
+)
 print(
     aggregate_py(
         test_group_idx,
@@ -43,7 +45,10 @@ print(
 print("")
 print("---------testing--------------")
 print("compare against group-and-loop with numpy")
-testable_funcs = {aliasing[f]: f for f in (np.sum, np.prod, np.any, np.all, np.min, np.max, np.std, np.var, np.mean)}
+testable_funcs = {
+    aliasing[f]: f
+    for f in (np.sum, np.prod, np.any, np.all, np.min, np.max, np.std, np.var, np.mean)
+}
 test_group_idx = np.random.randint(0, int(1e3), int(1e5))
 test_a = np.random.rand(int(1e5)) * 100 - 50
 test_a[test_a > 25] = 0  # for use with bool functions
@@ -73,7 +78,9 @@ for name, f in testable_funcs.items():
 
 print("")
 print("----------benchmarking-------------")
-print("Note that the actual observed speedup depends on a variety of properties of the input.")
+print(
+    "Note that the actual observed speedup depends on a variety of properties of the input."
+)
 print("Here we are using 100,000 indices uniformly picked from [0, 1000).")
 print("Specifically, about 25% of the values are 0 (for use with bool operations),")
 print("the remainder are uniformly distributed on [-50,25).")
@@ -109,12 +116,19 @@ for name, f in testable_funcs.items():
             func = f if acc_func is aggregate_group_loop else name
             reps = 3 if acc_func is aggregate_py else 20
             times[ii] = (
-                timeit.Timer(lambda: acc_func(test_group_idx, test_a, func=func)).timeit(number=reps) / reps * 10
+                timeit.Timer(
+                    lambda: acc_func(test_group_idx, test_a, func=func)
+                ).timeit(number=reps)
+                / reps
+                * 10
             )
             print(f"{times[ii] * 1000:.1f}ms".rjust(13), end="")
         except NotImplementedError:
             print("no-impl".rjust(13), end="")
 
     denom = min(t for t in times if t is not None)
-    ratios = [("-".center(4) if t is None else str(round(t / denom, 1))).center(5) for t in times]
+    ratios = [
+        ("-".center(4) if t is None else str(round(t / denom, 1))).center(5)
+        for t in times
+    ]
     print("   ", (":".join(ratios)))
