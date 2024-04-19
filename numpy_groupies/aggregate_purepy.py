@@ -67,7 +67,9 @@ def _sort(group_idx, a, reverse=False):
     def _argsort(unordered):
         return sorted(range(len(unordered)), key=lambda k: unordered[k])
 
-    sortidx = _argsort(list((gi, aj) for gi, aj in zip(group_idx, -a if reverse else a)))
+    sortidx = _argsort(
+        list((gi, aj) for gi, aj in zip(group_idx, -a if reverse else a))
+    )
     revidx = _argsort(_argsort(group_idx))
     a_srt = [a[si] for si in sortidx]
     return [a_srt[ri] for ri in revidx]
@@ -93,10 +95,24 @@ _impl_dict = dict(
     argmin=_argmin,
     len=len,
 )
-_impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not in funcs_no_separate_nan)
+_impl_dict.update(
+    ("nan" + k, v)
+    for k, v in list(_impl_dict.items())
+    if k not in funcs_no_separate_nan
+)
 
 
-def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order=None, dtype=None, axis=None, **kwargs):
+def aggregate(
+    group_idx,
+    a,
+    func="sum",
+    size=None,
+    fill_value=0,
+    order=None,
+    dtype=None,
+    axis=None,
+    **kwargs,
+):
     if axis is not None:
         raise NotImplementedError("axis arg not supported in purepy implementation.")
 
@@ -105,21 +121,27 @@ def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order=None, dty
         try:
             size = 1 + int(max(group_idx))
         except (TypeError, ValueError):
-            raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
+            raise NotImplementedError(
+                "pure python implementation doesn't accept ndim idx input."
+            )
 
     for i in group_idx:
         try:
             i = int(i)
         except (TypeError, ValueError):
             if isinstance(i, (list, tuple)):
-                raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
+                raise NotImplementedError(
+                    "pure python implementation doesn't accept ndim idx input."
+                )
             else:
                 try:
                     len(i)
                 except TypeError:
                     raise ValueError(f"invalid value found in group_idx: {i}")
                 else:
-                    raise NotImplementedError("pure python implementation doesn't accept ndim indexed input.")
+                    raise NotImplementedError(
+                        "pure python implementation doesn't accept ndim indexed input."
+                    )
         else:
             if i < 0:
                 raise ValueError("group_idx contains negative value")
@@ -127,7 +149,9 @@ def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order=None, dty
     func = get_func(func, aliasing, _impl_dict)
     if isinstance(a, (int, float)):
         if func not in ("sum", "prod", "len"):
-            raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
+            raise ValueError(
+                "scalar inputs are supported only for 'sum', 'prod' and 'len'"
+            )
         a = [a] * len(group_idx)
     elif len(group_idx) != len(a):
         raise ValueError("group_idx and a must be of the same length")
@@ -136,7 +160,9 @@ def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order=None, dty
         if func.startswith("nan"):
             func = func[3:]
             # remove nans
-            group_idx, a = zip(*((ix, val) for ix, val in zip(group_idx, a) if not math.isnan(val)))
+            group_idx, a = zip(
+                *((ix, val) for ix, val in zip(group_idx, a) if not math.isnan(val))
+            )
 
         func = _impl_dict[func]
     if func is _sort:

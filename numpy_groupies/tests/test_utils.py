@@ -19,7 +19,5 @@ def test_unpack():
 
 def test_unpack_long():
     group_idx = np.repeat(np.arange(10000), 20)
-    a = np.arange(group_idx.size, dtype=int)
-    a = np.random.randn(np.max(group_idx) + 1)
     vals = np.random.randn(np.max(group_idx) + 1)
     np.testing.assert_array_equal(unpack(group_idx, vals), vals[group_idx])

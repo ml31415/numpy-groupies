@@ -68,7 +68,9 @@ class AggregateOp(object):
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
-        ret, counter, mean, outer = self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
+        ret, counter, mean, outer = self._initialize(
+            flat_size, fill_value, dtype, input_dtype, group_idx.size
+        )
         group_idx = np.ascontiguousarray(group_idx)
 
         if not np.isscalar(a):
@@ -141,7 +143,9 @@ class AggregateOp(object):
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # ddof needs to be present for being exchangeable with loop_2pass
             size = len(ret)
-            rng = range(len(group_idx) - 1, -1, -1) if reverse else range(len(group_idx))
+            rng = (
+                range(len(group_idx) - 1, -1, -1) if reverse else range(len(group_idx))
+            )
             for i in rng:
                 ri = group_idx[i]
                 if ri < 0:
@@ -242,14 +246,18 @@ class AggregateGeneric(AggregateOp):
         axis=None,
         ddof=0,
     ):
-        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False)
+        iv = input_validation(
+            group_idx, a, size=size, order=order, axis=axis, check_bounds=False
+        )
         group_idx, a, flat_size, ndim_idx, size, _ = iv
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
-        ret, _, _, _ = self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
+        ret, _, _, _ = self._initialize(
+            flat_size, fill_value, dtype, input_dtype, group_idx.size
+        )
         group_idx = np.ascontiguousarray(group_idx)
 
         sortidx = np.argsort(group_idx, kind="mergesort")
@@ -493,7 +501,7 @@ class CumMin(AggregateNtoN, Min):
 
 
 def get_funcs():
-    funcs = dict()
+    funcs = {}
     for op in (
         Sum,
         Prod,
@@ -530,7 +538,16 @@ _default_cache = {}
 
 
 def aggregate(
-    group_idx, a, func="sum", size=None, fill_value=0, order="C", dtype=None, axis=None, cache=True, **kwargs
+    group_idx,
+    a,
+    func="sum",
+    size=None,
+    fill_value=0,
+    order="C",
+    dtype=None,
+    axis=None,
+    cache=True,
+    **kwargs,
 ):
     func = get_func(func, aliasing, _impl_dict)
     if not isinstance(func, str):
@@ -541,7 +558,9 @@ def aggregate(
             if cache is True:
                 cache = _default_cache
             aggregate_op = cache.setdefault(func, AggregateGeneric(func))
-        return aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+        return aggregate_op(
+            group_idx, a, size, fill_value, order, dtype, axis, **kwargs
+        )
     else:
         func = _impl_dict[func]
         return func(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
