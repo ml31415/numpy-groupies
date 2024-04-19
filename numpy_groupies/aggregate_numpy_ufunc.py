@@ -97,7 +97,17 @@ _impl_dict = dict(
 )
 
 
-def aggregate(group_idx, a, func="sum", size=None, fill_value=0, order="C", dtype=None, axis=None, **kwargs):
+def aggregate(
+    group_idx,
+    a,
+    func="sum",
+    size=None,
+    fill_value=0,
+    order="C",
+    dtype=None,
+    axis=None,
+    **kwargs,
+):
     func = get_func(func, aliasing, _impl_dict)
     if not isinstance(func, str):
         raise NotImplementedError("No such ufunc available")
