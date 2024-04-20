@@ -4,9 +4,6 @@ on:
   release:
     types:
       - published
-  push:
-    tags:
-      - 'v*'
 
 jobs:
   build-artifacts:
@@ -20,19 +17,18 @@ jobs:
         name: Install Python
         with:
           python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build twine
       - name: Build tarball and wheels
         run: |
           git clean -xdf
           git restore -SW .
-          python -m build
+          pipx run build
+      - name: List contents of built dist
+        run: |
+          ls -ltrh
+          ls -ltrh dist
       - name: Check built artifacts
         run: |
-          python -m twine check --strict dist/*
+          pipx run twine check --strict dist/*
           pwd
           if [ -f dist/numpy_groupies-0.0.0.tar.gz ]; then
             echo "❌ INVALID VERSION NUMBER"
@@ -40,32 +36,24 @@ jobs:
           else
             echo "✅ Looks good"
           fi
+      - name: Test artifact installation
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.tar.gz
       - uses: actions/upload-artifact@v4
         with:
+          name: release
           path: dist
 
   test-built-dist:
     needs: build-artifacts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-python@v5
-        name: Install Python
-        with:
-          python-version: "3.11"
       - uses: actions/download-artifact@v4
         with:
+          name: release
           path: dist
-      - name: List contents of built dist
-        run: |
-          ls -ltrh
-          ls -ltrh dist
-      - name: Verify the built dist/wheel is valid
-        if: github.event_name == 'push'
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install dist/*.tar.gz
       - name: Publish package to TestPyPI
-        if: github.event_name == 'push'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.TESTPYPI_TOKEN }}
@@ -79,6 +67,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: release
           path: dist
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
