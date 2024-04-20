@@ -6,7 +6,13 @@ import warnings
 import numpy as np
 import pytest
 
-from . import _impl_name, _implementations, _wrap_notimplemented_skip, func_list
+from . import (
+    _impl_name,
+    _implementations,
+    _wrap_notimplemented_skip,
+    func_list,
+    _is_implemented,
+)
 
 
 @pytest.fixture(params=_implementations, ids=_impl_name)
@@ -30,12 +36,21 @@ def _deselect_purepy_and_pandas(aggregate_all, *args, **kwargs):
     return aggregate_all.__name__.endswith(("pandas", "purepy"))
 
 
-def _deselect_purepy_and_invalid_axis(aggregate_all, size, axis, *args, **kwargs):
-    if axis >= len(size):
-        return True
-    if aggregate_all.__name__.endswith("purepy"):
+def _deselect_purepy_and_invalid_axis(aggregate_all, func, size, axis):
+    impl_name = aggregate_all.__name__.split("_")[-1]
+    if impl_name == "purepy":
         # purepy does not handle axis parameter
         return True
+    if axis >= len(size):
+        return True
+    if not _is_implemented(impl_name, func):
+        return True
+    return False
+
+
+def _deselect_not_implemented(aggregate_all, func, *args, **kwargs):
+    impl_name = aggregate_all.__name__.split("_")[-1]
+    return not _is_implemented(impl_name, func)
 
 
 def test_preserve_missing(aggregate_all):
@@ -533,7 +548,7 @@ def test_argreduction_negative_fill_value(aggregate_all):
     np.testing.assert_equal(actual, expected)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize(
     "nan_inds", (None, tuple([[1, 4, 5], Ellipsis]), tuple((1, (0, 1, 2, 3))))
 )

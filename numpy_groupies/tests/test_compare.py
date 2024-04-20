@@ -12,7 +12,7 @@ import pytest
 
 from . import (
     _impl_name,
-    _wrap_notimplemented_skip,
+    _is_implemented,
     aggregate_numba,
     aggregate_numpy,
     aggregate_numpy_ufunc,
@@ -34,7 +34,7 @@ def aggregate_cmp(request, seed=100):
     test_pair = request.param
     if test_pair == "np/py":
         # Some functions in purepy are not implemented
-        func_ref = _wrap_notimplemented_skip(aggregate_purepy.aggregate)
+        func_ref = aggregate_purepy.aggregate
         func = aggregate_numpy.aggregate
         group_cnt = 100
     else:
@@ -52,7 +52,7 @@ def aggregate_cmp(request, seed=100):
         if not impl:
             pytest.skip("Implementation not available")
         name = _impl_name(impl)
-        func = _wrap_notimplemented_skip(impl.aggregate, "aggregate_" + name)
+        func = impl.aggregate
 
     rnd = np.random.RandomState(seed=seed)
 
@@ -77,10 +77,12 @@ def _deselect_purepy(aggregate_cmp, *args, **kwargs):
     return aggregate_cmp.endswith("py")
 
 
-def _deselect_purepy_nanfuncs(aggregate_cmp, func, *args, **kwargs):
-    # purepy implementation does not handle nan values correctly
-    # This is a won't fix and should be deselected instead of skipped
-    return "nan" in getattr(func, "__name__", func) and aggregate_cmp.endswith("py")
+def _deselect_not_implemented(aggregate_cmp, func, fill_value, *args, **kwargs):
+    impl_name = (
+        "purepy" if aggregate_cmp.endswith("py") else aggregate_cmp.split("/", 1)[0]
+    )
+    funcname = getattr(func, "__name__", func)
+    return not _is_implemented(impl_name, funcname)
 
 
 def func_arbitrary(iterator):
@@ -97,8 +99,9 @@ def func_preserve_order(iterator):
     return tmp
 
 
+@pytest.mark.filterwarnings("ignore::FutureWarning")  # handled pandas deprecation
 @pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
-@pytest.mark.deselect_if(func=_deselect_purepy_nanfuncs)
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("fill_value", [0, 1, np.nan])
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, "__name__", x))
 def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
@@ -123,6 +126,9 @@ def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
                 pytest.skip(
                     "pure python version uses lists and does not raise ValueErrors when inserting nan into integers"
                 )
+            elif aggregate_cmp.test_pair.startswith("pandas"):
+                pytest.skip("pandas now raises ValueError on all-nan arrays")
+
             else:
                 raise
         if isinstance(ref, np.ndarray):
