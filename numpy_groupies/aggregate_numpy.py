@@ -149,15 +149,13 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
         sums.real = np.bincount(group_idx, weights=a.real, minlength=size)
         sums.imag = np.bincount(group_idx, weights=a.imag, minlength=size)
     else:
-        sums = np.bincount(group_idx, weights=a, minlength=size).astype(
-            dtype, copy=False
-        )
+        sums = np.bincount(group_idx, weights=a, minlength=size)
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        ret = sums.astype(dtype, copy=False) / counts
+        ret = sums / counts
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
-    return ret
+    return ret.astype(dtype, copy=False)
 
 
 def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
@@ -165,7 +163,7 @@ def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if fill_value != 0:
         counts = np.bincount(group_idx, minlength=size)
         ret[counts == 0] = fill_value
-    return ret
+    return ret.astype(dtype, copy=False)
 
 
 def _var(
@@ -176,7 +174,7 @@ def _var(
     counts = np.bincount(group_idx, minlength=size)
     sums = np.bincount(group_idx, weights=a, minlength=size)
     with np.errstate(divide="ignore", invalid="ignore"):
-        means = sums.astype(dtype, copy=False) / counts
+        means = sums / counts
         counts = np.where(counts > ddof, counts - ddof, 0)
         ret = (
             np.bincount(group_idx, (a - means[group_idx]) ** 2, minlength=size) / counts
@@ -185,7 +183,7 @@ def _var(
         ret = np.sqrt(ret)  # this is now std not var
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
-    return ret
+    return ret.astype(dtype, copy=False)
 
 
 def _std(group_idx, a, size, fill_value, dtype=np.dtype(np.float64), ddof=0):
