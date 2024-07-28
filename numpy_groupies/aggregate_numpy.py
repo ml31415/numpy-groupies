@@ -158,7 +158,7 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if iscomplexobj(a):
         return ret
     else:
-        ret.astype(dtype, copy=False)
+        return ret.astype(dtype, copy=False)
 
 
 def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
@@ -169,7 +169,7 @@ def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     if iscomplexobj(a):
         return ret
     else:
-        ret.astype(dtype, copy=False)
+        return ret.astype(dtype, copy=False)
 
 
 def _var(
@@ -192,7 +192,7 @@ def _var(
     if iscomplexobj(a):
         return ret
     else:
-        ret.astype(dtype, copy=False)
+        return ret.astype(dtype, copy=False)
 
 
 def _std(group_idx, a, size, fill_value, dtype=np.dtype(np.float64), ddof=0):
