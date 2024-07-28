@@ -250,7 +250,10 @@ def _cumsum(group_idx, a, size, fill_value=None, dtype=None):
 
     increasing = np.arange(len(a), dtype=int)
     group_starts = _min(group_idx_srt, increasing, size, fill_value=0)[group_idx_srt]
-    a_srt_cumsum += -a_srt_cumsum[group_starts] + a_srt[group_starts]
+    # First subtract large numbers
+    a_srt_cumsum -= a_srt_cumsum[group_starts]
+    # Then add potentially small numbers
+    a_srt_cumsum += a_srt[group_starts]
     return a_srt_cumsum[invsortidx]
 
 

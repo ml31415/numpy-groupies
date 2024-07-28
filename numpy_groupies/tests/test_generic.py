@@ -570,3 +570,14 @@ def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds, func):
         group_idx, a, axis=-1, fill_value=np.nan, func=func, ddof=ddof
     )
     np.testing.assert_equal(actual, expected)
+
+
+def test_cumsum_accuracy(aggregate_all):
+    array = np.array(
+        [0.00000000e00, 0.00000000e00, 0.00000000e00, 3.27680000e04, 9.99999975e-06]
+    )
+    group_idx = np.array([0, 0, 0, 0, 1])
+
+    actual = aggregate_all(group_idx, array, axis=-1, func="cumsum")
+    expected = array
+    np.testing.assert_allclose(actual, expected)
