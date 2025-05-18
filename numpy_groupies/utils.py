@@ -1,5 +1,6 @@
 """Common functionality for all aggregate implementations."""
 
+import platform
 import numpy as np
 
 aggregate_common_doc = """
@@ -258,6 +259,22 @@ _forced_types = {
     "nanargmin": np.int64,
     "nanargmax": np.int64,
 }
+if platform.architecture()[0] == "32bit":
+    _forced_types = {
+        "array": object,
+        "all": bool,
+        "any": bool,
+        "nanall": bool,
+        "nanany": bool,
+        "len": np.int32,
+        "nanlen": np.int32,
+        "allnan": bool,
+        "anynan": bool,
+        "argmax": np.int32,
+        "argmin": np.int32,
+        "nanargmin": np.int32,
+        "nanargmax": np.int32,
+    }
 _forced_float_types = {"mean", "var", "std", "nanmean", "nanvar", "nanstd"}
 _forced_same_type = {
     "min",
