@@ -160,7 +160,7 @@ def test_ndim_group_idx(aggregate_all, size):
 
 
 @pytest.mark.deselect_if(func=_deselect_purepy)
-@pytest.mark.parametrize(["ndim", "order"], itertools.product([1, 2, 3], ["C", "F"]))
+@pytest.mark.parametrize(["ndim", "order"], list(itertools.product([1, 2, 3], ["C", "F"])))
 def test_ndim_indexing(aggregate_all, ndim, order, outsize=10):
     nindices = int(outsize**ndim)
     outshape = tuple([outsize] * ndim)
@@ -222,7 +222,7 @@ def test_first_last(aggregate_all, first_last):
 
 
 @pytest.mark.parametrize(
-    ["first_last", "nanoffset"], itertools.product(["nanfirst", "nanlast"], [0, 2, 4])
+    ["first_last", "nanoffset"], list(itertools.product(["nanfirst", "nanlast"], [0, 2, 4]))
 )
 def test_nan_first_last(aggregate_all, first_last, nanoffset):
     group_idx = np.arange(0, 100, 2, dtype=int).repeat(5)
@@ -241,7 +241,7 @@ def test_nan_first_last(aggregate_all, first_last, nanoffset):
     np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.parametrize(["func", "ddof"], itertools.product(["var", "std"], [0, 1, 2]))
+@pytest.mark.parametrize(["func", "ddof"], list(itertools.product(["var", "std"], [0, 1, 2])))
 def test_ddof(aggregate_all, func, ddof, size=20):
     group_idx = np.zeros(20, dtype=int)
     a = np.random.random(group_idx.size)

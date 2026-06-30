@@ -145,7 +145,7 @@ def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
 
 
 @pytest.mark.deselect_if(func=_deselect_purepy)
-@pytest.mark.parametrize(["ndim", "order"], product([2, 3], ["C", "F"]))
+@pytest.mark.parametrize(["ndim", "order"], list(product([2, 3], ["C", "F"])))
 def test_cmp_ndim(aggregate_cmp, ndim, order, outsize=100, decimal=14):
     nindices = int(outsize**ndim)
     outshape = tuple([outsize] * ndim)
