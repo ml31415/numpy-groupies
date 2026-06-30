@@ -99,15 +99,18 @@ def test_no_negative_indices(aggregate_all):
     for pos in (0, 10, -1):
         group_idx = np.arange(5).repeat(5)
         group_idx[pos] = -1
-        pytest.raises(ValueError, aggregate_all, group_idx, np.arange(len(group_idx)))
+        with pytest.raises(ValueError):
+            aggregate_all(group_idx, np.arange(len(group_idx)))
 
 
 def test_parameter_missing(aggregate_all):
-    pytest.raises(TypeError, aggregate_all, np.arange(5))
+    with pytest.raises(TypeError):
+        aggregate_all(np.arange(5))
 
 
 def test_shape_mismatch(aggregate_all):
-    pytest.raises(ValueError, aggregate_all, np.array((1, 2, 3)), np.array((1, 2)))
+    with pytest.raises(ValueError):
+        aggregate_all(np.array((1, 2, 3)), np.array((1, 2)))
 
 
 def test_create_lists(aggregate_all):
@@ -252,9 +255,8 @@ def test_ddof(aggregate_all, func, ddof, size=20):
 def test_scalar_input(aggregate_all, func):
     group_idx = np.arange(0, 100, dtype=int).repeat(5)
     if func not in ("sum", "prod"):
-        pytest.raises(
-            (ValueError, NotImplementedError), aggregate_all, group_idx, 1, func=func
-        )
+        with pytest.raises((ValueError, NotImplementedError)):
+            aggregate_all(group_idx, 1, func=func)
     else:
         res = aggregate_all(group_idx, 1, func=func)
         ref = aggregate_all(group_idx, np.ones_like(group_idx, dtype=int), func=func)
