@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "numpy-groupies"
 description = "Optimised tools for group-indexing operations: aggregated sum and more."
 dynamic = ["version"]
-readme = {file = "README.md", content-type = "text/markdown"}
-license = {file = "LICENSE.txt"}
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE.txt"]
 authors = [
     {name = "Michael Löffler", email = "ml@occam.com.ua"},
     {name = "Daniel Manson", email = "danielmanson.uk@gmail.com"}
@@ -21,16 +22,16 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries",
-    "License :: OSI Approved :: BSD License",
 ]
 keywords = ["accumarray", "aggregate", "groupby", "grouping", "indexing"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ["numpy"]
 
 [project.optional-dependencies]
@@ -47,12 +48,14 @@ dev = [
 source = "https://github.com/ml31415/numpy-groupies"
 tracker = "https://github.com/ml31415/numpy-groupies/issues"
 
-[tool.black]
+[tool.ruff]
 line-length = 120
 
-[tool.isort]
-profile = "black"
-honor_noqa = true
+[tool.ruff.lint]
+ignore = [
+    "B008", # np.dtype defaults in signatures are immutable singletons
+    "PLR0124", # val != val is the idiomatic NaN check
+]
 
 [tool.setuptools.packages.find]
 include = ["numpy_groupies*"]
@@ -62,6 +65,7 @@ write_to = "numpy_groupies/_version.py"
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"numpy_groupies/benchmarks/*" = ["B023"] # closures are invoked immediately within the loop
 
 [tool.codespell]
 ignore-words-list = "nd,"
