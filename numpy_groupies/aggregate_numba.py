@@ -1,3 +1,5 @@
+import functools
+
 import numba as nb
 import numpy as np
 
@@ -22,8 +24,13 @@ class AggregateOp:
     two jitted callables, one for scalar arguments, and one for arrays. Calling the
     instantiated object picks the right cached callable, does some further preprocessing
     and then executes the actual aggregation operation.
+
+    The compiled kernels are created with numba's on-disk cache enabled
+    (``disk_cache``), so the compilation cost is only paid once per machine -
+    provided all captured values (flags and dispatchers) have stable cache keys.
     """
 
+    disk_cache = True
     forced_fill_value = None
     counter_fill_value = 1
     counter_dtype = bool
@@ -123,21 +130,21 @@ class AggregateOp:
     def callable(cls, nans=False, reverse=False, scalar=False):
         """Compile a jitted function doing the hard part of the job"""
         _valgetter = cls._valgetter_scalar if scalar else cls._valgetter
-        valgetter = nb.njit(_valgetter)
-        outersetter = nb.njit(cls._outersetter)
+        valgetter = nb.njit(cache=cls.disk_cache)(_valgetter)
+        outersetter = nb.njit(cache=cls.disk_cache)(cls._outersetter)
 
         if not nans:
-            inner = nb.njit(cls._inner)
+            inner = nb.njit(cache=cls.disk_cache)(cls._inner)
         else:
-            cls_inner = nb.njit(cls._inner)
-            cls_nan_check = nb.njit(cls._nan_check)
+            cls_inner = nb.njit(cache=cls.disk_cache)(cls._inner)
+            cls_nan_check = nb.njit(cache=cls.disk_cache)(cls._nan_check)
 
-            @nb.njit
+            @nb.njit(cache=cls.disk_cache)
             def inner(ri, val, ret, counter, mean, fill_value):
                 if not cls_nan_check(val):
                     cls_inner(ri, val, ret, counter, mean, fill_value)
 
-        @nb.njit
+        @nb.njit(cache=cls.disk_cache)
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # ddof needs to be present for being exchangeable with loop_2pass
             size = len(ret)
@@ -184,9 +191,9 @@ class Aggregate2pass(AggregateOp):
         # AggregateOp.callable
         loop_1st = super().callable(nans=nans, reverse=reverse, scalar=scalar)
 
-        _2pass_inner = nb.njit(cls._2pass_inner)
+        _2pass_inner = nb.njit(cache=cls.disk_cache)(cls._2pass_inner)
 
-        @nb.njit
+        @nb.njit(cache=cls.disk_cache)
         def loop_2nd(ret, counter, mean, fill_value, ddof):
             for ri in range(len(ret)):
                 if counter[ri] > ddof:
@@ -194,7 +201,7 @@ class Aggregate2pass(AggregateOp):
                 else:
                     ret[ri] = fill_value
 
-        @nb.njit
+        @nb.njit(cache=cls.disk_cache)
         def loop_2pass(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             loop_1st(group_idx, a, ret, counter, mean, outer, fill_value, ddof)
             loop_2nd(ret, counter, mean, fill_value, ddof)
@@ -221,9 +228,16 @@ class AggregateNtoN(AggregateOp):
 
 
 class AggregateGeneric(AggregateOp):
-    """Base class for jitting arbitrary functions."""
+    """Base class for jitting arbitrary functions.
+
+    ``disk_cache`` stays off here: the captured user callable has no stable
+    disk-cache key (and potentially an unstable repr), so numba's on-disk
+    cache could neither be relied upon to hit, nor be trusted against false
+    hits.
+    """
 
     counter_fill_value = None
+    disk_cache = False
 
     def __init__(self, func, **kwargs):
         self.func = func
@@ -405,7 +419,7 @@ class ArgMax(AggregateOp):
             # keep the generic (lazy) path for unchanged behaviour.
             return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
 
-        @nb.njit
+        @nb.njit(cache=True)
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             size = len(ret)
             for i in range(len(group_idx)):
@@ -440,7 +454,7 @@ class ArgMin(ArgMax):
         if scalar or reverse:
             return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
 
-        @nb.njit
+        @nb.njit(cache=True)
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             size = len(ret)
             for i in range(len(group_idx)):
@@ -564,7 +578,6 @@ def get_funcs():
 
 
 _impl_dict = get_funcs()
-_default_cache = {}
 
 
 def aggregate(
@@ -584,14 +597,23 @@ def aggregate(
         if cache in (None, False):
             # Keep None and False in order to accept empty dictionaries
             aggregate_op = AggregateGeneric(func)
+        elif cache is True:
+            aggregate_op = _get_cached_generic(func)
         else:
-            if cache is True:
-                cache = _default_cache
-            aggregate_op = cache.setdefault(func, AggregateGeneric(func))
+            aggregate_op = cache.get(func)
+            if aggregate_op is None:
+                aggregate_op = AggregateGeneric(func)
+                cache[func] = aggregate_op
         return aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
     else:
         func = _impl_dict[func]
         return func(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+
+
+@functools.lru_cache(maxsize=128)
+def _get_cached_generic(func):
+    """LRU-cache AggregateGeneric instances per user callable (bounded)."""
+    return AggregateGeneric(func)
 
 
 aggregate.__doc__ = (
@@ -603,13 +625,16 @@ aggregate.__doc__ = (
     cache: default=True
         when aggregating with a custom callable ``func``, the compiled
         implementation is cached so that subsequent calls with the same
-        function are fast.  Set to ``False`` to disable caching.
+        function are fast.  Set to ``False`` to disable caching, or pass
+        your own dictionary to control the caching manually.  With caching
+        enabled (the default), callables are kept in a bounded LRU cache of
+        128 entries.
     """
     + aggregate_common_doc
 )
 
 
-@nb.njit
+@nb.njit(cache=True)
 def step_count(group_idx):
     """Return the amount of index changes within group_idx."""
     cmp_pos = 0
@@ -623,7 +648,7 @@ def step_count(group_idx):
     return steps
 
 
-@nb.njit
+@nb.njit(cache=True)
 def step_indices(group_idx):
     """Return the edges of areas within group_idx, which are filled with the same value."""
     ilen = step_count(group_idx) + 1

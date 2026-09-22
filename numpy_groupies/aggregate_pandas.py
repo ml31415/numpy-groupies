@@ -14,15 +14,16 @@ from .utils import (
 
 
 def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **kwargs):
+    if len(group_idx) == 0:
+        raise ValueError("group_idx must not be empty")
     funcname = func.__name__ if callable(func) else func
-    kwargs = {}
     if funcname in ("var", "std"):
         kwargs["ddof"] = ddof
+    # kwargs starting with "_" are internal flags (e.g. _nansqueeze injected by
+    # _aggregate_base) that pandas does not understand - the rest is forwarded.
+    kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
     df = pd.DataFrame({"group_idx": group_idx, "a": a})
-    if func == "sort":
-        grouped = df.groupby("group_idx", sort=True)
-    else:
-        grouped = df.groupby("group_idx", sort=False).aggregate(func, **kwargs)
+    grouped = df.groupby("group_idx", sort=False).aggregate(func, **kwargs)
 
     dtype = check_dtype(dtype, getattr(func, "__name__", funcname), a, size)
     if funcname.startswith("cum"):

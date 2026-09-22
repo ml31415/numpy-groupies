@@ -108,6 +108,8 @@ def aggregate(
 ):
     if axis is not None:
         raise NotImplementedError("axis arg not supported in purepy implementation.")
+    if len(group_idx) == 0:
+        raise ValueError("group_idx must not be empty")
 
     # Check for 2d group_idx
     if size is None:

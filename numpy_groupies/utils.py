@@ -84,7 +84,7 @@ funcs_common = [
     "cummax",
     "cummin",
 ]
-funcs_no_separate_nan = frozenset(["sort", "rsort", "array", "allnan", "anynan"])
+funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan"])
 
 
 _alias_str = {
@@ -107,7 +107,6 @@ _alias_str = {
     "asorted": "sort",
     "rsorted": "sort",
     "dsort": "sort",
-    "dsorted": "rsort",
 }
 
 _alias_builtin = {
@@ -238,10 +237,10 @@ def minimum_dtype(x, dtype=np.bool_):
         try:
             with np.errstate(invalid="ignore"):
                 converted = np.array(x).astype(dtype)
-        except (ValueError, OverflowError, RuntimeWarning):
+        except (ValueError, OverflowError):
             return False
         # False if some overflow has happened
-        return converted == x or np.isnan(x)
+        return bool(converted == x) or (np.ndim(x) == 0 and np.isnan(x))
 
     def type_loop(x, dtype, dtype_dict, default=None):
         while True:
@@ -463,6 +462,9 @@ def input_validation(
     """
     if not isinstance(a, (int, float, complex)) and not is_duck_array(a):
         a = np.asanyarray(a)
+
+    if len(group_idx) == 0:
+        raise ValueError("group_idx must not be empty")
     if not is_duck_array(group_idx):
         group_idx = np.asanyarray(group_idx)
 
