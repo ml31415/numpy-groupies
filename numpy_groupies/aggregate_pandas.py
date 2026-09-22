@@ -34,12 +34,26 @@ def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **k
     return ret
 
 
-_supported_funcs = ["sum", "prod", "all", "any", "min", "max", "mean", "var", "std", "first", "last", "cumsum", "cumprod", "cummax", "cummin"]
+_supported_funcs = [
+    "sum",
+    "prod",
+    "all",
+    "any",
+    "min",
+    "max",
+    "mean",
+    "var",
+    "std",
+    "first",
+    "last",
+    "cumsum",
+    "cumprod",
+    "cummax",
+    "cummin",
+]
 _impl_dict = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
 _impl_dict.update(
-    ("nan" + fn, partial(_wrapper, func=fn))
-    for fn in _supported_funcs
-    if fn not in funcs_no_separate_nan
+    ("nan" + fn, partial(_wrapper, func=fn)) for fn in _supported_funcs if fn not in funcs_no_separate_nan
 )
 _impl_dict.update(
     allnan=partial(_wrapper, func=allnan),

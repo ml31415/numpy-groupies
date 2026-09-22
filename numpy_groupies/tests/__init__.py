@@ -31,13 +31,9 @@ def _impl_name(impl):
 
 _implemented_by_impl_name = {
     "numpy": {"not_implemented": ("cumprod", "cummax", "cummin")},
-    "purepy": {
-        "not_implemented": ("cumsum", "cumprod", "cummax", "cummin", "sumofsquares")
-    },
+    "purepy": {"not_implemented": ("cumsum", "cumprod", "cummax", "cummin", "sumofsquares")},
     "numba": {"not_implemented": ("array", "list", "sort")},
-    "pandas": {
-        "not_implemented": ("array", "list", "sort", "sumofsquares", "nansumofsquares")
-    },
+    "pandas": {"not_implemented": ("array", "list", "sort", "sumofsquares", "nansumofsquares")},
     "ufunc": {
         "implemented": (
             "sum",

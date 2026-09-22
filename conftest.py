@@ -5,9 +5,7 @@ See: https://github.com/pytest-dev/pytest/issues/3730#issuecomment-567142496
 
 
 def pytest_configure(config):
-    config.addinivalue_line(
-        "markers", "deselect_if(func): function to deselect tests from parametrization"
-    )
+    config.addinivalue_line("markers", "deselect_if(func): function to deselect tests from parametrization")
 
 
 def pytest_collection_modifyitems(config, items):

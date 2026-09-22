@@ -29,9 +29,10 @@ the `from .utils import (...)` line).
 ```python
 import numpy as np
 import numpy_groupies as npg
-group_idx = np.array([   3,   0,   0,   1,   0,   3,   5,   5,   0,   4])
-a =         np.array([13.2, 3.5, 3.5,-8.2, 3.0,13.4,99.2,-7.1, 0.0,53.7])
-npg.aggregate(group_idx, a, func='sum', fill_value=0)
+
+group_idx = np.array([3, 0, 0, 1, 0, 3, 5, 5, 0, 4])
+a = np.array([13.2, 3.5, 3.5, -8.2, 3.0, 13.4, 99.2, -7.1, 0.0, 53.7])
+npg.aggregate(group_idx, a, func="sum", fill_value=0)
 # >>>          array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
 ```
 `aggregate` takes an array of values, and an array giving the group number for each of those values. 
@@ -45,8 +46,8 @@ while iterating over the data or permutates them. The output size matches the in
 
 ```python
 group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
-a =         np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
-npg.aggregate(group_idx, a, func='cumsum')
+a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
+npg.aggregate(group_idx, a, func="cumsum")
 # >>>          array([3, 4, 5, 6,15, 9,15,22, 7, 0,15,17, 6,14,31,39])
 ```
 
@@ -122,15 +123,15 @@ group_idx = np.arange(5).repeat(3)
 # group_idx: array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
 a = np.arange(group_idx.size)
 # a: array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14])
-x = npg.aggregate(group_idx, a) # sum is default
+x = npg.aggregate(group_idx, a)  # sum is default
 # x: array([ 3, 12, 21, 30, 39])
-x = npg.aggregate(group_idx, a, 'prod')
+x = npg.aggregate(group_idx, a, "prod")
 # x: array([ 0, 60, 336, 990, 2184])
 ```
 
 Get variance ignoring nans, setting all-nan groups to `nan`.
 ```python
-x = npg.aggregate(group_idx, a, func='nanvar', fill_value=nan)
+x = npg.aggregate(group_idx, a, func="nanvar", fill_value=nan)
 ```
 
 Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, 
@@ -144,25 +145,22 @@ have the same size, but that doesn't have to be the case.
 ```python
 group_idx = np.random.randint(0, 15, size=(3, 1000))
 a = np.random.random(group_idx.shape[1])
-x = npg.aggregate(group_idx, a, func="sum", size=(15,15,15), order="F")
+x = npg.aggregate(group_idx, a, func="sum", size=(15, 15, 15), order="F")
 # x.shape: (15, 15, 15)
 # np.isfortran(x): True
 ```
 
 Use a custom function to generate some strings.
 ```python
-group_idx = np.array([1, 0,  1,  4,  1])
+group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
-x = npg.aggregate(group_idx, a,
-              func=lambda g: ' or maybe '.join(str(gg) for gg in g), fill_value='')
+x = npg.aggregate(group_idx, a, func=lambda g: " or maybe ".join(str(gg) for gg in g), fill_value="")
 # x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
 
 Use the `axis` arg in order to do a sum-aggregation on three rows simultaneously.
 ```python
-a = np.array([[99, 2,  11, 14,  20],
-	   	   [33, 76, 12, 100, 71],
-		   [67, 10, -8, 1,   9]])
+a = np.array([[99, 2, 11, 14, 20], [33, 76, 12, 100, 71], [67, 10, -8, 1, 9]])
 group_idx = np.array([[3, 3, 7, 0, 0]])
 x = npg.aggregate(group_idx, a, axis=1)
 # x : [[ 34, 0, 0, 101, 0, 0, 0, 11],

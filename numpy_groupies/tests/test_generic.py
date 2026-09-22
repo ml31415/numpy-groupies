@@ -75,9 +75,7 @@ def test_start_with_offset(aggregate_all):
         assert "int" in res.dtype.name
 
 
-@pytest.mark.parametrize(
-    "floatfunc", [np.std, np.var, np.mean], ids=lambda x: x.__name__
-)
+@pytest.mark.parametrize("floatfunc", [np.std, np.var, np.mean], ids=lambda x: x.__name__)
 def test_float_enforcement(aggregate_all, floatfunc):
     group_idx = np.arange(10).repeat(3)
     a = np.arange(group_idx.size)
@@ -112,9 +110,7 @@ def test_shape_mismatch(aggregate_all):
 
 
 def test_create_lists(aggregate_all):
-    res = aggregate_all(
-        np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int), func=list
-    )
+    res = aggregate_all(np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int), func=list)
     np.testing.assert_array_equal(np.array(res[0]), np.array([101]))
     assert res[2] == 0
     np.testing.assert_array_equal(np.array(res[3]), np.array([103, 105]))
@@ -127,9 +123,7 @@ def test_item_counting(aggregate_all):
     np.testing.assert_array_equal(res, np.array([0, 0, 0, 1, 1, 1, 0, 0, 1]))
 
 
-@pytest.mark.parametrize(
-    ["func", "fill_value"], [(np.array, None), (np.sum, -1)], ids=["array", "sum"]
-)
+@pytest.mark.parametrize(["func", "fill_value"], [(np.array, None), (np.sum, -1)], ids=["array", "sum"])
 def test_fill_value(aggregate_all, func, fill_value):
     group_idx = np.array([0, 2, 2], dtype=int)
     res = aggregate_all(
@@ -145,9 +139,7 @@ def test_fill_value(aggregate_all, func, fill_value):
 def test_array_ordering(aggregate_all, order, size=10):
     mat = np.zeros((size, size), order=order, dtype=float)
     mat.flat[:] = np.arange(size * size)
-    assert aggregate_all(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(
-        range(size)
-    )
+    assert aggregate_all(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(range(size))
 
 
 @pytest.mark.deselect_if(func=_deselect_purepy)
@@ -213,15 +205,11 @@ def test_first_last(aggregate_all, first_last):
     res = aggregate_all(group_idx, a, func=first_last, fill_value=-1)
     ref = np.zeros(np.max(group_idx) + 1)
     ref.fill(-1)
-    ref[::2] = np.arange(
-        0 if first_last == "first" else 4, group_idx.size, 5, dtype=int
-    )
+    ref[::2] = np.arange(0 if first_last == "first" else 4, group_idx.size, 5, dtype=int)
     np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.parametrize(
-    ["first_last", "nanoffset"], list(itertools.product(["nanfirst", "nanlast"], [0, 2, 4]))
-)
+@pytest.mark.parametrize(["first_last", "nanoffset"], list(itertools.product(["nanfirst", "nanlast"], [0, 2, 4])))
 def test_nan_first_last(aggregate_all, first_last, nanoffset):
     group_idx = np.arange(0, 100, 2, dtype=int).repeat(5)
     a = np.arange(group_idx.size, dtype=float)
@@ -317,9 +305,7 @@ def test_argmin_argmax_nans(aggregate_all):
 @pytest.mark.deselect_if(func=_deselect_purepy)
 def test_nanargmin_nanargmax_nans(aggregate_all):
     if aggregate_all.__name__.endswith("pandas"):
-        pytest.skip(
-            "pandas doesn't fill indices for all-nan groups with fill_value but with -inf instead"
-        )
+        pytest.skip("pandas doesn't fill indices for all-nan groups with fill_value but with -inf instead")
 
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, np.nan, 1, np.nan, np.nan, np.nan, np.nan])
@@ -549,9 +535,7 @@ def test_argreduction_negative_fill_value(aggregate_all):
 
 
 @pytest.mark.deselect_if(func=_deselect_not_implemented)
-@pytest.mark.parametrize(
-    "nan_inds", (None, ([1, 4, 5], Ellipsis), (1, (0, 1, 2, 3)))
-)
+@pytest.mark.parametrize("nan_inds", (None, ([1, 4, 5], Ellipsis), (1, (0, 1, 2, 3))))
 @pytest.mark.parametrize("ddof", (0, 1))
 @pytest.mark.parametrize("func", ("nanvar", "nanstd"))
 def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds, func):
@@ -566,16 +550,12 @@ def test_var_with_nan_fill_value(aggregate_all, ddof, nan_inds, func):
         warnings.simplefilter("ignore", RuntimeWarning)
         expected = getattr(np, func)(a, keepdims=True, axis=-1, ddof=ddof)
 
-    actual = aggregate_all(
-        group_idx, a, axis=-1, fill_value=np.nan, func=func, ddof=ddof
-    )
+    actual = aggregate_all(group_idx, a, axis=-1, fill_value=np.nan, func=func, ddof=ddof)
     np.testing.assert_equal(actual, expected)
 
 
 def test_cumsum_accuracy(aggregate_all):
-    array = np.array(
-        [0.00000000e00, 0.00000000e00, 0.00000000e00, 3.27680000e04, 9.99999975e-06]
-    )
+    array = np.array([0.00000000e00, 0.00000000e00, 0.00000000e00, 3.27680000e04, 9.99999975e-06])
     group_idx = np.array([0, 0, 0, 0, 1])
 
     actual = aggregate_all(group_idx, array, axis=-1, func="cumsum")
