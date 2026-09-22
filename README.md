@@ -16,11 +16,10 @@ If you have `pip`, then simply:
 ```
 pip install numpy_groupies
 ```
-Note that `numpy_groupies` doesn't have any compulsory dependencies (even `numpy` is optional) 
-so you should be able to install it fairly easily even without a package manager.  If you just 
-want one particular implementation of `aggregate` (e.g. `aggregate_numpy.py`), you can download 
-that one file, and copy-paste the contents of `utils.py` into the top of that file (replacing 
-the `from .utils import (...)` line).
+Note that the package only declares `numpy` as a dependency; the `pure python` implementation of 
+`aggregate` additionally works without it. If you just want one particular implementation of 
+`aggregate` (e.g. `aggregate_numpy.py`), you can download that one file, and copy-paste the contents 
+of `utils.py` into the top of that file (replacing the `from .utils import (...)` line).
 
 
 ## aggregate
@@ -99,21 +98,22 @@ The above functions also have a `nan`-form, which skip the `nan` values instead 
 * `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, `'nanargmax'`, `'nanargmin'`
 
 The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
-* `'all'` - `True` if all items within a group are truethy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truethy.
-* `'any'` - `True` if any items within a group are truethy.
+* `'all'` - `True` if all items within a group are truthy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truthy.
+* `'any'` - `True` if any items within a group are truthy.
 * `'allnan'` - `True` if all items within a group are `nan`.
 * `'anynan'` - `True` if any items within a group are `nan`.
 
 The following functions don't reduce the data, but instead produce an output matching the size of the input:
 * `'cumsum'` - cumulative sum of items within each group.
-* `'cumprod'` - cumulative product of items within each group. (numba only)
-* `'cummin'` - cumulative minimum of items within each group. (numba only)
-* `'cummax'` - cumulative maximum of items within each group. (numba only)
+* `'cumprod'` - cumulative product of items within each group. (numba and pandas)
+* `'cummin'` - cumulative minimum of items within each group. (numba and pandas)
+* `'cummax'` - cumulative maximum of items within each group. (numba and pandas)
 * `'sort'` - sort the items within each group in ascending order, use reverse=True to invert the order.
 
-Finally, there are three functions which don't reduce each group to a single value, instead they return the full 
+
+There is one function which doesn't reduce each group to a single value, instead it returns the full 
 set of items within the group:
-* `'array'` - simply returns the grouped items, using the same order as appeared in `a`. (numpy only)
+* `'array'` - simply returns the grouped items, using the same order as appeared in `a`. (numpy and pure python)
 
 
 ### Examples
@@ -171,15 +171,16 @@ x = npg.aggregate(group_idx, a, axis=1)
 
 ### Multiple implementations
 There are multiple implementations of `aggregate` provided. If you use `from numpy_groupies import aggregate`, 
-the best available implementation will automatically be selected. Otherwise you can pick a specific version directly 
+the best available implementation will automatically be selected (numba if installed, otherwise numpy).
+Otherwise you can pick a specific version directly 
 like `from numpy_groupies import aggregate_nb as aggregate` or by importing aggregate from the implementing module 
-`from numpy_groupies.aggregate_weave import aggregate`.
+`from numpy_groupies.aggregate_numpy import aggregate`.
 
 Currently the following implementations exist:
-* **numpy** - This is the default implementation. It uses plain `numpy`, mainly relying on `np.bincount` and basic indexing magic. It comes without other dependencies except `numpy` and shows reasonable performance for the occasional usage.
+* **numpy** - It uses plain `numpy`, mainly relying on `np.bincount` and basic indexing magic. It comes without other dependencies except `numpy` and shows reasonable performance for the occasional usage. This is the default implementation used when numba is not installed.
 * **numba** - This is the most performant implementation, based on jit compilation provided by numba and LLVM.
 * **pure python** - This implementation has no dependencies and uses only the standard library. It's horribly slow and should only be used, if there is no numpy available.
-* **numpy ufunc** - *Only for benchmarking.*  This implementation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for performing exactly the same calculation that `aggregate` executes, however the numpy implementation is rather incomplete.
+* **numpy ufunc** - *Only for benchmarking.*  This implementation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for performing exactly the same calculation that `aggregate` executes, however this implementation is rather incomplete.
 * **pandas** - *Only for reference.*  The pandas' `groupby` concept is the same as the task performed by `aggregate`. However, `pandas` is not actually faster than the default `numpy` implementation. Also, note that there may be room for improvement in the way that `pandas` is utilized here. Most notably, when computing multiple aggregations of the same data (e.g. `'min'` and `'max'`) pandas could potentially be used more efficiently.
 
 All implementations have the same calling syntax and produce the same outputs, to within some floating-point error. 
@@ -194,48 +195,48 @@ Below we are using `500,000` indices uniformly picked from `[0, 1000)`. The valu
 the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). 
 For `nan-` operations another 20% of the values are set to nan, leaving the remainder on the interval `[0.2,0.8)`.
 
-The benchmarking results are given in ms for an i7-7560U running at 2.40GHz:
+The benchmarking results are given in ms for an i7-7560U running at 2.40GHz, taking the minimum over 3 runs:
 
-| function  | ufunc   | numpy   | numba   | pandas  |
-|-----------|---------|---------|---------|---------|
-| sum       | 1.950   | 1.728   | 0.708   | 11.832  |
-| prod      | 2.279   | 2.349   | 0.709   | 11.649  |
-| min       | 2.472   | 2.489   | 0.716   | 11.686  |
-| max       | 2.457   | 2.480   | 0.745   | 11.598  |
-| len       | 1.481   | 1.270   | 0.635   | 10.932  |
-| all       | 37.186  | 3.054   | 0.892   | 12.587  |
-| any       | 35.278  | 5.157   | 0.890   | 12.845  |
-| anynan    | 5.783   | 2.126   | 0.762   | 144.740 |
-| allnan    | 7.971   | 4.367   | 0.774   | 144.507 |
-| mean      | ----    | 2.500   | 0.825   | 13.284  |
-| std       | ----    | 4.528   | 0.965   | 12.193  |
-| var       | ----    | 4.269   | 0.969   | 12.657  |
-| first     | ----    | 1.847   | 0.811   | 11.584  |
-| last      | ----    | 1.309   | 0.581   | 11.842  |
-| argmax    | ----    | 3.504   | 1.411   | 293.640 |
-| argmin    | ----    | 6.996   | 1.347   | 290.977 |
-| nansum    | ----    | 5.388   | 1.569   | 15.239  |
-| nanprod   | ----    | 5.707   | 1.546   | 15.004  |
-| nanmin    | ----    | 5.831   | 1.700   | 14.292  |
-| nanmax    | ----    | 5.847   | 1.731   | 14.927  |
-| nanlen    | ----    | 3.170   | 1.529   | 14.529  |
-| nanall    | ----    | 6.499   | 1.640   | 15.931  |
-| nanany    | ----    | 8.041   | 1.656   | 15.839  |
-| nanmean   | ----    | 5.636   | 1.583   | 15.185  |
-| nanvar    | ----    | 7.514   | 1.682   | 15.643  |
-| nanstd    | ----    | 7.292   | 1.666   | 15.104  |
-| nanfirst  | ----    | 5.318   | 2.096   | 14.432  |
-| nanlast   | ----    | 4.943   | 1.473   | 14.637  |
-| nanargmin | ----    | 7.977   | 1.779   | 298.911 |
-| nanargmax | ----    | 5.869   | 1.802   | 301.022 |
-| cumsum    | ----    | 71.713  | 1.119   | 8.864   |
-| cumprod   | ----    | ----    | 1.123   | 12.100  |
-| cummax    | ----    | ----    | 1.062   | 12.133  |
-| cummin    | ----    | ----    | 0.973   | 11.908  |
-| arbitrary | ----    | 147.853 | 46.690  | 129.779 |
-| sort      | ----    | 167.699 | ----    | ----    |
+| function | ufunc  | numpy   | numba  | pandas  |
+|-----------|--------|---------|--------|---------|
+| sum       | 1.310  | 1.168   | 0.728  | 14.427  |
+| prod      | 2.427  | 2.404   | 0.747  | 14.694  |
+| min       | 2.651  | 2.642   | 0.774  | 14.904  |
+| max       | 2.500  | 2.512   | 0.801  | 14.349  |
+| len       | 1.438  | 0.977   | 0.542  | 14.077  |
+| all       | 41.244 | 2.536   | 0.863  | 14.940  |
+| any       | 41.922 | 4.611   | 0.873  | 15.157  |
+| anynan    | 5.932  | 1.357   | 0.860  | 93.239  |
+| allnan    | 8.434  | 3.508   | 0.795  | 96.689  |
+| mean      | ----   | 1.887   | 0.714  | 16.377  |
+| std       | ----   | 4.519   | 0.951  | 16.713  |
+| var       | ----   | 4.330   | 1.018  | 17.524  |
+| first     | ----   | 1.824   | 0.611  | 14.889  |
+| last      | ----   | 1.512   | 0.591  | 14.217  |
+| argmax    | ----   | 3.945   | 0.978  | 13.536  |
+| argmin    | ----   | 6.375   | 0.974  | 15.229  |
+| nansum    | ----   | 4.932   | 1.916  | 19.633  |
+| nanprod   | ----   | 5.614   | 1.904  | 19.815  |
+| nanmin    | ----   | 6.034   | 1.730  | 17.543  |
+| nanmax    | ----   | 6.082   | 1.692  | 18.131  |
+| nanlen    | ----   | 3.023   | 1.543  | 18.795  |
+| nanall    | ----   | 5.806   | 1.696  | 19.612  |
+| nanany    | ----   | 7.531   | 1.667  | 18.599  |
+| nanmean   | ----   | 5.421   | 1.984  | 19.742  |
+| nanvar    | ----   | 7.590   | 2.309  | 21.146  |
+| nanstd    | ----   | 7.133   | 2.309  | 21.893  |
+| nanfirst  | ----   | 6.242   | 1.624  | 20.434  |
+| nanlast   | ----   | 5.904   | 1.578  | 19.503  |
+| nanargmin | ----   | 9.199   | 2.415  | 16.566  |
+| nanargmax | ----   | 6.401   | 2.327  | 16.536  |
+| cumsum    | ----   | 100.678 | 1.299  | 10.173  |
+| cumprod   | ----   | ----    | 1.184  | 13.667  |
+| cummax    | ----   | ----    | 1.308  | 14.618  |
+| cummin    | ----   | ----    | 1.312  | 13.994  |
+| arbitrary | ----   | 174.599 | 57.610 | 141.577 |
+| sort      | ----   | 197.815 | ----   | ----    |
 
-_Linux(x86_64), Python 3.10.12, Numpy 1.25.2, Numba 0.58.0, Pandas 2.0.2_
+_Linux(x86_64), Python 3.14.2, Numpy 2.5.3, Numba 0.67.0, Pandas 3.0.6_
 
 ## Development
 This project was started by @ml31415 and the `numba` and `weave` implementations are by him. The pure 
