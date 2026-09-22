@@ -360,73 +360,112 @@ class AnyNan(AggregateOp):
 class Max(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean, fill_value):
-        if counter[ri]:
-            ret[ri] = val
-            counter[ri] = 0
-        elif ret[ri] < val:
-            ret[ri] = val
+        # select-form on purpose: the branchy equivalent (see below) compiles
+        # ~15x slower under numba >= 0.66 when reached as a separate njit call.
+        # Note: ret[ri] must be read into a local first - repeating the
+        # subscript expression keeps the slow codegen (aliasing).
+        # if counter[ri]:
+        #     ret[ri] = val
+        #     counter[ri] = 0
+        # elif ret[ri] < val:
+        #     ret[ri] = val
+        first = counter[ri]
+        counter[ri] = 0
+        cur = ret[ri]
+        ret[ri] = val if (first or cur < val) else cur
 
 
 class Min(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean, fill_value):
-        if counter[ri]:
-            ret[ri] = val
-            counter[ri] = 0
-        elif ret[ri] > val:
-            ret[ri] = val
+        # select-form on purpose, see Max._inner
+        # if counter[ri]:
+        #     ret[ri] = val
+        #     counter[ri] = 0
+        # elif ret[ri] > val:
+        #     ret[ri] = val
+        first = counter[ri]
+        counter[ri] = 0
+        cur = ret[ri]
+        ret[ri] = val if (first or cur > val) else cur
 
 
 class ArgMax(AggregateOp):
     mean_fill_value = np.nan
 
-    @staticmethod
-    def _valgetter(a, i):
-        return a[i], i
+    @classmethod
+    def callable(cls, nans=False, reverse=False, scalar=False):
+        # The loop body is inlined on purpose: with numba >= 0.67 the generic
+        # loop plus a separate njit `_inner` call compiles ~20x slower for this
+        # reduction. The inlined logic is equivalent to the former _inner:
+        #   first value of a group seeds ret/mean, nans reset the group to
+        #   fill_value, and for nans=True nans are skipped entirely.
+        if scalar or reverse:
+            # scalar/reverse argreductions are not meaningfully supported;
+            # keep the generic (lazy) path for unchanged behaviour.
+            return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
 
-    @staticmethod
-    def _nan_check(val):
-        return val[0] != val[0]
+        @nb.njit
+        def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
+            size = len(ret)
+            for i in range(len(group_idx)):
+                ri = group_idx[i]
+                if ri < 0:
+                    raise ValueError("negative indices not supported")
+                if ri >= size:
+                    raise ValueError("one or more indices in group_idx are too large")
+                cmp_val = a[i]
+                if cmp_val != cmp_val:
+                    if nans:
+                        continue
+                    counter[ri] = 0
+                    mean[ri] = cmp_val
+                    ret[ri] = fill_value
+                    continue
+                if counter[ri]:
+                    counter[ri] = 0
+                    mean[ri] = cmp_val
+                    ret[ri] = i
+                elif mean[ri] < cmp_val:
+                    mean[ri] = cmp_val
+                    ret[ri] = i
 
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        cmp_val, arg = val
-        if counter[ri]:
-            # start of a new group
-            counter[ri] = 0
-            mean[ri] = cmp_val
-            if cmp_val == cmp_val:
-                # Don't point on nans
-                ret[ri] = arg
-        elif mean[ri] < cmp_val:
-            # larger valid value found
-            mean[ri] = cmp_val
-            ret[ri] = arg
-        elif cmp_val != cmp_val:
-            # nan found, reset group
-            mean[ri] = cmp_val
-            ret[ri] = fill_value
+        return loop
 
 
 class ArgMin(ArgMax):
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        cmp_val, arg = val
-        if counter[ri]:
-            # start of a new group
-            counter[ri] = 0
-            mean[ri] = cmp_val
-            if cmp_val == cmp_val:
-                # Don't point on nans
-                ret[ri] = arg
-        elif mean[ri] > cmp_val:
-            # larger valid value found
-            mean[ri] = cmp_val
-            ret[ri] = arg
-        elif cmp_val != cmp_val:
-            # nan found, reset group
-            mean[ri] = cmp_val
-            ret[ri] = fill_value
+    @classmethod
+    def callable(cls, nans=False, reverse=False, scalar=False):
+        # inlined on purpose, see ArgMax.callable
+        if scalar or reverse:
+            return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
+
+        @nb.njit
+        def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
+            size = len(ret)
+            for i in range(len(group_idx)):
+                ri = group_idx[i]
+                if ri < 0:
+                    raise ValueError("negative indices not supported")
+                if ri >= size:
+                    raise ValueError("one or more indices in group_idx are too large")
+                cmp_val = a[i]
+                if cmp_val != cmp_val:
+                    if nans:
+                        continue
+                    counter[ri] = 0
+                    mean[ri] = cmp_val
+                    ret[ri] = fill_value
+                    continue
+                if counter[ri]:
+                    counter[ri] = 0
+                    mean[ri] = cmp_val
+                    ret[ri] = i
+                elif mean[ri] > cmp_val:
+                    mean[ri] = cmp_val
+                    ret[ri] = i
+
+        return loop
 
 
 class SumOfSquares(AggregateOp):
