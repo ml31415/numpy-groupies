@@ -238,20 +238,29 @@ def _cumsum(group_idx, a, size, fill_value=None, dtype=None):
     _cumsum(group_idx, a, np.max(group_idx) + 1)
     >>> array([ 3,  4,  5,  6, 15,  9, 15, 22,  7,  0, 15, 17,  6, 14, 31, 39])
     """
-    sortidx = np.argsort(group_idx, kind="mergesort")
-    invsortidx = np.argsort(sortidx, kind="mergesort")
+    sortidx = np.argsort(group_idx, kind="stable")
     group_idx_srt = group_idx[sortidx]
 
     a_srt = a[sortidx]
     a_srt_cumsum = np.cumsum(a_srt, dtype=dtype)
 
-    increasing = np.arange(len(a), dtype=int)
-    group_starts = _min(group_idx_srt, increasing, size, fill_value=0)[group_idx_srt]
+    # group_idx_srt is sorted, so each group occupies one contiguous block and
+    # the cumulative sum of every group simply needs offsetting by the value
+    # of its first element (minus the preceding groups' sums, which the
+    # global cumsum already includes).
+    new_group = np.empty(group_idx_srt.size, dtype=bool)
+    new_group[0] = True
+    np.not_equal(group_idx_srt[1:], group_idx_srt[:-1], out=new_group[1:])
+    start_positions = np.flatnonzero(new_group)
+    group_starts = start_positions[np.cumsum(new_group) - 1]
     # First subtract large numbers
     a_srt_cumsum -= a_srt_cumsum[group_starts]
     # Then add potentially small numbers
     a_srt_cumsum += a_srt[group_starts]
-    return a_srt_cumsum[invsortidx]
+
+    ret = np.empty_like(a_srt_cumsum)
+    ret[sortidx] = a_srt_cumsum
+    return ret
 
 
 def _nancumsum(group_idx, a, size, fill_value=None, dtype=None):
