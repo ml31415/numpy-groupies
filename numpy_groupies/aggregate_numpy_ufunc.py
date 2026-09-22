@@ -84,17 +84,17 @@ def _max(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-_impl_dict = dict(
-    min=_min,
-    max=_max,
-    sum=_sum,
-    prod=_prod,
-    all=_all,
-    any=_any,
-    allnan=_allnan,
-    anynan=_anynan,
-    len=_len,
-)
+_impl_dict = {
+    "min": _min,
+    "max": _max,
+    "sum": _sum,
+    "prod": _prod,
+    "all": _all,
+    "any": _any,
+    "allnan": _allnan,
+    "anynan": _anynan,
+    "len": _len,
+}
 
 
 def aggregate(

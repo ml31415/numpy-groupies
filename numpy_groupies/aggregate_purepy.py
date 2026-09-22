@@ -2,9 +2,8 @@ import itertools
 import math
 import operator
 
-from .utils import aggregate_common_doc
+from .utils import aggregate_common_doc, funcs_no_separate_nan, get_func
 from .utils import aliasing_py as aliasing
-from .utils import funcs_no_separate_nan, get_func
 
 # min, max, sum, all, any - builtin
 
@@ -68,33 +67,33 @@ def _sort(group_idx, a, reverse=False):
         return sorted(range(len(unordered)), key=lambda k: unordered[k])
 
     sortidx = _argsort(
-        list((gi, aj) for gi, aj in zip(group_idx, -a if reverse else a))
+        list(zip(group_idx, -a if reverse else a))
     )
     revidx = _argsort(_argsort(group_idx))
     a_srt = [a[si] for si in sortidx]
     return [a_srt[ri] for ri in revidx]
 
 
-_impl_dict = dict(
-    min=min,
-    max=max,
-    sum=sum,
-    prod=_prod,
-    last=_last,
-    first=_first,
-    all=all,
-    any=any,
-    mean=_mean,
-    std=_std,
-    var=_var,
-    anynan=_anynan,
-    allnan=_allnan,
-    sort=_sort,
-    array=_array,
-    argmax=_argmax,
-    argmin=_argmin,
-    len=len,
-)
+_impl_dict = {
+    "min": min,
+    "max": max,
+    "sum": sum,
+    "prod": _prod,
+    "last": _last,
+    "first": _first,
+    "all": all,
+    "any": any,
+    "mean": _mean,
+    "std": _std,
+    "var": _var,
+    "anynan": _anynan,
+    "allnan": _allnan,
+    "sort": _sort,
+    "array": _array,
+    "argmax": _argmax,
+    "argmin": _argmin,
+    "len": len,
+}
 _impl_dict.update(
     ("nan" + k, v)
     for k, v in list(_impl_dict.items())
@@ -173,11 +172,11 @@ def aggregate(
     if not getattr(func, "x_and_idx", False):
         data = sorted(zip(group_idx, a), key=operator.itemgetter(0))
         for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
-            ret[ix] = func(list(val for _, val in group), **kwargs)
+            ret[ix] = func([val for _, val in group], **kwargs)
     else:
         data = sorted(zip(range(len(a)), group_idx, a), key=operator.itemgetter(1))
         for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
-            ret[ix] = func(list((val_idx, val) for val_idx, _, val in group), **kwargs)
+            ret[ix] = func([(val_idx, val) for val_idx, _, val in group], **kwargs)
 
     return ret
 

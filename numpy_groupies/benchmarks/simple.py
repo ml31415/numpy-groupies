@@ -42,7 +42,7 @@ print(
 )
 
 
-print("")
+print()
 print("---------testing--------------")
 print("compare against group-and-loop with numpy")
 testable_funcs = {
@@ -76,7 +76,7 @@ for name, f in testable_funcs.items():
         except NotImplementedError:
             print(name, acc_name, "NOT IMPLEMENTED")
 
-print("")
+print()
 print("----------benchmarking-------------")
 print(
     "Note that the actual observed speedup depends on a variety of properties of the input."

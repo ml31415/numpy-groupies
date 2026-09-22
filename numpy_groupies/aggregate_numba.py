@@ -12,7 +12,7 @@ from .utils import (
 )
 
 
-class AggregateOp(object):
+class AggregateOp:
     """
     Every subclass of AggregateOp handles a different aggregation operation. There are
     several private class methods that need to be overwritten by the subclasses
@@ -212,7 +212,6 @@ class Aggregate2pass(AggregateOp):
     @classmethod
     def _finalize(cls, ret, counter, fill_value):
         """Copying the fill value is already done in the 2nd pass"""
-        pass
 
 
 class AggregateNtoN(AggregateOp):

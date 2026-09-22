@@ -62,9 +62,7 @@ def _is_implemented(impl_name, funcname):
         return False
     if funcname in not_implemented:
         return False
-    if implemented and funcname not in implemented:
-        return False
-    return True
+    return not (implemented and funcname not in implemented)
 
 
 def _wrap_notimplemented_skip(impl, name=None):

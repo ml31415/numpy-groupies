@@ -9,9 +9,9 @@ import pytest
 from . import (
     _impl_name,
     _implementations,
+    _is_implemented,
     _wrap_notimplemented_skip,
     func_list,
-    _is_implemented,
 )
 
 
@@ -43,9 +43,7 @@ def _deselect_purepy_and_invalid_axis(aggregate_all, func, size, axis):
         return True
     if axis >= len(size):
         return True
-    if not _is_implemented(impl_name, func):
-        return True
-    return False
+    return not _is_implemented(impl_name, func)
 
 
 def _deselect_not_implemented(aggregate_all, func, *args, **kwargs):
@@ -552,7 +550,7 @@ def test_argreduction_negative_fill_value(aggregate_all):
 
 @pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize(
-    "nan_inds", (None, tuple([[1, 4, 5], Ellipsis]), tuple((1, (0, 1, 2, 3))))
+    "nan_inds", (None, ([1, 4, 5], Ellipsis), (1, (0, 1, 2, 3)))
 )
 @pytest.mark.parametrize("ddof", (0, 1))
 @pytest.mark.parametrize("func", ("nanvar", "nanstd"))

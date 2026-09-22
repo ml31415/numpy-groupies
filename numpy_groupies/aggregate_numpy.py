@@ -274,29 +274,29 @@ def _nancumsum(group_idx, a, size, fill_value=None, dtype=None):
     return _cumsum(group_idx_nonans, a_nonans, size, fill_value=fill_value, dtype=dtype)
 
 
-_impl_dict = dict(
-    min=_min,
-    max=_max,
-    sum=_sum,
-    prod=_prod,
-    last=_last,
-    first=_first,
-    all=_all,
-    any=_any,
-    mean=_mean,
-    std=_std,
-    var=_var,
-    anynan=_anynan,
-    allnan=_allnan,
-    sort=_sort,
-    array=_array,
-    argmax=_argmax,
-    argmin=_argmin,
-    len=_len,
-    cumsum=_cumsum,
-    sumofsquares=_sum_of_squres,
-    generic=_generic_callable,
-)
+_impl_dict = {
+    "min": _min,
+    "max": _max,
+    "sum": _sum,
+    "prod": _prod,
+    "last": _last,
+    "first": _first,
+    "all": _all,
+    "any": _any,
+    "mean": _mean,
+    "std": _std,
+    "var": _var,
+    "anynan": _anynan,
+    "allnan": _allnan,
+    "sort": _sort,
+    "array": _array,
+    "argmax": _argmax,
+    "argmin": _argmin,
+    "len": _len,
+    "cumsum": _cumsum,
+    "sumofsquares": _sum_of_squres,
+    "generic": _generic_callable,
+}
 _impl_dict.update(
     ("nan" + k, v)
     for k, v in list(_impl_dict.items())

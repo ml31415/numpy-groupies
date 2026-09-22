@@ -1,6 +1,7 @@
 """Common functionality for all aggregate implementations."""
 
 import platform
+
 import numpy as np
 
 aggregate_common_doc = """
@@ -43,7 +44,7 @@ aggregate_common_doc = """
         appear instead of ``0`` for the 2 element in the output.  Note that
         there are some subtle interactions between what is permitted for
         ``fill_value`` and the input/output ``dtype`` - exceptions should be
-        raised in most cases to alert the programmer if issue arrise.
+        raised in most cases to alert the programmer if issue arise.
     order: default='C'
         this is relevant only for multimensional output.  It controls the
         layout of the output array in memory, can be ``'F'`` for fortran-style.
@@ -55,7 +56,7 @@ aggregate_common_doc = """
         (see above).
 """
 
-funcs_common = "first last len mean var std allnan anynan max min argmax argmin sumofsquares cumsum cumprod cummax cummin".split()
+funcs_common = ["first", "last", "len", "mean", "var", "std", "allnan", "anynan", "max", "min", "argmax", "argmin", "sumofsquares", "cumsum", "cumprod", "cummax", "cummin"]
 funcs_no_separate_nan = frozenset(["sort", "rsort", "array", "allnan", "anynan"])
 
 
@@ -141,7 +142,7 @@ def get_aliasing(*extra):
 
     This function should only be called during import.
     """
-    alias = dict((k, k) for k in funcs_common)
+    alias = {k: k for k in funcs_common}
     alias.update(_alias_str)
     alias.update((fn, fn) for fn in _alias_builtin.values())
     alias.update(_alias_builtin)
@@ -184,22 +185,22 @@ def check_boolean(x):
         raise ValueError("Value not boolean")
 
 
-_next_int_dtype = dict(
-    bool=np.int8,
-    uint8=np.int16,
-    int8=np.int16,
-    uint16=np.int32,
-    int16=np.int32,
-    uint32=np.int64,
-    int32=np.int64,
-)
+_next_int_dtype = {
+    "bool": np.int8,
+    "uint8": np.int16,
+    "int8": np.int16,
+    "uint16": np.int32,
+    "int16": np.int32,
+    "uint32": np.int64,
+    "int32": np.int64,
+}
 
-_next_float_dtype = dict(
-    float16=np.float32,
-    float32=np.float64,
-    float64=np.complex64,
-    complex64=np.complex128,
-)
+_next_float_dtype = {
+    "float16": np.float32,
+    "float32": np.float64,
+    "float64": np.complex64,
+    "complex64": np.complex128,
+}
 
 
 def minimum_dtype(x, dtype=np.bool_):
