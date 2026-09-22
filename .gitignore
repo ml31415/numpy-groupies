@@ -41,6 +41,9 @@ __pycache__/
 .hypothesis/
 *~
 *.ini
+.venv/
+.ruff_cache/
+uv.lock
 
 # Dynamic versioning
 numpy_groupies/_version.py
