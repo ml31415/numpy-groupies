@@ -130,9 +130,9 @@ aggregate.__doc__ = (
     Unlike ``aggregate_numpy``, which in most cases does some custom
     optimisations, this version simply uses ``numpy``'s ``ufunc.at``.
 
-    As of version 1.14 this gives fairly poor performance. There should
-    normally be no need to use this version, it is intended to be used in
-    testing and benchmarking only.
+    With numpy 1.25 the performance of ``ufunc.at`` improved substantially,
+    however this implementation remains incomplete and is intended to be
+    used in testing and benchmarking only.
     """
     + aggregate_common_doc
 )

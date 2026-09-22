@@ -597,6 +597,13 @@ def aggregate(
 aggregate.__doc__ = (
     """
     This is the numba implementation of aggregate.
+
+    This implementation accepts one additional keyword argument:
+
+    cache: default=True
+        when aggregating with a custom callable ``func``, the compiled
+        implementation is cached so that subsequent calls with the same
+        function are fast.  Set to ``False`` to disable caching.
     """
     + aggregate_common_doc
 )

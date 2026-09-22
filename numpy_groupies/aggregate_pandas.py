@@ -97,7 +97,7 @@ def aggregate(
 aggregate.__doc__ = (
     """
     This is the pandas implementation of aggregate. It makes use of
-    `pandas`'s groupby machienery and is mainly used for reference
+    `pandas`'s groupby machinery and is mainly used for reference
     and benchmarking.
     """
     + aggregate_common_doc

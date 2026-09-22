@@ -44,13 +44,22 @@ aggregate_common_doc = """
         appear instead of ``0`` for the 2 element in the output.  Note that
         there are some subtle interactions between what is permitted for
         ``fill_value`` and the input/output ``dtype`` - exceptions should be
-        raised in most cases to alert the programmer if issue arise.
+        raised in most cases to alert the programmer if issues arise.
     order: default='C'
-        this is relevant only for multimensional output.  It controls the
+        this is relevant only for multidimensional output.  It controls the
         layout of the output array in memory, can be ``'F'`` for fortran-style.
     dtype: default=None
         the ``dtype`` of the output.  By default something sensible is chosen
         based on the input, aggregation function, and ``fill_value``.
+    axis: default=None
+        allows aggregation to be performed along a single axis of a
+        multi-dimensional array ``a``.  In that case ``group_idx`` must be 1D
+        with length matching ``a.shape[axis]``, and the groups are broadcast
+        out along the remaining axes of ``a``.  Not supported by the pure
+        python implementation.
+    reverse: default=False
+        only relevant for ``func='sort'`` - sorts the items within each group
+        in descending order instead of ascending.
     ddof: default=0
         passed through into calculations of variance and standard deviation
         (see above).
@@ -630,7 +639,7 @@ def relabel_groups_unique(group_idx):
     ret:         [0 3 3 3 0 2 4 2 0 1 1 0 3 4 4]
 
     Description of above: unique groups in input was ``1,2,3,5``, i.e.
-    ``4`` was missing, so group 5 was relabled to be ``4``.
+    ``4`` was missing, so group 5 was relabeled to be ``4``.
     Relabeling maintains order, just "compressing" the higher numbers
     to fill gaps.
     """
@@ -655,7 +664,7 @@ def relabel_groups_masked(group_idx, keep_group):
     but the user supplied mask said to keep group 4, so group 5 is only moved up by one place to fill
     the gap created by removing group 2.
 
-    That is, the mask describes which groups to remove, the remaining groups are relabled to remove the
+    That is, the mask describes which groups to remove, the remaining groups are relabeled to remove the
     gaps created by the falsy elements in ``keep_group``. Note that ``keep_group[0]`` has no particular
     meaning because it refers to the zero group which cannot be "removed".
 

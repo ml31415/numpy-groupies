@@ -101,7 +101,7 @@ def aggregate(
     func="sum",
     size=None,
     fill_value=0,
-    order=None,
+    order="C",
     dtype=None,
     axis=None,
     **kwargs,
