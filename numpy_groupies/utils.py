@@ -57,6 +57,12 @@ aggregate_common_doc = """
     dtype: default=None
         the ``dtype`` of the output.  By default something sensible is chosen
         based on the input, aggregation function, and ``fill_value``.
+        Complex input keeps the complex dtype wherever the result is complex
+        (sum, prod, mean, median, trapezoid, first, last, sort, cumsum), while
+        var, std and sumofsquares measure squared magnitudes and return a real
+        dtype - matching numpy.  Order-dependent functions (min, max, argmax,
+        argmin) are not supported for complex input by the numba
+        implementation, which cannot order complex values.
     axis: default=None
         allows aggregation to be performed along a single axis of a
         multi-dimensional array ``a``.  In that case ``group_idx`` must be 1D
