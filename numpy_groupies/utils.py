@@ -177,9 +177,14 @@ def resolve_fill_value(func, fill_value, dtype):
     if fill_value is not DEFAULT_FILL_VALUE:
         return fill_value
     key = _fill_value_key(func)
-    # nan only fits where the output can hold it - the averaging functions
-    # coerce their result to a float type anyway
-    fits = dtype is None or key in _forced_float_types or np.issubdtype(dtype, np.inexact)
+    # nan only fits where the output can hold it - the averaging and
+    # dispersion functions coerce their result to a float type anyway
+    fits = (
+        dtype is None
+        or key in _forced_float_types
+        or key in _forced_real_float_types
+        or np.issubdtype(dtype, np.inexact)
+    )
     value = _default_fill_values.get(key)
     if value is None:
         # a custom callable has no function specific default
@@ -397,7 +402,7 @@ def minimum_dtype(x, dtype=np.bool_):
 
 def minimum_dtype_scalar(x, dtype, a):
     if dtype is None:
-        dtype = np.dtype(type(a)) if isinstance(a, (int, float)) else a.dtype
+        dtype = np.dtype(type(a)) if isinstance(a, (int, float, complex)) else a.dtype
     return minimum_dtype(x, dtype)
 
 
@@ -436,13 +441,19 @@ _forced_float_types = {
     "mean",
     "median",
     "trapezoid",
-    "var",
-    "std",
     "nanmean",
     "nanmedian",
     "nantrapezoid",
+}
+# var/std (and sumofsquares) measure the squared magnitude of the deviations,
+# which is real even for complex input - like np.var returning a real dtype
+_forced_real_float_types = {
+    "var",
+    "std",
     "nanvar",
     "nanstd",
+    "sumofsquares",
+    "nansumofsquares",
 }
 _forced_same_type = {
     "min",
@@ -478,8 +489,20 @@ def check_dtype(dtype, func_str, a, n):
             return np.dtype(_forced_types[func_str])
         except KeyError:
             if func_str in _forced_float_types:
+                if np.issubdtype(a_dtype, np.inexact):
+                    # floating input keeps its dtype, complex input stays complex
+                    return a_dtype
+                else:
+                    return np.dtype(np.float64)
+            elif func_str in _forced_real_float_types:
                 if np.issubdtype(a_dtype, np.floating):
                     return a_dtype
+                elif np.issubdtype(a_dtype, np.complexfloating):
+                    # the real counterpart of the complex dtype (complex64 -> float32)
+                    return np.dtype(a_dtype.char.lower())
+                elif func_str in ("sumofsquares", "nansumofsquares"):
+                    # exact squares of integers
+                    return np.dtype(np.int64)
                 else:
                     return np.dtype(np.float64)
             else:

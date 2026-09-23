@@ -33,7 +33,7 @@ def _mean(x):
 
 
 def _median(x):
-    if any(math.isnan(v) for v in x):
+    if any(v != v for v in x):
         # like np.median, any nan poisons the whole group
         return math.nan
     srt = sorted(x)
@@ -53,8 +53,9 @@ def _trapezoid(x, dx=1.0):
 
 
 def _var(x, ddof=0):
+    # the squared magnitude, so complex values give a real result like np.var
     mean = _mean(x)
-    return sum((xx - mean) ** 2 for xx in x) / (len(x) - ddof)
+    return sum(abs(xx - mean) ** 2 for xx in x) / (len(x) - ddof)
 
 
 def _std(x, ddof=0):
@@ -69,11 +70,11 @@ def _prod(x):
 
 
 def _anynan(x):
-    return any(math.isnan(xx) for xx in x)
+    return any(xx != xx for xx in x)
 
 
 def _allnan(x):
-    return all(math.isnan(xx) for xx in x)
+    return all(xx != xx for xx in x)
 
 
 def _argmax(x_and_idx):
@@ -180,8 +181,8 @@ def aggregate(
     if isinstance(func, str):
         if func.startswith("nan"):
             func = func[3:]
-            # remove nans
-            group_idx, a = zip(*((ix, val) for ix, val in zip(group_idx, a) if not math.isnan(val)))
+            # remove nans (works for complex values, where math.isnan fails)
+            group_idx, a = zip(*((ix, val) for ix, val in zip(group_idx, a) if val == val))
 
         func = _impl_dict[func]
     if func is _sort:
