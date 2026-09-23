@@ -16,22 +16,36 @@ from .utils import (
 def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **kwargs):
     if len(group_idx) == 0:
         raise ValueError("group_idx must not be empty")
+    # scalar input needs broadcasting before anything group-based can run
+    a = a if np.ndim(a) else np.broadcast_to(a, len(group_idx))
+    if func is anynan or func is allnan:
+        # route through the cython any/all kernels on a precomputed isnan
+        # mask - pushing a python callable through groupby.aggregate is
+        # ~10x slower
+        a = np.isnan(a)
+        func = "any" if func is anynan else "all"
     funcname = func.__name__ if callable(func) else func
     if funcname in ("var", "std"):
         kwargs["ddof"] = ddof
     # kwargs starting with "_" are internal flags (e.g. _nansqueeze injected by
     # _aggregate_base) that pandas does not understand - the rest is forwarded.
     kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
-    df = pd.DataFrame({"group_idx": group_idx, "a": a})
-    grouped = df.groupby("group_idx", sort=False).aggregate(func, **kwargs)
+    # grouping a Series over the raw arrays skips per-call DataFrame
+    # construction (~2ms) and direct method calls skip the generic
+    # aggregate-dispatch (~1ms)
+    grouped = pd.Series(a).groupby(group_idx, sort=False)
+    if callable(func):
+        result = grouped.aggregate(func, **kwargs)
+    else:
+        result = getattr(grouped, funcname)(**kwargs)
 
-    dtype = check_dtype(dtype, getattr(func, "__name__", funcname), a, size)
+    dtype = check_dtype(dtype, funcname, a, size)
     if funcname.startswith("cum"):
-        ret = grouped.values[:, 0]
+        ret = result.to_numpy()
     else:
         ret = np.full(size, fill_value, dtype=dtype)
         with np.errstate(invalid="ignore"):
-            ret[grouped.index] = grouped.values[:, 0]
+            ret[np.asarray(result.index)] = result.to_numpy()
     return ret
 
 
