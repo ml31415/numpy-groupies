@@ -35,6 +35,15 @@ def _median(x):
     return (srt[mid - 1] + srt[mid]) / 2
 
 
+def _trapezoid(x, dx=1.0):
+    # trapezoidal integration over the group, in array order; a group of a
+    # single element (or none) integrates to zero
+    s = 0.0
+    for prev, cur in itertools.pairwise(x):
+        s += 0.5 * (prev + cur)
+    return s * dx
+
+
 def _var(x, ddof=0):
     mean = _mean(x)
     return sum((xx - mean) ** 2 for xx in x) / (len(x) - ddof)
@@ -94,6 +103,7 @@ _impl_dict = {
     "any": any,
     "mean": _mean,
     "median": _median,
+    "trapezoid": _trapezoid,
     "std": _std,
     "var": _var,
     "anynan": _anynan,

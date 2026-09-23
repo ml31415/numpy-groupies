@@ -75,11 +75,13 @@ def test_start_with_offset(aggregate_all):
         assert "int" in res.dtype.name
 
 
-@pytest.mark.parametrize("floatfunc", [np.std, np.var, np.mean, np.median, np.nanmedian], ids=lambda x: x.__name__)
+@pytest.mark.parametrize(
+    "floatfunc", [np.std, np.var, np.mean, np.median, np.nanmedian, np.trapezoid], ids=lambda x: x.__name__
+)
 def test_float_enforcement(aggregate_all, floatfunc):
     group_idx = np.arange(10).repeat(3)
     a = np.arange(group_idx.size)
-    res = aggregate_all(group_idx, a, floatfunc)
+    res = aggregate_all(group_idx, a, func=floatfunc)
     if not isinstance(res, list):
         assert "float" in res.dtype.name
     assert np.all(np.array(res) > 0)
@@ -422,6 +424,38 @@ def test_median_nan(aggregate_all):
     )
 
 
+def test_trapezoid(aggregate_all):
+    # https://github.com/ml31415/numpy-groupies/issues/54
+    # the integral follows the order the samples appear in, dx is the sample
+    # spacing, and a group of a single sample integrates to zero
+    group_idx = np.array([0, 0, 0, 1, 1, 2, 4, 4, 4])
+    a = np.array([1.0, 5.0, 2.0, 2.0, 8.0, 7.0, 9.0, 3.0, 4.0])
+    np.testing.assert_allclose(
+        aggregate_all(group_idx, a, func="trapezoid", fill_value=-1.0),
+        [6.5, 5.0, 0.0, -1.0, 9.5],
+    )
+    np.testing.assert_allclose(
+        aggregate_all(group_idx, a, func="trapezoid", dx=2.0, fill_value=-1.0),
+        [13.0, 10.0, 0.0, -1.0, 19.0],
+    )
+
+
+def test_trapezoid_nan(aggregate_all):
+    # plain trapezoid is poisoned by nans within their group, while
+    # nantrapezoid skips them and bridges the gap they leave
+    group_idx = np.array([0, 0, 0, 1, 1, 2, 4, 4, 4])
+    a = np.array([1.0, 5.0, np.nan, 2.0, 8.0, 7.0, 9.0, np.nan, 3.0])
+    np.testing.assert_allclose(
+        aggregate_all(group_idx, a, func="trapezoid", fill_value=-1.0),
+        [np.nan, 5.0, 0.0, -1.0, np.nan],
+        equal_nan=True,
+    )
+    np.testing.assert_allclose(
+        aggregate_all(group_idx, a, func="nantrapezoid", fill_value=-1.0),
+        [3.0, 5.0, 0.0, -1.0, 6.0],
+    )
+
+
 def test_cummax(aggregate_all):
     group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
     a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
@@ -485,6 +519,10 @@ def test_along_axis(aggregate_all, func, size, axis):
         expected = np.sum(a * a, axis=axis)
     elif func == "nansumofsquares":
         expected = np.nansum(a * a, axis=axis)
+    elif func == "nantrapezoid":
+        # numpy has no nan-aware trapezoid - nantrapezoid integrates the
+        # samples that are left, bridging over the gaps the nans leave
+        expected = np.apply_along_axis(lambda v: np.trapezoid(v[~np.isnan(v)]), axis, a)
     else:
         with warnings.catch_warnings():
             # Filter  expected warnings:

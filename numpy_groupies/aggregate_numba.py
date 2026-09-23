@@ -624,6 +624,58 @@ class Median(AggregateOp):
         return (np.max(part[: m // 2]) + part[m // 2]) / 2
 
 
+class Trapezoid(AggregateOp):
+    """Trapezoidal integration of each group, in the order the samples appear.
+    The area accumulates in ret, the previous sample is kept in mean and
+    counter doubles as the "group started" flag, so one pass over the data
+    is enough."""
+
+    forced_fill_value = 0
+    mean_fill_value = 0
+    mean_dtype = None
+
+    @classmethod
+    def callable(cls, nans=False, reverse=False, scalar=False):
+        # the integral follows the order of the input, so reverse is ignored
+        valgetter = nb.njit(cache=cls.disk_cache)(cls._valgetter_scalar if scalar else cls._valgetter)
+
+        @nb.njit(cache=cls.disk_cache)
+        def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
+            # ddof carries the sample spacing dx, see Trapezoid.__call__
+            size = len(ret)
+            for i in range(len(group_idx)):
+                ri = group_idx[i]
+                if ri < 0:
+                    raise ValueError("negative indices not supported")
+                if ri >= size:
+                    raise ValueError("one or more indices in group_idx are too large")
+                val = valgetter(a, i)
+                if nans and val != val:
+                    continue
+                if counter[ri]:
+                    counter[ri] = False
+                else:
+                    ret[ri] += 0.5 * ddof * (mean[ri] + val)
+                mean[ri] = val
+
+        return loop
+
+    def __call__(
+        self,
+        group_idx,
+        a,
+        size=None,
+        fill_value=0,
+        order="C",
+        dtype=None,
+        axis=None,
+        dx=1.0,
+    ):
+        # the one float argument of this operation is the sample spacing,
+        # which the kernels expect in the position otherwise used for ddof
+        return super().__call__(group_idx, a, size, fill_value, order, dtype, axis, dx)
+
+
 class CumSum(AggregateNtoN, Sum):
     pass
 
@@ -658,6 +710,7 @@ def get_funcs():
         ArgMax,
         Mean,
         Median,
+        Trapezoid,
         Std,
         Var,
         SumOfSquares,

@@ -65,6 +65,9 @@ aggregate_common_doc = """
     ddof: default=0
         passed through into calculations of variance and standard deviation
         (see above).
+    dx: default=1.0
+        passed through into the calculation of the trapezoidal integral
+        ``trapezoid`` (see above), where it is the sample spacing.
 """
 
 funcs_common = [
@@ -73,6 +76,7 @@ funcs_common = [
     "len",
     "mean",
     "median",
+    "trapezoid",
     "var",
     "std",
     "allnan",
@@ -161,6 +165,9 @@ _alias_numpy = {
     np.nanargmin: "nanargmin",
     np.nancumsum: "nancumsum",
 }
+if hasattr(np, "trapezoid"):
+    # np.trapezoid replaced np.trapz in numpy 2.0
+    _alias_numpy[np.trapezoid] = "trapezoid"
 
 
 def get_aliasing(*extra):
@@ -305,7 +312,18 @@ if platform.architecture()[0] == "32bit":
         "nanargmin": np.int32,
         "nanargmax": np.int32,
     }
-_forced_float_types = {"mean", "median", "var", "std", "nanmean", "nanmedian", "nanvar", "nanstd"}
+_forced_float_types = {
+    "mean",
+    "median",
+    "trapezoid",
+    "var",
+    "std",
+    "nanmean",
+    "nanmedian",
+    "nantrapezoid",
+    "nanvar",
+    "nanstd",
+}
 _forced_same_type = {
     "min",
     "max",

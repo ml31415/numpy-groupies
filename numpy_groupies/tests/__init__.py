@@ -33,7 +33,9 @@ _implemented_by_impl_name = {
     "numpy": {"not_implemented": ("cumprod", "cummax", "cummin")},
     "purepy": {"not_implemented": ("cumsum", "cumprod", "cummax", "cummin", "sumofsquares")},
     "numba": {"not_implemented": ("array", "list", "sort")},
-    "pandas": {"not_implemented": ("array", "list", "sort", "sumofsquares", "nansumofsquares")},
+    "pandas": {
+        "not_implemented": ("array", "list", "sort", "sumofsquares", "nansumofsquares", "trapezoid", "nantrapezoid")
+    },
     "ufunc": {
         "implemented": (
             "sum",
@@ -90,6 +92,7 @@ func_list = (
     "any",
     "mean",
     "median",
+    "trapezoid",
     "std",
     "var",
     "len",
@@ -105,6 +108,7 @@ func_list = (
     "nanmax",
     "nanmean",
     "nanmedian",
+    "nantrapezoid",
     "nanstd",
     "nanvar",
     "nanlen",

@@ -214,6 +214,41 @@ def _median(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
+def _trapezoid(group_idx, a, size, fill_value, dtype=None, dx=1.0):
+    """
+    Trapezoidal integration of each group, keeping the order of the input.
+
+    With the constant sample spacing dx, the integral of a group of n
+    samples collapses to its sum minus the half weighted endpoints:
+
+        sum_{k=1..n-1} dx / 2 * (y[k-1] + y[k])
+        = dx * (sum(y) - (y[0] + y[n-1]) / 2)
+
+    which spares both the grouping sort and the pairwise products - the
+    order sensitive endpoints are exactly what the order sensitive "first"
+    and "last" reductions deliver.
+
+    group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
+    a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
+    _trapezoid(group_idx, a, np.max(group_idx) + 1)
+    >>> array([ 0. , 30.5,  0. ,  8. , 14.5,  0. ,  0. ,  7.5,  0. ])
+    """
+    dtype = dtype or np.float64
+    total = _sum(group_idx, a, size, 0, dtype=dtype)
+    first = _first(group_idx, a, size, 0, dtype=dtype)
+    last = _last(group_idx, a, size, 0, dtype=dtype)
+    ret = (total - 0.5 * (first + last)) * dx
+
+    counts = np.bincount(group_idx, minlength=size)
+    if np.any(counts < 2):
+        # without a whole pair there is no extent to integrate over, so the
+        # group integrates to zero rather than to whatever sum - y - y is
+        ret[counts < 2] = 0.0
+    if np.any(counts == 0):
+        ret[counts == 0] = fill_value
+    return ret
+
+
 def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     ret = np.bincount(group_idx, weights=a * a, minlength=size)
     if fill_value != 0:
@@ -381,6 +416,7 @@ _impl_dict = {
     "len": _len,
     "cumsum": _cumsum,
     "sumofsquares": _sum_of_squres,
+    "trapezoid": _trapezoid,
     "generic": _generic_callable,
 }
 _impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not in funcs_no_separate_nan)
