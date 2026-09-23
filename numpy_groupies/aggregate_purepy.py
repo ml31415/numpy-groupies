@@ -2,7 +2,15 @@ import itertools
 import math
 import operator
 
-from .utils import aggregate_common_doc, funcs_no_separate_nan, get_func
+import numpy as np
+
+from .utils import (
+    DEFAULT_FILL_VALUE,
+    aggregate_common_doc,
+    funcs_no_separate_nan,
+    get_func,
+    resolve_fill_value,
+)
 from .utils import aliasing_py as aliasing
 
 # min, max, sum, all, any - builtin
@@ -122,7 +130,7 @@ def aggregate(
     a,
     func="sum",
     size=None,
-    fill_value=0,
+    fill_value=DEFAULT_FILL_VALUE,
     order="C",
     dtype=None,
     axis=None,
@@ -164,6 +172,10 @@ def aggregate(
         a = [a] * len(group_idx)
     elif len(group_idx) != len(a):
         raise ValueError("group_idx and a must be of the same length")
+
+    # the datatype rule of the numpy implementations: nan is only a sensible
+    # default where the output datatype can hold it
+    fill_value = resolve_fill_value(func, fill_value, np.asarray(a).dtype)
 
     if isinstance(func, str):
         if func.startswith("nan"):

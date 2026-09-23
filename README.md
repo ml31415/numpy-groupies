@@ -60,7 +60,7 @@ in more detail:
 * `a` - array of values to be aggregated.
 * `func='sum'` - the function to use for aggregation. See the section below for more details.
 * `size=None` - the shape of the output array. If `None`, the maximum value in `group_idx` will set the size of the output.
-* `fill_value=0` - value to use for output groups that do not appear anywhere in the `group_idx` input array.
+* `fill_value=DEFAULT_FILL_VALUE` - value to use for output groups that do not appear anywhere in the `group_idx` input array.  By default it is chosen per function, see the section below.
 * `order='C'` - for multidimensional output, this controls the layout in memory, can be `'F'` for fortran-style.
 * `dtype=None` - the`dtype` of the output. `None` means choose a sensible type for the given `a`, `func`, and `fill_value`.
 * `axis=None` - explained below.
@@ -119,6 +119,28 @@ set of items within the group:
 * `'array'` - simply returns the grouped items, using the same order as appeared in `a`. (numpy and pure python)
 
 
+### Fill values
+
+Groups which have no items at all are filled with `fill_value`, which by default is chosen to match
+what the corresponding numpy function gives for an empty input:
+
+| functions | default fill value |
+|-----------|--------------------|
+| `sum`, `len`, `sumofsquares` (and their `nan`-forms) | `0` |
+| `prod` (and `nanprod`) | `1` |
+| `all`, `any`, `allnan`, `anynan` | `False` |
+| `mean`, `median`, `var`, `std` (and their `nan`-forms) | `nan` |
+| `min`, `max`, `first`, `last` (and their `nan`-forms) | `nan` for floating input, `0` for integer output, which cannot hold `nan` |
+| `argmax`, `argmin` (and their `nan`-forms) | `-1` |
+| `trapezoid`, `nantrapezoid` | `0`, as it is for a single sample |
+| `array`, `sort` | an empty sequence |
+| a custom `func` | `nan` for floating input, `0` otherwise |
+
+The `cum`-functions and `sort` return one value per input item, so they have nothing to fill an
+absent group with - asking them to do so raises a `ValueError`.  The default of a particular
+function can be queried with `npg.default_fill_value(func, dtype=None)`, which is handy if downstream
+code needs to know it without repeating the table.
+
 ### Examples
 Compute sums of consecutive integers, and then compute products of those consecutive integers.
 ```python
@@ -132,9 +154,10 @@ x = npg.aggregate(group_idx, a, "prod")
 # x: array([ 0, 60, 336, 990, 2184])
 ```
 
-Get variance ignoring nans, setting all-nan groups to `nan`.
+Get variance ignoring nans.  Groups which are entirely nan end up as `nan`, which is the default
+`fill_value` of that function.
 ```python
-x = npg.aggregate(group_idx, a, func="nanvar", fill_value=nan)
+x = npg.aggregate(group_idx, a, func="nanvar")
 ```
 
 Integrate the items of each group with the trapezoidal rule, in the order they appear in `a`. `dx` is the
@@ -162,11 +185,12 @@ x = npg.aggregate(group_idx, a, func="sum", size=(15, 15, 15), order="F")
 # np.isfortran(x): True
 ```
 
-Use a custom function to generate some strings.
+Use a custom function to generate some strings.  Non-numeric output needs `dtype=object`, and the
+`fill_value` of a custom function has to be given explicitly, since it cannot be guessed.
 ```python
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
-x = npg.aggregate(group_idx, a, func=lambda g: " or maybe ".join(str(gg) for gg in g), fill_value="")
+x = npg.aggregate(group_idx, a, func=lambda g: " or maybe ".join(str(gg) for gg in g), fill_value="", dtype=object)
 # x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
 

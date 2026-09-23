@@ -6,6 +6,7 @@ import warnings
 import numpy as np
 import pytest
 
+from ..utils import default_fill_value
 from . import (
     _impl_name,
     _implementations,
@@ -99,7 +100,7 @@ def test_float_enforcement(aggregate_all, floatfunc):
 def test_start_with_offset_prod(aggregate_all):
     group_idx = np.array([2, 2, 4, 4, 4, 7, 7, 7])
     res = aggregate_all(group_idx, group_idx, func=np.prod, dtype=int)
-    np.testing.assert_array_equal(res, np.array([0, 0, 4, 0, 64, 0, 0, 343]))
+    np.testing.assert_array_equal(res, np.array([1, 1, 4, 1, 64, 1, 1, 343]))
 
 
 def test_no_negative_indices(aggregate_all):
@@ -123,7 +124,7 @@ def test_shape_mismatch(aggregate_all):
 def test_create_lists(aggregate_all):
     res = aggregate_all(np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int), func=list)
     np.testing.assert_array_equal(np.array(res[0]), np.array([101]))
-    assert res[2] == 0
+    assert len(res[2]) == 0
     np.testing.assert_array_equal(np.array(res[3]), np.array([103, 105]))
 
 
@@ -144,6 +145,86 @@ def test_fill_value(aggregate_all, func, fill_value):
         fill_value=fill_value,
     )
     assert res[1] == fill_value
+
+
+# the one-out-per-item functions (cum*, sort) emit one value per input item,
+# so there is nothing to fill an absent group with - see
+# test_one_out_per_in_cannot_fill for those
+default_fill_funcs = tuple(fn for fn in func_list if "cum" not in fn)
+default_fill_funcs += ("first", "last", "nanfirst", "nanlast", "array")
+
+
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
+@pytest.mark.parametrize("a_dtype", ["float64", "int64"], ids=["float", "int"])
+@pytest.mark.parametrize("func", default_fill_funcs, ids=lambda x: getattr(x, "__name__", x))
+def test_default_fill_value(aggregate_all, func, a_dtype):
+    # group 1 has no items at all, so it takes the function specific default
+    group_idx = np.array([0, 0, 2, 2])
+    a = np.array([1.0, 2.0, 4.0, 8.0], dtype=a_dtype)
+
+    res = aggregate_all(group_idx, a, func=func, size=3)
+    if isinstance(res, list) and isinstance(res[0], list):
+        # the array function gives a list of lists, which no ndarray accepts
+        assert len(res[1]) == 0
+        return
+
+    res = np.asarray(res)
+    expected = default_fill_value(func, res.dtype)
+    if isinstance(expected, list):
+        assert len(res[1]) == 0
+    else:
+        # nan is only equal to itself in the eyes of this test
+        assert res[1] == expected or (res[1] != res[1] and expected != expected)
+
+
+@pytest.mark.parametrize(
+    ["func", "dtype", "expected"],
+    [
+        ("sum", "int64", 0),
+        ("prod", "int64", 1),
+        ("mean", "float64", np.nan),
+        ("median", "float64", np.nan),
+        ("var", "float64", np.nan),
+        ("trapezoid", "float64", 0),
+        ("argmax", "int64", -1),
+        ("nanargmin", "int64", -1),
+        ("first", "float64", np.nan),
+        # integer output cannot hold nan, so those keep the conservative 0
+        ("first", "int64", 0),
+        ("max", "int64", 0),
+        ("all", "bool", False),
+        ("array", "object", []),
+    ],
+)
+def test_default_fill_value_table(func, dtype, expected):
+    # comparing by repr because neither nan nor the empty sequence compare
+    # equal to themselves
+    assert repr(default_fill_value(func, dtype)) == repr(expected)
+
+
+@pytest.mark.deselect_if(func=_deselect_purepy)
+def test_holes_in_multidim_size(aggregate_all):
+    # multidimensional labels with the last column cut off, leaving group
+    # (2, 3) without any item (issue #32)
+    group_idx = np.array(list(itertools.product(range(3), range(4)))).T
+    group_idx, a = group_idx[:, :-1], np.arange(11, dtype=float)
+
+    for func, expected in (("sum", 0.0), ("prod", 1.0), ("mean", np.nan), ("argmax", -1)):
+        res = aggregate_all(group_idx, a, func=func, size=(3, 4))
+        assert res[2, 3] == expected or expected != expected
+
+    res = aggregate_all(group_idx, a, func="array", size=(3, 4))
+    assert len(res[2, 3]) == 0
+
+
+@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.parametrize("func", ["sort", "cumsum", "cumprod"])
+def test_one_out_per_in_cannot_fill(aggregate_all, func):
+    # sort and the cum-functions emit one value per item, so they have
+    # nothing to fill a hole with - but they need to say so clearly
+    group_idx = np.array(list(itertools.product(range(3), range(4)))).T[:, :-1]
+    with pytest.raises(ValueError, match="cannot fill"):
+        aggregate_all(group_idx, np.arange(11, dtype=float), func=func, size=(3, 4))
 
 
 @pytest.mark.parametrize("order", ["C", "F"])
@@ -380,7 +461,7 @@ def test_mean(aggregate_all):
     a = np.arange(len(group_idx))
 
     res = aggregate_all(group_idx, a, func="mean")
-    np.testing.assert_array_equal(res, [1.5, 0, 0, 5.5])
+    np.testing.assert_allclose(res, [1.5, np.nan, np.nan, 5.5], equal_nan=True)
 
 
 def test_cumsum(aggregate_all):
@@ -543,18 +624,8 @@ def test_along_axis(aggregate_all, func, size, axis):
             warnings.simplefilter("ignore", RuntimeWarning)
             expected = getattr(np, func)(a, axis=axis)
 
-    # The default fill_value is 0, the following makes the output match numpy
-    fill_value = {
-        "nanprod": 1,
-        "nanvar": np.nan,
-        "nanstd": np.nan,
-        "nanmax": np.nan,
-        "nanmin": np.nan,
-        "nanmean": np.nan,
-        "nanmedian": np.nan,
-    }.get(func, 0)
-
-    actual = aggregate_all(group_idx, a, axis=axis, func=func, fill_value=fill_value)
+    # no fill_value needed - the function specific defaults match numpy
+    actual = aggregate_all(group_idx, a, axis=axis, func=func)
     assert actual.ndim == a.ndim
 
     # argmin, argmax don't support keepdims, so we can't use that to construct expected

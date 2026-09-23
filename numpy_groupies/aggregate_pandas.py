@@ -5,6 +5,7 @@ import pandas as pd
 
 from .aggregate_numpy import _aggregate_base
 from .utils import (
+    DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     allnan,
     anynan,
@@ -108,7 +109,7 @@ def aggregate(
     a,
     func="sum",
     size=None,
-    fill_value=0,
+    fill_value=DEFAULT_FILL_VALUE,
     order="C",
     dtype=None,
     axis=None,

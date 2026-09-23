@@ -1,11 +1,13 @@
 import numpy as np
 
 from .utils import (
+    DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     aliasing,
     check_boolean,
     check_dtype,
     check_fill_value,
+    check_nton_shape,
     funcs_no_separate_nan,
     get_func,
     input_validation,
@@ -14,6 +16,7 @@ from .utils import (
     minimum_dtype,
     minimum_dtype_scalar,
     minval,
+    resolve_fill_value,
 )
 
 
@@ -428,7 +431,7 @@ def _aggregate_base(
     a,
     func="sum",
     size=None,
-    fill_value=0,
+    fill_value=DEFAULT_FILL_VALUE,
     order="C",
     dtype=None,
     axis=None,
@@ -444,7 +447,9 @@ def _aggregate_base(
         group_idx = group_idx.astype(int)
 
     func = get_func(func, aliasing, _impl_dict)
+    funcname = func
     if not isinstance(func, str):
+        fill_value = resolve_fill_value(func, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
         # do simple grouping and execute function in loop
         ret = _impl_dict.get("generic", _generic_callable)(
             group_idx, a, flat_size, fill_value, func=func, dtype=dtype, **kwargs
@@ -467,8 +472,9 @@ def _aggregate_base(
                     group_idx = group_idx[good]
 
         dtype = check_dtype(dtype, func, a, flat_size)
+        fill_value = resolve_fill_value(func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=func)
-        func = _impl_dict[func]
+        funcname, func = func, _impl_dict[func]
         ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
     # deal with ndimensional indexing
@@ -479,6 +485,7 @@ def _aggregate_base(
             ret[mask] = 0
             ret = np.unravel_index(ret, unravel_shape)[axis]
             ret[mask] = fill_value
+        check_nton_shape(ret, size, funcname)
         ret = ret.reshape(size, order=order)
     return ret
 
@@ -488,7 +495,7 @@ def aggregate(
     a,
     func="sum",
     size=None,
-    fill_value=0,
+    fill_value=DEFAULT_FILL_VALUE,
     order="C",
     dtype=None,
     axis=None,

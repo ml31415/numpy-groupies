@@ -37,14 +37,20 @@ aggregate_common_doc = """
         ``group_idx`` will set the size of the output.  Note that for
         multidimensional output you need to list the size of each dimension
         here, or give ``None``.
-    fill_value: default=0
+    fill_value: default=DEFAULT_FILL_VALUE
         in the example above, group 2 does not have any data, so requires some
-        kind of filling value - in this case the default of ``0`` is used.  If
-        you had set ``fill_value=nan`` or something else, that value would
-        appear instead of ``0`` for the 2 element in the output.  Note that
-        there are some subtle interactions between what is permitted for
-        ``fill_value`` and the input/output ``dtype`` - exceptions should be
-        raised in most cases to alert the programmer if issues arise.
+        kind of filling value.  By default the value is chosen per function,
+        following what the corresponding numpy function returns for an empty
+        slice: ``0`` for sums and counts, ``1`` for products, ``False`` for the
+        boolean functions, ``nan`` for the averaging ones (mean, median, var,
+        std, and min/max/first/last on floating input), ``0`` for the
+        trapezoidal integral (as it is for a single sample), ``-1`` for
+        argmax/argmin, and an empty sequence for array/sort.  Integer output
+        cannot hold ``nan``, so those functions fall back to ``0``.  Use
+        ``utils.default_fill_value(func, dtype)`` to query the value, or pass
+        your own.  Note that there are some subtle interactions between what is
+        permitted for ``fill_value`` and the input/output ``dtype`` - exceptions
+        should be raised in most cases to alert the programmer if issues arise.
     order: default='C'
         this is relevant only for multidimensional output.  It controls the
         layout of the output array in memory, can be ``'F'`` for fortran-style.
@@ -92,6 +98,120 @@ funcs_common = [
     "cummin",
 ]
 funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan"])
+
+
+class _DefaultFillValue:
+    """Sentinel for ``fill_value``, asking for the function specific default."""
+
+    def __repr__(self):
+        return "DEFAULT_FILL_VALUE"
+
+    def __reduce__(self):
+        # keep the singleton through pickling and deepcopy
+        return (_get_default_fill_value, ())
+
+
+def _get_default_fill_value():
+    return DEFAULT_FILL_VALUE
+
+
+DEFAULT_FILL_VALUE = _DefaultFillValue()
+
+
+# The value an absent group gets, per aggregation function, following the
+# convention that it is whatever numpy returns for an empty slice - where the
+# output datatype can represent it (see ``resolve_fill_value``).
+_default_fill_values = {
+    "sum": 0,
+    "prod": 1,
+    "all": False,
+    "any": False,
+    "allnan": False,
+    "anynan": False,
+    "len": 0,
+    "mean": np.nan,
+    "median": np.nan,
+    # an empty domain has a zero integral, just like a single sample does
+    "trapezoid": 0,
+    "var": np.nan,
+    "std": np.nan,
+    "min": np.nan,
+    "max": np.nan,
+    "first": np.nan,
+    "last": np.nan,
+    "argmax": -1,
+    "argmin": -1,
+    "sumofsquares": 0,
+    "cumsum": 0,
+    "cumprod": 1,
+    "cummax": 0,
+    "cummin": 0,
+    # 'array' and 'sort' ask for an empty sequence, which their implementations
+    # interpret as 'leave the empty group as it is' - a fresh list per call is
+    # handed out below so that callers cannot alias each other's results.
+    "array": [],
+    "sort": [],
+}
+
+
+def _fill_value_key(func):
+    """Map a function (name, alias or callable) onto a ``_default_fill_values`` key."""
+    try:
+        name = aliasing[func]
+    except (KeyError, TypeError):
+        name = getattr(func, "__name__", "")
+    if name not in _default_fill_values and str(name).startswith("nan"):
+        # nan-variants fill like their plain counterparts
+        name = name[3:]
+    return name
+
+
+def resolve_fill_value(func, fill_value, dtype):
+    """Replace the ``DEFAULT_FILL_VALUE`` sentinel with the default of ``func``.
+
+    Anything else than the sentinel is returned untouched.  ``nan`` is only
+    handed out if ``dtype`` can represent it, otherwise the value falls back to
+    ``0`` - changing the output datatype of e.g. an integer ``min`` would be a
+    worse surprise than an unspectacular filling value.
+    """
+    if fill_value is not DEFAULT_FILL_VALUE:
+        return fill_value
+    key = _fill_value_key(func)
+    # nan only fits where the output can hold it - the averaging functions
+    # coerce their result to a float type anyway
+    fits = dtype is None or key in _forced_float_types or np.issubdtype(dtype, np.inexact)
+    value = _default_fill_values.get(key)
+    if value is None:
+        # a custom callable has no function specific default
+        value = np.nan if fits else 0
+    elif value != value and not fits:
+        value = 0
+    return list(value) if isinstance(value, list) else value
+
+
+def default_fill_value(func, dtype=None):
+    """The value ``aggregate`` uses for groups missing from ``group_idx``.
+
+    ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your
+    actual output to get the value that would really be used, ``None`` assumes
+    a floating result (which is what the averaging functions give anyway).
+    """
+    return resolve_fill_value(func, DEFAULT_FILL_VALUE, np.dtype(dtype) if dtype is not None else np.float64)
+
+
+def check_nton_shape(ret, size, func):
+    """Complain early when a one-out-per-in function has to fill a hole.
+
+    ``sort`` and the ``cum``-functions emit exactly one value per input item,
+    so a group without items leaves the output too short for the requested
+    shape - which numpy would otherwise report as a plain reshape error.
+    """
+    if ret.size != int(np.prod(size)):
+        name = getattr(func, "__name__", func)
+        raise ValueError(
+            f"'{name}' gives one value per input item and cannot fill the "
+            f"{int(np.prod(size)) - ret.size} absent group entries of size {tuple(size)}"
+        )
 
 
 _alias_str = {

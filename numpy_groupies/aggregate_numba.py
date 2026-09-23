@@ -4,13 +4,16 @@ import numba as nb
 import numpy as np
 
 from .utils import (
+    DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     aliasing,
     check_dtype,
     check_fill_value,
+    check_nton_shape,
     funcs_no_separate_nan,
     get_func,
     input_validation,
+    resolve_fill_value,
 )
 
 
@@ -54,7 +57,7 @@ class AggregateOp:
         group_idx,
         a,
         size=None,
-        fill_value=0,
+        fill_value=DEFAULT_FILL_VALUE,
         order="C",
         dtype=None,
         axis=None,
@@ -73,6 +76,7 @@ class AggregateOp:
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
+        fill_value = resolve_fill_value(self.func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
         ret, counter, mean, outer = self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
@@ -97,6 +101,7 @@ class AggregateOp:
                 ret[mask] = 0
                 ret = np.unravel_index(ret, unravel_shape)[axis]
                 ret[mask] = fill_value
+            check_nton_shape(ret, size, self.func)
             ret = ret.reshape(size, order=order)
         return ret
 
@@ -249,7 +254,7 @@ class AggregateGeneric(AggregateOp):
         group_idx,
         a,
         size=None,
-        fill_value=0,
+        fill_value=DEFAULT_FILL_VALUE,
         order="C",
         dtype=None,
         axis=None,
@@ -260,6 +265,7 @@ class AggregateGeneric(AggregateOp):
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
+        fill_value = resolve_fill_value(self.func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
         ret, _, _, _ = self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
@@ -270,6 +276,7 @@ class AggregateGeneric(AggregateOp):
 
         # Deal with ndimensional indexing
         if ndim_idx > 1:
+            check_nton_shape(ret, size, self.func)
             ret = ret.reshape(size, order=order)
         return ret
 
@@ -665,7 +672,7 @@ class Trapezoid(AggregateOp):
         group_idx,
         a,
         size=None,
-        fill_value=0,
+        fill_value=DEFAULT_FILL_VALUE,
         order="C",
         dtype=None,
         axis=None,
@@ -735,7 +742,7 @@ def aggregate(
     a,
     func="sum",
     size=None,
-    fill_value=0,
+    fill_value=DEFAULT_FILL_VALUE,
     order="C",
     dtype=None,
     axis=None,
