@@ -200,7 +200,7 @@ def _anynan(group_idx, a, size, fill_value, dtype=bool):
 def _sort(group_idx, a, size=None, fill_value=None, dtype=None, reverse=False):
     sortidx = np.lexsort((-a if reverse else a, group_idx))
     # Reverse sorting back to into grouped order, but preserving groupwise sorting
-    revidx = np.argsort(np.argsort(group_idx, kind="mergesort"), kind="mergesort")
+    revidx = np.argsort(np.argsort(group_idx, kind="stable"), kind="stable")
     return a[sortidx][revidx]
 
 
@@ -208,7 +208,7 @@ def _array(group_idx, a, size, fill_value, dtype=None):
     """groups a into separate arrays, keeping the order intact."""
     if fill_value is not None and not (np.isscalar(fill_value) or len(fill_value) == 0):
         raise ValueError("fill_value must be None, a scalar or an empty sequence")
-    order_group_idx = np.argsort(group_idx, kind="mergesort")
+    order_group_idx = np.argsort(group_idx, kind="stable")
     counts = np.bincount(group_idx, minlength=size)
     ret = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
     ret = np.asanyarray(ret, dtype="object")

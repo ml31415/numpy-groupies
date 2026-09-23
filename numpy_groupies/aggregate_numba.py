@@ -265,7 +265,7 @@ class AggregateGeneric(AggregateOp):
         ret, _, _, _ = self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
         group_idx = np.ascontiguousarray(group_idx)
 
-        sortidx = np.argsort(group_idx, kind="mergesort")
+        sortidx = np.argsort(group_idx, kind="stable")
         self._jitfunc(sortidx, group_idx, a, ret)
 
         # Deal with ndimensional indexing
