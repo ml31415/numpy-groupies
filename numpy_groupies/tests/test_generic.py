@@ -227,6 +227,131 @@ def test_one_out_per_in_cannot_fill(aggregate_all, func):
         aggregate_all(group_idx, np.arange(11, dtype=float), func=func, size=(3, 4))
 
 
+# functions with a well-defined complex result, following numpy semantics;
+# median, sort and the min/max family are order statistics - covered in the
+# tests below, since not every backend can order complex values
+complex_funcs = (
+    "sum",
+    "prod",
+    "mean",
+    "var",
+    "std",
+    "trapezoid",
+    "sumofsquares",
+    "first",
+    "last",
+    "nansum",
+    "nanprod",
+    "nanmean",
+    "nanvar",
+    "nanstd",
+)
+# their complex result is the real squared magnitude, not complex a*a
+complex_real_out_funcs = {"var", "std", "sumofsquares", "nanvar", "nanstd"}
+
+
+def _complex_reference(func, group_idx, a, size):
+    """group-wise application of the numpy function (or its python equivalent)"""
+    ret = []
+    for grp in range(size):
+        vals = a[group_idx == grp]
+        if func == "first":
+            ret.append(vals[0])
+        elif func == "last":
+            ret.append(vals[-1])
+        elif func == "sumofsquares":
+            ret.append(np.sum(np.abs(vals) ** 2))
+        else:
+            if func == "trapezoid":
+                # np.trapz was renamed to np.trapezoid in numpy 2.0
+                func_ref = getattr(np, "trapezoid", None) or np.trapz
+            else:
+                func_ref = getattr(np, func)
+            ret.append(func_ref(vals))
+    return ret
+
+
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
+@pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
+@pytest.mark.parametrize("func", complex_funcs, ids=str)
+def test_complex(aggregate_all, func, a_dtype):
+    group_idx = np.array([0, 1, 1, 2, 2, 2])
+    a = np.array([1 + 2j, 3 + 1j, 5 + 5j, -2 + 0j, 4 - 3j, 6 - 6j]).astype(a_dtype)
+
+    res = aggregate_all(group_idx, a, func=func, size=3)
+    expected = _complex_reference(func, group_idx, a, 3)
+
+    res = np.asarray(res)
+    if aggregate_all.__name__.endswith("purepy"):
+        # the pure python implementation computes with python numbers, which
+        # are always double precision
+        pass
+    elif func in complex_real_out_funcs:
+        # the squared magnitude is real, with the real counterpart dtype of
+        # the input (complex64 -> float32), exactly like np.var
+        expected_real_dtype = {np.complex64: np.float32, np.complex128: np.float64}[a_dtype]
+        assert res.dtype == expected_real_dtype
+    else:
+        assert res.dtype == a_dtype
+    np.testing.assert_allclose(res, expected, rtol=1e-5)
+
+
+@pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
+def test_complex_median(aggregate_all, a_dtype):
+    # the median is an order statistic - numpy orders complex values
+    # lexicographically (real part first), and so do the backends built on
+    # numpy's dtypes; numba cannot partition complex values and falls back
+    group_idx = np.array([0, 0, 1, 1, 1])
+    a = np.array([3 + 1j, 1 + 2j, 5 + 5j, -2 + 0j, 1 - 5j]).astype(a_dtype)
+
+    res = aggregate_all(group_idx, a, func="median", size=2)
+    res = np.asarray(res)
+    if not aggregate_all.__name__.endswith("purepy"):
+        assert res.dtype == a_dtype
+    expected = [np.median(vals) for vals in (a[:2], a[2:])]
+    np.testing.assert_allclose(res, expected, rtol=1e-5)
+
+
+@pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
+def test_complex_sort(aggregate_all, a_dtype):
+    # sorting follows numpy's lexicographic complex order
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array([3 + 1j, 1 + 2j, 1 - 5j, 1 + 5j]).astype(a_dtype)
+
+    res = np.asarray(aggregate_all(group_idx, a, func="sort"))
+    assert res.dtype == a_dtype
+    expected = np.concatenate([np.sort(a[group_idx == grp]) for grp in range(2)])
+    np.testing.assert_array_equal(res, expected)
+
+
+@pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
+def test_complex_empty_group(aggregate_all, a_dtype):
+    # an empty group takes the nan default, which complex dtypes can hold
+    group_idx = np.array([0, 0, 2, 2])
+    a = np.array([1 + 2j, 3 + 1j, 5 + 5j, 4 - 3j]).astype(a_dtype)
+
+    res = np.asarray(aggregate_all(group_idx, a, func="mean", size=3))
+    if not aggregate_all.__name__.endswith("purepy"):
+        # the pure python implementation computes with python numbers, which
+        # are always double precision
+        assert res.dtype == a_dtype
+    # nan + 0j for the complex dtypes, i.e. nan in either part
+    assert np.isnan(res[1])
+
+
+def test_complex_nan_handling(aggregate_all):
+    group_idx = np.array([0, 0, 0, 1])
+    a = np.array([1 + 2j, np.nan + 0j, 3 + 1j, 5 + 5j])
+
+    res = np.asarray(aggregate_all(group_idx, a, func="nanmean", size=2))
+    np.testing.assert_allclose(res, [np.mean([1 + 2j, 3 + 1j]), 5 + 5j], rtol=1e-5)
+
+    # the plain mean stays poisoned by the nan, like numpy
+    res = np.asarray(aggregate_all(group_idx, a, func="mean", size=2))
+    assert np.isnan(res[0].real) and np.isnan(res[0].imag)
+    np.testing.assert_allclose(res[1], 5 + 5j)
+
+
 @pytest.mark.parametrize("order", ["C", "F"])
 def test_array_ordering(aggregate_all, order, size=10):
     mat = np.zeros((size, size), order=order, dtype=float)
