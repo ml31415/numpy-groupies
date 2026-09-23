@@ -1,4 +1,6 @@
 import functools
+import hashlib
+import inspect
 
 import numba as nb
 import numpy as np
@@ -17,6 +19,63 @@ from .utils import (
 )
 
 
+def njit_stable(py_func=None, cache=True, **options):
+    """``nb.njit`` plus a deterministic dispatcher identity.
+
+    Numba draws a dispatcher's uuid lazily from ``uuid.uuid4()`` and embeds
+    it in the cloudpickle representation of the dispatcher.  Closures over
+    dispatchers therefore hash to new bytes in every interpreter process,
+    so numba's on-disk cache key of the enclosing function never hits and
+    every run appends a new cache file instead (see numba #6522).  Pinning
+    a content-derived uuid keeps the closure hash stable across processes,
+    which makes the on-disk cache effective for the factory-nested loops
+    of this module.
+
+    The fingerprint covers module, qualname, source, options and the
+    closure contents (dispatchers contribute their already pinned uuid),
+    so dispatchers compiled from the same factory lines for different
+    operations receive distinct identities.  Usable as
+    ``njit_stable(func, **options)`` or ``@njit_stable`` /
+    ``@njit_stable(**options)``.  Disk caching is enabled by default
+    (``cache=True``), which is the main point of this wrapper.
+    """
+
+    def wrap(func):
+        disp = nb.njit(func, cache=cache, **options)
+        try:
+            cells = []
+            if func.__closure__ is not None:
+                for cell in func.__closure__:
+                    try:
+                        content = cell.cell_contents
+                    except ValueError:  # pragma: no cover - empty cell
+                        content = "<empty cell>"
+                    # dispatchers were wrapped earlier and already carry
+                    # their pinned uuid, closures are created in order
+                    cells.append(getattr(content, "_uuid", repr(content)))
+            fingerprint = "\n".join(
+                [
+                    func.__module__,
+                    func.__qualname__,
+                    inspect.getsource(func),
+                    repr(sorted(options.items())),
+                    repr(cells),
+                ]
+            )
+            disp._set_uuid(hashlib.sha256(fingerprint.encode()).hexdigest()[:16])
+        except Exception:  # noqa: BLE001 - any numba internals change must degrade to no caching
+            # numba internals changed: without a stable uuid the closure
+            # hash differs in every process, the cache could never hit and
+            # would grow without bound - disable caching for this
+            # dispatcher instead of polluting the disk (numba #6522)
+            disp.targetoptions["cache"] = False
+        return disp
+
+    if py_func is None:
+        return wrap
+    return wrap(py_func)
+
+
 class AggregateOp:
     """
     Every subclass of AggregateOp handles a different aggregation operation. There are
@@ -28,14 +87,12 @@ class AggregateOp:
     instantiated object picks the right cached callable, does some further preprocessing
     and then executes the actual aggregation operation.
 
-    The compiled kernels are created with numba's on-disk cache enabled
-    (``disk_cache``), so the compilation cost is only paid once per machine -
-    provided all captured values (flags and dispatchers) have stable cache keys.
-    Factory-nested loop shells are deliberately compiled without disk caching:
-    their closures over njit dispatchers hash to new bytes in every process,
-    so a cache entry would never hit and would instead accumulate on disk
-    (see numba #6522). Only the dispatcher-wrapped staticmethod kernels -
-    which have no closure - are disk-cached.
+    The compiled kernels are created with numba's on-disk cache enabled, so
+    the compilation cost is only paid once per machine.  All dispatchers are
+    built through ``njit_stable``, which enables the cache by default and
+    pins a content-derived uuid: closures over njit dispatchers would
+    otherwise hash to new bytes in every process, breaking the on-disk
+    cache and accumulating cache files on disk (see numba #6522).
     """
 
     disk_cache = True
@@ -140,25 +197,21 @@ class AggregateOp:
     def callable(cls, nans=False, reverse=False, scalar=False):
         """Compile a jitted function doing the hard part of the job"""
         _valgetter = cls._valgetter_scalar if scalar else cls._valgetter
-        valgetter = nb.njit(cache=cls.disk_cache)(_valgetter)
-        outersetter = nb.njit(cache=cls.disk_cache)(cls._outersetter)
+        valgetter = njit_stable(_valgetter)
+        outersetter = njit_stable(cls._outersetter)
 
         if not nans:
-            inner = nb.njit(cache=cls.disk_cache)(cls._inner)
+            inner = njit_stable(cls._inner)
         else:
-            cls_inner = nb.njit(cache=cls.disk_cache)(cls._inner)
-            cls_nan_check = nb.njit(cache=cls.disk_cache)(cls._nan_check)
+            cls_inner = njit_stable(cls._inner)
+            cls_nan_check = njit_stable(cls._nan_check)
 
-            # no cache=True: closure over njit dispatchers hashes to new bytes
-            # per process, see numba #6522
-            @nb.njit
+            @njit_stable
             def inner(ri, val, ret, counter, mean, fill_value):
                 if not cls_nan_check(val):
                     cls_inner(ri, val, ret, counter, mean, fill_value)
 
-        # no cache=True: closure over njit dispatchers hashes to new bytes
-        # per process, see numba #6522
-        @nb.njit
+        @njit_stable
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # ddof needs to be present for being exchangeable with loop_2pass
             size = len(ret)
@@ -205,11 +258,9 @@ class Aggregate2pass(AggregateOp):
         # AggregateOp.callable
         loop_1st = super().callable(nans=nans, reverse=reverse, scalar=scalar)
 
-        _2pass_inner = nb.njit(cache=cls.disk_cache)(cls._2pass_inner)
+        _2pass_inner = njit_stable(cls._2pass_inner)
 
-        # no cache=True: closure over njit dispatchers hashes to new bytes
-        # per process, see numba #6522
-        @nb.njit
+        @njit_stable
         def loop_2nd(ret, counter, mean, fill_value, ddof):
             for ri in range(len(ret)):
                 if counter[ri] > ddof:
@@ -217,7 +268,7 @@ class Aggregate2pass(AggregateOp):
                 else:
                     ret[ri] = fill_value
 
-        @nb.njit
+        @njit_stable
         def loop_2pass(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             loop_1st(group_idx, a, ret, counter, mean, outer, fill_value, ddof)
             loop_2nd(ret, counter, mean, fill_value, ddof)
@@ -437,10 +488,7 @@ class ArgMax(AggregateOp):
             # keep the generic (lazy) path for unchanged behaviour.
             return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
 
-        # cache=True is safe here: the only closure variable is the `nans`
-        # flag (stable bytes), unlike a closure over njit dispatchers
-        # (see numba #6522) - verified to hit the disk cache.
-        @nb.njit(cache=True)
+        @njit_stable
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             size = len(ret)
             for i in range(len(group_idx)):
@@ -475,10 +523,7 @@ class ArgMin(ArgMax):
         if scalar or reverse:
             return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
 
-        # cache=True is safe here: the only closure variable is the `nans`
-        # flag (stable bytes), unlike a closure over njit dispatchers
-        # (see numba #6522) - verified to hit the disk cache.
-        @nb.njit(cache=True)
+        @njit_stable
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             size = len(ret)
             for i in range(len(group_idx)):
@@ -561,15 +606,13 @@ class Median(AggregateOp):
     @classmethod
     def callable(cls, nans=False, reverse=False, scalar=False):
         # median is order-insensitive, so reverse is ignored
-        _count = nb.njit(cache=cls.disk_cache)(cls._count)
-        _starts = nb.njit(cache=cls.disk_cache)(cls._starts)
-        _place = nb.njit(cache=cls.disk_cache)(cls._place)
-        _valid = nb.njit(cache=cls.disk_cache)(cls._valid)
-        _middle = nb.njit(cache=cls.disk_cache)(cls._middle)
+        _count = njit_stable(cls._count)
+        _starts = njit_stable(cls._starts)
+        _place = njit_stable(cls._place)
+        _valid = njit_stable(cls._valid)
+        _middle = njit_stable(cls._middle)
 
-        # no cache=True: closure over njit dispatchers hashes to new bytes
-        # per process, see numba #6522
-        @nb.njit
+        @njit_stable
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # signature kept identical to AggregateOp.callable
             size = len(ret)
@@ -663,11 +706,9 @@ class Trapezoid(AggregateOp):
     @classmethod
     def callable(cls, nans=False, reverse=False, scalar=False):
         # the integral follows the order of the input, so reverse is ignored
-        valgetter = nb.njit(cache=cls.disk_cache)(cls._valgetter_scalar if scalar else cls._valgetter)
+        valgetter = njit_stable(cls._valgetter_scalar if scalar else cls._valgetter)
 
-        # no cache=True: closure over njit dispatchers hashes to new bytes
-        # per process, see numba #6522
-        @nb.njit
+        @njit_stable
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # ddof carries the sample spacing dx, see Trapezoid.__call__
             size = len(ret)
