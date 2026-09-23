@@ -240,25 +240,17 @@ def _generic_callable(group_idx, a, size, fill_value, dtype=None, func=lambda g:
     return ret
 
 
-def _cumsum(group_idx, a, size, fill_value=None, dtype=None):
+def _group_cumsum_sorted(group_idx_srt, a_srt, dtype=None):
     """
-    N to N aggregate operation of cumsum. Perform cumulative sum for each group.
+    Cumsum within each group of a group-sorted nan-free array.
 
-    group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
-    a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
-    _cumsum(group_idx, a, np.max(group_idx) + 1)
-    >>> array([ 3,  4,  5,  6, 15,  9, 15, 22,  7,  0, 15, 17,  6, 14, 31, 39])
+    group_idx_srt is sorted, so each group occupies one contiguous block and
+    the cumulative sum of every group simply needs offsetting by the value
+    of its first element (minus the preceding groups' sums, which the
+    global cumsum already includes).
     """
-    sortidx = np.argsort(group_idx, kind="stable")
-    group_idx_srt = group_idx[sortidx]
-
-    a_srt = a[sortidx]
     a_srt_cumsum = np.cumsum(a_srt, dtype=dtype)
 
-    # group_idx_srt is sorted, so each group occupies one contiguous block and
-    # the cumulative sum of every group simply needs offsetting by the value
-    # of its first element (minus the preceding groups' sums, which the
-    # global cumsum already includes).
     new_group = np.empty(group_idx_srt.size, dtype=bool)
     new_group[0] = True
     np.not_equal(group_idx_srt[1:], group_idx_srt[:-1], out=new_group[1:])
@@ -268,6 +260,41 @@ def _cumsum(group_idx, a, size, fill_value=None, dtype=None):
     a_srt_cumsum -= a_srt_cumsum[group_starts]
     # Then add potentially small numbers
     a_srt_cumsum += a_srt[group_starts]
+    return a_srt_cumsum
+
+
+def _cumsum(group_idx, a, size, fill_value=None, dtype=None):
+    """
+    N to N aggregate operation of cumsum. Perform cumulative sum for each group.
+
+    NaNs propagate within their own group only - entries of other groups as
+    well as entries preceding the first NaN of the same group are unaffected
+    (issue #91).
+
+    group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
+    a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
+    _cumsum(group_idx, a, np.max(group_idx) + 1)
+    >>> array([ 3,  4,  5,  6, 15,  9, 15, 22,  7,  0, 15, 17,  6, 14, 31, 39])
+    """
+    sortidx = np.argsort(group_idx, kind="stable")
+    group_idx_srt = group_idx[sortidx]
+    a_srt = a[sortidx]
+
+    nans_from = None
+    if np.issubdtype(a_srt.dtype, np.floating):
+        nans = np.isnan(a_srt)
+        if nans.any():
+            # nan-free running sums cannot be poisoned across group
+            # boundaries; the per-group prefix-count of nans (itself a
+            # nan-free cumsum) flags every position from the first nan of
+            # its group onwards.
+            a_srt = np.where(nans, 0, a_srt)
+            nan_prefix = _group_cumsum_sorted(group_idx_srt, nans.astype(np.int64))
+            nans_from = nan_prefix > 0
+
+    a_srt_cumsum = _group_cumsum_sorted(group_idx_srt, a_srt, dtype=dtype)
+    if nans_from is not None:
+        a_srt_cumsum[nans_from] = np.nan
 
     ret = np.empty_like(a_srt_cumsum)
     ret[sortidx] = a_srt_cumsum

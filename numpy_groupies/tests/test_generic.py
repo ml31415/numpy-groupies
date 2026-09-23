@@ -392,6 +392,20 @@ def test_nancumsum(aggregate_all):
     np.testing.assert_array_equal(res, ref)
 
 
+def test_cumsum_nan(aggregate_all):
+    # https://github.com/ml31415/numpy-groupies/issues/91
+    # NaNs propagate within their own group only - other groups and
+    # preceding entries of the same group are unaffected
+    group_idx = np.array([1, 1, 1, 0, 0])
+    a = np.array([[5.0, 6.0, 7.0, 8.0, 9.0], [0.0, 0.0, 0.0, np.nan, 0.0]])
+    res = aggregate_all(group_idx, a, func="cumsum", axis=-1)
+    ref = np.array([[5.0, 11.0, 18.0, 8.0, 17.0], [0.0, 0.0, 0.0, np.nan, np.nan]])
+    np.testing.assert_array_equal(res, ref)
+
+    res = aggregate_all(np.array([0, 0, 0, 1]), np.array([np.nan, 1.0, 2.0, 5.0]), func="cumsum")
+    np.testing.assert_array_equal(res, [np.nan, np.nan, np.nan, 5.0])
+
+
 def test_cummax(aggregate_all):
     group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
     a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])

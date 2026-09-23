@@ -25,6 +25,12 @@ def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **k
         a = np.isnan(a)
         func = "any" if func is anynan else "all"
     funcname = func.__name__ if callable(func) else func
+    if funcname == "nancumsum":
+        # pandas skipna-cumsum keeps NaN in place, whereas nancumsum
+        # semantics expect NaN treated as 0 (issues #79 and #91)
+        a = np.where(np.isnan(a), 0, a)
+        func = "cumsum"
+        funcname = "cumsum"
     if funcname in ("var", "std"):
         kwargs["ddof"] = ddof
     # kwargs starting with "_" are internal flags (e.g. _nansqueeze injected by
@@ -70,6 +76,10 @@ _impl_dict = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
 _impl_dict.update(
     ("nan" + fn, partial(_wrapper, func=fn)) for fn in _supported_funcs if fn not in funcs_no_separate_nan
 )
+# plain cumsum must propagate NaNs within their group (issue #91), which is
+# pandas skipna=False - nancumsum is handled inside _wrapper instead
+_impl_dict["cumsum"] = partial(_wrapper, func="cumsum", skipna=False)
+_impl_dict["nancumsum"] = partial(_wrapper, func="nancumsum")
 _impl_dict.update(
     allnan=partial(_wrapper, func=allnan),
     anynan=partial(_wrapper, func=anynan),
