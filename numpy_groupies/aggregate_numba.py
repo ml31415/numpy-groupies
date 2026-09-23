@@ -9,6 +9,7 @@ from .utils import (
     aggregate_common_doc,
     aliasing,
     check_dtype,
+    check_dtype_support,
     check_fill_value,
     check_nton_shape,
     funcs_no_separate_nan,
@@ -82,6 +83,7 @@ class AggregateOp:
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
+        check_dtype_support(self.func, np.dtype(type(a)) if np.isscalar(a) else a.dtype, "numba")
         fill_value = resolve_fill_value(self.func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
@@ -279,6 +281,7 @@ class AggregateGeneric(AggregateOp):
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
+        check_dtype_support(self.func, np.dtype(type(a)) if np.isscalar(a) else a.dtype, "numba")
         fill_value = resolve_fill_value(self.func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
