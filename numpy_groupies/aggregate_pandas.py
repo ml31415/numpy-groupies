@@ -25,6 +25,9 @@ def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **k
         a = np.isnan(a)
         func = "any" if func is anynan else "all"
     funcname = func.__name__ if callable(func) else func
+    # pandas skips NaN in median; the plain median has to poison its group
+    # afterwards (GroupBy.median() accepts no skipna argument)
+    poison_nan = kwargs.pop("_nan_poison", False)
     if funcname == "nancumsum":
         # pandas skipna-cumsum keeps NaN in place, whereas nancumsum
         # semantics expect NaN treated as 0 (issues #79 and #91)
@@ -52,6 +55,9 @@ def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **k
         ret = np.full(size, fill_value, dtype=dtype)
         with np.errstate(invalid="ignore"):
             ret[np.asarray(result.index)] = result.to_numpy()
+        if poison_nan:
+            poisoned = np.bincount(group_idx, weights=np.isnan(a), minlength=size) > 0
+            ret[poisoned] = np.nan
     return ret
 
 
@@ -82,7 +88,8 @@ _impl_dict.update(
 _impl_dict["cumsum"] = partial(_wrapper, func="cumsum", skipna=False)
 _impl_dict["nancumsum"] = partial(_wrapper, func="nancumsum")
 # plain median propagates NaNs like np.median - pandas skips them by default
-_impl_dict["median"] = partial(_wrapper, func="median", skipna=False)
+# and GroupBy.median() takes no skipna argument
+_impl_dict["median"] = partial(_wrapper, func="median", _nan_poison=True)
 _impl_dict.update(
     allnan=partial(_wrapper, func=allnan),
     anynan=partial(_wrapper, func=anynan),
