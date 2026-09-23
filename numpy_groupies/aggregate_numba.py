@@ -8,10 +8,12 @@ import numpy as np
 from .aggregate_numpy import _aggregate_base
 from .utils import (
     DEFAULT_FILL_VALUE,
+    _no_complex_order,
     aggregate_common_doc,
     aliasing,
     build_dispatch,
     check_dtype,
+    check_dtype_support,
     check_fill_value,
     check_nton_shape,
     funcs_no_separate_nan,
@@ -147,6 +149,9 @@ class AggregateOp:
             and type(a) is np.ndarray
             and a.ndim == 1
             and a.shape[0] == group_idx.size
+            # order-dependent kernels cannot compile complex values - fall
+            # through to the slow path, which rejects them with a clear error
+            and not (self.func in _no_complex_order and a.dtype.kind == "c")
         ):
             a_key = a.dtype
             n_key = len(group_idx) if (self.func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
@@ -162,7 +167,9 @@ class AggregateOp:
             ):
                 # 2pass kernels copy the fill_value to empty groups in their
                 # second pass, so they never need _finalize
-                mean_dtype = self._mean_dtype if self._mean_dtype is not None else a_key
+                # a float64 accumulator widened to the complex counterpart
+                # keeps the running mean lossless for complex input as well
+                mean_dtype = a_key if self._mean_dtype is None else np.result_type(a_key, self._mean_dtype)
                 return self._jit_entry(
                     group_idx,
                     a,
@@ -194,6 +201,9 @@ class AggregateOp:
         else:
             a_key = a.dtype
             n_key = len(group_idx) if (self.func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
+        # reject order-dependent reductions of complex input before any dtype
+        # planning - np.issubdtype inside accepts plain types as well
+        check_dtype_support(self.func, a_key, "numba")
         try:
             dtype, fill_value = _dtype_fill_plan(self, a_key, dtype, fill_value, n_key)
         except TypeError:
@@ -445,6 +455,7 @@ class AggregateGeneric(AggregateOp):
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
+        check_dtype_support(self.func, np.dtype(type(a)) if np.isscalar(a) else a.dtype, "numba")
         fill_value = resolve_fill_value(self.func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype

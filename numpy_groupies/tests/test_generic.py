@@ -12,6 +12,7 @@ from . import (
     _implementations,
     _is_implemented,
     _wrap_notimplemented_skip,
+    aggregate_numba,
     func_list,
 )
 
@@ -357,6 +358,18 @@ def test_array_ordering(aggregate_all, order, size=10):
     mat = np.zeros((size, size), order=order, dtype=float)
     mat.flat[:] = np.arange(size * size)
     assert aggregate_all(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(range(size))
+
+
+@pytest.mark.parametrize("func", ["min", "max", "argmin", "argmax"])
+def test_complex_unorderable_numba(func):
+    # the numba kernels cannot order complex values - they must say so
+    # instead of failing to compile with a TypingError
+    if aggregate_numba is None:
+        pytest.skip("numba implementation not available")
+    group_idx = np.array([0, 1, 1])
+    a = np.array([1 + 2j, 3 + 1j, 5 + 5j])
+    with pytest.raises(NotImplementedError, match="complex numbers have no order"):
+        aggregate_numba.aggregate(group_idx, a, func=func)
 
 
 @pytest.mark.deselect_if(func=_deselect_purepy)
