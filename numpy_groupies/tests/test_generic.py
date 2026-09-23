@@ -509,6 +509,34 @@ def test_not_last_axis_reduction(aggregate_all):
 
 
 @pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.parametrize("axis", (0, 1))
+def test_along_axis_multidim(aggregate_all, axis):
+    # https://github.com/ml31415/numpy-groupies/issues/74
+    a = np.arange(15, dtype=float).reshape(3, 5)
+    labels = np.array([1, 1, 0, 2, 2]) if axis == 1 else np.array([2, 0, 2])
+    ref = aggregate_all(labels, a, axis=axis, func="sum")
+
+    # a single row/column of labels broadcasts over the remaining axes,
+    # so it must give identical results to the equivalent 1d group_idx
+    group_idx = labels.reshape(1, -1) if axis == 1 else labels.reshape(-1, 1)
+    np.testing.assert_array_equal(aggregate_all(group_idx, a, axis=axis, func="sum"), ref)
+
+    # labels may also vary along the non-aggregated axes
+    if axis == 1:
+        group_idx = np.array([[0, 1, 1, 2, 2], [2, 2, 1, 1, 0], [1, 1, 0, 0, 2]])
+        expected = np.stack([np.bincount(row, weights=vals, minlength=3) for row, vals in zip(group_idx, a)])
+    else:
+        group_idx = np.array([[0, 1, 2, 2, 1], [1, 1, 0, 2, 1], [2, 0, 2, 0, 0]])
+        expected = np.zeros((3, 5))
+        for jj in range(a.shape[1]):
+            for lbl in range(3):
+                mask = group_idx[:, jj] == lbl
+                if mask.any():
+                    expected[lbl, jj] = a[mask, jj].sum()
+    np.testing.assert_array_equal(aggregate_all(group_idx, a, axis=axis, func="sum", size=3), expected)
+
+
+@pytest.mark.deselect_if(func=_deselect_purepy)
 def test_custom_callable(aggregate_all):
     def custom_callable(x):
         return x.sum()

@@ -54,9 +54,11 @@ aggregate_common_doc = """
     axis: default=None
         allows aggregation to be performed along a single axis of a
         multi-dimensional array ``a``.  In that case ``group_idx`` must be 1D
-        with length matching ``a.shape[axis]``, and the groups are broadcast
-        out along the remaining axes of ``a``.  Not supported by the pure
-        python implementation.
+        with length matching ``a.shape[axis]``, or have the same
+        dimensionality as ``a`` with a shape broadcastable to ``a.shape``
+        (e.g. to use separate group labels for each row).  In either case the
+        groups are broadcast out along the remaining axes of ``a``.  Not
+        supported by the pure python implementation.
     reverse: default=False
         only relevant for ``func='sort'`` - sorts the items within each group
         in descending order instead of ascending.
@@ -411,10 +413,20 @@ def _ravel_group_idx(group_idx, a, axis, size, order, method="ravel"):
     size = []
     for ii, s in enumerate(a.shape):
         if method == "ravel":
-            ii_idx = group_idx_in if ii == axis else np.arange(s)
-            ii_shape = [1] * ndim_a
-            ii_shape[ii] = s
-            group_idx.append(ii_idx.reshape(ii_shape))
+            if ii == axis:
+                ii_idx = group_idx_in
+                if ii_idx.ndim == 1:
+                    # 1d labels only carry the axis dimension - reshape so
+                    # that ravel_multi_index broadcasts them against the
+                    # arange-pieces of the other dimensions
+                    ii_shape = [1] * ndim_a
+                    ii_shape[ii] = s
+                    ii_idx = ii_idx.reshape(ii_shape)
+            else:
+                ii_shape = [1] * ndim_a
+                ii_shape[ii] = s
+                ii_idx = np.arange(s).reshape(ii_shape)
+            group_idx.append(ii_idx)
         size.append(size_in if ii == axis else s)
     # Use the indexing, and return. It's a bit simpler than
     # using trying to keep all the logic below happy
@@ -433,8 +445,7 @@ def offset_labels(group_idx, inshape, axis, order, size):
     https://stackoverflow.com/questions/46256279/bin-elements-per-row-vectorized-2d-bincount-for-numpy
     """
 
-    newaxes = tuple(ax for ax in range(len(inshape)) if ax != axis)
-    group_idx = np.broadcast_to(np.expand_dims(group_idx, newaxes), inshape)
+    group_idx = np.broadcast_to(group_idx, inshape)
     if axis not in (-1, len(inshape) - 1):
         group_idx = np.moveaxis(group_idx, axis, -1)
     newshape = group_idx.shape[:-1] + (-1,)
@@ -488,15 +499,24 @@ def input_validation(
     else:
         axis = axis if axis >= 0 else ndim_a + axis  # negative indexing
         if ndim_idx > 1:
-            # TODO: we could support a sequence of axis values for multiple
-            # dimensions of group_idx.
-            raise NotImplementedError("only 1d indexing currently supported with axis arg.")
-        elif a.shape[axis] != len(group_idx):
+            # multidimensional group labels - e.g. separate group labels for
+            # each row - broadcast across the non-axis dimensions of a
+            # (issue #74)
+            if ndim_idx != ndim_a:
+                raise ValueError("when using axis arg, group_idx must be 1d, or of the same dimensionality as a")
+            try:
+                group_idx = np.broadcast_to(group_idx, a.shape)
+            except ValueError as err:
+                raise ValueError(
+                    f"group_idx with shape {group_idx.shape} cannot be broadcast to a with shape {a.shape}"
+                ) from err
+            ndim_idx = 1
+        if group_idx.ndim == 1 and a.shape[axis] != group_idx.shape[0]:
             raise ValueError("a.shape[axis] doesn't match length of group_idx.")
         elif size is not None and not np.isscalar(size):
             raise NotImplementedError("when using axis arg, size must be None or scalar.")
         else:
-            is_form_3 = group_idx.ndim == 1 and a.ndim > 1 and axis is not None
+            is_form_3 = ndim_a > 1
             orig_shape = a.shape if is_form_3 else group_idx.shape
             if isinstance(func, str) and "arg" in func:
                 unravel_shape = orig_shape
