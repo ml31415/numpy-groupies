@@ -141,6 +141,17 @@ absent group with - asking them to do so raises a `ValueError`.  The default of 
 function can be queried with `npg.default_fill_value(func, dtype=None)`, which is handy if downstream
 code needs to know it without repeating the table.
 
+### Complex values
+
+Complex input is supported wherever the result is well defined, following numpy's conventions:
+`sum`, `prod`, `mean`, `median`, `trapezoid`, `sort`, `first`, `last`, `array` and the `cumsum`
+functions keep the complex dtype (order statistics like `median` and `sort` use numpy's
+lexicographic ordering of the real and then imaginary part), while `var`, `std` and `sumofsquares`
+measure squared magnitudes and therefore return a real dtype (like `np.var` of complex input).
+The order-dependent `min`, `max`, `argmax` and `argmin` are available in the numpy, pandas and
+pure python implementations, but rejected by the numba implementation, which has no notion of
+ordering complex numbers.
+
 ### Examples
 Compute sums of consecutive integers, and then compute products of those consecutive integers.
 ```python
