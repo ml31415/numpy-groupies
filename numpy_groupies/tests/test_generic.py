@@ -24,6 +24,12 @@ def aggregate_all(request):
     return _wrap_notimplemented_skip(impl.aggregate, "aggregate_" + name)
 
 
+def _reference_trapezoid(*args, **kwargs):
+    # np.trapz was renamed to np.trapezoid in numpy 2.0
+    func = getattr(np, "trapezoid", None) or getattr(np, "trapz", None)
+    return func(*args, **kwargs)
+
+
 def _deselect_purepy(aggregate_all, *args, **kwargs):
     # purepy implementations does not handle nan values and ndim correctly.
     # So it needs to be excluded from several tests."""
@@ -75,9 +81,12 @@ def test_start_with_offset(aggregate_all):
         assert "int" in res.dtype.name
 
 
-@pytest.mark.parametrize(
-    "floatfunc", [np.std, np.var, np.mean, np.median, np.nanmedian, np.trapezoid], ids=lambda x: x.__name__
-)
+float_funcs = [np.std, np.var, np.mean, np.median, np.nanmedian]
+if hasattr(np, "trapezoid"):
+    float_funcs.append(np.trapezoid)
+
+
+@pytest.mark.parametrize("floatfunc", float_funcs, ids=lambda x: x.__name__)
 def test_float_enforcement(aggregate_all, floatfunc):
     group_idx = np.arange(10).repeat(3)
     a = np.arange(group_idx.size)
@@ -519,10 +528,12 @@ def test_along_axis(aggregate_all, func, size, axis):
         expected = np.sum(a * a, axis=axis)
     elif func == "nansumofsquares":
         expected = np.nansum(a * a, axis=axis)
+    elif func == "trapezoid":
+        expected = _reference_trapezoid(a, axis=axis)
     elif func == "nantrapezoid":
         # numpy has no nan-aware trapezoid - nantrapezoid integrates the
         # samples that are left, bridging over the gaps the nans leave
-        expected = np.apply_along_axis(lambda v: np.trapezoid(v[~np.isnan(v)]), axis, a)
+        expected = np.apply_along_axis(lambda v: _reference_trapezoid(v[~np.isnan(v)]), axis, a)
     else:
         with warnings.catch_warnings():
             # Filter  expected warnings:
