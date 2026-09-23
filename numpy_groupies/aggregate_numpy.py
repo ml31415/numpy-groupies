@@ -81,7 +81,14 @@ def _any(group_idx, a, size, fill_value, dtype=None):
     ret = np.full(size, fill_value, dtype=bool)
     if fill_value:
         ret[group_idx] = False
-    ret[group_idx.compress(a)] = True
+    # convert to bool explicitly - ndarray.compress on a float mask is slow
+    mask = np.asarray(a, dtype=bool)
+    # numpy quirk: compress wins for sparse masks, fancy indexing for dense
+    # ones (up to ~3x either way) - so pick based on mask density
+    if np.count_nonzero(mask) < mask.size / 2:
+        ret[group_idx.compress(mask)] = True
+    else:
+        ret[group_idx[mask]] = True
     return ret
 
 
