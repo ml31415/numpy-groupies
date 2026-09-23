@@ -65,6 +65,7 @@ in more detail:
 * `dtype=None` - the`dtype` of the output. `None` means choose a sensible type for the given `a`, `func`, and `fill_value`.
 * `axis=None` - explained below.
 * `ddof=0` - passed through into calculations of variance and standard deviation (see section on functions).
+* `dx=1.0` - passed through into the calculation of the trapezoidal integral (see section on functions), where it is the sample spacing.
 
 ![aggregate_dims_diagram](/diagrams/aggregate_dims.png)
 
@@ -94,9 +95,10 @@ the following optimized functions. Note that not all functions might be provided
 * `'last'` - last item in `a` from each group.
 * `'argmax'` - the index in `a` of the maximum value in each group.
 * `'argmin'` - the index in `a` of the minimum value in each group.
+* `'trapezoid'` - trapezoidal integral of the items within each group, taken in the order they appear in `a` (numpy, numba and pure python). Use `dx` kwarg for the sample spacing, which is 1 by default. A group of fewer than two items integrates to zero.
 
-The above functions also have a `nan`-form, which skip the `nan` values instead of propagating them to the result of the calculation:
-* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanmedian'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, `'nanargmax'`, `'nanargmin'`
+The above functions also have a `nan`-form, which skip the `nan` values instead of propagating them to the result of the calculation (for `nantrapezoid` this means integrating over the items which are left, bridging over the gap the `nan` leaves):
+* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanmedian'`, `'nantrapezoid'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, `'nanargmax'`, `'nanargmin'`
 
 The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
 * `'all'` - `True` if all items within a group are truthy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truthy.
@@ -133,6 +135,15 @@ x = npg.aggregate(group_idx, a, "prod")
 Get variance ignoring nans, setting all-nan groups to `nan`.
 ```python
 x = npg.aggregate(group_idx, a, func="nanvar", fill_value=nan)
+```
+
+Integrate the items of each group with the trapezoidal rule, in the order they appear in `a`. `dx` is the
+sample spacing, and `np.trapezoid` may be used in place of the function name.
+```python
+x = npg.aggregate(group_idx, a, func="trapezoid")
+# x: array([ 2.,  8., 14., 20., 26.])
+x = npg.aggregate(group_idx, a, func=np.trapezoid, dx=0.5)
+# x: array([ 1.,  4.,  7., 10., 13.])
 ```
 
 Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, 
@@ -211,6 +222,7 @@ The benchmarking results are given in ms for an i7-7560U running at 2.40GHz, tak
 | allnan    |  10.014 |   3.592 |   0.800 |  13.799 |
 | mean      |    ---- |   1.836 |   0.770 |  14.771 |
 | median    |    ---- |  60.150 |  12.379 |  19.578 |
+| trapezoid |    ---- |   4.626 |   1.000 |    ---- |
 | std       |    ---- |   4.481 |   0.968 |  15.491 |
 | var       |    ---- |   4.327 |   0.981 |  15.588 |
 | first     |    ---- |   1.733 |   0.637 |  13.619 |
@@ -226,6 +238,7 @@ The benchmarking results are given in ms for an i7-7560U running at 2.40GHz, tak
 | nanany    |    ---- |   6.694 |   1.716 |  19.712 |
 | nanmean   |    ---- |   5.405 |   1.998 |  19.443 |
 | nanmedian |    ---- |  53.924 |   9.602 |  24.646 |
+| nantrapezoid|    ---- |   8.541 |   2.164 |    ---- |
 | nanvar    |    ---- |   7.273 |   2.050 |  20.352 |
 | nanstd    |    ---- |   7.589 |   2.100 |  22.989 |
 | nanfirst  |    ---- |   5.442 |   1.474 |  19.188 |
