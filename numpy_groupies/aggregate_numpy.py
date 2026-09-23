@@ -199,9 +199,13 @@ def _anynan(group_idx, a, size, fill_value, dtype=bool):
 
 def _sort(group_idx, a, size=None, fill_value=None, dtype=None, reverse=False):
     sortidx = np.lexsort((-a if reverse else a, group_idx))
-    # Reverse sorting back to into grouped order, but preserving groupwise sorting
-    revidx = np.argsort(np.argsort(group_idx, kind="stable"), kind="stable")
-    return a[sortidx][revidx]
+    # Unsort back into original order, but preserving the groupwise value
+    # sorting: scattering through the group-stable argsort is exactly the
+    # inverse permutation, avoiding the classic argsort-of-argsort.
+    gsort = np.argsort(group_idx, kind="stable")
+    ret = np.empty_like(a)
+    ret[gsort] = a[sortidx]
+    return ret
 
 
 def _array(group_idx, a, size, fill_value, dtype=None):
