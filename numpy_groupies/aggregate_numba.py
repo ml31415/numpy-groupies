@@ -31,6 +31,11 @@ class AggregateOp:
     The compiled kernels are created with numba's on-disk cache enabled
     (``disk_cache``), so the compilation cost is only paid once per machine -
     provided all captured values (flags and dispatchers) have stable cache keys.
+    Factory-nested loop shells are deliberately compiled without disk caching:
+    their closures over njit dispatchers hash to new bytes in every process,
+    so a cache entry would never hit and would instead accumulate on disk
+    (see numba #6522). Only the dispatcher-wrapped staticmethod kernels -
+    which have no closure - are disk-cached.
     """
 
     disk_cache = True
@@ -144,12 +149,16 @@ class AggregateOp:
             cls_inner = nb.njit(cache=cls.disk_cache)(cls._inner)
             cls_nan_check = nb.njit(cache=cls.disk_cache)(cls._nan_check)
 
-            @nb.njit(cache=cls.disk_cache)
+            # no cache=True: closure over njit dispatchers hashes to new bytes
+            # per process, see numba #6522
+            @nb.njit
             def inner(ri, val, ret, counter, mean, fill_value):
                 if not cls_nan_check(val):
                     cls_inner(ri, val, ret, counter, mean, fill_value)
 
-        @nb.njit(cache=cls.disk_cache)
+        # no cache=True: closure over njit dispatchers hashes to new bytes
+        # per process, see numba #6522
+        @nb.njit
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # ddof needs to be present for being exchangeable with loop_2pass
             size = len(ret)
@@ -198,7 +207,9 @@ class Aggregate2pass(AggregateOp):
 
         _2pass_inner = nb.njit(cache=cls.disk_cache)(cls._2pass_inner)
 
-        @nb.njit(cache=cls.disk_cache)
+        # no cache=True: closure over njit dispatchers hashes to new bytes
+        # per process, see numba #6522
+        @nb.njit
         def loop_2nd(ret, counter, mean, fill_value, ddof):
             for ri in range(len(ret)):
                 if counter[ri] > ddof:
@@ -206,7 +217,7 @@ class Aggregate2pass(AggregateOp):
                 else:
                     ret[ri] = fill_value
 
-        @nb.njit(cache=cls.disk_cache)
+        @nb.njit
         def loop_2pass(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             loop_1st(group_idx, a, ret, counter, mean, outer, fill_value, ddof)
             loop_2nd(ret, counter, mean, fill_value, ddof)
@@ -426,6 +437,9 @@ class ArgMax(AggregateOp):
             # keep the generic (lazy) path for unchanged behaviour.
             return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
 
+        # cache=True is safe here: the only closure variable is the `nans`
+        # flag (stable bytes), unlike a closure over njit dispatchers
+        # (see numba #6522) - verified to hit the disk cache.
         @nb.njit(cache=True)
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             size = len(ret)
@@ -461,6 +475,9 @@ class ArgMin(ArgMax):
         if scalar or reverse:
             return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
 
+        # cache=True is safe here: the only closure variable is the `nans`
+        # flag (stable bytes), unlike a closure over njit dispatchers
+        # (see numba #6522) - verified to hit the disk cache.
         @nb.njit(cache=True)
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             size = len(ret)
@@ -550,7 +567,9 @@ class Median(AggregateOp):
         _valid = nb.njit(cache=cls.disk_cache)(cls._valid)
         _middle = nb.njit(cache=cls.disk_cache)(cls._middle)
 
-        @nb.njit(cache=cls.disk_cache)
+        # no cache=True: closure over njit dispatchers hashes to new bytes
+        # per process, see numba #6522
+        @nb.njit
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # signature kept identical to AggregateOp.callable
             size = len(ret)
@@ -646,7 +665,9 @@ class Trapezoid(AggregateOp):
         # the integral follows the order of the input, so reverse is ignored
         valgetter = nb.njit(cache=cls.disk_cache)(cls._valgetter_scalar if scalar else cls._valgetter)
 
-        @nb.njit(cache=cls.disk_cache)
+        # no cache=True: closure over njit dispatchers hashes to new bytes
+        # per process, see numba #6522
+        @nb.njit
         def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
             # ddof carries the sample spacing dx, see Trapezoid.__call__
             size = len(ret)
