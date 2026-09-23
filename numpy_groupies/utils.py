@@ -72,6 +72,7 @@ funcs_common = [
     "last",
     "len",
     "mean",
+    "median",
     "var",
     "std",
     "allnan",
@@ -140,6 +141,7 @@ _alias_numpy = {
     np.argmax: "argmax",
     np.argmin: "argmin",
     np.mean: "mean",
+    np.median: "median",
     np.std: "std",
     np.var: "var",
     np.array: "array",
@@ -150,6 +152,7 @@ _alias_numpy = {
     np.nansum: "nansum",
     np.nanprod: "nanprod",
     np.nanmean: "nanmean",
+    np.nanmedian: "nanmedian",
     np.nanvar: "nanvar",
     np.nanmax: "nanmax",
     np.nanmin: "nanmin",
@@ -302,7 +305,7 @@ if platform.architecture()[0] == "32bit":
         "nanargmin": np.int32,
         "nanargmax": np.int32,
     }
-_forced_float_types = {"mean", "var", "std", "nanmean", "nanvar", "nanstd"}
+_forced_float_types = {"mean", "median", "var", "std", "nanmean", "nanmedian", "nanvar", "nanstd"}
 _forced_same_type = {
     "min",
     "max",

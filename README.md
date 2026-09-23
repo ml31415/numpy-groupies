@@ -85,6 +85,7 @@ the following optimized functions. Note that not all functions might be provided
 * `'sum'` - sum of items within each group (see example above).
 * `'prod'` - product of items within each group
 * `'mean'` - mean of items within each group
+* `'median'` - median of items within each group
 * `'var'`- variance of items within each group. Use `ddof` kwarg for degrees of freedom. The divisor used in calculations is `N - ddof`, where `N` represents the number of elements. By default `ddof` is zero.
 * `'std'` - standard deviation of items within each group. Use `ddof` kwarg for degrees of freedom (see `var` above).
 * `'min'` - minimum value of items within each group.
@@ -95,7 +96,7 @@ the following optimized functions. Note that not all functions might be provided
 * `'argmin'` - the index in `a` of the minimum value in each group.
 
 The above functions also have a `nan`-form, which skip the `nan` values instead of propagating them to the result of the calculation:
-* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, `'nanargmax'`, `'nanargmin'`
+* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanmedian'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, `'nanargmax'`, `'nanargmin'`
 
 The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
 * `'all'` - `True` if all items within a group are truthy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truthy.
@@ -199,16 +200,17 @@ The benchmarking results are given in ms for an i7-7560U running at 2.40GHz, tak
 
 | function | ufunc  | numpy   | numba  | pandas  |
 |-----------|--------|---------|--------|---------|
-| sum       |   1.423 |   1.158 |   0.673 |  14.782 |
-| prod      |   2.390 |   2.570 |   0.740 |  13.803 |
-| min       |   2.593 |   2.625 |   0.788 |  13.764 |
-| max       |   2.608 |   2.572 |   0.736 |  14.119 |
-| len       |   1.386 |   1.029 |   0.528 |  13.242 |
-| all       |  47.315 |   2.494 |   0.859 |  14.314 |
-| any       |  43.811 |   3.167 |   0.931 |  15.008 |
+| sum       |   1.386 |   1.158 |   0.673 |  14.498 |
+| prod      |   2.390 |   2.570 |   0.740 |  13.569 |
+| min       |   2.593 |   2.625 |   0.788 |  13.560 |
+| max       |   2.608 |   2.572 |   0.736 |  13.745 |
+| len       |   1.386 |   1.029 |   0.528 |  12.699 |
+| all       |  47.042 |   2.494 |   0.859 |  14.314 |
+| any       |  43.811 |   3.167 |   0.928 |  14.633 |
 | anynan    |   6.835 |   1.399 |   0.809 |  13.659 |
 | allnan    |  10.014 |   3.592 |   0.800 |  13.799 |
 | mean      |    ---- |   1.836 |   0.770 |  14.771 |
+| median    |    ---- |  60.150 |  12.379 |  19.578 |
 | std       |    ---- |   4.481 |   0.968 |  15.491 |
 | var       |    ---- |   4.327 |   0.981 |  15.588 |
 | first     |    ---- |   1.733 |   0.637 |  13.619 |
@@ -216,13 +218,14 @@ The benchmarking results are given in ms for an i7-7560U running at 2.40GHz, tak
 | argmax    |    ---- |   3.937 |   0.976 |  13.299 |
 | argmin    |    ---- |   6.528 |   0.963 |  13.058 |
 | nansum    |    ---- |   5.138 |   1.868 |  21.898 |
-| nanprod   |    ---- |   6.571 |   1.854 |  20.857 |
+| nanprod   |    ---- |   6.571 |   1.854 |  20.524 |
 | nanmin    |    ---- |   5.979 |   1.783 |  18.319 |
-| nanmax    |    ---- |   6.079 |   1.766 |  18.218 |
+| nanmax    |    ---- |   6.079 |   1.759 |  18.218 |
 | nanlen    |    ---- |   3.041 |   1.626 |  18.105 |
 | nanall    |    ---- |   6.001 |   1.709 |  19.557 |
 | nanany    |    ---- |   6.694 |   1.716 |  19.712 |
 | nanmean   |    ---- |   5.405 |   1.998 |  19.443 |
+| nanmedian |    ---- |  53.924 |   9.602 |  24.646 |
 | nanvar    |    ---- |   7.273 |   2.050 |  20.352 |
 | nanstd    |    ---- |   7.589 |   2.100 |  22.989 |
 | nanfirst  |    ---- |   5.442 |   1.474 |  19.188 |

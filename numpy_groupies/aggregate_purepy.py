@@ -24,6 +24,17 @@ def _mean(x):
     return sum(x) / len(x)
 
 
+def _median(x):
+    if any(math.isnan(v) for v in x):
+        # like np.median, any nan poisons the whole group
+        return math.nan
+    srt = sorted(x)
+    mid = len(srt) // 2
+    if len(srt) % 2 == 1:
+        return srt[mid]
+    return (srt[mid - 1] + srt[mid]) / 2
+
+
 def _var(x, ddof=0):
     mean = _mean(x)
     return sum((xx - mean) ** 2 for xx in x) / (len(x) - ddof)
@@ -82,6 +93,7 @@ _impl_dict = {
     "all": all,
     "any": any,
     "mean": _mean,
+    "median": _median,
     "std": _std,
     "var": _var,
     "anynan": _anynan,

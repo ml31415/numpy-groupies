@@ -75,7 +75,7 @@ def test_start_with_offset(aggregate_all):
         assert "int" in res.dtype.name
 
 
-@pytest.mark.parametrize("floatfunc", [np.std, np.var, np.mean], ids=lambda x: x.__name__)
+@pytest.mark.parametrize("floatfunc", [np.std, np.var, np.mean, np.median, np.nanmedian], ids=lambda x: x.__name__)
 def test_float_enforcement(aggregate_all, floatfunc):
     group_idx = np.arange(10).repeat(3)
     a = np.arange(group_idx.size)
@@ -406,6 +406,22 @@ def test_cumsum_nan(aggregate_all):
     np.testing.assert_array_equal(res, [np.nan, np.nan, np.nan, 5.0])
 
 
+def test_median_nan(aggregate_all):
+    # plain median propagates nans within their group (like np.median),
+    # nanmedian skips them; groups without any member keep the fill value
+    group_idx = np.array([0, 0, 0, 1, 1, 2, 4, 4, 4])
+    a = np.array([1.0, 5.0, np.nan, 2.0, 8.0, 7.0, 9.0, np.nan, 3.0])
+    np.testing.assert_allclose(
+        aggregate_all(group_idx, a, "median", fill_value=-1.0),
+        [np.nan, 5.0, 7.0, -1.0, np.nan],
+        equal_nan=True,
+    )
+    np.testing.assert_allclose(
+        aggregate_all(group_idx, a, "nanmedian", fill_value=-1.0),
+        [3.0, 5.0, 7.0, -1.0, 6.0],
+    )
+
+
 def test_cummax(aggregate_all):
     group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
     a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
@@ -486,6 +502,7 @@ def test_along_axis(aggregate_all, func, size, axis):
         "nanmax": np.nan,
         "nanmin": np.nan,
         "nanmean": np.nan,
+        "nanmedian": np.nan,
     }.get(func, 0)
 
     actual = aggregate_all(group_idx, a, axis=axis, func=func, fill_value=fill_value)

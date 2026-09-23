@@ -63,6 +63,7 @@ _supported_funcs = [
     "min",
     "max",
     "mean",
+    "median",
     "var",
     "std",
     "first",
@@ -80,6 +81,8 @@ _impl_dict.update(
 # pandas skipna=False - nancumsum is handled inside _wrapper instead
 _impl_dict["cumsum"] = partial(_wrapper, func="cumsum", skipna=False)
 _impl_dict["nancumsum"] = partial(_wrapper, func="nancumsum")
+# plain median propagates NaNs like np.median - pandas skips them by default
+_impl_dict["median"] = partial(_wrapper, func="median", skipna=False)
 _impl_dict.update(
     allnan=partial(_wrapper, func=allnan),
     anynan=partial(_wrapper, func=anynan),

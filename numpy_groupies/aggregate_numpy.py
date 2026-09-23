@@ -162,6 +162,58 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
         return ret.astype(dtype, copy=False)
 
 
+def _median(group_idx, a, size, fill_value, dtype=None):
+    """
+    Aggregate operation of the median within each group.
+
+    The median is an order statistic, so unlike the streaming reductions it
+    works on group-ordered data: the values are gathered group by group and
+    the middle of each group is then *selected* via partition (O(n) on
+    average) instead of sorting the values within the groups.
+
+    group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
+    a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
+    _median(group_idx, a, np.max(group_idx) + 1)
+    >>> array([0. , 8. , 4.5, 3. , 0. , 0. , 0. , 7.5, 0. ])
+    """
+    if group_idx.size == 0:
+        return np.full(size, fill_value, dtype=dtype or np.float64)
+    # any argsort kind works - the median is insensitive to the order of
+    # equal group labels
+    sortidx = np.argsort(group_idx, kind="stable")
+    group_idx_srt = group_idx[sortidx]
+    a_srt = a[sortidx]
+
+    new_group = np.empty(group_idx_srt.size, dtype=bool)
+    new_group[0] = True
+    np.not_equal(group_idx_srt[1:], group_idx_srt[:-1], out=new_group[1:])
+    starts = np.flatnonzero(new_group)
+    counts = np.diff(np.append(starts, group_idx_srt.size))
+    mids = counts // 2
+    odd = counts % 2 == 1
+
+    # partition places the kth element(s) at their sorted position while
+    # leaving the rest unsorted - the two middles of even-sized groups are
+    # obtained with a single call using both kths
+    vals = np.empty(starts.size, dtype=np.float64)
+    for grp in range(starts.size):
+        start, mid = starts[grp], mids[grp]
+        part = np.partition(a_srt[start : start + counts[grp]], (mid - 1, mid))
+        if odd[grp]:
+            vals[grp] = part[mid]
+        else:
+            vals[grp] = (part[mid - 1] + part[mid]) / 2
+    if np.issubdtype(a_srt.dtype, np.floating):
+        # like np.median, any nan poisons its whole group - partition does
+        # not order nans, so they are detected with a per-group reduction
+        nan_groups = np.logical_or.reduceat(np.isnan(a_srt), starts)
+        vals[nan_groups] = np.nan
+
+    ret = np.full(size, fill_value, dtype=dtype or vals.dtype)
+    ret[group_idx_srt[starts]] = vals
+    return ret
+
+
 def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
     ret = np.bincount(group_idx, weights=a * a, minlength=size)
     if fill_value != 0:
@@ -317,6 +369,7 @@ _impl_dict = {
     "all": _all,
     "any": _any,
     "mean": _mean,
+    "median": _median,
     "std": _std,
     "var": _var,
     "anynan": _anynan,
