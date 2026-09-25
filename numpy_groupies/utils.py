@@ -57,6 +57,12 @@ aggregate_common_doc = """
     dtype: default=None
         the ``dtype`` of the output.  By default something sensible is chosen
         based on the input, aggregation function, and ``fill_value``.
+        Complex input keeps the complex dtype wherever the result is complex
+        (sum, prod, mean, median, trapezoid, first, last, sort, cumsum), while
+        var, std and sumofsquares measure squared magnitudes and return a real
+        dtype - matching numpy.  Order-dependent functions (min, max, argmax,
+        argmin) are not supported for complex input by the numba
+        implementation, which cannot order complex values.
     axis: default=None
         allows aggregation to be performed along a single axis of a
         multi-dimensional array ``a``.  In that case ``group_idx`` must be 1D
@@ -177,9 +183,14 @@ def resolve_fill_value(func, fill_value, dtype):
     if fill_value is not DEFAULT_FILL_VALUE:
         return fill_value
     key = _fill_value_key(func)
-    # nan only fits where the output can hold it - the averaging functions
-    # coerce their result to a float type anyway
-    fits = dtype is None or key in _forced_float_types or np.issubdtype(dtype, np.inexact)
+    # nan only fits where the output can hold it - the averaging and
+    # dispersion functions coerce their result to a float type anyway
+    fits = (
+        dtype is None
+        or key in _forced_float_types
+        or key in _forced_real_float_types
+        or np.issubdtype(dtype, np.inexact)
+    )
     value = _default_fill_values.get(key)
     if value is None:
         # a custom callable has no function specific default
@@ -397,7 +408,7 @@ def minimum_dtype(x, dtype=np.bool_):
 
 def minimum_dtype_scalar(x, dtype, a):
     if dtype is None:
-        dtype = np.dtype(type(a)) if isinstance(a, (int, float)) else a.dtype
+        dtype = np.dtype(type(a)) if isinstance(a, (int, float, complex)) else a.dtype
     return minimum_dtype(x, dtype)
 
 
@@ -436,13 +447,19 @@ _forced_float_types = {
     "mean",
     "median",
     "trapezoid",
-    "var",
-    "std",
     "nanmean",
     "nanmedian",
     "nantrapezoid",
+}
+# var/std (and sumofsquares) measure the squared magnitude of the deviations,
+# which is real even for complex input - like np.var returning a real dtype
+_forced_real_float_types = {
+    "var",
+    "std",
     "nanvar",
     "nanstd",
+    "sumofsquares",
+    "nansumofsquares",
 }
 _forced_same_type = {
     "min",
@@ -478,8 +495,20 @@ def check_dtype(dtype, func_str, a, n):
             return np.dtype(_forced_types[func_str])
         except KeyError:
             if func_str in _forced_float_types:
+                if np.issubdtype(a_dtype, np.inexact):
+                    # floating input keeps its dtype, complex input stays complex
+                    return a_dtype
+                else:
+                    return np.dtype(np.float64)
+            elif func_str in _forced_real_float_types:
                 if np.issubdtype(a_dtype, np.floating):
                     return a_dtype
+                elif np.issubdtype(a_dtype, np.complexfloating):
+                    # the real counterpart of the complex dtype (complex64 -> float32)
+                    return np.dtype(a_dtype.char.lower())
+                elif func_str in ("sumofsquares", "nansumofsquares"):
+                    # exact squares of integers
+                    return np.dtype(np.int64)
                 else:
                     return np.dtype(np.float64)
             else:
@@ -504,6 +533,25 @@ def check_dtype(dtype, func_str, a, n):
                         return np.dtype(np.int64)
                     else:
                         return a_dtype
+
+
+# numpy imposes a lexicographic order on complex values (real part first,
+# imaginary part second), but python and numba do not order complex numbers
+# at all - backends built on them reject the order-dependent functions for
+# complex input instead of leaking a TypeError from a comparison
+_no_complex_order = frozenset(["min", "max", "argmin", "argmax", "nanmin", "nanmax", "nanargmin", "nanargmax"])
+_no_complex_order_or_median = _no_complex_order | {"median", "nanmedian"}
+
+
+def check_dtype_support(func_str, a_dtype, backend, funcs=_no_complex_order):
+    """Reject functions that rely on ordered values for complex input, where
+    the backend cannot provide numpy's ordering convention."""
+    if func_str in funcs and np.issubdtype(a_dtype, np.complexfloating):
+        raise NotImplementedError(
+            f"'{func_str}' of complex values is not supported by the {backend} implementation - "
+            "complex numbers have no order (the numpy implementation follows numpy's "
+            "lexicographic convention)"
+        )
 
 
 def minval(fill_value, dtype):

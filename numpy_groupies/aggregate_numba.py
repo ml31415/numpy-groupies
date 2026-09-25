@@ -5,11 +5,13 @@ import inspect
 import numba as nb
 import numpy as np
 
+from .aggregate_numpy import _aggregate_base
 from .utils import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     aliasing,
     check_dtype,
+    check_dtype_support,
     check_fill_value,
     check_nton_shape,
     funcs_no_separate_nan,
@@ -138,6 +140,7 @@ class AggregateOp:
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
+        check_dtype_support(self.func, np.dtype(type(a)) if np.isscalar(a) else a.dtype, "numba")
         fill_value = resolve_fill_value(self.func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
@@ -178,7 +181,9 @@ class AggregateOp:
         if cls.counter_fill_value is not None:
             counter = np.full_like(ret, cls.counter_fill_value, dtype=cls.counter_dtype)
         if cls.mean_fill_value is not None:
-            dtype = cls.mean_dtype if cls.mean_dtype else input_dtype
+            # a float64 accumulator widened to the complex counterpart keeps
+            # the running mean lossless for complex input as well
+            dtype = input_dtype if cls.mean_dtype is None else np.result_type(input_dtype, cls.mean_dtype)
             mean = np.full_like(ret, cls.mean_fill_value, dtype=dtype)
         if cls.outer:
             outer = np.full(input_size, fill_value, dtype=dtype)
@@ -327,6 +332,7 @@ class AggregateGeneric(AggregateOp):
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
+        check_dtype_support(self.func, np.dtype(type(a)) if np.isscalar(a) else a.dtype, "numba")
         fill_value = resolve_fill_value(self.func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
@@ -557,7 +563,9 @@ class SumOfSquares(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] = 0
-        ret[ri] += val * val
+        # the squared magnitude, so complex values give a real result like
+        # np.var; for real values val.real is val itself
+        ret[ri] += val.real * val.real + val.imag * val.imag
 
 
 class Mean(Aggregate2pass):
@@ -582,18 +590,23 @@ class Std(Mean):
     def _inner(ri, val, ret, counter, mean, fill_value):
         counter[ri] += 1
         mean[ri] += val
-        ret[ri] += val * val
+        # the squared deviation of complex values is its magnitude squared,
+        # so ret stays real for complex input - matching np.var; for real
+        # values val.real is val itself, keeping this branch-free
+        ret[ri] += val.real * val.real + val.imag * val.imag
 
     @staticmethod
     def _2pass_inner(ri, ret, counter, mean, ddof):
-        mean2 = mean[ri] * mean[ri]
+        m = mean[ri]
+        mean2 = m.real * m.real + m.imag * m.imag
         return np.sqrt((ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof))
 
 
 class Var(Std):
     @staticmethod
     def _2pass_inner(ri, ret, counter, mean, ddof):
-        mean2 = mean[ri] * mean[ri]
+        m = mean[ri]
+        mean2 = m.real * m.real + m.imag * m.imag
         return (ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof)
 
 
@@ -602,6 +615,25 @@ class Median(AggregateOp):
     it needs group-ordered data: values are placed group by group via
     counting sort (O(n)) and the middle of each group is then *selected*
     via partition (O(n) on average) instead of sorting within the groups."""
+
+    def __call__(
+        self,
+        group_idx,
+        a,
+        size=None,
+        fill_value=DEFAULT_FILL_VALUE,
+        order="C",
+        dtype=None,
+        axis=None,
+        ddof=0,
+    ):
+        if not np.isscalar(a) and np.issubdtype(a.dtype, np.complexfloating):
+            # numba cannot partition complex values - the numpy implementation
+            # selects the middle of the lexicographically ordered values
+            return _aggregate_base(
+                group_idx, a, self.func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis
+            )
+        return super().__call__(group_idx, a, size, fill_value, order, dtype, axis, ddof)
 
     @classmethod
     def callable(cls, nans=False, reverse=False, scalar=False):

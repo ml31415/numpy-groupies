@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from .aggregate_numpy import _aggregate_base
+from .aggregate_numpy import aggregate as _aggregate_numpy
 from .utils import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
@@ -11,6 +12,7 @@ from .utils import (
     anynan,
     check_dtype,
     funcs_no_separate_nan,
+    iscomplexobj,
 )
 
 
@@ -115,6 +117,20 @@ def aggregate(
     axis=None,
     **kwargs,
 ):
+    if not np.isscalar(a) and iscomplexobj(a):
+        # pandas' groupby kernels have no signatures for complex dtypes - the
+        # numpy implementation handles complex values correctly
+        return _aggregate_numpy(
+            group_idx,
+            a,
+            func=func,
+            size=size,
+            fill_value=fill_value,
+            order=order,
+            dtype=dtype,
+            axis=axis,
+            **kwargs,
+        )
     return _aggregate_base(
         group_idx,
         a,
