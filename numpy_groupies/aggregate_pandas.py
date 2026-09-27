@@ -7,8 +7,10 @@ from .aggregate_numpy import _aggregate_base
 from .utils import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
+    aliasing,
     allnan,
     anynan,
+    build_dispatch,
     check_dtype,
     funcs_no_separate_nan,
 )
@@ -104,6 +106,9 @@ _impl_dict.update(
 )
 
 
+_dispatch = build_dispatch(_impl_dict, aliasing)
+
+
 def aggregate(
     group_idx,
     a,
@@ -125,6 +130,7 @@ def aggregate(
         func=func,
         axis=axis,
         _impl_dict=_impl_dict,
+        _dispatch=_dispatch,
         is_pandas=True,
         **kwargs,
     )

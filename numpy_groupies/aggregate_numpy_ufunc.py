@@ -5,6 +5,7 @@ from .utils import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     aliasing,
+    build_dispatch,
     check_boolean,
     get_func,
     maxval,
@@ -97,6 +98,8 @@ _impl_dict = {
     "len": _len,
 }
 
+_dispatch = build_dispatch(_impl_dict, aliasing)
+
 
 def aggregate(
     group_idx,
@@ -109,9 +112,14 @@ def aggregate(
     axis=None,
     **kwargs,
 ):
-    func = get_func(func, aliasing, _impl_dict)
-    if not isinstance(func, str):
-        raise NotImplementedError("No such ufunc available")
+    try:
+        funcname, _ = _dispatch[func]
+    except (KeyError, TypeError):
+        # a custom callable is not supported here - get_func raises for
+        # unknown names, and any callable it returns is not a ufunc impl
+        funcname = get_func(func, aliasing, _impl_dict)
+        if not isinstance(funcname, str):
+            raise NotImplementedError("No such ufunc available")
     return _aggregate_base(
         group_idx,
         a,
@@ -119,9 +127,10 @@ def aggregate(
         fill_value=fill_value,
         order=order,
         dtype=dtype,
-        func=func,
+        func=funcname,
         axis=axis,
         _impl_dict=_impl_dict,
+        _dispatch=_dispatch,
         **kwargs,
     )
 

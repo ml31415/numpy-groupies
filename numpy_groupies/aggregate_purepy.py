@@ -7,6 +7,7 @@ import numpy as np
 from .utils import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
+    build_dispatch,
     funcs_no_separate_nan,
     get_func,
     resolve_fill_value,
@@ -124,6 +125,8 @@ _impl_dict = {
 }
 _impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not in funcs_no_separate_nan)
 
+_dispatch = build_dispatch(_impl_dict, aliasing)
+
 
 def aggregate(
     group_idx,
@@ -165,7 +168,10 @@ def aggregate(
             if i < 0:
                 raise ValueError("group_idx contains negative value")
 
-    func = get_func(func, aliasing, _impl_dict)
+    try:
+        func = _dispatch[func][0]
+    except (KeyError, TypeError):
+        func = get_func(func, aliasing, _impl_dict)
     if isinstance(a, (int, float)):
         if func not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")

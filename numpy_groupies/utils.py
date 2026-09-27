@@ -336,6 +336,22 @@ def get_func(func, aliasing, implementations):
     raise ValueError(f"func {func} is neither a valid function string nor a callable object")
 
 
+def build_dispatch(impl_dict, aliasing):
+    """Fuse an aliasing and an implementation table for single-lookup dispatch.
+
+    Returns a dict mapping every alias (string or callable) onto a
+    ``(canonical name, implementation)`` tuple.  Aliases without an
+    implementation are omitted, so lookups missing there fall through to
+    ``get_func``, which keeps handling custom callables and error reporting.
+    """
+    dispatch = {}
+    for alias, name in aliasing.items():
+        impl = impl_dict.get(name)
+        if impl is not None:
+            dispatch[alias] = (name, impl)
+    return dispatch
+
+
 def check_boolean(x):
     if x not in (0, 1):
         raise ValueError("Value not boolean")
@@ -464,6 +480,15 @@ def check_dtype(dtype, func_str, a, n):
     else:
         a_dtype = a.dtype
 
+    return resolve_output_dtype(dtype, func_str, a_dtype, n)
+
+
+def resolve_output_dtype(dtype, func_str, a_dtype, n):
+    """The dtype resolution of ``check_dtype`` given the input dtype directly.
+
+    ``a_dtype`` is the dtype of the input data and ``n`` the number of values
+    to be aggregated (only needed by the ``sum`` overflow guesses).
+    """
     if dtype is not None:
         # dtype set by the user
         # Careful here: np.bool != np.bool_ !
@@ -620,15 +645,16 @@ def input_validation(
     if not is_duck_array(group_idx):
         group_idx = np.asanyarray(group_idx)
 
-    if not np.issubdtype(group_idx.dtype, np.integer):
+    # equivalent to np.issubdtype(group_idx.dtype, np.integer), just cheaper
+    if group_idx.dtype.kind not in "iu":
         raise TypeError("group_idx must be of integer type")
 
     # This check works for multidimensional indexing as well
     if check_bounds and np.any(group_idx < 0):
         raise ValueError("negative indices not supported")
 
-    ndim_idx = np.ndim(group_idx)
-    ndim_a = np.ndim(a)
+    ndim_idx = group_idx.ndim
+    ndim_a = getattr(a, "ndim", 0)
 
     # Deal with the axis arg: if present, then turn 1d indexing into
     # multi-dimensional indexing along the specified axis.
@@ -698,7 +724,7 @@ def input_validation(
             group_idx = np.ravel_multi_index(group_idx, size, order=order, mode="raise")
         flat_size = np.prod(size)
 
-    if not (np.ndim(a) == 0 or len(a) == group_idx.size):
+    if not (ndim_a == 0 or len(a) == group_idx.size):
         raise ValueError("group_idx and a must be of the same length, or a can be scalar")
 
     return group_idx, a, flat_size, ndim_idx, size, None

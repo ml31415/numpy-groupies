@@ -9,6 +9,7 @@ from .utils import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     aliasing,
+    build_dispatch,
     check_dtype,
     check_fill_value,
     check_nton_shape,
@@ -16,6 +17,7 @@ from .utils import (
     get_func,
     input_validation,
     resolve_fill_value,
+    resolve_output_dtype,
 )
 
 
@@ -137,18 +139,32 @@ class AggregateOp:
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
-        dtype = check_dtype(dtype, self.func, a, len(group_idx))
-        fill_value = resolve_fill_value(self.func, fill_value, dtype)
-        check_fill_value(fill_value, dtype, func=self.func)
-        input_dtype = type(a) if np.isscalar(a) else a.dtype
+        a_shape = getattr(a, "shape", None)
+        if a_shape is None or not a_shape:
+            # scalar input: the type stands in for the dtype, and only the
+            # bool 'sum' dtype guess depends on the input length
+            a_key = type(a)
+            n_key = len(group_idx) if (self.func == "sum" and a_key in _SCALAR_BOOL_TYPES) else 0
+        else:
+            a_key = a.dtype
+            n_key = len(group_idx) if (self.func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
+        try:
+            dtype, fill_value = _dtype_fill_plan(self, a_key, dtype, fill_value, n_key)
+        except TypeError:
+            # unhashable dtype/fill_value (or a genuine TypeError from the
+            # checks, e.g. 0-d array input) - resolve without the cache
+            dtype = check_dtype(dtype, self.func, a, len(group_idx))
+            fill_value = resolve_fill_value(self.func, fill_value, dtype)
+            check_fill_value(fill_value, dtype, func=self.func)
+        input_dtype = a_key
         ret, counter, mean, outer = self._initialize(flat_size, fill_value, dtype, input_dtype, group_idx.size)
         group_idx = np.ascontiguousarray(group_idx)
 
-        if not np.isscalar(a):
+        if isinstance(a, np.generic) or a_shape is None:
+            jitfunc = self._jit_scalar
+        else:
             a = np.ascontiguousarray(a)
             jitfunc = self._jit_non_scalar
-        else:
-            jitfunc = self._jit_scalar
         jitfunc(group_idx, a, ret, counter, mean, outer, fill_value, ddof)
         self._finalize(ret, counter, fill_value)
 
@@ -798,6 +814,41 @@ def get_funcs():
 
 _impl_dict = get_funcs()
 
+# alias (string or callable) -> compiled op instance, so that the common call
+# path resolves with a single dict lookup instead of the two-step aliasing +
+# implementation resolution in get_func
+_dispatch = build_dispatch(_impl_dict, aliasing)
+
+# input dtypes for which the 'sum' output dtype depends on the input length
+# (the overflow guesses in resolve_output_dtype)
+_N_DEPENDENT_ADTYPES = frozenset(
+    np.dtype(t) for t in ("bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "uint64")
+)
+_SCALAR_BOOL_TYPES = frozenset((bool, np.bool_))
+
+
+@functools.lru_cache(maxsize=256)
+def _dtype_fill_plan(op, a_key, dtype, fill_value, n):
+    """Memoized output-dtype and fill-value resolution.
+
+    ``a_key`` is ``type(a)`` for scalar inputs and ``a.dtype`` otherwise.
+    ``n`` carries ``len(group_idx)`` only for the length-dependent ``sum``
+    dtype guesses and is 0 otherwise.  Unhashable arguments fail the cache
+    lookup with a TypeError, which the caller answers with the uncached
+    resolution.
+    """
+    func = op.func
+    if isinstance(a_key, type):
+        if func not in ("sum", "prod", "len"):
+            raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
+        a_dtype = np.dtype(a_key)
+    else:
+        a_dtype = a_key
+    out_dtype = resolve_output_dtype(dtype, func, a_dtype, n)
+    fill_value = resolve_fill_value(func, fill_value, out_dtype)
+    check_fill_value(fill_value, out_dtype, func=func)
+    return out_dtype, fill_value
+
 
 def aggregate(
     group_idx,
@@ -811,6 +862,27 @@ def aggregate(
     cache=True,
     **kwargs,
 ):
+    try:
+        aggregate_op = _dispatch[func][1]
+    except (KeyError, TypeError):
+        # a custom callable, or an unknown name that get_func complains about
+        return _aggregate_custom(group_idx, a, func, size, fill_value, order, dtype, axis, cache, **kwargs)
+    return aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+
+
+def _aggregate_custom(
+    group_idx,
+    a,
+    func,
+    size,
+    fill_value,
+    order,
+    dtype,
+    axis,
+    cache,
+    **kwargs,
+):
+    """Slow dispatch path for custom callables and unknown function names."""
     func = get_func(func, aliasing, _impl_dict)
     if not isinstance(func, str):
         if cache in (None, False):

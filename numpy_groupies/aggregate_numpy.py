@@ -4,6 +4,7 @@ from .utils import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     aliasing,
+    build_dispatch,
     check_boolean,
     check_dtype,
     check_fill_value,
@@ -425,6 +426,8 @@ _impl_dict = {
 _impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not in funcs_no_separate_nan)
 _impl_dict["nancumsum"] = _nancumsum
 
+_dispatch = build_dispatch(_impl_dict, aliasing)
+
 
 def _aggregate_base(
     group_idx,
@@ -436,6 +439,7 @@ def _aggregate_base(
     dtype=None,
     axis=None,
     _impl_dict=_impl_dict,
+    _dispatch=_dispatch,
     is_pandas=False,
     **kwargs,
 ):
@@ -446,35 +450,43 @@ def _aggregate_base(
         # Force conversion to signed int, to avoid issues with bincount etc later
         group_idx = group_idx.astype(int)
 
-    func = get_func(func, aliasing, _impl_dict)
-    funcname = func
-    if not isinstance(func, str):
+    try:
+        funcname, func = _dispatch[func]
+    except (KeyError, TypeError):
+        # a custom callable - unknown names make get_func raise, and get_func
+        # can only return callables here, since every implemented name has a
+        # dispatch entry
+        func = get_func(func, aliasing, _impl_dict)
+        funcname = func
         fill_value = resolve_fill_value(func, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
         # do simple grouping and execute function in loop
         ret = _impl_dict.get("generic", _generic_callable)(
             group_idx, a, flat_size, fill_value, func=func, dtype=dtype, **kwargs
         )
+        if ndim_idx > 1:
+            check_nton_shape(ret, size, funcname)
+            ret = ret.reshape(size, order=order)
+        return ret
     else:
         # deal with nans and find the function
-        if func.startswith("nan"):
+        if funcname.startswith("nan"):
             if np.ndim(a) == 0:
                 raise ValueError("nan-version not supported for scalar input.")
-            if "nan" in func:
-                if "arg" in func:
+            if "nan" in funcname:
+                if "arg" in funcname:
                     kwargs["_nansqueeze"] = True
-                elif "cum" in func:
+                elif "cum" in funcname:
                     pass
                 else:
                     good = ~np.isnan(a)
-                    if "len" not in func or is_pandas:
+                    if "len" not in funcname or is_pandas:
                         # a is not needed for len, nanlen!
                         a = a[good]
                     group_idx = group_idx[good]
 
-        dtype = check_dtype(dtype, func, a, flat_size)
-        fill_value = resolve_fill_value(func, fill_value, dtype)
-        check_fill_value(fill_value, dtype, func=func)
-        funcname, func = func, _impl_dict[func]
+        dtype = check_dtype(dtype, funcname, a, flat_size)
+        fill_value = resolve_fill_value(funcname, fill_value, dtype)
+        check_fill_value(fill_value, dtype, func=funcname)
         ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
     # deal with ndimensional indexing
