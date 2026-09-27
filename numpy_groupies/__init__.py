@@ -35,13 +35,18 @@ except ImportError:
     aggregate_nb = None
 else:
     from .aggregate_numba import aggregate as aggregate_nb
-    from .aggregate_numba import step_count, step_indices
+    from .aggregate_numba import step_count, step_indices, unpack_into
 
     aggregate = aggregate_nb
 
 
-def uaggregate(group_idx, a, **kwargs):
-    return unpack(group_idx, aggregate(group_idx, a, **kwargs))
+def uaggregate(group_idx, a, out=None, **kwargs):
+    ret = aggregate(group_idx, a, **kwargs)
+    if out is None:
+        return unpack(group_idx, ret)
+    if aggregate is not aggregate_nb:
+        raise NotImplementedError("out= is only supported by the numba implementation")
+    return unpack_into(group_idx, ret, out)
 
 
 try:
