@@ -6,6 +6,7 @@ import warnings
 import numpy as np
 import pytest
 
+from .. import aggregate_np, aggregate_ufunc
 from ..utils import default_fill_value
 from . import (
     _impl_name,
@@ -667,6 +668,27 @@ def test_complex_unorderable_numba(func):
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j])
     with pytest.raises(NotImplementedError, match="complex numbers have no order"):
         aggregate_numba.aggregate(group_idx, a, func=func)
+
+
+def test_complex_min_max_reduction_seeds_with_the_extreme_value():
+    # min and max seed themselves with the extreme value of the dtype, and the
+    # extreme of a complex dtype is inf+infj (respectively -inf-infj) under
+    # numpy's lexicographic order: inf+0j - the extreme of a single part - is
+    # smaller than inf+infj, so it would win a group it is not part of.  Each
+    # group holds one value, so min, max and the indices are all determined.
+    group_idx = np.array([0, 1])
+    a = np.array([complex(np.inf, np.inf), complex(-np.inf, -np.inf)])
+
+    values = ("min", "max", "nanmin", "nanmax")
+    indices = ("argmin", "argmax", "nanargmin", "nanargmax")
+    for func in values:
+        np.testing.assert_array_equal(np.asarray(aggregate_np(group_idx, a, func=func, size=2)), a)
+    for func in indices:
+        np.testing.assert_array_equal(np.asarray(aggregate_np(group_idx, a, func=func, size=2)), [0, 1])
+    # the ufunc backend reduces min and max only - it has no arg functions and
+    # no nan variants to get the seed wrong with
+    for func in ("min", "max"):
+        np.testing.assert_array_equal(np.asarray(aggregate_ufunc(group_idx, a, func=func, size=2)), a)
 
 
 @pytest.mark.deselect_if(func=_deselect_purepy)

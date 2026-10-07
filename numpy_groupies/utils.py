@@ -621,6 +621,11 @@ def minval(fill_value, dtype):
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return -np.inf
+    if issubclass(dtype.type, np.complexfloating):
+        # numpy orders complex values lexicographically, so -inf+0j is *larger*
+        # than -inf-infj: the extreme of a single part is not the extreme value,
+        # both parts have to sit at the same end of the order
+        return complex(-np.inf, -np.inf)
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).min
     return np.finfo(dtype).min
@@ -630,6 +635,10 @@ def maxval(fill_value, dtype):
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return np.inf
+    if issubclass(dtype.type, np.complexfloating):
+        # see minval: the seed of the reduction has to be the largest value of
+        # numpy's order, which is inf+infj and not inf+0j
+        return complex(np.inf, np.inf)
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).max
     return np.finfo(dtype).max
