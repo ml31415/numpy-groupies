@@ -46,7 +46,9 @@ aggregate_common_doc = """
         std, and min/max/first/last on floating input), ``0`` for the
         trapezoidal integral (as it is for a single sample), ``-1`` for
         argmax/argmin, and an empty sequence for array/sort.  Integer output
-        cannot hold ``nan``, so those functions fall back to ``0``.  Use
+        cannot hold ``nan``, so those functions fall back to ``0``.  For complex
+        output the default ``nan`` fills with a nan in *both* parts, so that an
+        empty group looks the same in every implementation.  Use
         ``utils.default_fill_value(func, dtype)`` to query the value, or pass
         your own.  Note that there are some subtle interactions between what is
         permitted for ``fill_value`` and the input/output ``dtype`` - exceptions
@@ -60,8 +62,10 @@ aggregate_common_doc = """
         Complex input keeps the complex dtype wherever the result is complex
         (sum, prod, mean, median, trapezoid, first, last, sort, cumsum), while
         var, std and sumofsquares measure squared magnitudes and return a real
-        dtype - matching numpy.  Order-dependent functions (min, max, argmax,
-        argmin) are not supported for complex input by the numba
+        dtype - matching numpy.  Requesting a non-complex ``dtype`` for complex
+        input is refused for every function that does return a complex result,
+        since the imaginary part would be lost.  Order-dependent functions (min,
+        max, argmax, argmin) are not supported for complex input by the numba
         implementation, which cannot order complex values.
     axis: default=None
         allows aggregation to be performed along a single axis of a
@@ -197,6 +201,17 @@ def resolve_fill_value(func, fill_value, dtype):
         value = np.nan if fits else 0
     elif value != value and not fits:
         value = 0
+    if (
+        isinstance(value, float)
+        and value != value
+        and dtype is not None
+        and np.issubdtype(dtype, np.complexfloating)
+        and key not in _forced_real_float_types
+    ):
+        # a nan of a complex output has to be a nan in both parts - the numpy
+        # kernels divide an empty sum by zero and so get nan+nanj for free,
+        # and filling with nan+0j would make the backends disagree
+        value = np.nan + np.nan * 1j
     return list(value) if isinstance(value, list) else value
 
 
@@ -487,6 +502,29 @@ _forced_same_type = {
     "nanfirst",
     "nanlast",
 }
+# functions whose result is not complex even for complex input - only these may
+# be asked for a non-complex dtype, everything else would throw the imaginary
+# part of the values away
+_complex_real_result = _forced_real_float_types | _forced_types.keys()
+
+
+def check_complex_dtype(a_dtype, dtype, func_str):
+    """Complain when a non-complex ``dtype`` is requested for complex input.
+
+    ``resolve_output_dtype`` applies this for the backends that honour ``dtype``;
+    the pure python implementation needs it on its own, since python numbers
+    carry no dtype and it would otherwise silently ignore the request.
+    """
+    if (
+        dtype is not None
+        and np.issubdtype(a_dtype, np.complexfloating)
+        and not np.issubdtype(dtype, np.complexfloating)
+        and func_str not in _complex_real_result
+    ):
+        raise TypeError(
+            f"function {func_str} cannot aggregate complex values into the non-complex dtype "
+            f"{np.dtype(dtype)} - pass a complex dtype to keep the imaginary part"
+        )
 
 
 def check_dtype(dtype, func_str, a, n):
@@ -513,6 +551,7 @@ def resolve_output_dtype(dtype, func_str, a_dtype, n):
             raise TypeError(f"function {func_str} requires a more complex datatype than bool")
         if not np.issubdtype(dtype, np.integer) and func_str in ("len", "nanlen"):
             raise TypeError(f"function {func_str} requires an integer datatype")
+        check_complex_dtype(a_dtype, dtype, func_str)
         # TODO: Maybe have some more checks here
         return np.dtype(dtype)
     else:
@@ -565,7 +604,6 @@ def resolve_output_dtype(dtype, func_str, a_dtype, n):
 # at all - backends built on them reject the order-dependent functions for
 # complex input instead of leaking a TypeError from a comparison
 _no_complex_order = frozenset(["min", "max", "argmin", "argmax", "nanmin", "nanmax", "nanargmin", "nanargmax"])
-_no_complex_order_or_median = _no_complex_order | {"median", "nanmedian"}
 
 
 def check_dtype_support(func_str, a_dtype, backend, funcs=_no_complex_order):

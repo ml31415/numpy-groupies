@@ -8,6 +8,7 @@ from .utils import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     build_dispatch,
+    check_complex_dtype,
     funcs_no_separate_nan,
     get_func,
     resolve_fill_value,
@@ -207,6 +208,10 @@ def aggregate(
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it
     fill_value = resolve_fill_value(func, fill_value, np.asarray(a).dtype)
+    if dtype is not None and isinstance(func, str):
+        # python numbers carry no dtype at all, so this is the one place where
+        # the pure python implementation has to reject a non-complex dtype
+        check_complex_dtype(np.asarray(a).dtype, dtype, func)
 
     if isinstance(func, str):
         if func.startswith("nan"):

@@ -336,8 +336,9 @@ def test_complex_empty_group(aggregate_all, a_dtype):
         # the pure python implementation computes with python numbers, which
         # are always double precision
         assert res.dtype == a_dtype
-    # nan + 0j for the complex dtypes, i.e. nan in either part
-    assert np.isnan(res[1])
+    # the nan default of a complex output is a nan in *both* parts, so all
+    # implementations fill an empty group identically
+    assert np.isnan(res[1].real) and np.isnan(res[1].imag)
 
 
 def test_complex_nan_handling(aggregate_all):
