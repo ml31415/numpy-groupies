@@ -229,8 +229,8 @@ def test_one_out_per_in_cannot_fill(aggregate_all, func):
 
 
 # functions with a well-defined complex result, following numpy semantics;
-# median, sort and the min/max family are order statistics - covered in the
-# tests below, since not every backend can order complex values
+# the min/max and argmin/argmax families are order statistics - they live in
+# complex_order_funcs below, since not every backend can order complex values
 complex_funcs = (
     "sum",
     "prod",
@@ -246,13 +246,52 @@ complex_funcs = (
     "nanmean",
     "nanvar",
     "nanstd",
+    "nanmedian",
+    "nantrapezoid",
+    "nansumofsquares",
+    "cumsum",
+    "all",
+    "any",
+    "allnan",
+    "anynan",
+    "len",
+    "nanlen",
+    "nanfirst",
+    "nanlast",
 )
 # their complex result is the real squared magnitude, not complex a*a
-complex_real_out_funcs = {"var", "std", "sumofsquares", "nanvar", "nanstd"}
+complex_real_out_funcs = {"var", "std", "sumofsquares", "nanvar", "nanstd", "nansumofsquares"}
+# these count or test values, so their result is not a number of the input type
+complex_bool_funcs = {"all", "any", "allnan", "anynan"}
+complex_int_funcs = {"len", "nanlen"}
+# order statistics: numpy orders complex values lexicographically, numba cannot
+complex_order_funcs = ("min", "max", "nanmin", "nanmax")
+complex_arg_funcs = ("argmin", "argmax", "nanargmin", "nanargmax")
+complex_unorderable_funcs = complex_order_funcs + complex_arg_funcs
+# functions whose output dtype a complex input does not fix
+complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
+
+
+def _not_nan(vals):
+    """numpy's isnan of a complex value is true when either part is nan"""
+    return ~(np.isnan(vals.real) | np.isnan(vals.imag))
+
+
+def _trapezoid_ref(vals):
+    # np.trapz was renamed to np.trapezoid in numpy 2.0
+    func_ref = getattr(np, "trapezoid", None) or np.trapz
+    return func_ref(vals)
 
 
 def _complex_reference(func, group_idx, a, size):
     """group-wise application of the numpy function (or its python equivalent)"""
+    if func == "cumsum":
+        # one value per input item, written back to the position of the item
+        ret = np.empty(a.shape, dtype=np.result_type(a, np.float64))
+        for grp in range(size):
+            pos = np.flatnonzero(group_idx == grp)
+            ret[pos] = np.cumsum(a[pos])
+        return ret
     ret = []
     for grp in range(size):
         vals = a[group_idx == grp]
@@ -260,15 +299,26 @@ def _complex_reference(func, group_idx, a, size):
             ret.append(vals[0])
         elif func == "last":
             ret.append(vals[-1])
+        elif func == "nanfirst":
+            ret.append(vals[_not_nan(vals)][0])
+        elif func == "nanlast":
+            ret.append(vals[_not_nan(vals)][-1])
         elif func == "sumofsquares":
             ret.append(np.sum(np.abs(vals) ** 2))
+        elif func == "nansumofsquares":
+            ret.append(np.sum(np.abs(vals[_not_nan(vals)]) ** 2))
+        elif func in ("len", "nanlen"):
+            ret.append(len(vals) if func == "len" else int(_not_nan(vals).sum()))
+        elif func == "allnan":
+            ret.append(bool(np.all(np.isnan(vals))))
+        elif func == "anynan":
+            ret.append(bool(np.any(np.isnan(vals))))
+        elif func == "trapezoid":
+            ret.append(_trapezoid_ref(vals))
+        elif func == "nantrapezoid":
+            ret.append(_trapezoid_ref(vals[_not_nan(vals)]))
         else:
-            if func == "trapezoid":
-                # np.trapz was renamed to np.trapezoid in numpy 2.0
-                func_ref = getattr(np, "trapezoid", None) or np.trapz
-            else:
-                func_ref = getattr(np, func)
-            ret.append(func_ref(vals))
+            ret.append(getattr(np, func)(vals))
     return ret
 
 
@@ -287,6 +337,10 @@ def test_complex(aggregate_all, func, a_dtype):
         # the pure python implementation computes with python numbers, which
         # are always double precision
         pass
+    elif func in complex_bool_funcs:
+        assert res.dtype == np.dtype(bool)
+    elif func in complex_int_funcs:
+        assert np.issubdtype(res.dtype, np.integer)
     elif func in complex_real_out_funcs:
         # the squared magnitude is real, with the real counterpart dtype of
         # the input (complex64 -> float32), exactly like np.var
@@ -361,7 +415,249 @@ def test_array_ordering(aggregate_all, order, size=10):
     assert aggregate_all(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(range(size))
 
 
-@pytest.mark.parametrize("func", ["min", "max", "argmin", "argmax"])
+def _deselect_numba_unorderable(aggregate_all, func, *args, **kwargs):
+    # the numba kernels refuse complex values for the order statistics - that
+    # is checked on its own by test_complex_unorderable_numba
+    if _deselect_not_implemented(aggregate_all, func, *args, **kwargs):
+        return True
+    return aggregate_all.__name__.endswith("numba") and func in complex_unorderable_funcs
+
+
+# everything complex, including the order statistics
+complex_all_funcs = complex_funcs + complex_order_funcs + complex_arg_funcs
+# cumsum yields one value per input item, so it cannot be indexed per group
+complex_nan_funcs = tuple(func for func in complex_all_funcs if func != "cumsum")
+
+
+@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.parametrize("func", complex_all_funcs, ids=str)
+def test_complex_matches_equivalent_real_input(aggregate_all, func):
+    # values with a zero imaginary part have to aggregate exactly like the very
+    # same values as floats - representing them as complex may not change a result
+    rng = np.random.default_rng(11)
+    group_idx = np.repeat(np.arange(4), 5)
+    x = rng.random(group_idx.size) * 10 - 5
+    if func.startswith("nan"):
+        x[::4] = np.nan
+
+    expected = np.asarray(aggregate_all(group_idx, x, func=func, size=4))
+    res = np.asarray(aggregate_all(group_idx, x.astype(np.complex128), func=func, size=4))
+    np.testing.assert_allclose(res, expected.astype(np.complex128), rtol=1e-9, equal_nan=True)
+
+
+@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.parametrize("func", complex_all_funcs, ids=str)
+def test_complex_conjugation_symmetry(aggregate_all, func):
+    # negating every imaginary part may only negate the imaginary part of the
+    # result - the functions measuring a squared magnitude ignore it entirely
+    rng = np.random.default_rng(12)
+    group_idx = np.repeat(np.arange(3), 4)
+    a = (rng.random(group_idx.size) * 4 - 2) + 1j * (rng.random(group_idx.size) * 4 - 2)
+
+    res = np.asarray(aggregate_all(group_idx, a, func=func, size=3))
+    conj = np.asarray(aggregate_all(group_idx, a.conj(), func=func, size=3))
+    if func in complex_real_out_funcs | complex_bool_funcs | complex_int_funcs:
+        np.testing.assert_allclose(conj, res, rtol=1e-6)
+    else:
+        np.testing.assert_allclose(conj, np.conj(res), rtol=1e-6)
+
+
+@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.parametrize("func", complex_nan_funcs, ids=str)
+def test_complex_nan_in_either_part(aggregate_all, func):
+    # a nan in the imaginary part has to hit the result exactly like a nan in
+    # the real part - the nan check looks at both parts
+    group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+    a = np.array([1 + 2j, 2 + 3j, np.nan + 1j, 4 + 5j, 5 + 6j, 6 + 7j, 7 + 8j, np.nan + 9j])
+
+    res = np.asarray(aggregate_all(group_idx, a, func=func, size=2))
+    imag_nan = np.asarray(aggregate_all(group_idx, a.conj(), func=func, size=2))
+    if func in complex_bool_funcs | complex_int_funcs:
+        # truthiness and counting do not care where the nan sits
+        np.testing.assert_array_equal(imag_nan, res)
+        return
+    if func in complex_arg_funcs:
+        # these report an index, which cannot conjugate - the nan only shows up
+        # in which index is (not) chosen
+        np.testing.assert_array_equal(imag_nan, res)
+        return
+    if func in ("first", "last"):
+        # these pick a position, so the value simply follows the conjugation
+        np.testing.assert_allclose(imag_nan, np.conj(res), rtol=1e-9)
+        return
+    if aggregate_all.__name__.endswith("purepy") and func in complex_order_funcs:
+        pytest.skip("the builtin min/max have no nan semantics, unlike numpy's")
+    if not func.startswith("nan"):
+        # the plain functions propagate the nan, whichever part it hides in,
+        # while their nan counterparts skip it in both parts alike
+        assert np.isnan(res[0]).any() and np.isnan(imag_nan[0]).any()
+    if func in complex_real_out_funcs:
+        np.testing.assert_allclose(imag_nan, res, rtol=1e-6, equal_nan=True)
+    else:
+        np.testing.assert_allclose(imag_nan, np.conj(res), rtol=1e-6, equal_nan=True)
+
+
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
+@pytest.mark.parametrize("dtype", [np.float64, np.float32, np.int64, bool], ids=["float64", "float32", "int64", "bool"])
+@pytest.mark.parametrize("func", ["sum", "prod", "mean", "median", "first", "last", "trapezoid", "cumsum"])
+def test_complex_rejects_non_complex_dtype(aggregate_all, func, dtype):
+    # a non-complex dtype would silently throw the imaginary part away
+    group_idx = np.array([0, 0, 1, 1, 2])
+    a = np.array([1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j])
+
+    with pytest.raises(TypeError):
+        aggregate_all(group_idx, a, func=func, size=3, dtype=dtype)
+
+
+def test_complex_dtype_rejection_message(aggregate_all):
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1 + 2j, 3 - 1j, 5 + 5j])
+
+    with pytest.raises(TypeError, match="cannot aggregate complex values into the non-complex dtype"):
+        aggregate_all(group_idx, a, func="sum", size=2, dtype=np.float64)
+
+
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
+@pytest.mark.parametrize(
+    ("func", "dtype"),
+    [
+        ("var", np.float32),
+        ("std", np.float64),
+        ("sumofsquares", np.float64),
+        ("nanvar", np.float64),
+        ("len", np.int64),
+        ("all", bool),
+    ],
+)
+def test_complex_accepts_the_real_result_dtypes(aggregate_all, func, dtype):
+    # var, std and sumofsquares measure a real squared magnitude, and the
+    # counting and testing functions never were complex to begin with
+    group_idx = np.array([0, 0, 1, 1, 2])
+    a = np.array([1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j]).astype(np.complex64)
+
+    res = np.asarray(aggregate_all(group_idx, a, func=func, size=3, dtype=dtype))
+    if not aggregate_all.__name__.endswith("purepy"):
+        # the pure python implementation ignores the dtype argument entirely
+        assert res.dtype == np.dtype(dtype)
+
+
+@pytest.mark.parametrize("func", ["sum", "prod"])
+def test_complex_scalar_input(aggregate_all, func):
+    # scalars are permitted for sum and prod, in every implementation
+    group_idx = np.arange(0, 20, dtype=int).repeat(5)
+    res = np.asarray(aggregate_all(group_idx, 2 + 3j, func=func))
+    expected = np.asarray(aggregate_all(group_idx, np.full(group_idx.size, 2 + 3j), func=func))
+    np.testing.assert_allclose(res, expected)
+
+
+@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.parametrize("func", ["mean", "var", "std", "min", "max"])
+def test_complex_scalar_rejected(aggregate_all, func):
+    with pytest.raises((ValueError, NotImplementedError)):
+        aggregate_all(np.arange(0, 10, dtype=int), 2 + 3j, func=func)
+
+
+# the value a group missing from group_idx is filled with, for complex input:
+# the same table numpy itself follows - with a nan in *both* parts wherever the
+# default is a nan at all, since the numpy kernels divide an empty sum by zero
+complex_fill_cases = [
+    ("mean", np.nan),
+    ("median", np.nan),
+    ("first", np.nan),
+    ("last", np.nan),
+    ("min", np.nan),
+    ("max", np.nan),
+    ("nanmean", np.nan),
+    ("nanmedian", np.nan),
+    ("var", np.nan),
+    ("std", np.nan),
+    ("nanvar", np.nan),
+    ("nanstd", np.nan),
+    ("sum", 0),
+    ("nansum", 0),
+    ("prod", 1),
+    ("len", 0),
+    ("nanlen", 0),
+    ("trapezoid", 0),
+    ("sumofsquares", 0),
+    ("nansumofsquares", 0),
+    ("all", 0),
+    ("any", 0),
+]
+
+
+@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.parametrize(("func", "fill"), complex_fill_cases)
+def test_complex_default_fill_value(aggregate_all, func, fill):
+    group_idx = np.array([0, 0, 2, 2, 2])
+    a = np.array([1 + 2j, 3 + 1j, 5 + 5j, 4 - 3j, 6 + 1j])
+
+    res = np.asarray(aggregate_all(group_idx, a, func=func, size=3))
+    if not np.isnan(fill):
+        np.testing.assert_allclose(res[1], fill)
+    elif func in complex_real_out_funcs:
+        # a real result has no imaginary part to poison
+        assert np.isnan(res[1])
+    else:
+        assert np.isnan(res[1].real) and np.isnan(res[1].imag)
+
+
+def test_complex_explicit_fill_value(aggregate_all):
+    group_idx = np.array([0, 0, 2, 2])
+    a = np.array([1 + 2j, 3 + 1j, 5 + 5j, 4 - 3j])
+
+    res = np.asarray(aggregate_all(group_idx, a, func="mean", size=3, fill_value=1 - 2j))
+    np.testing.assert_allclose(res[1], 1 - 2j)
+
+    # a real fill value is a complex one with a zero imaginary part
+    res = np.asarray(aggregate_all(group_idx, a, func="mean", size=3, fill_value=1.0))
+    np.testing.assert_allclose(res[1], 1 + 0j)
+
+
+@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.parametrize("axis", (0, 1))
+def test_complex_axis(aggregate_all, axis):
+    # the labels run along the requested axis, the remaining axes are kept
+    group_idx = np.array([1, 0, 0, 1])
+    rng = np.random.default_rng(14)
+    shape = (4, 3) if axis == 0 else (3, 4)
+    a = rng.random(shape) + 1j * rng.random(shape)
+
+    res = np.asarray(aggregate_all(group_idx, a, func="sum", axis=axis))
+    groups = np.unique(group_idx)
+    if axis == 0:
+        expected = np.stack([a[group_idx == grp].sum(axis=0) for grp in groups])
+    else:
+        expected = np.stack([a[:, group_idx == grp].sum(axis=1) for grp in groups], axis=1)
+    np.testing.assert_allclose(res, expected, rtol=1e-9)
+    assert res.dtype == a.dtype
+
+
+@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.parametrize("func", ["sum", "mean", "var", "max", "first", "last"])
+def test_complex_non_contiguous_input(aggregate_all, func):
+    # a strided view is as valid an input as a contiguous array
+    rng = np.random.default_rng(13)
+    base = rng.random(40) + 1j * rng.random(40)
+    a = base[::2]  # 20 values, stride 2 - and not contiguous
+    assert not a.flags["C_CONTIGUOUS"] and not a.flags["F_CONTIGUOUS"]
+    group_idx = np.repeat(np.arange(5), 4)
+
+    expected = np.asarray(aggregate_all(group_idx, a.copy(), func=func, size=5))
+    res = np.asarray(aggregate_all(group_idx, a, func=func, size=5))
+    np.testing.assert_allclose(res, expected, rtol=1e-9)
+
+
+def test_complex_list_input(aggregate_all):
+    group_idx = np.array([0, 0, 1, 1, 1])
+    a = [1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j]
+
+    res = np.asarray(aggregate_all(group_idx, a, func="mean", size=2))
+    np.testing.assert_allclose(res, [np.mean(a[:2]), np.mean(a[2:])], rtol=1e-5)
+    assert res.dtype == np.complex128
+
+
+@pytest.mark.parametrize("func", ["min", "max", "argmin", "argmax", "nanmin", "nanmax", "nanargmin", "nanargmax"])
 def test_complex_unorderable_numba(func):
     # the numba kernels cannot order complex values - they must say so
     # instead of failing to compile with a TypingError
