@@ -148,9 +148,11 @@ Complex input is supported wherever the result is well defined, following numpy'
 functions keep the complex dtype (order statistics like `median` and `sort` use numpy's
 lexicographic ordering of the real and then imaginary part), while `var`, `std` and `sumofsquares`
 measure squared magnitudes and therefore return a real dtype (like `np.var` of complex input).
-The order-dependent `min`, `max`, `argmax` and `argmin` are available in the numpy, pandas and
-pure python implementations, but rejected by the numba implementation, which has no notion of
-ordering complex numbers.
+The order statistics `min`, `max`, `argmin`, `argmax` and their `nan` counterparts follow numpy's
+lexicographic ordering everywhere - the real part decides, the imaginary part only breaks a tie -
+including the numba implementation, which compares the two parts itself since neither python nor
+numba orders complex numbers.  Like numpy, a value with a nan in either part compares neither
+smaller nor greater.
 
 ### Examples
 Compute sums of consecutive integers, and then compute products of those consecutive integers.

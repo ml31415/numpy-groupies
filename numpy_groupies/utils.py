@@ -64,9 +64,12 @@ aggregate_common_doc = """
         var, std and sumofsquares measure squared magnitudes and return a real
         dtype - matching numpy.  Requesting a non-complex ``dtype`` for complex
         input is refused for every function that does return a complex result,
-        since the imaginary part would be lost.  Order-dependent functions (min,
-        max, argmax, argmin) are not supported for complex input by the numba
-        implementation, which cannot order complex values.
+        since the imaginary part would be lost.  The order-dependent functions
+        (min, max, argmax, argmin and their ``nan`` counterparts) follow numpy's
+        lexicographic ordering - the real part decides, the imaginary part only
+        breaks a tie - in every implementation, including numba, which compares
+        the two parts itself because neither python nor numba orders complex
+        numbers.
     axis: default=None
         allows aggregation to be performed along a single axis of a
         multi-dimensional array ``a``.  In that case ``group_idx`` must be 1D
@@ -597,24 +600,6 @@ def resolve_output_dtype(dtype, func_str, a_dtype, n):
                         return np.dtype(np.int64)
                     else:
                         return a_dtype
-
-
-# numpy imposes a lexicographic order on complex values (real part first,
-# imaginary part second), but python and numba do not order complex numbers
-# at all - backends built on them reject the order-dependent functions for
-# complex input instead of leaking a TypeError from a comparison
-_no_complex_order = frozenset(["min", "max", "argmin", "argmax", "nanmin", "nanmax", "nanargmin", "nanargmax"])
-
-
-def check_dtype_support(func_str, a_dtype, backend, funcs=_no_complex_order):
-    """Reject functions that rely on ordered values for complex input, where
-    the backend cannot provide numpy's ordering convention."""
-    if func_str in funcs and np.issubdtype(a_dtype, np.complexfloating):
-        raise NotImplementedError(
-            f"'{func_str}' of complex values is not supported by the {backend} implementation - "
-            "complex numbers have no order (the numpy implementation follows numpy's "
-            "lexicographic convention)"
-        )
 
 
 def minval(fill_value, dtype):

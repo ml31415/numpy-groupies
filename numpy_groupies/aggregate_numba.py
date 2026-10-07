@@ -8,12 +8,10 @@ import numpy as np
 from .aggregate_numpy import _aggregate_base
 from .utils import (
     DEFAULT_FILL_VALUE,
-    _no_complex_order,
     aggregate_common_doc,
     aliasing,
     build_dispatch,
     check_dtype,
-    check_dtype_support,
     check_fill_value,
     check_nton_shape,
     funcs_no_separate_nan,
@@ -22,6 +20,40 @@ from .utils import (
     resolve_fill_value,
     resolve_output_dtype,
 )
+
+
+def complex_less(x, y):
+    """The ordering every reduction kernel of this module compares with.
+
+    For real values this is plain ``<``.  numpy orders complex values
+    lexicographically - the real part first, the imaginary part only on a tie -
+    and compares the parts with ordinary float comparisons rather than with a
+    total order, so a nan in either part compares neither smaller nor greater,
+    just like a nan of a real dtype.  Note that numpy does not look at the
+    imaginary part at all once the real parts differ, but it does require both
+    imaginary parts to be comparable for the real part to decide the order -
+    which makes ``1+nanj < 2+1j`` False instead of True.
+    """
+    raise NotImplementedError  # replaced by the overload below
+
+
+@nb.extending.overload(complex_less)
+def _complex_less_overload(x, y):
+    if isinstance(x, nb.types.Complex) and isinstance(y, nb.types.Complex):
+
+        def _impl(x, y):
+            if x.real < y.real:
+                return not (np.isnan(x.imag) or np.isnan(y.imag))
+            if x.real == y.real:
+                return x.imag < y.imag
+            return False
+
+        return _impl
+
+    def _impl(x, y):
+        return x < y
+
+    return _impl
 
 
 def njit_stable(py_func=None, cache=True, **options):
@@ -149,9 +181,6 @@ class AggregateOp:
             and type(a) is np.ndarray
             and a.ndim == 1
             and a.shape[0] == group_idx.size
-            # order-dependent kernels cannot compile complex values - fall
-            # through to the slow path, which rejects them with a clear error
-            and not (self.func in _no_complex_order and a.dtype.kind == "c")
         ):
             a_key = a.dtype
             n_key = len(group_idx) if (self.func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
@@ -201,9 +230,6 @@ class AggregateOp:
         else:
             a_key = a.dtype
             n_key = len(group_idx) if (self.func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
-        # reject order-dependent reductions of complex input before any dtype
-        # planning - np.issubdtype inside accepts plain types as well
-        check_dtype_support(self.func, a_key, "numba")
         try:
             dtype, fill_value = _dtype_fill_plan(self, a_key, dtype, fill_value, n_key)
         except TypeError:
@@ -455,7 +481,6 @@ class AggregateGeneric(AggregateOp):
 
         # TODO: The typecheck should be done by the class itself, not by check_dtype
         dtype = check_dtype(dtype, self.func, a, len(group_idx))
-        check_dtype_support(self.func, np.dtype(type(a)) if np.isscalar(a) else a.dtype, "numba")
         fill_value = resolve_fill_value(self.func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=self.func)
         input_dtype = type(a) if np.isscalar(a) else a.dtype
@@ -577,24 +602,26 @@ class Max(AggregateOp):
         # Note: ret[ri] must be read into a local first - repeating the
         # subscript expression keeps the slow codegen (aliasing).
         # val != val has to be tested explicitly - a nan compares neither
-        # smaller nor greater, so `cur < val` alone would leave a group whose
-        # nan arrives after its first value at the finite value, unlike np.max
-        # (and unlike this module's own arg kernels, which do report such a
-        # group as invalid).  The nan variants are unaffected, they filter the
-        # nans out before the kernel runs.  The extra comparison is the
-        # cheapest way to get there: np.maximum in the non-first branch
-        # (which propagates nans on its own) and the branchy form below both
-        # measured ~45% slower than this, while for integer dtypes LLVM folds
-        # the test away entirely.
+        # smaller nor greater, in numpy's order for complex values as well as
+        # for floats, so `complex_less(cur, val)` alone would leave a group
+        # whose nan arrives after its first value at the finite value, unlike
+        # np.max (and unlike this module's own arg kernels, which do report
+        # such a group as invalid).  The nan variants are unaffected, they
+        # filter the nans out before the kernel runs.  The extra comparison is
+        # the cheapest way to get there: np.maximum in the non-first branch
+        # (which propagates nans on its own, but does not order complex values
+        # the way numpy does) and the branchy form below both measured ~45%
+        # slower than this, while for integer dtypes LLVM folds the test away
+        # entirely.
         # if counter[ri]:
         #     ret[ri] = val
         #     counter[ri] = 0
-        # elif ret[ri] < val:
+        # elif complex_less(ret[ri], val):
         #     ret[ri] = val
         first = counter[ri]
         counter[ri] = 0
         cur = ret[ri]
-        ret[ri] = val if (first or val != val or cur < val) else cur
+        ret[ri] = val if (first or val != val or complex_less(cur, val)) else cur
 
 
 class Min(AggregateOp):
@@ -605,12 +632,12 @@ class Min(AggregateOp):
         # if counter[ri]:
         #     ret[ri] = val
         #     counter[ri] = 0
-        # elif ret[ri] > val:
+        # elif complex_less(val, ret[ri]):
         #     ret[ri] = val
         first = counter[ri]
         counter[ri] = 0
         cur = ret[ri]
-        ret[ri] = val if (first or val != val or cur > val) else cur
+        ret[ri] = val if (first or val != val or complex_less(val, cur)) else cur
 
 
 class ArgMax(AggregateOp):
@@ -649,7 +676,7 @@ class ArgMax(AggregateOp):
                     counter[ri] = 0
                     mean[ri] = cmp_val
                     ret[ri] = i
-                elif mean[ri] < cmp_val:
+                elif complex_less(mean[ri], cmp_val):
                     mean[ri] = cmp_val
                     ret[ri] = i
 
@@ -684,7 +711,7 @@ class ArgMin(ArgMax):
                     counter[ri] = 0
                     mean[ri] = cmp_val
                     ret[ri] = i
-                elif mean[ri] > cmp_val:
+                elif complex_less(cmp_val, mean[ri]):
                     mean[ri] = cmp_val
                     ret[ri] = i
 

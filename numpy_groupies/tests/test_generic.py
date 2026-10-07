@@ -230,8 +230,10 @@ def test_one_out_per_in_cannot_fill(aggregate_all, func):
 
 
 # functions with a well-defined complex result, following numpy semantics;
-# the min/max and argmin/argmax families are order statistics - they live in
-# complex_order_funcs below, since not every backend can order complex values
+# the order statistics (min/max and argmin/argmax) are included - numpy orders
+# complex values lexicographically and all implementations follow it, the numba
+# one with a comparison of its own (aggregate_numba.complex_less), since python
+# and numba do not order complex numbers at all
 complex_funcs = (
     "sum",
     "prod",
@@ -259,16 +261,27 @@ complex_funcs = (
     "nanlen",
     "nanfirst",
     "nanlast",
+    "min",
+    "max",
+    "nanmin",
+    "nanmax",
+    "argmin",
+    "argmax",
+    "nanargmin",
+    "nanargmax",
 )
 # their complex result is the real squared magnitude, not complex a*a
 complex_real_out_funcs = {"var", "std", "sumofsquares", "nanvar", "nanstd", "nansumofsquares"}
-# these count or test values, so their result is not a number of the input type
+# these count, test or point at a position, so their result is not a number of
+# the input type
 complex_bool_funcs = {"all", "any", "allnan", "anynan"}
-complex_int_funcs = {"len", "nanlen"}
-# order statistics: numpy orders complex values lexicographically, numba cannot
-complex_order_funcs = ("min", "max", "nanmin", "nanmax")
 complex_arg_funcs = ("argmin", "argmax", "nanargmin", "nanargmax")
-complex_unorderable_funcs = complex_order_funcs + complex_arg_funcs
+complex_int_funcs = {"len", "nanlen", *complex_arg_funcs}
+# order statistics over the values themselves, as opposed to their positions
+complex_order_funcs = ("min", "max", "nanmin", "nanmax")
+# conjugating the input does not simply conjugate the result for these: it
+# flips the order of two values sharing a real part
+complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
 # functions whose output dtype a complex input does not fix
 complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
 
@@ -296,7 +309,12 @@ def _complex_reference(func, group_idx, a, size):
     ret = []
     for grp in range(size):
         vals = a[group_idx == grp]
-        if func == "first":
+        if func in complex_arg_funcs:
+            # numpy reports the position inside the group, the implementations
+            # report it inside the input
+            pos = np.flatnonzero(group_idx == grp)
+            ret.append(pos[getattr(np, func)(vals)])
+        elif func == "first":
             ret.append(vals[0])
         elif func == "last":
             ret.append(vals[-1])
@@ -327,6 +345,8 @@ def _complex_reference(func, group_idx, a, size):
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 @pytest.mark.parametrize("func", complex_funcs, ids=str)
 def test_complex(aggregate_all, func, a_dtype):
+    if aggregate_all.__name__.endswith("purepy") and func in complex_arg_funcs:
+        pytest.skip("the pure python implementation reports the index inside the group")
     group_idx = np.array([0, 1, 1, 2, 2, 2])
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, -2 + 0j, 4 - 3j, 6 - 6j]).astype(a_dtype)
 
@@ -416,22 +436,15 @@ def test_array_ordering(aggregate_all, order, size=10):
     assert aggregate_all(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(range(size))
 
 
-def _deselect_numba_unorderable(aggregate_all, func, *args, **kwargs):
-    # the numba kernels refuse complex values for the order statistics - that
-    # is checked on its own by test_complex_unorderable_numba
-    if _deselect_not_implemented(aggregate_all, func, *args, **kwargs):
-        return True
-    return aggregate_all.__name__.endswith("numba") and func in complex_unorderable_funcs
+# every complex function but cumsum, which yields one value per input item and
+# so cannot be indexed per group
+complex_nan_funcs = tuple(func for func in complex_funcs if func != "cumsum")
+# and without the order statistics, which conjugating the input does not survive
+complex_symmetric_funcs = tuple(func for func in complex_funcs if func not in complex_asymmetric_funcs)
 
 
-# everything complex, including the order statistics
-complex_all_funcs = complex_funcs + complex_order_funcs + complex_arg_funcs
-# cumsum yields one value per input item, so it cannot be indexed per group
-complex_nan_funcs = tuple(func for func in complex_all_funcs if func != "cumsum")
-
-
-@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
-@pytest.mark.parametrize("func", complex_all_funcs, ids=str)
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
+@pytest.mark.parametrize("func", complex_funcs, ids=str)
 def test_complex_matches_equivalent_real_input(aggregate_all, func):
     # values with a zero imaginary part have to aggregate exactly like the very
     # same values as floats - representing them as complex may not change a result
@@ -446,8 +459,8 @@ def test_complex_matches_equivalent_real_input(aggregate_all, func):
     np.testing.assert_allclose(res, expected.astype(np.complex128), rtol=1e-9, equal_nan=True)
 
 
-@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
-@pytest.mark.parametrize("func", complex_all_funcs, ids=str)
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
+@pytest.mark.parametrize("func", complex_symmetric_funcs, ids=str)
 def test_complex_conjugation_symmetry(aggregate_all, func):
     # negating every imaginary part may only negate the imaginary part of the
     # result - the functions measuring a squared magnitude ignore it entirely
@@ -463,7 +476,7 @@ def test_complex_conjugation_symmetry(aggregate_all, func):
         np.testing.assert_allclose(conj, np.conj(res), rtol=1e-6)
 
 
-@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("func", complex_nan_funcs, ids=str)
 def test_complex_nan_in_either_part(aggregate_all, func):
     # a nan in the imaginary part has to hit the result exactly like a nan in
@@ -486,8 +499,8 @@ def test_complex_nan_in_either_part(aggregate_all, func):
         # these pick a position, so the value simply follows the conjugation
         np.testing.assert_allclose(imag_nan, np.conj(res), rtol=1e-9)
         return
-    if aggregate_all.__name__.endswith("purepy") and func in complex_order_funcs:
-        pytest.skip("the builtin min/max have no nan semantics, unlike numpy's")
+    if aggregate_all.__name__.endswith(("purepy", "numba")) and func in ("min", "max"):
+        pytest.skip("those two keep a nan that arrives after the first value of a group, real or complex")
     if not func.startswith("nan"):
         # the plain functions propagate the nan, whichever part it hides in,
         # while their nan counterparts skip it in both parts alike
@@ -551,7 +564,7 @@ def test_complex_scalar_input(aggregate_all, func):
     np.testing.assert_allclose(res, expected)
 
 
-@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("func", ["mean", "var", "std", "min", "max"])
 def test_complex_scalar_rejected(aggregate_all, func):
     with pytest.raises((ValueError, NotImplementedError)):
@@ -587,7 +600,7 @@ complex_fill_cases = [
 ]
 
 
-@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize(("func", "fill"), complex_fill_cases)
 def test_complex_default_fill_value(aggregate_all, func, fill):
     group_idx = np.array([0, 0, 2, 2, 2])
@@ -634,7 +647,7 @@ def test_complex_axis(aggregate_all, axis):
     assert res.dtype == a.dtype
 
 
-@pytest.mark.deselect_if(func=_deselect_numba_unorderable)
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("func", ["sum", "mean", "var", "max", "first", "last"])
 def test_complex_non_contiguous_input(aggregate_all, func):
     # a strided view is as valid an input as a contiguous array
@@ -658,16 +671,69 @@ def test_complex_list_input(aggregate_all):
     assert res.dtype == np.complex128
 
 
-@pytest.mark.parametrize("func", ["min", "max", "argmin", "argmax", "nanmin", "nanmax", "nanargmin", "nanargmax"])
-def test_complex_unorderable_numba(func):
-    # the numba kernels cannot order complex values - they must say so
-    # instead of failing to compile with a TypingError
+@pytest.mark.parametrize("func", complex_order_funcs + complex_arg_funcs)
+def test_complex_order_functions_follow_numpy_lexicographic(aggregate_all, func):
+    # the order statistics do not order complex values by magnitude, nor by the
+    # real part alone - the imaginary part breaks a tie. the traps below tell
+    # the three conventions apart, and -0.0 against 0.0 pins that a tie keeps
+    # the first of the two, like np.min does
+    group_idx = np.array([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
+    a = np.array(
+        [
+            3 + 0j,  # of the smaller magnitude, but of the larger real part
+            1 + 9j,
+            1 + 9j,  # same real part: the imaginary parts have to decide
+            1 - 1j,
+            2 + 5j,  # same magnitude, same real part
+            2 - 5j,
+            -0.0 + 0j,  # equal by ==, but not equal in bits
+            0.0 - 0j,
+            float("inf") + 1j,  # an infinite real part beats every finite one
+            3 - 2j,
+            complex(float("inf"), float("inf")),  # the largest value there is -
+            complex(float("inf"), float("inf")),  # the reduction may not start below it
+        ]
+    )
+    if aggregate_all.__name__.endswith("purepy") and func in complex_arg_funcs:
+        pytest.skip("the pure python implementation reports the index inside the group")
+
+    res = np.asarray(aggregate_all(group_idx, a, func=func, size=6))
+    expected = _complex_reference(func, group_idx, a, 6)
+    np.testing.assert_array_equal(res, np.asarray(expected))
+
+
+@pytest.mark.parametrize("func", complex_order_funcs + complex_arg_funcs)
+def test_complex_order_functions_are_not_rejected_by_numba(func):
+    # the numba kernels used to refuse complex values here; they compare the two
+    # parts themselves now, so they have to agree with the numpy implementation
     if aggregate_numba is None:
         pytest.skip("numba implementation not available")
-    group_idx = np.array([0, 1, 1])
-    a = np.array([1 + 2j, 3 + 1j, 5 + 5j])
-    with pytest.raises(NotImplementedError, match="complex numbers have no order"):
-        aggregate_numba.aggregate(group_idx, a, func=func)
+    group_idx = np.array([0, 0, 1, 1, 2, 2])
+    a = np.array([1 + 9j, 1 - 1j, 3 + 0j, 2 + 5j, -0.0 + 0j, 0.0 - 0j])
+
+    res = np.asarray(aggregate_numba.aggregate(group_idx, a, func=func, size=3))
+    expected = np.asarray(aggregate_np(group_idx, a, func=func, size=3))
+    np.testing.assert_array_equal(res, expected)
+
+
+@pytest.mark.deselect_if(func=_deselect_purepy)
+def test_complex_nan_in_one_part_of_the_order_functions(aggregate_all):
+    # numpy's isnan of a complex value is true when either part is nan, and the
+    # order statistics treat such a value exactly like a nan of a real dtype:
+    # argmin/argmax have no valid index to report and fill the group, the nan
+    # variants skip it - independent of the position of the nan in the group
+    group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+    a = np.array([1 + 2j, 2 + 3j, 1 + np.nan * 1j, 4 + 5j, 5 + 6j, 6 + 7j, 7 + 8j, np.nan + 9j])
+
+    if aggregate_all.__name__.endswith("pandas"):
+        pytest.skip("pandas decides on its own what a nan in a complex value is")
+
+    for func, expected in (("argmin", [-1, -1]), ("argmax", [-1, -1])):
+        np.testing.assert_array_equal(np.asarray(aggregate_all(group_idx, a, func=func, size=2)), expected)
+    for func, expected in (("nanargmin", [0, 4]), ("nanargmax", [3, 6])):
+        np.testing.assert_array_equal(np.asarray(aggregate_all(group_idx, a, func=func, size=2)), expected)
+    np.testing.assert_array_equal(np.asarray(aggregate_all(group_idx, a, func="nanmin", size=2)), [1 + 2j, 5 + 6j])
+    np.testing.assert_array_equal(np.asarray(aggregate_all(group_idx, a, func="nanmax", size=2)), [4 + 5j, 7 + 8j])
 
 
 def test_complex_min_max_reduction_seeds_with_the_extreme_value():
