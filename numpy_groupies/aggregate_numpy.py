@@ -121,7 +121,9 @@ def _max(group_idx, a, size, fill_value, dtype=None):
 
 
 def _argmax(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
-    a_ = np.where(np.isnan(a), -np.inf, a) if _nansqueeze else a
+    # the mask value has to be the smallest value of numpy's order, which for a
+    # complex dtype is -inf-infj and not -inf+0j (see minval and maxval)
+    a_ = np.where(np.isnan(a), minval(fill_value, a.dtype), a) if _nansqueeze else a
     group_max = _max(group_idx, a_, size, np.nan)
     # nan should never be maximum, so use a and not a_
     is_max = a == group_max[group_idx]
@@ -133,7 +135,9 @@ def _argmax(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
 
 
 def _argmin(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
-    a_ = np.where(np.isnan(a), np.inf, a) if _nansqueeze else a
+    # the mask value has to be the largest value of numpy's order, which for a
+    # complex dtype is inf+infj and not inf+0j (see minval and maxval)
+    a_ = np.where(np.isnan(a), maxval(fill_value, a.dtype), a) if _nansqueeze else a
     group_min = _min(group_idx, a_, size, np.nan)
     # nan should never be minimum, so use a and not a_
     is_min = a == group_min[group_idx]

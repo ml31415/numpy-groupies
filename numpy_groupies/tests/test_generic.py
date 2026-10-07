@@ -757,6 +757,27 @@ def test_complex_min_max_reduction_seeds_with_the_extreme_value():
         np.testing.assert_array_equal(np.asarray(aggregate_ufunc(group_idx, a, func=func, size=2)), a)
 
 
+def test_complex_nanarg_of_a_group_with_an_infinite_value():
+    # the nan variants mask the nan values with the extreme value of the order
+    # before looking for the index, and for a complex dtype that extreme is
+    # inf+infj (respectively -inf-infj): masking with inf+0j left a group whose
+    # only other value is inf+infj without any value equal to the found minimum,
+    # so it was reported as fill_value instead of as an index
+    group_idx = np.array([0, 0])
+    with_inf = np.array([complex(np.nan, 0), complex(np.inf, np.inf)])
+    with_minus_inf = np.array([complex(np.nan, 0), complex(-np.inf, -np.inf)])
+    impls = [aggregate_np] + ([aggregate_numba.aggregate] if aggregate_numba is not None else [])
+
+    for impl in impls:
+        for a, func in (
+            (with_inf, "nanargmin"),
+            (with_inf, "nanargmax"),
+            (with_minus_inf, "nanargmin"),
+            (with_minus_inf, "nanargmax"),
+        ):
+            np.testing.assert_array_equal(np.asarray(impl(group_idx, a, func=func, size=1)), [1])
+
+
 @pytest.mark.deselect_if(func=_deselect_purepy)
 @pytest.mark.parametrize("size", [None, (10, 2)])
 def test_ndim_group_idx(aggregate_all, size):
