@@ -197,7 +197,7 @@ def aggregate(
         func = _dispatch[func][0]
     except (KeyError, TypeError):
         func = get_func(func, aliasing, _impl_dict)
-    if isinstance(a, (int, float)):
+    if isinstance(a, (int, float, complex)):
         if func not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
         a = [a] * len(group_idx)

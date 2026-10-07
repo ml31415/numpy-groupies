@@ -122,9 +122,9 @@ def aggregate(
     axis=None,
     **kwargs,
 ):
-    if not np.isscalar(a) and iscomplexobj(a):
+    if iscomplexobj(a):
         # pandas' groupby kernels have no signatures for complex dtypes - the
-        # numpy implementation handles complex values correctly
+        # numpy implementation handles complex values, scalars included
         return _aggregate_numpy(
             group_idx,
             a,
