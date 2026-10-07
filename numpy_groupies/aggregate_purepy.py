@@ -41,13 +41,7 @@ def _median(x):
     mid = len(srt) // 2
     if len(srt) % 2 == 1:
         return srt[mid]
-    lo, hi = srt[mid - 1], srt[mid]
-    if isinstance(lo, (bool, np.bool_, np.integer)):
-        # numpy scalars add in their own dtype, which overflows for narrow
-        # integers and makes bool addition a logical or - np.median promotes
-        # to float before dividing, so do the same here
-        return (float(lo) + float(hi)) / 2
-    return (lo + hi) / 2
+    return (srt[mid - 1] + srt[mid]) / 2
 
 
 def _trapezoid(x, dx=1.0):

@@ -804,11 +804,8 @@ class Median(AggregateOp):
         part = np.partition(values, m // 2)
         if m % 2 == 1:
             return part[m // 2]
-        # the lower middle is the maximum of the unsorted left half; the 1.0
-        # promotes integral input to float64, just like np.median promotes
-        # before averaging - summing the two middles in their own dtype
-        # overflows (int64 2**62 + 2**62) and adds bool as a logical or
-        return (np.max(part[: m // 2]) * 1.0 + part[m // 2]) / 2
+        # the lower middle is the maximum of the unsorted left half
+        return (np.max(part[: m // 2]) + part[m // 2]) / 2
 
 
 class Trapezoid(AggregateOp):

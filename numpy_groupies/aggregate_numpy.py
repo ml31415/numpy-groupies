@@ -200,17 +200,11 @@ def _median(group_idx, a, size, fill_value, dtype=None):
     # leaving the rest unsorted - the two middles of even-sized groups are
     # obtained with a single call using both kths
     vals = np.empty(starts.size, dtype=np.float64)
-    # the mean of the two middles is taken in float64 for integral input -
-    # adding them in their own dtype overflows (int8 100 + 100) and bool
-    # addition is a logical or (True + True), while np.median promotes first
-    promote = np.issubdtype(a_srt.dtype, np.integer) or np.issubdtype(a_srt.dtype, np.bool_)
     for grp in range(starts.size):
         start, mid = starts[grp], mids[grp]
         part = np.partition(a_srt[start : start + counts[grp]], (mid - 1, mid))
         if odd[grp]:
             vals[grp] = part[mid]
-        elif promote:
-            vals[grp] = (part[mid - 1].astype(np.float64) + part[mid]) / 2
         else:
             vals[grp] = (part[mid - 1] + part[mid]) / 2
     if np.issubdtype(a_srt.dtype, np.floating):

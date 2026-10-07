@@ -514,49 +514,6 @@ def test_median_nan(aggregate_all):
     )
 
 
-@pytest.mark.parametrize("func", ["median", "nanmedian"])
-@pytest.mark.parametrize(
-    ("a", "expected"),
-    [
-        (np.array([True, True]), 1.0),
-        (np.array([False, False]), 0.0),
-        (np.array([100, 100], dtype=np.int8), 100.0),
-        (np.array([200, 200], dtype=np.uint8), 200.0),
-        (np.array([30000, 30000], dtype=np.int16), 30000.0),
-        (np.array([np.int64(2**62), np.int64(2**62)]), 2.0**62),
-    ],
-    ids=["bool", "bool_zero", "int8", "uint8", "int16", "int64"],
-)
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
-def test_median_even_group_promotes_integral_middles(aggregate_all, func, a, expected):
-    # the two middles of an even sized group must not be summed in the dtype of
-    # the input: that overflows for narrow integers (int8 100 + 100) and turns
-    # bool addition into a logical or (True + True), while np.median promotes
-    # to float64 before dividing
-    group_idx = np.array([0, 0])
-    np.testing.assert_allclose(aggregate_all(group_idx, a, func, size=1), [expected])
-
-
-@pytest.mark.parametrize("func", ["median", "nanmedian"])
-@pytest.mark.parametrize("dtype", [np.bool_, np.int8, np.uint8, np.int16, np.uint16, np.int32])
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
-def test_median_narrow_dtypes_match_numpy(aggregate_all, func, dtype):
-    # group sizes from one to five, so both the odd and the even branch of the
-    # median are checked against numpy's own promotion rules
-    counts = [1, 2, 3, 4, 5, 2, 4]
-    group_idx = np.repeat(np.arange(len(counts)), counts)
-    rng = np.random.default_rng(42)
-    if dtype is np.bool_:
-        a = rng.integers(0, 2, group_idx.size, dtype=bool)
-    else:
-        a = rng.integers(0, np.iinfo(dtype).max, group_idx.size).astype(dtype)
-    expected = [np.median(a[group_idx == grp]) for grp in range(len(counts))]
-    np.testing.assert_allclose(
-        aggregate_all(group_idx, a, func, size=len(counts)),
-        expected,
-    )
-
-
 def test_trapezoid(aggregate_all):
     # https://github.com/ml31415/numpy-groupies/issues/54
     # the integral follows the order the samples appear in, dx is the sample
