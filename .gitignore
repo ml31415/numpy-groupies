@@ -43,7 +43,6 @@ __pycache__/
 *.ini
 .venv/
 .ruff_cache/
-uv.lock
 
 # Dynamic versioning
 numpy_groupies/_version.py
