@@ -152,16 +152,20 @@ def test_complex(aggregate_all, func, a_dtype):
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 def test_complex_median(aggregate_all, a_dtype):
     # the median is an order statistic - numpy orders complex values
-    # lexicographically (real part first), and so do the backends built on
-    # numpy's dtypes; numba cannot partition complex values and falls back
-    group_idx = np.array([0, 0, 1, 1, 1])
-    a = np.array([3 + 1j, 1 + 2j, 5 + 5j, -2 + 0j, 1 - 5j]).astype(a_dtype)
+    # lexicographically (the real part first, the imaginary part breaks a tie)
+    # and so do the implementations, and a group of an even number of values
+    # averages its two middles.
+    # Both groups are traps: ordered by magnitude they would mediate to
+    # -1.5+0j and 2+0j, ordered by the real part alone the second one to 1-1j,
+    # only numpy's order answers 1+4j and 1+9j.
+    group_idx = np.array([0, 0, 0, 0, 1, 1, 1])
+    a = np.array([1 + 9j, 1 - 1j, 2 + 0j, -5 + 0j, 1 + 9j, 1 - 1j, 2 + 0j]).astype(a_dtype)
 
     res = aggregate_all(group_idx, a, func="median", size=2)
     res = np.asarray(res)
     if not aggregate_all.__name__.endswith("purepy"):
         assert res.dtype == a_dtype
-    expected = [np.median(vals) for vals in (a[:2], a[2:])]
+    expected = [np.median(vals) for vals in (a[:4], a[4:])]
     np.testing.assert_allclose(res, expected, rtol=1e-5)
 
 
