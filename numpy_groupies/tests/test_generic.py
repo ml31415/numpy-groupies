@@ -111,9 +111,8 @@ def test_fill_value(aggregate_all, func, fill_value):
     assert res[1] == fill_value
 
 
-# the one-out-per-item functions (cum*, sort) emit one value per input item,
-# so there is nothing to fill an absent group with - see
-# test_one_out_per_in_cannot_fill for those
+# the one-out-per-item functions (cum*, sort) have nothing to fill an absent
+# group with - see test_one_out_per_in_cannot_fill
 default_fill_funcs = tuple(fn for fn in func_list if "cum" not in fn)
 default_fill_funcs += ("first", "last", "nanfirst", "nanlast", "array")
 
@@ -344,12 +343,8 @@ def test_argmin_argmax_nonans(aggregate_all):
 
 
 def test_min_max_nans(aggregate_all):
-    # a nan of a group wins over its other values, at every position - np.min
-    # and np.max propagate it, and so do all implementations except pandas,
-    # which skips nans throughout.  The builtin python reductions only did so
-    # when the nan was the first value of the group (a nan compares neither
-    # smaller nor greater), and the numba kernels did not do it at all - which
-    # also contradicted their own arg kernels reporting such a group as invalid
+    # a nan of a group wins over the other values, at every position, as in
+    # np.min and np.max - the builtin reductions did it only for the first one
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([4, 3, np.nan, 1, 5, 9, 2, 7])
 
@@ -469,9 +464,8 @@ def test_nancumsum(aggregate_all):
 
 
 def test_cumsum_nan(aggregate_all):
-    # https://github.com/ml31415/numpy-groupies/issues/91
-    # NaNs propagate within their own group only - other groups and
-    # preceding entries of the same group are unaffected
+    # https://github.com/ml31415/numpy-groupies/issues/91 - nans propagate
+    # within their own group only, other groups are unaffected
     group_idx = np.array([1, 1, 1, 0, 0])
     a = np.array([[5.0, 6.0, 7.0, 8.0, 9.0], [0.0, 0.0, 0.0, np.nan, 0.0]])
     res = aggregate_all(group_idx, a, func="cumsum", axis=-1)
@@ -513,10 +507,8 @@ def test_median_nan(aggregate_all):
 )
 @pytest.mark.deselect_if(func=_deselect_not_implemented)
 def test_median_even_group_promotes_integral_middles(aggregate_all, func, a, expected):
-    # the two middles of an even sized group must not be summed in the dtype of
-    # the input: that overflows for narrow integers (int8 100 + 100) and turns
-    # bool addition into a logical or (True + True), while np.median promotes
-    # to float64 before dividing
+    # the two middles may not be summed in the dtype of the input, which
+    # overflows for narrow integers and makes bool addition a logical or
     group_idx = np.array([0, 0])
     np.testing.assert_allclose(aggregate_all(group_idx, a, func, size=1), [expected])
 
@@ -542,9 +534,8 @@ def test_median_narrow_dtypes_match_numpy(aggregate_all, func, dtype):
 
 
 def test_trapezoid(aggregate_all):
-    # https://github.com/ml31415/numpy-groupies/issues/54
-    # the integral follows the order the samples appear in, dx is the sample
-    # spacing, and a group of a single sample integrates to zero
+    # https://github.com/ml31415/numpy-groupies/issues/54 - the integral
+    # follows the order the samples appear in, one sample integrates to zero
     group_idx = np.array([0, 0, 0, 1, 1, 2, 4, 4, 4])
     a = np.array([1.0, 5.0, 2.0, 2.0, 8.0, 7.0, 9.0, 3.0, 4.0])
     np.testing.assert_allclose(
@@ -644,10 +635,7 @@ def test_along_axis(aggregate_all, func, size, axis):
         expected = np.apply_along_axis(lambda v: _reference_trapezoid(v[~np.isnan(v)]), axis, a)
     else:
         with warnings.catch_warnings():
-            # Filter  expected warnings:
-            # - RuntimeWarning: All-NaN slice encountered
-            # - RuntimeWarning: Mean of empty slice
-            # - RuntimeWarning: Degrees of freedom <= 0 for slice.
+            # the numpy reference warns about the all-nan slices it averages
             warnings.simplefilter("ignore", RuntimeWarning)
             expected = getattr(np, func)(a, axis=axis)
 
