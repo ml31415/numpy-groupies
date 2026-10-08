@@ -341,7 +341,7 @@ def test_scalar_input(aggregate_all, func):
         np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "all", "any"])
+@pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max", "all", "any"])
 def test_nan_input(aggregate_all, func, groups=100):
     if aggregate_all.__name__.endswith("pandas"):
         pytest.skip("pandas always skips nan values")
@@ -377,6 +377,26 @@ def test_argmin_argmax_nonans(aggregate_all):
 
     res = aggregate_all(group_idx, a, func="argmin", fill_value=-1)
     np.testing.assert_array_equal(res, [3, -1, -1, 5])
+
+
+def test_min_max_nans(aggregate_all):
+    # a nan of a group wins over its other values, at every position - np.min
+    # and np.max propagate it, and so do all implementations except pandas,
+    # which skips nans throughout.  The builtin python reductions only did so
+    # when the nan was the first value of the group (a nan compares neither
+    # smaller nor greater), and the numba kernels did not do it at all - which
+    # also contradicted their own arg kernels reporting such a group as invalid
+    group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+    a = np.array([4, 3, np.nan, 1, 5, 9, 2, 7])
+
+    if aggregate_all.__name__.endswith("pandas"):
+        pytest.skip("pandas always skips nan values")
+
+    res = aggregate_all(group_idx, a, func="min", fill_value=np.nan)
+    np.testing.assert_array_equal(res, [np.nan, 2])
+
+    res = aggregate_all(group_idx, a, func="max", fill_value=np.nan)
+    np.testing.assert_array_equal(res, [np.nan, 9])
 
 
 @pytest.mark.deselect_if(func=_deselect_purepy)

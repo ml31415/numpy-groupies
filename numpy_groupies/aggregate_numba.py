@@ -562,6 +562,16 @@ class Max(AggregateOp):
         # ~15x slower under numba >= 0.66 when reached as a separate njit call.
         # Note: ret[ri] must be read into a local first - repeating the
         # subscript expression keeps the slow codegen (aliasing).
+        # val != val has to be tested explicitly - a nan compares neither
+        # smaller nor greater, so `cur < val` alone would leave a group whose
+        # nan arrives after its first value at the finite value, unlike np.max
+        # (and unlike this module's own arg kernels, which do report such a
+        # group as invalid).  The nan variants are unaffected, they filter the
+        # nans out before the kernel runs.  The extra comparison is the
+        # cheapest way to get there: np.maximum in the non-first branch
+        # (which propagates nans on its own) and the branchy form below both
+        # measured ~45% slower than this, while for integer dtypes LLVM folds
+        # the test away entirely.
         # if counter[ri]:
         #     ret[ri] = val
         #     counter[ri] = 0
@@ -570,13 +580,14 @@ class Max(AggregateOp):
         first = counter[ri]
         counter[ri] = 0
         cur = ret[ri]
-        ret[ri] = val if (first or cur < val) else cur
+        ret[ri] = val if (first or val != val or cur < val) else cur
 
 
 class Min(AggregateOp):
     @staticmethod
     def _inner(ri, val, ret, counter, mean, fill_value):
-        # select-form on purpose, see Max._inner
+        # select-form on purpose, see Max._inner (including why val != val is
+        # part of the condition and what it costs)
         # if counter[ri]:
         #     ret[ri] = val
         #     counter[ri] = 0
@@ -585,7 +596,7 @@ class Min(AggregateOp):
         first = counter[ri]
         counter[ri] = 0
         cur = ret[ri]
-        ret[ri] = val if (first or cur > val) else cur
+        ret[ri] = val if (first or val != val or cur > val) else cur
 
 
 class ArgMax(AggregateOp):

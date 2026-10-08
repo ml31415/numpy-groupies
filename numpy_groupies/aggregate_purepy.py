@@ -107,9 +107,27 @@ def _sort(group_idx, a, reverse=False):
     return [a_srt[ri] for ri in revidx]
 
 
+def _propagate_nan(reduction):
+    """Let a nan of the group win over its other values, like np.min and np.max do.
+
+    The builtin reductions only do that when the nan happens to be the first
+    value of the group: a nan compares neither smaller nor greater, so `min([3,
+    nan, 4])` returns 3.  The nan variants of the functions are unaffected -
+    `aggregate` filters the nans out before handing the group over.
+    """
+
+    def reduction_with_nan(values):
+        for val in values:
+            if val != val:  # val != val - np.isnan does not cover ints and objects
+                return val
+        return reduction(values)
+
+    return reduction_with_nan
+
+
 _impl_dict = {
-    "min": min,
-    "max": max,
+    "min": _propagate_nan(min),
+    "max": _propagate_nan(max),
     "sum": sum,
     "prod": _prod,
     "last": _last,
