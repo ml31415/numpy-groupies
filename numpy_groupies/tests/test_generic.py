@@ -499,8 +499,6 @@ def test_complex_nan_in_either_part(aggregate_all, func):
         # these pick a position, so the value simply follows the conjugation
         np.testing.assert_allclose(imag_nan, np.conj(res), rtol=1e-9)
         return
-    if aggregate_all.__name__.endswith(("purepy", "numba")) and func in ("min", "max"):
-        pytest.skip("those two keep a nan that arrives after the first value of a group, real or complex")
     if not func.startswith("nan"):
         # the plain functions propagate the nan, whichever part it hides in,
         # while their nan counterparts skip it in both parts alike
@@ -721,9 +719,11 @@ def test_complex_nan_in_one_part_of_the_order_functions(aggregate_all):
     # numpy's isnan of a complex value is true when either part is nan, and the
     # order statistics treat such a value exactly like a nan of a real dtype:
     # argmin/argmax have no valid index to report and fill the group, the nan
-    # variants skip it - independent of the position of the nan in the group
+    # variants skip it - independent of the position of the nan in the group.
+    # The nan value is built with complex(): `np.nan * 1j` would put a nan in
+    # both parts, as nan times the zero of the real part of 1j is a nan again
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
-    a = np.array([1 + 2j, 2 + 3j, 1 + np.nan * 1j, 4 + 5j, 5 + 6j, 6 + 7j, 7 + 8j, np.nan + 9j])
+    a = np.array([1 + 2j, 2 + 3j, complex(1.0, np.nan), 4 + 5j, 5 + 6j, 6 + 7j, 7 + 8j, np.nan + 9j])
 
     if aggregate_all.__name__.endswith("pandas"):
         pytest.skip("pandas decides on its own what a nan in a complex value is")
@@ -732,6 +732,11 @@ def test_complex_nan_in_one_part_of_the_order_functions(aggregate_all):
         np.testing.assert_array_equal(np.asarray(aggregate_all(group_idx, a, func=func, size=2)), expected)
     for func, expected in (("nanargmin", [0, 4]), ("nanargmax", [3, 6])):
         np.testing.assert_array_equal(np.asarray(aggregate_all(group_idx, a, func=func, size=2)), expected)
+    # min and max propagate the value itself, as np.min and np.max do
+    for func in ("min", "max"):
+        np.testing.assert_array_equal(
+            np.asarray(aggregate_all(group_idx, a, func=func, size=2)), [complex(1.0, np.nan), complex(np.nan, 9.0)]
+        )
     np.testing.assert_array_equal(np.asarray(aggregate_all(group_idx, a, func="nanmin", size=2)), [1 + 2j, 5 + 6j])
     np.testing.assert_array_equal(np.asarray(aggregate_all(group_idx, a, func="nanmax", size=2)), [4 + 5j, 7 + 8j])
 
