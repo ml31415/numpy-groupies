@@ -216,8 +216,16 @@ def aggregate(
     if isinstance(func, str):
         if func.startswith("nan"):
             func = func[3:]
-            # remove nans (works for complex values, where math.isnan fails)
-            group_idx, a = zip(*((ix, val) for ix, val in zip(group_idx, a) if val == val))
+            # remove nans (works for complex values, where math.isnan fails) -
+            # a group of nothing but nans loses every one of its values and is
+            # then left to the fill value, exactly like a group missing from
+            # group_idx, which is what the numpy implementations make of such a
+            # group too.  Without the case below there is nothing left to
+            # unpack once every value was a nan
+            kept = [(ix, val) for ix, val in zip(group_idx, a) if val == val]
+            if not kept:
+                return [fill_value] * size
+            group_idx, a = zip(*kept)
 
         func = _impl_dict[func]
     if func is _sort:
