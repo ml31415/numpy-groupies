@@ -46,7 +46,9 @@ aggregate_common_doc = """
         std, and min/max/first/last on floating input), ``0`` for the
         trapezoidal integral (as it is for a single sample), ``-1`` for
         argmax/argmin, and an empty sequence for array/sort.  Integer output
-        cannot hold ``nan``, so those functions fall back to ``0``.  Use
+        cannot hold ``nan``, so those functions fall back to ``0``.  For complex
+        output the default ``nan`` fills with a nan in *both* parts, so that an
+        empty group looks the same in every implementation.  Use
         ``utils.default_fill_value(func, dtype)`` to query the value, or pass
         your own.  Note that there are some subtle interactions between what is
         permitted for ``fill_value`` and the input/output ``dtype`` - exceptions
@@ -57,6 +59,17 @@ aggregate_common_doc = """
     dtype: default=None
         the ``dtype`` of the output.  By default something sensible is chosen
         based on the input, aggregation function, and ``fill_value``.
+        Complex input keeps the complex dtype wherever the result is complex
+        (sum, prod, mean, median, trapezoid, first, last, sort, cumsum), while
+        var, std and sumofsquares measure squared magnitudes and return a real
+        dtype - matching numpy.  Requesting a non-complex ``dtype`` for complex
+        input is refused for every function that does return a complex result,
+        since the imaginary part would be lost.  The order-dependent functions
+        (min, max, argmax, argmin and their ``nan`` counterparts) follow numpy's
+        lexicographic ordering - the real part decides, the imaginary part only
+        breaks a tie - in every implementation, including numba, which compares
+        the two parts itself because neither python nor numba orders complex
+        numbers.
     axis: default=None
         allows aggregation to be performed along a single axis of a
         multi-dimensional array ``a``.  In that case ``group_idx`` must be 1D
@@ -177,15 +190,31 @@ def resolve_fill_value(func, fill_value, dtype):
     if fill_value is not DEFAULT_FILL_VALUE:
         return fill_value
     key = _fill_value_key(func)
-    # nan only fits where the output can hold it - the averaging functions
-    # coerce their result to a float type anyway
-    fits = dtype is None or key in _forced_float_types or np.issubdtype(dtype, np.inexact)
+    # nan only fits where the output can hold it - the averaging and
+    # dispersion functions coerce their result to a float type anyway
+    fits = (
+        dtype is None
+        or key in _forced_float_types
+        or key in _forced_real_float_types
+        or np.issubdtype(dtype, np.inexact)
+    )
     value = _default_fill_values.get(key)
     if value is None:
         # a custom callable has no function specific default
         value = np.nan if fits else 0
     elif value != value and not fits:
         value = 0
+    if (
+        isinstance(value, float)
+        and value != value
+        and dtype is not None
+        and np.issubdtype(dtype, np.complexfloating)
+        and key not in _forced_real_float_types
+    ):
+        # a nan of a complex output has to be a nan in both parts - the numpy
+        # kernels divide an empty sum by zero and so get nan+nanj for free,
+        # and filling with nan+0j would make the backends disagree
+        value = np.nan + np.nan * 1j
     return list(value) if isinstance(value, list) else value
 
 
@@ -413,7 +442,7 @@ def minimum_dtype(x, dtype=np.bool_):
 
 def minimum_dtype_scalar(x, dtype, a):
     if dtype is None:
-        dtype = np.dtype(type(a)) if isinstance(a, (int, float)) else a.dtype
+        dtype = np.dtype(type(a)) if isinstance(a, (int, float, complex)) else a.dtype
     return minimum_dtype(x, dtype)
 
 
@@ -452,13 +481,19 @@ _forced_float_types = {
     "mean",
     "median",
     "trapezoid",
-    "var",
-    "std",
     "nanmean",
     "nanmedian",
     "nantrapezoid",
+}
+# var/std (and sumofsquares) measure the squared magnitude of the deviations,
+# which is real even for complex input - like np.var returning a real dtype
+_forced_real_float_types = {
+    "var",
+    "std",
     "nanvar",
     "nanstd",
+    "sumofsquares",
+    "nansumofsquares",
 }
 _forced_same_type = {
     "min",
@@ -470,6 +505,29 @@ _forced_same_type = {
     "nanfirst",
     "nanlast",
 }
+# functions whose result is not complex even for complex input - only these may
+# be asked for a non-complex dtype, everything else would throw the imaginary
+# part of the values away
+_complex_real_result = _forced_real_float_types | _forced_types.keys()
+
+
+def check_complex_dtype(a_dtype, dtype, func_str):
+    """Complain when a non-complex ``dtype`` is requested for complex input.
+
+    ``resolve_output_dtype`` applies this for the backends that honour ``dtype``;
+    the pure python implementation needs it on its own, since python numbers
+    carry no dtype and it would otherwise silently ignore the request.
+    """
+    if (
+        dtype is not None
+        and np.issubdtype(a_dtype, np.complexfloating)
+        and not np.issubdtype(dtype, np.complexfloating)
+        and func_str not in _complex_real_result
+    ):
+        raise TypeError(
+            f"function {func_str} cannot aggregate complex values into the non-complex dtype "
+            f"{np.dtype(dtype)} - pass a complex dtype to keep the imaginary part"
+        )
 
 
 def check_dtype(dtype, func_str, a, n):
@@ -496,6 +554,7 @@ def resolve_output_dtype(dtype, func_str, a_dtype, n):
             raise TypeError(f"function {func_str} requires a more complex datatype than bool")
         if not np.issubdtype(dtype, np.integer) and func_str in ("len", "nanlen"):
             raise TypeError(f"function {func_str} requires an integer datatype")
+        check_complex_dtype(a_dtype, dtype, func_str)
         # TODO: Maybe have some more checks here
         return np.dtype(dtype)
     else:
@@ -503,8 +562,20 @@ def resolve_output_dtype(dtype, func_str, a_dtype, n):
             return np.dtype(_forced_types[func_str])
         except KeyError:
             if func_str in _forced_float_types:
+                if np.issubdtype(a_dtype, np.inexact):
+                    # floating input keeps its dtype, complex input stays complex
+                    return a_dtype
+                else:
+                    return np.dtype(np.float64)
+            elif func_str in _forced_real_float_types:
                 if np.issubdtype(a_dtype, np.floating):
                     return a_dtype
+                elif np.issubdtype(a_dtype, np.complexfloating):
+                    # the real counterpart of the complex dtype (complex64 -> float32)
+                    return np.dtype(a_dtype.char.lower())
+                elif func_str in ("sumofsquares", "nansumofsquares"):
+                    # exact squares of integers
+                    return np.dtype(np.int64)
                 else:
                     return np.dtype(np.float64)
             else:
@@ -535,6 +606,11 @@ def minval(fill_value, dtype):
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return -np.inf
+    if issubclass(dtype.type, np.complexfloating):
+        # numpy orders complex values lexicographically, so -inf+0j is *larger*
+        # than -inf-infj: the extreme of a single part is not the extreme value,
+        # both parts have to sit at the same end of the order
+        return complex(-np.inf, -np.inf)
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).min
     return np.finfo(dtype).min
@@ -544,6 +620,10 @@ def maxval(fill_value, dtype):
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return np.inf
+    if issubclass(dtype.type, np.complexfloating):
+        # see minval: the seed of the reduction has to be the largest value of
+        # numpy's order, which is inf+infj and not inf+0j
+        return complex(np.inf, np.inf)
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).max
     return np.finfo(dtype).max

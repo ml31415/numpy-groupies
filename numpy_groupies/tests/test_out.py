@@ -48,3 +48,35 @@ def test_uaggregate_out():
     ret2 = uaggregate(group_idx_2d, a2, func="sum", out=out2)
     assert ret2 is out2
     np.testing.assert_array_equal(out2, ref2)
+
+
+def test_aggregate_out_complex():
+    rng = np.random.default_rng(50)
+    group_idx = rng.integers(0, 6, 300)
+    a = rng.random(300) + 1j * rng.random(300)
+    ref = aggregate(group_idx, a, func="sum")
+    out = np.empty(6, dtype=np.complex128)
+    ret = aggregate(group_idx, a, func="sum", out=out)
+    assert ret is out
+    np.testing.assert_array_equal(out, ref)
+    # a real out= would throw the imaginary part away, so it is refused
+    with pytest.raises(TypeError, match="dtype complex128"):
+        aggregate(group_idx, a, func="sum", out=np.empty(6))
+    # var measures a real squared magnitude, so a real out= is the right shape
+    ref_var = aggregate(group_idx, a, func="var")
+    out_var = np.empty(6)
+    aggregate(group_idx, a, func="var", out=out_var)
+    np.testing.assert_allclose(out_var, ref_var)
+
+
+def test_uaggregate_out_complex():
+    rng = np.random.default_rng(51)
+    group_idx = rng.integers(0, 6, 300)
+    a = rng.random(300) + 1j * rng.random(300)
+    ref = uaggregate(group_idx, a, func="sum")
+    out = np.empty(300, dtype=np.complex128)
+    ret = uaggregate(group_idx, a, out=out, func="sum")
+    assert ret is out
+    np.testing.assert_array_equal(out, ref)
+    with pytest.raises(TypeError, match="does not match the result dtype"):
+        uaggregate(group_idx, a, out=np.empty(300), func="sum")

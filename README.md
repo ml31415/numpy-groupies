@@ -141,6 +141,19 @@ absent group with - asking them to do so raises a `ValueError`.  The default of 
 function can be queried with `npg.default_fill_value(func, dtype=None)`, which is handy if downstream
 code needs to know it without repeating the table.
 
+### Complex values
+
+Complex input is supported wherever the result is well defined, following numpy's conventions:
+`sum`, `prod`, `mean`, `median`, `trapezoid`, `sort`, `first`, `last`, `array` and the `cumsum`
+functions keep the complex dtype (order statistics like `median` and `sort` use numpy's
+lexicographic ordering of the real and then imaginary part), while `var`, `std` and `sumofsquares`
+measure squared magnitudes and therefore return a real dtype (like `np.var` of complex input).
+The order statistics `min`, `max`, `argmin`, `argmax` and their `nan` counterparts follow numpy's
+lexicographic ordering everywhere - the real part decides, the imaginary part only breaks a tie -
+including the numba implementation, which compares the two parts itself since neither python nor
+numba orders complex numbers.  Like numpy, a value with a nan in either part compares neither
+smaller nor greater.
+
 ### Examples
 Compute sums of consecutive integers, and then compute products of those consecutive integers.
 ```python
@@ -231,50 +244,50 @@ Below we are using `500,000` indices uniformly picked from `[0, 1000)`. The valu
 the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). 
 For `nan-` operations another 20% of the values are set to nan, leaving the remainder on the interval `[0.2,0.8)`.
 
-The benchmarking results are given in ms for an i7-7560U running at 2.40GHz, taking the minimum over 3 runs:
+The benchmarking results are given in ms for an i7-7560U running at 2.40GHz with Python 3.14.2, NumPy 2.5.3, Numba 0.67.0 and Pandas 3.0.6, taking the minimum over 7 runs after discarding a warm-up run:
 
 | function | ufunc  | numpy   | numba  | pandas  |
 |-----------|--------|---------|--------|---------|
-| sum       |   1.386 |   1.158 |   0.673 |  14.498 |
-| prod      |   2.390 |   2.570 |   0.740 |  13.569 |
-| min       |   2.593 |   2.625 |   0.788 |  13.560 |
-| max       |   2.608 |   2.572 |   0.736 |  13.745 |
-| len       |   1.386 |   1.029 |   0.528 |  12.699 |
-| all       |  47.042 |   2.494 |   0.859 |  14.314 |
-| any       |  43.811 |   3.167 |   0.928 |  14.633 |
-| anynan    |   6.835 |   1.399 |   0.809 |  13.659 |
-| allnan    |  10.014 |   3.592 |   0.800 |  13.799 |
-| mean      |    ---- |   1.836 |   0.770 |  14.771 |
-| median    |    ---- |  60.150 |  12.379 |  19.578 |
-| trapezoid |    ---- |   4.626 |   1.000 |    ---- |
-| std       |    ---- |   4.481 |   0.968 |  15.491 |
-| var       |    ---- |   4.327 |   0.981 |  15.588 |
-| first     |    ---- |   1.733 |   0.637 |  13.619 |
-| last      |    ---- |   1.542 |   0.607 |  14.027 |
-| argmax    |    ---- |   3.937 |   0.976 |  13.299 |
-| argmin    |    ---- |   6.528 |   0.963 |  13.058 |
-| nansum    |    ---- |   5.138 |   1.868 |  21.898 |
-| nanprod   |    ---- |   6.571 |   1.854 |  20.524 |
-| nanmin    |    ---- |   5.979 |   1.783 |  18.319 |
-| nanmax    |    ---- |   6.079 |   1.759 |  18.218 |
-| nanlen    |    ---- |   3.041 |   1.626 |  18.105 |
-| nanall    |    ---- |   6.001 |   1.709 |  19.557 |
-| nanany    |    ---- |   6.694 |   1.716 |  19.712 |
-| nanmean   |    ---- |   5.405 |   1.998 |  19.443 |
-| nanmedian |    ---- |  53.924 |   9.602 |  24.646 |
-| nantrapezoid|    ---- |   8.541 |   2.164 |    ---- |
-| nanvar    |    ---- |   7.273 |   2.050 |  20.352 |
-| nanstd    |    ---- |   7.589 |   2.100 |  22.989 |
-| nanfirst  |    ---- |   5.442 |   1.474 |  19.188 |
-| nanlast   |    ---- |   5.370 |   1.484 |  18.711 |
-| nanargmin |    ---- |   8.112 |   2.082 |  14.236 |
-| nanargmax |    ---- |   5.727 |   2.221 |  14.160 |
-| cumsum    |    ---- |  51.117 |   1.155 |   8.894 |
-| cumprod   |    ---- |    ---- |   1.125 |  14.006 |
-| cummax    |    ---- |    ---- |   1.174 |  13.838 |
-| cummin    |    ---- |    ---- |   1.192 |  14.774 |
-| arbitrary |    ---- | 145.723 |  49.292 | 140.942 |
-| sort      |    ---- | 141.303 |    ---- |    ---- |
+| sum       |   1.586 |   1.242 |   0.722 |  13.763 |
+| prod      |   1.420 |   1.411 |   0.709 |  13.303 |
+| min       |   2.746 |   2.735 |   0.864 |  12.792 |
+| max       |   2.774 |   2.763 |   0.881 |  13.106 |
+| len       |   1.494 |   1.032 |   0.526 |  12.174 |
+| all       |  43.727 |   2.894 |   0.949 |  13.499 |
+| any       |  42.965 |   3.301 |   1.272 |  13.555 |
+| anynan    |   6.563 |   1.445 |   0.864 |  13.308 |
+| allnan    |   9.487 |   3.554 |   0.785 |  13.284 |
+| mean      |    ---- |   1.823 |   0.985 |  13.913 |
+| median    |    ---- |  53.343 |  11.713 |  24.283 |
+| trapezoid |    ---- |   4.486 |   0.996 |    ---- |
+| std       |    ---- |   4.175 |   1.144 |  14.981 |
+| var       |    ---- |   4.085 |   1.154 |  14.942 |
+| first     |    ---- |   1.831 |   0.710 |  13.069 |
+| last      |    ---- |   1.570 |   0.589 |  13.247 |
+| argmax    |    ---- |   4.146 |   1.347 |  12.837 |
+| argmin    |    ---- |   6.576 |   1.297 |  12.567 |
+| nansum    |    ---- |   5.130 |   1.689 |  18.962 |
+| nanprod   |    ---- |   5.257 |   1.998 |  18.528 |
+| nanmin    |    ---- |   6.278 |   2.003 |  18.196 |
+| nanmax    |    ---- |   6.339 |   1.991 |  18.370 |
+| nanlen    |    ---- |   3.103 |   1.589 |  18.012 |
+| nanall    |    ---- |   6.293 |   1.768 |  18.895 |
+| nanany    |    ---- |   6.916 |   2.246 |  19.134 |
+| nanmean   |    ---- |   5.615 |   1.916 |  19.756 |
+| nanmedian |    ---- |  55.496 |  10.082 |  26.411 |
+| nantrapezoid|    ---- |   7.718 |   2.122 |    ---- |
+| nanvar    |    ---- |   7.476 |   2.079 |  20.148 |
+| nanstd    |    ---- |   7.679 |   2.052 |  20.417 |
+| nanfirst  |    ---- |   5.671 |   1.579 |  18.570 |
+| nanlast   |    ---- |   5.397 |   1.559 |  18.765 |
+| nanargmin |    ---- |   8.633 |   2.006 |  13.773 |
+| nanargmax |    ---- |   6.054 |   2.056 |  13.866 |
+| cumsum    |    ---- |  53.275 |   1.150 |  13.433 |
+| cumprod   |    ---- |    ---- |   1.176 |  11.117 |
+| cummax    |    ---- |    ---- |   1.498 |  11.597 |
+| cummin    |    ---- |    ---- |   1.481 |  11.583 |
+| arbitrary |    ---- | 161.542 |  50.944 | 131.864 |
+| sort      |    ---- | 143.335 |    ---- |    ---- |
 
 _Linux(x86_64), Python 3.14.2, Numpy 2.5.3, Numba 0.67.0, Pandas 3.0.6_
 

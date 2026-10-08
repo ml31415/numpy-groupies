@@ -8,6 +8,7 @@ from .utils import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     build_dispatch,
+    check_complex_dtype,
     funcs_no_separate_nan,
     get_func,
     resolve_fill_value,
@@ -34,7 +35,7 @@ def _mean(x):
 
 
 def _median(x):
-    if any(math.isnan(v) for v in x):
+    if any(v != v for v in x):
         # like np.median, any nan poisons the whole group
         return math.nan
     srt = sorted(x)
@@ -60,8 +61,9 @@ def _trapezoid(x, dx=1.0):
 
 
 def _var(x, ddof=0):
+    # the squared magnitude, so complex values give a real result like np.var
     mean = _mean(x)
-    return sum((xx - mean) ** 2 for xx in x) / (len(x) - ddof)
+    return sum(abs(xx - mean) ** 2 for xx in x) / (len(x) - ddof)
 
 
 def _std(x, ddof=0):
@@ -76,11 +78,11 @@ def _prod(x):
 
 
 def _anynan(x):
-    return any(math.isnan(xx) for xx in x)
+    return any(xx != xx for xx in x)
 
 
 def _allnan(x):
-    return all(math.isnan(xx) for xx in x)
+    return all(xx != xx for xx in x)
 
 
 def _argmax(x_and_idx):
@@ -196,7 +198,7 @@ def aggregate(
         func = _dispatch[func][0]
     except (KeyError, TypeError):
         func = get_func(func, aliasing, _impl_dict)
-    if isinstance(a, (int, float)):
+    if isinstance(a, (int, float, complex)):
         if func not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
         a = [a] * len(group_idx)
@@ -206,12 +208,16 @@ def aggregate(
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it
     fill_value = resolve_fill_value(func, fill_value, np.asarray(a).dtype)
+    if dtype is not None and isinstance(func, str):
+        # python numbers carry no dtype at all, so this is the one place where
+        # the pure python implementation has to reject a non-complex dtype
+        check_complex_dtype(np.asarray(a).dtype, dtype, func)
 
     if isinstance(func, str):
         if func.startswith("nan"):
             func = func[3:]
-            # remove nans
-            group_idx, a = zip(*((ix, val) for ix, val in zip(group_idx, a) if not math.isnan(val)))
+            # remove nans (works for complex values, where math.isnan fails)
+            group_idx, a = zip(*((ix, val) for ix, val in zip(group_idx, a) if val == val))
 
         func = _impl_dict[func]
     if func is _sort:

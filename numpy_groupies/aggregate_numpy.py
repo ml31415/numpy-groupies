@@ -121,7 +121,9 @@ def _max(group_idx, a, size, fill_value, dtype=None):
 
 
 def _argmax(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
-    a_ = np.where(np.isnan(a), -np.inf, a) if _nansqueeze else a
+    # the mask value has to be the smallest value of numpy's order, which for a
+    # complex dtype is -inf-infj and not -inf+0j (see minval and maxval)
+    a_ = np.where(np.isnan(a), minval(fill_value, a.dtype), a) if _nansqueeze else a
     group_max = _max(group_idx, a_, size, np.nan)
     # nan should never be maximum, so use a and not a_
     is_max = a == group_max[group_idx]
@@ -133,7 +135,9 @@ def _argmax(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
 
 
 def _argmin(group_idx, a, size, fill_value, dtype=int, _nansqueeze=False):
-    a_ = np.where(np.isnan(a), np.inf, a) if _nansqueeze else a
+    # the mask value has to be the largest value of numpy's order, which for a
+    # complex dtype is inf+infj and not inf+0j (see minval and maxval)
+    a_ = np.where(np.isnan(a), maxval(fill_value, a.dtype), a) if _nansqueeze else a
     group_min = _min(group_idx, a_, size, np.nan)
     # nan should never be minimum, so use a and not a_
     is_min = a == group_min[group_idx]
@@ -149,7 +153,8 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
         raise ValueError("cannot take mean with scalar a")
     counts = np.bincount(group_idx, minlength=size)
     if iscomplexobj(a):
-        dtype = a.dtype  # TODO: this is a bit clumsy
+        # np.bincount does not take complex weights - accumulate the real and
+        # imaginary parts separately
         sums = np.empty(size, dtype=dtype)
         sums.real = np.bincount(group_idx, weights=a.real, minlength=size)
         sums.imag = np.bincount(group_idx, weights=a.imag, minlength=size)
@@ -160,10 +165,7 @@ def _mean(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
         ret = sums / counts
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
-    if iscomplexobj(a):
-        return ret
-    else:
-        return ret.astype(dtype, copy=False)
+    return ret.astype(dtype, copy=False)
 
 
 def _median(group_idx, a, size, fill_value, dtype=None):
@@ -181,7 +183,7 @@ def _median(group_idx, a, size, fill_value, dtype=None):
     >>> array([0. , 8. , 4.5, 3. , 0. , 0. , 0. , 7.5, 0. ])
     """
     if group_idx.size == 0:
-        return np.full(size, fill_value, dtype=dtype or np.float64)
+        return np.full(size, fill_value, dtype=dtype or np.result_type(a, np.float64))
     # any argsort kind works - the median is insensitive to the order of
     # equal group labels
     sortidx = np.argsort(group_idx, kind="stable")
@@ -198,8 +200,9 @@ def _median(group_idx, a, size, fill_value, dtype=None):
 
     # partition places the kth element(s) at their sorted position while
     # leaving the rest unsorted - the two middles of even-sized groups are
-    # obtained with a single call using both kths
-    vals = np.empty(starts.size, dtype=np.float64)
+    # obtained with a single call using both kths; np.partition orders
+    # complex values lexicographically, so the dtype is kept
+    vals = np.empty(starts.size, dtype=np.result_type(a_srt, np.float64))
     # the mean of the two middles is taken in float64 for integral input -
     # adding them in their own dtype overflows (int8 100 + 100) and bool
     # addition is a logical or (True + True), while np.median promotes first
@@ -213,7 +216,7 @@ def _median(group_idx, a, size, fill_value, dtype=None):
             vals[grp] = (part[mid - 1].astype(np.float64) + part[mid]) / 2
         else:
             vals[grp] = (part[mid - 1] + part[mid]) / 2
-    if np.issubdtype(a_srt.dtype, np.floating):
+    if np.issubdtype(a_srt.dtype, np.inexact):
         # like np.median, any nan poisons its whole group - partition does
         # not order nans, so they are detected with a per-group reduction
         nan_groups = np.logical_or.reduceat(np.isnan(a_srt), starts)
@@ -243,7 +246,8 @@ def _trapezoid(group_idx, a, size, fill_value, dtype=None, dx=1.0):
     _trapezoid(group_idx, a, np.max(group_idx) + 1)
     >>> array([ 0. , 30.5,  0. ,  8. , 14.5,  0. ,  0. ,  7.5,  0. ])
     """
-    dtype = dtype or np.float64
+    # complex samples integrate to complex values, real ones stay float64
+    dtype = dtype or (a.dtype if iscomplexobj(a) else np.float64)
     total = _sum(group_idx, a, size, 0, dtype=dtype)
     first = _first(group_idx, a, size, 0, dtype=dtype)
     last = _last(group_idx, a, size, 0, dtype=dtype)
@@ -260,33 +264,49 @@ def _trapezoid(group_idx, a, size, fill_value, dtype=None, dx=1.0):
 
 
 def _sum_of_squres(group_idx, a, size, fill_value, dtype=np.dtype(np.float64)):
-    ret = np.bincount(group_idx, weights=a * a, minlength=size)
+    if iscomplexobj(a):
+        # the squared magnitude |a|^2 - the power of complex values, giving
+        # a real result like np.var, instead of the complex a*a
+        sq = a.real**2
+        sq += a.imag**2
+    else:
+        sq = a * a
+    ret = np.bincount(group_idx, weights=sq, minlength=size)
     if fill_value != 0:
         counts = np.bincount(group_idx, minlength=size)
         ret[counts == 0] = fill_value
-    if iscomplexobj(a):
-        return ret
-    else:
-        return ret.astype(dtype, copy=False)
+    return ret.astype(dtype, copy=False)
 
 
 def _var(group_idx, a, size, fill_value, dtype=np.dtype(np.float64), sqrt=False, ddof=0):
     if np.ndim(a) == 0:
         raise ValueError("cannot take variance with scalar a")
     counts = np.bincount(group_idx, minlength=size)
-    sums = np.bincount(group_idx, weights=a, minlength=size)
+    if iscomplexobj(a):
+        # np.bincount does not take complex weights - accumulate the real and
+        # imaginary parts separately
+        sums = np.bincount(group_idx, weights=a.real, minlength=size)
+        sums = sums + 1j * np.bincount(group_idx, weights=a.imag, minlength=size)
+    else:
+        sums = np.bincount(group_idx, weights=a, minlength=size)
     with np.errstate(divide="ignore", invalid="ignore"):
         means = sums / counts
         counts = np.where(counts > ddof, counts - ddof, 0)
-        ret = np.bincount(group_idx, (a - means[group_idx]) ** 2, minlength=size) / counts
+        devs = a - means[group_idx]
+        if iscomplexobj(a):
+            # the magnitude squared of the complex deviation is real, so
+            # like np.var the result is real
+            devs_sq = devs.real**2
+            devs_sq += devs.imag**2
+        else:
+            devs_sq = devs
+            devs_sq *= devs
+        ret = np.bincount(group_idx, devs_sq, minlength=size) / counts
     if sqrt:
         ret = np.sqrt(ret)  # this is now std not var
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
-    if iscomplexobj(a):
-        return ret
-    else:
-        return ret.astype(dtype, copy=False)
+    return ret.astype(dtype, copy=False)
 
 
 def _std(group_idx, a, size, fill_value, dtype=np.dtype(np.float64), ddof=0):

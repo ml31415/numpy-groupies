@@ -116,3 +116,30 @@ func_list = (
     "nanargmax",
     "nansumofsquares",
 )
+
+
+def _deselect_purepy(aggregate_all, *args, **kwargs):
+    # purepy implementations does not handle nan values and ndim correctly.
+    # So it needs to be excluded from several tests."""
+    return aggregate_all.__name__.endswith("purepy")
+
+
+def _deselect_purepy_and_pandas(aggregate_all, *args, **kwargs):
+    # purepy and pandas implementation handle some nan cases differently.
+    # So they need to be excluded from several tests."""
+    return aggregate_all.__name__.endswith(("pandas", "purepy"))
+
+
+def _deselect_purepy_and_invalid_axis(aggregate_all, func, size, axis):
+    impl_name = aggregate_all.__name__.split("_")[-1]
+    if impl_name == "purepy":
+        # purepy does not handle axis parameter
+        return True
+    if axis >= len(size):
+        return True
+    return not _is_implemented(impl_name, func)
+
+
+def _deselect_not_implemented(aggregate_all, func, *args, **kwargs):
+    impl_name = aggregate_all.__name__.split("_")[-1]
+    return not _is_implemented(impl_name, func)

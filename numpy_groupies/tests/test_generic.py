@@ -8,54 +8,18 @@ import pytest
 
 from ..utils import default_fill_value
 from . import (
-    _impl_name,
-    _implementations,
-    _is_implemented,
-    _wrap_notimplemented_skip,
+    _deselect_not_implemented,
+    _deselect_purepy,
+    _deselect_purepy_and_invalid_axis,
+    _deselect_purepy_and_pandas,
     func_list,
 )
-
-
-@pytest.fixture(params=_implementations, ids=_impl_name)
-def aggregate_all(request):
-    impl = request.param
-    if impl is None:
-        pytest.skip("Implementation not available")
-    name = _impl_name(impl)
-    return _wrap_notimplemented_skip(impl.aggregate, "aggregate_" + name)
 
 
 def _reference_trapezoid(*args, **kwargs):
     # np.trapz was renamed to np.trapezoid in numpy 2.0
     func = getattr(np, "trapezoid", None) or getattr(np, "trapz", None)
     return func(*args, **kwargs)
-
-
-def _deselect_purepy(aggregate_all, *args, **kwargs):
-    # purepy implementations does not handle nan values and ndim correctly.
-    # So it needs to be excluded from several tests."""
-    return aggregate_all.__name__.endswith("purepy")
-
-
-def _deselect_purepy_and_pandas(aggregate_all, *args, **kwargs):
-    # purepy and pandas implementation handle some nan cases differently.
-    # So they need to be excluded from several tests."""
-    return aggregate_all.__name__.endswith(("pandas", "purepy"))
-
-
-def _deselect_purepy_and_invalid_axis(aggregate_all, func, size, axis):
-    impl_name = aggregate_all.__name__.split("_")[-1]
-    if impl_name == "purepy":
-        # purepy does not handle axis parameter
-        return True
-    if axis >= len(size):
-        return True
-    return not _is_implemented(impl_name, func)
-
-
-def _deselect_not_implemented(aggregate_all, func, *args, **kwargs):
-    impl_name = aggregate_all.__name__.split("_")[-1]
-    return not _is_implemented(impl_name, func)
 
 
 def test_preserve_missing(aggregate_all):
