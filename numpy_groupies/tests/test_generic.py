@@ -6,12 +6,14 @@ import warnings
 import numpy as np
 import pytest
 
+from .. import aggregate_np
 from ..utils import default_fill_value
 from . import (
     _deselect_not_implemented,
     _deselect_purepy,
     _deselect_purepy_and_invalid_axis,
     _deselect_purepy_and_pandas,
+    aggregate_purepy,
     func_list,
 )
 
@@ -319,6 +321,46 @@ def test_nan_input(aggregate_all, func, groups=100):
         ref = np.full(groups, np.nan, dtype=float)
     res = aggregate_all(group_idx, a, func=func)
     np.testing.assert_array_equal(res, ref)
+
+
+def test_nan_form_of_a_group_of_only_nan():
+    # filtering the nans out can leave nothing to unpack, and an all-nan group
+    # then takes the fill value (called directly - purepy's nan forms are skipped)
+    funcs = (
+        "nansum",
+        "nanprod",
+        "nanmean",
+        "nanmedian",
+        "nanmin",
+        "nanmax",
+        "nanlen",
+        "nanfirst",
+        "nanlast",
+        "nanvar",
+        "nanstd",
+        "nanall",
+        "nanany",
+        "nanargmin",
+        "nanargmax",
+    )
+    cases = (
+        # every value a nan: nothing survives the filtering
+        (np.array([0, 0]), np.array([np.nan, np.nan])),
+        # one group of nothing but nans, one with a value left
+        (np.array([0, 0, 1]), np.array([np.nan, np.nan, 1.0])),
+        # the same with complex values, where a nan in either part counts
+        (np.array([0, 0]), np.array([complex(np.nan, 1), complex(1, np.nan)])),
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # an all-nan group is worth a numpy warning
+        for group_idx, a in cases:
+            for func in funcs:
+                res = np.asarray(aggregate_purepy.aggregate(group_idx, a, func=func, size=2))
+                expected = np.asarray(aggregate_np(group_idx, a, func=func, size=2))
+                # only the group of nothing but nans - in a group with values the
+                # pure python implementation reports the index inside the group
+                np.testing.assert_array_equal(res[:1], expected[:1])
 
 
 def test_nan_input_len(aggregate_all, groups=100, group_size=5):
