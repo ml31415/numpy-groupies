@@ -6,11 +6,8 @@ import pytest
 from .. import aggregate_np, aggregate_ufunc
 from . import _deselect_not_implemented, _deselect_purepy, aggregate_numba
 
-# functions with a well-defined complex result, following numpy semantics;
-# the order statistics (min/max and argmin/argmax) are included - numpy orders
-# complex values lexicographically and all implementations follow it, the numba
-# one with a comparison of its own (aggregate_numba.complex_less), since python
-# and numba do not order complex numbers at all
+# functions with a well-defined complex result, following numpy semantics - the
+# order statistics included, as numpy orders complex values lexicographically
 complex_funcs = (
     "sum",
     "prod",
@@ -151,13 +148,8 @@ def test_complex(aggregate_all, func, a_dtype):
 
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 def test_complex_median(aggregate_all, a_dtype):
-    # the median is an order statistic - numpy orders complex values
-    # lexicographically (the real part first, the imaginary part breaks a tie)
-    # and so do the implementations, and a group of an even number of values
-    # averages its two middles.
-    # Both groups are traps: ordered by magnitude they would mediate to
-    # -1.5+0j and 2+0j, ordered by the real part alone the second one to 1-1j,
-    # only numpy's order answers 1+4j and 1+9j.
+    # traps: by magnitude these would mediate to -1.5+0j and 2+0j, by the real
+    # part alone to 1-1j - only numpy's lexicographic order answers 1+4j, 1+9j
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1])
     a = np.array([1 + 9j, 1 - 1j, 2 + 0j, -5 + 0j, 1 + 9j, 1 - 1j, 2 + 0j]).astype(a_dtype)
 
@@ -294,9 +286,7 @@ def test_complex_rejects_non_complex_dtype(aggregate_all, func, dtype):
     with pytest.raises(TypeError) as raised:
         aggregate_all(group_idx, a, func=func, size=3, dtype=dtype)
     if np.dtype(dtype) is not np.dtype(bool):
-        # the message names what was refused - bool is answered one step
-        # earlier already, as a result dtype too narrow for the function, so
-        # the complex input never gets looked at
+        # bool is refused one step earlier, as a result dtype too narrow
         assert "cannot aggregate complex values into the non-complex dtype" in str(raised.value)
 
 
@@ -339,9 +329,8 @@ def test_complex_scalar(aggregate_all, func):
             aggregate_all(group_idx, 2 + 3j, func=func)
 
 
-# the value a group missing from group_idx is filled with, for complex input:
-# the same table numpy itself follows - with a nan in *both* parts wherever the
-# default is a nan at all, since the numpy kernels divide an empty sum by zero
+# the value a group missing from group_idx is filled with, for complex input -
+# a nan in *both* parts wherever numpy's own default is a nan at all
 complex_fill_cases = [
     ("mean", np.nan),
     ("median", np.nan),
@@ -441,10 +430,8 @@ def test_complex_list_input(aggregate_all):
 
 @pytest.mark.parametrize("func", complex_order_funcs + complex_arg_funcs)
 def test_complex_order_functions_follow_numpy_lexicographic(aggregate_all, func):
-    # the order statistics do not order complex values by magnitude, nor by the
-    # real part alone - the imaginary part breaks a tie. the traps below tell
-    # the three conventions apart, and -0.0 against 0.0 pins that a tie keeps
-    # the first of the two, like np.min does
+    # the traps tell magnitude, real part alone and lexicographic order apart;
+    # -0.0 against 0.0 pins that a tie keeps the first of the two, like np.min
     group_idx = np.array([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
     a = np.array(
         [
@@ -486,12 +473,8 @@ def test_complex_order_functions_are_not_rejected_by_numba(func):
 
 @pytest.mark.deselect_if(func=_deselect_purepy)
 def test_complex_nan_in_one_part_of_the_order_functions(aggregate_all):
-    # numpy's isnan of a complex value is true when either part is nan, and the
-    # order statistics treat such a value exactly like a nan of a real dtype:
-    # argmin/argmax have no valid index to report and fill the group, the nan
-    # variants skip it - independent of the position of the nan in the group.
-    # The nan value is built with complex(): `np.nan * 1j` would put a nan in
-    # both parts, as nan times the zero of the real part of 1j is a nan again
+    # a nan in either part is a nan of the value, wherever it sits in it.  The
+    # value is built with complex(): `np.nan * 1j` puts a nan in both parts
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([1 + 2j, 2 + 3j, complex(1.0, np.nan), 4 + 5j, 5 + 6j, 6 + 7j, 7 + 8j, np.nan + 9j])
 
@@ -512,12 +495,8 @@ def test_complex_nan_in_one_part_of_the_order_functions(aggregate_all):
 
 
 def test_complex_order_functions_use_the_extreme_value_of_the_order():
-    # the order statistics start from the extreme value of the dtype, and the
-    # extreme of a complex dtype is inf+infj (respectively -inf-infj) under
-    # numpy's order: inf+0j - the extreme of a single part - is smaller than
-    # inf+infj, so it would win, or mask, a group it is not part of.  The
-    # min and max reductions seed themselves with that extreme, and the nan
-    # variants mask the nans with it before looking for an index.
+    # the extreme of a complex dtype is inf+infj, not inf+0j: the reductions
+    # seed with it, and the nan variants mask the nans with it
     group_idx = np.array([0, 1])
     a = np.array([complex(np.inf, np.inf), complex(-np.inf, -np.inf)])
     # each group holds one value, so min, max and the indices are all determined
@@ -530,9 +509,7 @@ def test_complex_order_functions_use_the_extreme_value_of_the_order():
     for func in ("min", "max"):
         np.testing.assert_array_equal(np.asarray(aggregate_ufunc(group_idx, a, func=func, size=2)), a)
 
-    # masking with inf+0j left a group whose only other value is inf+infj
-    # without any value equal to the found minimum, so it was reported as
-    # fill_value instead of as an index
+    # masking with inf+0j would leave no value equal to the found minimum
     impls = [aggregate_np] + ([aggregate_numba.aggregate] if aggregate_numba is not None else [])
     both_in_one_group = np.array([0, 0])
     for impl in impls:

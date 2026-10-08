@@ -125,9 +125,7 @@ def test_errors_match_slow_path():
 
 
 def test_integer_sum_dtype_guess():
-    # the 'sum' overflow guess is length dependent and must agree between
-    # paths and with the length-dependent dtype resolution itself, for
-    # several input lengths (the plan cache is keyed on the length)
+    # the 'sum' overflow guess is length dependent, so check several lengths
     rng = np.random.default_rng(47)
     for adtype in (np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint32, np.bool_):
         for n in (10, 1000):
