@@ -287,16 +287,13 @@ def test_complex_rejects_non_complex_dtype(aggregate_all, func, dtype):
     group_idx = np.array([0, 0, 1, 1, 2])
     a = np.array([1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j])
 
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError) as raised:
         aggregate_all(group_idx, a, func=func, size=3, dtype=dtype)
-
-
-def test_complex_dtype_rejection_message(aggregate_all):
-    group_idx = np.array([0, 0, 1])
-    a = np.array([1 + 2j, 3 - 1j, 5 + 5j])
-
-    with pytest.raises(TypeError, match="cannot aggregate complex values into the non-complex dtype"):
-        aggregate_all(group_idx, a, func="sum", size=2, dtype=np.float64)
+    if np.dtype(dtype) is not np.dtype(bool):
+        # the message names what was refused - bool is answered one step
+        # earlier already, as a result dtype too narrow for the function, so
+        # the complex input never gets looked at
+        assert "cannot aggregate complex values into the non-complex dtype" in str(raised.value)
 
 
 @pytest.mark.deselect_if(func=_deselect_not_implemented)
@@ -323,20 +320,19 @@ def test_complex_accepts_the_real_result_dtypes(aggregate_all, func, dtype):
         assert res.dtype == np.dtype(dtype)
 
 
-@pytest.mark.parametrize("func", ["sum", "prod"])
-def test_complex_scalar_input(aggregate_all, func):
-    # scalars are permitted for sum and prod, in every implementation
-    group_idx = np.arange(0, 20, dtype=int).repeat(5)
-    res = np.asarray(aggregate_all(group_idx, 2 + 3j, func=func))
-    expected = np.asarray(aggregate_all(group_idx, np.full(group_idx.size, 2 + 3j), func=func))
-    np.testing.assert_allclose(res, expected)
-
-
 @pytest.mark.deselect_if(func=_deselect_not_implemented)
-@pytest.mark.parametrize("func", ["mean", "var", "std", "min", "max"])
-def test_complex_scalar_rejected(aggregate_all, func):
-    with pytest.raises((ValueError, NotImplementedError)):
-        aggregate_all(np.arange(0, 10, dtype=int), 2 + 3j, func=func)
+@pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max"])
+def test_complex_scalar(aggregate_all, func):
+    # a scalar is one and the same value in every group: sum and prod can do
+    # something with that, everything reducing over an array of them cannot
+    group_idx = np.arange(0, 20, dtype=int).repeat(5)
+    if func in ("sum", "prod"):
+        res = np.asarray(aggregate_all(group_idx, 2 + 3j, func=func))
+        expected = np.asarray(aggregate_all(group_idx, np.full(group_idx.size, 2 + 3j), func=func))
+        np.testing.assert_allclose(res, expected)
+    else:
+        with pytest.raises((ValueError, NotImplementedError)):
+            aggregate_all(group_idx, 2 + 3j, func=func)
 
 
 # the value a group missing from group_idx is filled with, for complex input:
@@ -511,43 +507,36 @@ def test_complex_nan_in_one_part_of_the_order_functions(aggregate_all):
     np.testing.assert_array_equal(np.asarray(aggregate_all(group_idx, a, func="nanmax", size=2)), [4 + 5j, 7 + 8j])
 
 
-def test_complex_min_max_reduction_seeds_with_the_extreme_value():
-    # min and max seed themselves with the extreme value of the dtype, and the
+def test_complex_order_functions_use_the_extreme_value_of_the_order():
+    # the order statistics start from the extreme value of the dtype, and the
     # extreme of a complex dtype is inf+infj (respectively -inf-infj) under
-    # numpy's lexicographic order: inf+0j - the extreme of a single part - is
-    # smaller than inf+infj, so it would win a group it is not part of.  Each
-    # group holds one value, so min, max and the indices are all determined.
+    # numpy's order: inf+0j - the extreme of a single part - is smaller than
+    # inf+infj, so it would win, or mask, a group it is not part of.  The
+    # min and max reductions seed themselves with that extreme, and the nan
+    # variants mask the nans with it before looking for an index.
     group_idx = np.array([0, 1])
     a = np.array([complex(np.inf, np.inf), complex(-np.inf, -np.inf)])
-
-    values = ("min", "max", "nanmin", "nanmax")
-    indices = ("argmin", "argmax", "nanargmin", "nanargmax")
-    for func in values:
+    # each group holds one value, so min, max and the indices are all determined
+    for func in ("min", "max", "nanmin", "nanmax"):
         np.testing.assert_array_equal(np.asarray(aggregate_np(group_idx, a, func=func, size=2)), a)
-    for func in indices:
+    for func in ("argmin", "argmax", "nanargmin", "nanargmax"):
         np.testing.assert_array_equal(np.asarray(aggregate_np(group_idx, a, func=func, size=2)), [0, 1])
     # the ufunc backend reduces min and max only - it has no arg functions and
     # no nan variants to get the seed wrong with
     for func in ("min", "max"):
         np.testing.assert_array_equal(np.asarray(aggregate_ufunc(group_idx, a, func=func, size=2)), a)
 
-
-def test_complex_nanarg_of_a_group_with_an_infinite_value():
-    # the nan variants mask the nan values with the extreme value of the order
-    # before looking for the index, and for a complex dtype that extreme is
-    # inf+infj (respectively -inf-infj): masking with inf+0j left a group whose
-    # only other value is inf+infj without any value equal to the found minimum,
-    # so it was reported as fill_value instead of as an index
-    group_idx = np.array([0, 0])
-    with_inf = np.array([complex(np.nan, 0), complex(np.inf, np.inf)])
-    with_minus_inf = np.array([complex(np.nan, 0), complex(-np.inf, -np.inf)])
+    # masking with inf+0j left a group whose only other value is inf+infj
+    # without any value equal to the found minimum, so it was reported as
+    # fill_value instead of as an index
     impls = [aggregate_np] + ([aggregate_numba.aggregate] if aggregate_numba is not None else [])
-
+    both_in_one_group = np.array([0, 0])
     for impl in impls:
-        for a, func in (
-            (with_inf, "nanargmin"),
-            (with_inf, "nanargmax"),
-            (with_minus_inf, "nanargmin"),
-            (with_minus_inf, "nanargmax"),
+        for values, func in (
+            ([complex(np.nan, 0), complex(np.inf, np.inf)], "nanargmin"),
+            ([complex(np.nan, 0), complex(np.inf, np.inf)], "nanargmax"),
+            ([complex(np.nan, 0), complex(-np.inf, -np.inf)], "nanargmin"),
+            ([complex(np.nan, 0), complex(-np.inf, -np.inf)], "nanargmax"),
         ):
-            np.testing.assert_array_equal(np.asarray(impl(group_idx, a, func=func, size=1)), [1])
+            res = np.asarray(impl(both_in_one_group, np.array(values), func=func, size=1))
+            np.testing.assert_array_equal(res, [1])
