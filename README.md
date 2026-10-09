@@ -1,301 +1,336 @@
-[![GitHub Workflow CI Status](https://img.shields.io/github/actions/workflow/status/ml31415/numpy-groupies/ci.yaml?branch=master&logo=github&style=flat)](https://github.com/ml31415/numpy-groupies/actions)
-[![PyPI](https://img.shields.io/pypi/v/numpy-groupies.svg?style=flat)](https://pypi.org/project/numpy-groupies/)
-[![Conda-forge](https://img.shields.io/conda/vn/conda-forge/numpy_groupies.svg?style=flat)](https://anaconda.org/conda-forge/numpy_groupies)
-![Python Version from PEP 621 TOML](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fml31415%2Fnumpy-groupies%2Fmaster%2Fpyproject.toml)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/numpy-groupies)
-
 # numpy-groupies
 
-This package consists of a small library of optimised tools for doing things that can roughly 
-be considered "group-indexing operations". The most prominent tool is `aggregate`, which is 
-described in detail further down the page.
+[![CI](https://img.shields.io/github/actions/workflow/status/ml31415/numpy-groupies/ci.yaml?branch=master&logo=github&style=flat)](https://github.com/ml31415/numpy-groupies/actions)
+[![PyPI](https://img.shields.io/pypi/v/numpy-groupies.svg?style=flat)](https://pypi.org/project/numpy-groupies/)
+[![Conda-forge](https://img.shields.io/conda/vn/conda-forge/numpy_groupies.svg?style=flat)](https://anaconda.org/conda-forge/numpy_groupies)
+[![Python versions](https://img.shields.io/pypi/pyversions/numpy-groupies.svg?style=flat)](https://pypi.org/project/numpy-groupies/)
+[![Downloads](https://img.shields.io/pypi/dm/numpy-groupies.svg?style=flat)](https://pypi.org/project/numpy-groupies/)
 
+**Fast group-by aggregation on plain NumPy arrays.**
+Give it values and a group label for each value, get back one result per group — sum, mean, std, median, min/max, argmax, cumulative sums, custom functions and more. No DataFrame required, with an optional [Numba](https://numba.pydata.org/) backend for speed.
 
-## Installation
-If you have `pip`, then simply:
-```
-pip install numpy_groupies
-```
-Note that the package only declares `numpy` as a dependency; the `pure python` implementation of 
-`aggregate` additionally works without it. If you just want one particular implementation of 
-`aggregate` (e.g. `aggregate_numpy.py`), you can download that one file, and copy-paste the contents 
-of `utils.py` into the top of that file (replacing the `from .utils import (...)` line).
-
-
-## aggregate
-
-![aggregate_diagram](/diagrams/aggregate.png)
 ```python
 import numpy as np
 import numpy_groupies as npg
 
 group_idx = np.array([3, 0, 0, 1, 0, 3, 5, 5, 0, 4])
-a = np.array([13.2, 3.5, 3.5, -8.2, 3.0, 13.4, 99.2, -7.1, 0.0, 53.7])
+a         = np.array([13.2, 3.5, 3.5, -8.2, 3.0, 13.4, 99.2, -7.1, 0.0, 53.7])
+
 npg.aggregate(group_idx, a, func="sum", fill_value=0)
-# >>>          array([10.0, -8.2, 0.0, 26.6, 53.7, 92.1])
+# array([10. , -8.2,  0. , 26.6, 53.7, 92.1])
+#  group:  0     1    2     3     4     5
 ```
-`aggregate` takes an array of values, and an array giving the group number for each of those values. 
-It then returns the sum (or mean, or std, or any, ...etc.) of the values in each group. You have 
-probably come across this idea before - see [Matlab's `accumarray` function](http://uk.mathworks.com/help/matlab/ref/accumarray.html?refresh=true), or
- [`pandas` groupby concept](http://pandas.pydata.org/pandas-docs/dev/groupby.html), or
- [MapReduce paradigm](http://en.wikipedia.org/wiki/MapReduce), or simply the [basic histogram](https://en.wikipedia.org/wiki/Histogram).
 
-A couple of implemented functions do not reduce the data, instead it calculates values cumulatively
-while iterating over the data or permutates them. The output size matches the input size.
+Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
+
+![Diagram of aggregate: values are collected by group label and reduced](https://github.com/ml31415/numpy-groupies/raw/master/diagrams/aggregate.png)
+
+**Contents:**
+[Why numpy-groupies?](#why-numpy-groupies) ·
+[Installation](#installation) ·
+[Quickstart](#quickstart) ·
+[Input forms](#input-forms) ·
+[Functions](#functions) ·
+[Helper tools](#helper-tools) ·
+[Implementations](#implementations) ·
+[Performance](#performance) ·
+[Development](#development)
+
+## Why numpy-groupies?
+
+The idea behind `aggregate` is an old one: Matlab's [`accumarray`](https://www.mathworks.com/help/matlab/ref/accumarray.html), the pandas [`groupby`](https://pandas.pydata.org/docs/user_guide/groupby.html), the [MapReduce](https://en.wikipedia.org/wiki/MapReduce) paradigm, or simply a [histogram](https://en.wikipedia.org/wiki/Histogram). What this package adds is a single, consistent array-in/array-out function that covers many reductions.
+
+|                                    | `np.bincount` | `pandas.groupby` | `numpy_groupies.aggregate` |
+| ---------------------------------- | :-----------: | :--------------: | :------------------------: |
+| Works on bare NumPy arrays         |      yes      |  via a Series    |            yes             |
+| Reductions beyond sum / count      |      no       |       yes        |            yes             |
+| Multi-dimensional output (N-D bins)|      no       |   via MultiIndex |            yes             |
+| Arbitrary labels (strings, ...)    |      no       |       yes        |   no — non-negative ints   |
+| Speed on plain arrays              |     fast      |      slower      |       fast (see below)     |
+
+Use it when your data already lives in NumPy arrays, your groups are (or can cheaply be turned into) integer labels, and you want group statistics without the overhead of building a DataFrame. If your labels are strings or other objects, map them to integers first:
 
 ```python
-group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
-a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
-npg.aggregate(group_idx, a, func="cumsum")
-# >>>          array([3, 4, 5, 6,15, 9,15,22, 7, 0,15,17, 6,14,31,39])
+labels = np.array(["b", "a", "b", "c", "a"])
+values = np.arange(5.0)
+uniques, inverse = np.unique(labels, return_inverse=True)
+npg.aggregate(inverse, values)       # array([5., 2., 3.])  ->  groups "a", "b", "c"
 ```
 
+## Installation
 
-### Inputs
-The function accepts various different combinations of inputs, producing various different shapes of output. 
-We give a brief description of the general meaning of the inputs and then go over the different combinations 
-in more detail:
+```
+pip install numpy_groupies            # NumPy implementation
+pip install "numpy_groupies[fast]"    # + Numba for the fastest implementation
+conda install -c conda-forge numpy_groupies
+```
 
-* `group_idx` - array of non-negative integers to be used as the "labels" with which to group the values in `a`.
-* `a` - array of values to be aggregated.
-* `func='sum'` - the function to use for aggregation. See the section below for more details.
-* `size=None` - the shape of the output array. If `None`, the maximum value in `group_idx` will set the size of the output.
-* `fill_value=DEFAULT_FILL_VALUE` - value to use for output groups that do not appear anywhere in the `group_idx` input array.  By default it is chosen per function, see the section below.
-* `order='C'` - for multidimensional output, this controls the layout in memory, can be `'F'` for fortran-style.
-* `dtype=None` - the`dtype` of the output. `None` means choose a sensible type for the given `a`, `func`, and `fill_value`.
-* `axis=None` - explained below.
-* `ddof=0` - passed through into calculations of variance and standard deviation (see section on functions).
-* `dx=1.0` - passed through into the calculation of the trapezoidal integral (see section on functions), where it is the sample spacing.
+NumPy is the only declared dependency. Numba is optional, and the pure-Python implementation needs neither (see [Implementations](#implementations)).
 
-![aggregate_dims_diagram](/diagrams/aggregate_dims.png)
+If you only want one implementation, you can copy a single file (e.g. `aggregate_numpy.py`) into your project: paste the contents of `utils.py` at its top, replacing the `from .utils import (...)` line.
 
-* Form 1 is the simplest, taking `group_idx` and `a` of matching 1D lengths, and producing a 1D output.
-* Form 2 is similar to Form 1, but takes a scalar `a`, which is broadcast out to the length of `group_idx`. Note that this is generally not that useful.
-* Form 3 is more complicated. `group_idx` is the same length as the `a.shape[axis]`. The groups are broadcast out along the other axis/axes of `a`, thus the output is of shape `n_groups x a.shape[0] x ... x a.shape[axis-1] x a.shape[axis+1] x ... a.shape[-1]`, i.e. the output has two or more dimensions.
-* Form 4 also produces output with two or more dimensions, but for very different reasons to Form 3.  Here `a` is 1D and `group_idx` is exactly `2D`, whereas in Form 3 `a` is `ND`, `group_idx` is `1D`, and we provide a value for `axis`.  The length of `a` must match `group_idx.shape[1]`, the value of `group_idx.shape[0]` determines the number of dimensions in the output, i.e. `group_idx[:,99]` gives the `(x,y,z)` group indices for the `a[99]`.
-* Form 5 is the same as Form 4 but with scalar `a`. As with Form 2, this is rarely that helpful.
+## Quickstart
 
-**Note on performance.** The `order` of the output is unlikely to affect performance of `aggregate` (although it may affect your downstream usage of that output), however the order of multidimensional `a` or `group_idx` can affect performance:  in Form 4 it is best if columns are contiguous in memory within `group_idx`, i.e. `group_idx[:, 99]` corresponds to a contiguous chunk of memory; in Form 3 it's best if all the data in `a` for `group_idx[i]` is contiguous, e.g. if `axis=1` then we want `a[:, 55]` to be contiguous.
+**Counting, and other reductions.** The default function is `sum`; pass a scalar to count items per group (this is what `np.bincount` does under the hood in the NumPy implementation).
 
-
-### Available functions
-By default, `aggregate` assumes you want to sum the values within each group, however you can specify another 
-function using the `func` kwarg.  This `func` can be any custom callable, however you will likely want one of
-the following optimized functions. Note that not all functions might be provided by all implementations.
-
-* `'sum'` - sum of items within each group (see example above).
-* `'prod'` - product of items within each group
-* `'mean'` - mean of items within each group
-* `'median'` - median of items within each group
-* `'var'`- variance of items within each group. Use `ddof` kwarg for degrees of freedom. The divisor used in calculations is `N - ddof`, where `N` represents the number of elements. By default `ddof` is zero.
-* `'std'` - standard deviation of items within each group. Use `ddof` kwarg for degrees of freedom (see `var` above).
-* `'min'` - minimum value of items within each group.
-* `'max'` - maximum value of items within each group.
-* `'first'` - first item in `a` from each group.
-* `'last'` - last item in `a` from each group.
-* `'argmax'` - the index in `a` of the maximum value in each group.
-* `'argmin'` - the index in `a` of the minimum value in each group.
-* `'trapezoid'` - trapezoidal integral of the items within each group, taken in the order they appear in `a` (numpy, numba and pure python). Use `dx` kwarg for the sample spacing, which is 1 by default. A group of fewer than two items integrates to zero.
-
-The above functions also have a `nan`-form, which skip the `nan` values instead of propagating them to the result of the calculation (for `nantrapezoid` this means integrating over the items which are left, bridging over the gap the `nan` leaves):
-* `'nansum'`, `'nanprod'`, `'nanmean'`, `'nanmedian'`, `'nantrapezoid'`, `'nanvar'`, `'nanstd'`, `'nanmin'`, `'nanmax'`, `'nanfirst'`, `'nanlast'`, `'nanargmax'`, `'nanargmin'`
-
-The following functions are slightly different in that they always return boolean values. Their treatment of nans is also different from above:
-* `'all'` - `True` if all items within a group are truthy. Note that `np.all(nan)` is `True`, i.e. `nan` is actually truthy.
-* `'any'` - `True` if any items within a group are truthy.
-* `'allnan'` - `True` if all items within a group are `nan`.
-* `'anynan'` - `True` if any items within a group are `nan`.
-
-The following functions don't reduce the data, but instead produce an output matching the size of the input:
-* `'cumsum'` - cumulative sum of items within each group.
-* `'cumprod'` - cumulative product of items within each group. (numba and pandas)
-* `'cummin'` - cumulative minimum of items within each group. (numba and pandas)
-* `'cummax'` - cumulative maximum of items within each group. (numba and pandas)
-* `'sort'` - sort the items within each group in ascending order, use reverse=True to invert the order.
-
-
-There is one function which doesn't reduce each group to a single value, instead it returns the full 
-set of items within the group:
-* `'array'` - simply returns the grouped items, using the same order as appeared in `a`. (numpy and pure python)
-
-
-### Fill values
-
-Groups which have no items at all are filled with `fill_value`, which by default is chosen to match
-what the corresponding numpy function gives for an empty input:
-
-| functions | default fill value |
-|-----------|--------------------|
-| `sum`, `len`, `sumofsquares` (and their `nan`-forms) | `0` |
-| `prod` (and `nanprod`) | `1` |
-| `all`, `any`, `allnan`, `anynan` | `False` |
-| `mean`, `median`, `var`, `std` (and their `nan`-forms) | `nan` |
-| `min`, `max`, `first`, `last` (and their `nan`-forms) | `nan` for floating input, `0` for integer output, which cannot hold `nan` |
-| `argmax`, `argmin` (and their `nan`-forms) | `-1` |
-| `trapezoid`, `nantrapezoid` | `0`, as it is for a single sample |
-| `array`, `sort` | an empty sequence |
-| a custom `func` | `nan` for floating input, `0` otherwise |
-
-The `cum`-functions and `sort` return one value per input item, so they have nothing to fill an
-absent group with - asking them to do so raises a `ValueError`.  The default of a particular
-function can be queried with `npg.default_fill_value(func, dtype=None)`, which is handy if downstream
-code needs to know it without repeating the table.
-
-### Complex values
-
-Complex input is supported wherever the result is well defined, following numpy's conventions:
-`sum`, `prod`, `mean`, `median`, `trapezoid`, `sort`, `first`, `last`, `array` and the `cumsum`
-functions keep the complex dtype (order statistics like `median` and `sort` use numpy's
-lexicographic ordering of the real and then imaginary part), while `var`, `std` and `sumofsquares`
-measure squared magnitudes and therefore return a real dtype (like `np.var` of complex input).
-The order statistics `min`, `max`, `argmin`, `argmax` and their `nan` counterparts follow numpy's
-lexicographic ordering everywhere - the real part decides, the imaginary part only breaks a tie -
-including the numba implementation, which compares the two parts itself since neither python nor
-numba orders complex numbers.  Like numpy, a value with a nan in either part compares neither
-smaller nor greater.
-
-### Examples
-Compute sums of consecutive integers, and then compute products of those consecutive integers.
 ```python
-group_idx = np.arange(5).repeat(3)
-# group_idx: array([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
-a = np.arange(group_idx.size)
-# a: array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14])
-x = npg.aggregate(group_idx, a)  # sum is default
-# x: array([ 3, 12, 21, 30, 39])
-x = npg.aggregate(group_idx, a, "prod")
-# x: array([ 0, 60, 336, 990, 2184])
+npg.aggregate(group_idx, 1)                     # items per group
+npg.aggregate(group_idx, a, func="mean")        # nan for the empty group 2
+npg.aggregate(group_idx, a, func="mean", fill_value=-1)
 ```
 
-Get variance ignoring nans.  Groups which are entirely nan end up as `nan`, which is the default
-`fill_value` of that function.
+**Ignoring NaNs.** Every common reduction has a `nan…` variant, as in NumPy.
+
 ```python
-x = npg.aggregate(group_idx, a, func="nanvar")
+g = np.array([0, 0, 0, 1, 1, 2])
+v = np.array([1.0, 2.0, np.nan, 4.0, np.nan, np.nan])
+
+npg.aggregate(g, v, func="nanmean")             # array([1.5, 4. , nan])
+npg.aggregate(g, v, func="nanvar")              # array([0.25, 0.  , nan])
+npg.aggregate(g, v, func="var")                 # array([nan, nan, nan])  (plain var propagates NaN)
 ```
 
-Integrate the items of each group with the trapezoidal rule, in the order they appear in `a`. `dx` is the
-sample spacing, and `np.trapezoid` may be used in place of the function name.
+**Cumulative functions** don't reduce; the output has the same length as the input.
+
 ```python
-x = npg.aggregate(group_idx, a, func="trapezoid")
-# x: array([ 2.,  8., 14., 20., 26.])
-x = npg.aggregate(group_idx, a, func=np.trapezoid, dx=0.5)
-# x: array([ 1.,  4.,  7., 10., 13.])
+npg.aggregate(np.array([0, 1, 0, 1, 0]), np.array([1, 2, 3, 4, 5]), func="cumsum")
+# array([1, 2, 4, 6, 9])
 ```
 
-Count the number of elements in each group. Note that this is equivalent to doing `np.bincount(group_idx)`, 
-indeed that is how the numpy implementation does it.
+**Custom functions.** Any callable works. Non-numeric output needs `dtype=object`, and since the default fill value of a custom function cannot be guessed, give one explicitly. Use the NumPy implementation for this: Numba can only compile numeric functions, so with Numba installed the plain `aggregate` fails on the string example below.
+
 ```python
-x = npg.aggregate(group_idx, 1)
+g = np.array([1, 0, 1, 4, 1])
+v = np.array([12.0, 3.2, -15, 88, 12.9])
+npg.aggregate_np(g, v, func=lambda x: " or ".join(map(str, x)), fill_value="", dtype=object)
+# array(['3.2', '12.0 or -15.0 or 12.9', '', '', '88.0'], dtype=object)
 ```
 
-Sum 1000 values into a three-dimensional cube of size 15x15x15. Note that in this example all three dimensions 
-have the same size, but that doesn't have to be the case.
+**Multi-dimensional output.** Give `group_idx` one row per output dimension — here, 1000 values binned into a 15×15×15 cube:
+
 ```python
 group_idx = np.random.randint(0, 15, size=(3, 1000))
-a = np.random.random(group_idx.shape[1])
-x = npg.aggregate(group_idx, a, func="sum", size=(15, 15, 15), order="F")
-# x.shape: (15, 15, 15)
-# np.isfortran(x): True
+a = np.random.random(1000)
+cube = npg.aggregate(group_idx, a, func="sum", size=(15, 15, 15), order="F")
+cube.shape            # (15, 15, 15)
+np.isfortran(cube)    # True
 ```
 
-Use a custom function to generate some strings.  Non-numeric output needs `dtype=object`, and the
-`fill_value` of a custom function has to be given explicitly, since it cannot be guessed.
+**Aggregating along an axis** of an N-D array: the groups run along `axis`, everything else is carried along.
+
 ```python
-group_idx = np.array([1, 0, 1, 4, 1])
-a = np.array([12.0, 3.2, -15, 88, 12.9])
-x = npg.aggregate(group_idx, a, func=lambda g: " or maybe ".join(str(gg) for gg in g), fill_value="", dtype=object)
-# x: ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
+a = np.array([[99,  2, 11,  14, 20],
+              [33, 76, 12, 100, 71],
+              [67, 10, -8,   1,  9]])
+group_idx = np.array([3, 3, 7, 0, 0])             # one label per column
+
+npg.aggregate(group_idx, a, axis=1)
+# array([[ 34,   0,   0, 101,   0,   0,   0,  11],
+#        [171,   0,   0, 109,   0,   0,   0,  12],
+#        [ 10,   0,   0,  77,   0,   0,   0,  -8]])
 ```
 
-Use the `axis` arg in order to do a sum-aggregation on three rows simultaneously.
+**Coming from pandas?** These are equivalent:
+
 ```python
-a = np.array([[99, 2, 11, 14, 20], [33, 76, 12, 100, 71], [67, 10, -8, 1, 9]])
-group_idx = np.array([[3, 3, 7, 0, 0]])
-x = npg.aggregate(group_idx, a, axis=1)
-# x : [[ 34, 0, 0, 101, 0, 0, 0, 11],
-#      [171, 0, 0, 109, 0, 0, 0, 12],
-#      [ 10, 0, 0,  77, 0, 0, 0, -8]]
+npg.aggregate(group_idx, a, func="sum", fill_value=0)
+pd.Series(a).groupby(group_idx).sum().reindex(range(group_idx.max() + 1), fill_value=0).to_numpy()
 ```
 
+## Input forms
 
-### Multiple implementations
-There are multiple implementations of `aggregate` provided. If you use `from numpy_groupies import aggregate`, 
-the best available implementation will automatically be selected (numba if installed, otherwise numpy).
-Otherwise you can pick a specific version directly 
-like `from numpy_groupies import aggregate_nb as aggregate` or by importing aggregate from the implementing module 
-`from numpy_groupies.aggregate_numpy import aggregate`.
+`aggregate(group_idx, a, func="sum", size=None, fill_value=DEFAULT, order="C", dtype=None, axis=None, ddof=0, ...)` accepts five combinations of input shapes:
 
-Currently the following implementations exist:
-* **numpy** - It uses plain `numpy`, mainly relying on `np.bincount` and basic indexing magic. It comes without other dependencies except `numpy` and shows reasonable performance for the occasional usage. This is the default implementation used when numba is not installed.
-* **numba** - This is the most performant implementation, based on jit compilation provided by numba and LLVM.
-* **pure python** - This implementation has no dependencies and uses only the standard library. It's horribly slow and should only be used, if there is no numpy available.
-* **numpy ufunc** - *Only for benchmarking.*  This implementation uses the `.at` method of numpy's `ufunc`s (e.g. `add.at`), which would appear to be designed for performing exactly the same calculation that `aggregate` executes, however this implementation is rather incomplete.
-* **pandas** - *Only for reference.*  The pandas' `groupby` concept is the same as the task performed by `aggregate`. However, `pandas` is not actually faster than the default `numpy` implementation. Also, note that there may be room for improvement in the way that `pandas` is utilized here. Most notably, when computing multiple aggregations of the same data (e.g. `'min'` and `'max'`) pandas could potentially be used more efficiently.
+| Form | `group_idx`                          | `a`        | `axis`  | Output                                          |
+| :--: | ------------------------------------ | ---------- | ------- | ----------------------------------------------- |
+|  1   | 1-D, length *n*                      | 1-D, len *n* | —     | 1-D, one value per group                        |
+|  2   | 1-D                                  | scalar     | —       | like form 1, scalar broadcast (e.g. counting)   |
+|  3   | 1-D, length `a.shape[axis]` (or broadcastable to `a.shape`) | N-D | required | `a`'s shape with `axis` replaced by the groups |
+|  4   | 2-D, shape *(d, n)*                  | 1-D, len *n* | —     | *d*-dimensional; `group_idx[:, i]` is the position of `a[i]` |
+|  5   | 2-D                                  | scalar     | —       | like form 4, scalar broadcast                   |
 
-All implementations have the same calling syntax and produce the same outputs, to within some floating-point error. 
-However some implementations only support a subset of the valid inputs and will sometimes throw `NotImplementedError`.
+![Diagram of the five input forms](https://github.com/ml31415/numpy-groupies/raw/master/diagrams/aggregate_dims.png)
 
+Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix it. Full parameter descriptions, plus notes on memory layout and performance, are in the [reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md).
 
-### Benchmarks
-Scripts for testing and benchmarking are included in this repository. For benchmarking, run 
-`python -m numpy_groupies.benchmarks.generic` from the root of this repository.
+## Functions
 
-Below we are using `500,000` indices uniformly picked from `[0, 1000)`. The values of `a` are uniformly picked from 
-the interval `[0,1)`, with anything less than `0.2` then set to 0 (in order to serve as falsy values in boolean operations). 
-For `nan-` operations another 20% of the values are set to nan, leaving the remainder on the interval `[0.2,0.8)`.
+`func` can be a name, a NumPy function or builtin (`np.max`, `max`, `len`, …), or any callable. Optimised built-ins:
 
-The benchmarking results are given in ms for an i7-7560U running at 2.40GHz with Python 3.14.2, NumPy 2.5.3, Numba 0.67.0 and Pandas 3.0.6, taking the minimum over 7 runs after discarding a warm-up run:
+| Category                        | Functions |
+| ------------------------------- | --------- |
+| Reductions                      | `sum` `prod` `mean` `median` `var` `std` `min` `max` `first` `last` `len` `sumofsquares` `trapezoid` |
+| Index of extremes               | `argmin` `argmax` |
+| Boolean                         | `all` `any` `allnan` `anynan` |
+| NaN-skipping variants           | `nansum` `nanmean` `nanvar` `nanmax` … — a `nan` prefix on every reduction above except `allnan`/`anynan` |
+| Cumulative (size of input)      | `cumsum` `cumprod` `cummin` `cummax` |
+| Sorting (size of input)         | `sort` (`reverse=True` for descending) |
+| Collect group members           | `array` |
 
-| function | ufunc  | numpy   | numba  | pandas  |
-|-----------|--------|---------|--------|---------|
-| sum       |   1.586 |   1.242 |   0.722 |  13.763 |
-| prod      |   1.420 |   1.411 |   0.709 |  13.303 |
-| min       |   2.746 |   2.735 |   0.864 |  12.792 |
-| max       |   2.774 |   2.763 |   0.881 |  13.106 |
-| len       |   1.494 |   1.032 |   0.526 |  12.174 |
-| all       |  43.727 |   2.894 |   0.949 |  13.499 |
-| any       |  42.965 |   3.301 |   1.272 |  13.555 |
-| anynan    |   6.563 |   1.445 |   0.864 |  13.308 |
-| allnan    |   9.487 |   3.554 |   0.785 |  13.284 |
-| mean      |    ---- |   1.823 |   0.985 |  13.913 |
-| median    |    ---- |  53.343 |  11.713 |  24.283 |
-| trapezoid |    ---- |   4.486 |   0.996 |    ---- |
-| std       |    ---- |   4.175 |   1.144 |  14.981 |
-| var       |    ---- |   4.085 |   1.154 |  14.942 |
-| first     |    ---- |   1.831 |   0.710 |  13.069 |
-| last      |    ---- |   1.570 |   0.589 |  13.247 |
-| argmax    |    ---- |   4.146 |   1.347 |  12.837 |
-| argmin    |    ---- |   6.576 |   1.297 |  12.567 |
-| nansum    |    ---- |   5.130 |   1.689 |  18.962 |
-| nanprod   |    ---- |   5.257 |   1.998 |  18.528 |
-| nanmin    |    ---- |   6.278 |   2.003 |  18.196 |
-| nanmax    |    ---- |   6.339 |   1.991 |  18.370 |
-| nanlen    |    ---- |   3.103 |   1.589 |  18.012 |
-| nanall    |    ---- |   6.293 |   1.768 |  18.895 |
-| nanany    |    ---- |   6.916 |   2.246 |  19.134 |
-| nanmean   |    ---- |   5.615 |   1.916 |  19.756 |
-| nanmedian |    ---- |  55.496 |  10.082 |  26.411 |
-| nantrapezoid|    ---- |   7.718 |   2.122 |    ---- |
-| nanvar    |    ---- |   7.476 |   2.079 |  20.148 |
-| nanstd    |    ---- |   7.679 |   2.052 |  20.417 |
-| nanfirst  |    ---- |   5.671 |   1.579 |  18.570 |
-| nanlast   |    ---- |   5.397 |   1.559 |  18.765 |
-| nanargmin |    ---- |   8.633 |   2.006 |  13.773 |
-| nanargmax |    ---- |   6.054 |   2.056 |  13.866 |
-| cumsum    |    ---- |  53.275 |   1.150 |  13.433 |
-| cumprod   |    ---- |    ---- |   1.176 |  11.117 |
-| cummax    |    ---- |    ---- |   1.498 |  11.597 |
-| cummin    |    ---- |    ---- |   1.481 |  11.583 |
-| arbitrary |    ---- | 161.542 |  50.944 | 131.864 |
-| sort      |    ---- | 143.335 |    ---- |    ---- |
+Not every implementation supports every function — for example `sort` and `array` are **not** available in the Numba implementation. The [function reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md) has the exact semantics, default fill values, complex-number behaviour and a function × implementation matrix.
 
-_Linux(x86_64), Python 3.14.2, Numpy 2.5.3, Numba 0.67.0, Pandas 3.0.6_
+## Helper tools
+
+Besides `aggregate`, the package exports a few small tools that tend to be useful around group operations.
+
+### `uaggregate` — aggregate and broadcast back
+
+Like `aggregate`, but the result is "unpacked" back to the length of the input, so each element receives the result of its group. This is `aggregate(...)[group_idx]` in one call — handy for normalising within groups.
+
+```python
+group_idx = np.array([3, 0, 0, 1, 0, 3, 5, 5, 0, 4])
+a = np.array([13.2, 3.5, 3.5, -8.2, 3.0, 13.4, 99.2, -7.1, 0.0, 53.7])
+
+npg.uaggregate(group_idx, a, func="mean")
+# array([13.3 ,  2.5 ,  2.5 , -8.2 ,  2.5 , 13.3 , 46.05, 46.05,  2.5 , 53.7 ])
+
+a - npg.uaggregate(group_idx, a, func="mean")     # demean within each group
+```
+
+With the Numba implementation you can pass `out=` to gather into a preallocated array (shape and dtype must match; other implementations raise `NotImplementedError`):
+
+```python
+out = np.empty_like(a)
+npg.uaggregate(group_idx, a, func="max", out=out)
+```
+
+### `unpack` / `unpack_into`
+
+`unpack(group_idx, ret)` expands a per-group result back to input length — it is simply `ret[group_idx]`. `unpack_into(group_idx, ret, out)` does the same into an existing array, using a jitted loop that is faster than fancy indexing for large 1-D inputs (Numba only).
+
+### `step_count` and `step_indices` — find runs of equal labels *(Numba only)*
+
+For a `group_idx` whose equal values are stored contiguously (e.g. data sorted by group), these find the run boundaries without sorting or hashing:
+
+```python
+group_idx = np.array([0, 0, 0, 2, 2, 5, 5, 5, 5, 1])
+
+npg.step_count(group_idx)       # 4   -> number of runs
+npg.step_indices(group_idx)     # array([ 0,  3,  5,  9, 10])   -> run edges, incl. start and end
+
+edges = npg.step_indices(group_idx)
+[group_idx[i:j] for i, j in zip(edges[:-1], edges[1:])]    # the four runs
+```
+
+Note that runs are counted as they appear: a label that shows up in two separate places counts as two runs.
+
+### `multi_arange`
+
+Concatenates `arange(n_i)` for every entry of `n` — a vectorised `np.hstack([np.arange(k) for k in n])`.
+
+```python
+npg.multi_arange(np.array([0, 0, 3, 0, 0, 2, 0, 2, 1]))
+# array([0, 1, 2, 0, 1, 0, 1, 0])
+```
+
+Combined with `np.bincount` it gives the rank of each item *within* its group, when the data is sorted by group:
+
+```python
+npg.multi_arange(np.bincount(np.array([0, 0, 0, 1, 1, 2])))
+# array([0, 1, 2, 0, 1, 0])
+```
+
+### `label_contiguous_1d`
+
+Labels consecutive blocks with 1, 2, 3, … and leaves zeros/`False` as 0. For boolean input each block of `True` gets a label; for other dtypes each block of identical non-zero values does.
+
+```python
+npg.label_contiguous_1d(np.array([False, True, True, False, False, True]))
+# array([0, 1, 1, 0, 0, 2])
+npg.label_contiguous_1d(np.array([0, 3, 3, 0, 0, 5, 5, 5, 1, 1, 0, 2]))
+# array([0, 1, 1, 0, 0, 2, 2, 2, 3, 3, 0, 4])
+```
+
+The output is a ready-made `group_idx` for "aggregate over each run of …" questions. The docstring flags the API of this function as not final.
+
+### `relabel_groups_unique` / `relabel_groups_masked`
+
+Output size is `max(group_idx) + 1`, so sparse labels waste memory. These functions close the gaps while preserving order:
+
+```python
+g = np.array([0, 3, 3, 3, 0, 2, 5, 2, 0, 1, 1, 0, 3, 5, 5])
+
+npg.relabel_groups_unique(g)
+# array([0, 3, 3, 3, 0, 2, 4, 2, 0, 1, 1, 0, 3, 4, 4])     label 4 was unused, so 5 -> 4
+
+keep = np.array([0, 1, 0, 1, 1, 1])                         # drop group 2
+npg.relabel_groups_masked(g, keep)
+# array([0, 2, 2, 2, 0, 0, 4, 0, 0, 1, 1, 0, 2, 4, 4])     removed items become group 0
+```
+
+Group 0 plays a special role here: `keep[0]` is ignored, and removed groups are merged into 0.
+
+### `default_fill_value`
+
+`npg.default_fill_value(func, dtype=None)` returns the fill value `aggregate` would use for empty groups — useful when downstream code needs it without duplicating the [table](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md#fill-values).
+
+```python
+npg.default_fill_value("max")            # nan
+npg.default_fill_value("max", int)       # 0   (integers cannot hold nan)
+npg.default_fill_value("argmax")         # -1
+```
+
+## Implementations
+
+`from numpy_groupies import aggregate` picks the best available implementation: **numba** if installed, otherwise **numpy**. To choose explicitly:
+
+```python
+from numpy_groupies import aggregate_nb as aggregate      # numba
+from numpy_groupies import aggregate_np as aggregate      # numpy
+from numpy_groupies import aggregate_py as aggregate      # pure python
+from numpy_groupies.aggregate_numpy import aggregate      # same, via the module
+```
+
+All implementations share the calling syntax and produce the same results up to floating-point error, but some support only a subset of functions and raise `NotImplementedError` otherwise.
+
+| Implementation | Needs        | Notes |
+| -------------- | ------------ | ----- |
+| **numba**      | numpy, numba | Fastest. Default if numba is installed. Lacks `sort` and `array`. |
+| **numpy**      | numpy        | Based on `np.bincount` and indexing tricks. Default without numba. Most complete. |
+| **pure python** | nothing     | Standard library only. Very slow; a last resort when NumPy is unavailable. |
+| numpy ufunc    | numpy        | For benchmarking only: built on `ufunc.at` (`np.add.at`, …). Incomplete. |
+| pandas         | numpy, pandas | For reference only: wraps `groupby`. Skips NaN even in the plain functions (except `median`, `cumsum`). |
+
+> **Gotchas:** with Numba installed, `aggregate(..., func="sort")` and `func="array"` raise `NotImplementedError`, and custom callables must be Numba-compilable (numeric code). For those cases call the NumPy implementation: `npg.aggregate_np(group_idx, a, func="sort")`.
+
+## Performance
+
+Median time in milliseconds for 500,000 values in 1,000 groups (lower is better), taken from the maintainers' benchmark on an Intel i7-7560U laptop CPU (Linux, Python 3.14, NumPy 2.5, Numba 0.67, pandas 3.0):
+
+| function | numpy  | numba  | pandas |
+| -------- | -----: | -----: | -----: |
+| `sum`    |   1.24 |   0.72 |  13.76 |
+| `mean`   |   1.82 |   0.99 |  13.91 |
+| `max`    |   2.76 |   0.88 |  13.11 |
+| `std`    |   4.18 |   1.14 |  14.98 |
+| `nansum` |   5.13 |   1.69 |  18.96 |
+| `median` |  53.34 |  11.71 |  24.28 |
+| `cumsum` |  53.28 |   1.15 |  13.43 |
+| custom callable | 161.54 | 50.94 | 131.86 |
+
+In short: the NumPy implementation is about 4–13× faster than pandas on common reductions, and Numba adds another 1.5–4.5× on top — and about 46× for `cumsum`. `median` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
+
+The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root:
+
+```
+python -m numpy_groupies.benchmarks.generic
+```
+
+The `numpy` and `numba` columns above are not the whole story: NumPy 1.25 brought major [speed improvements to ufuncs](https://numpy.org/doc/stable/release/1.25.0-notes.html), which narrowed the gap between the NumPy and Numba implementations considerably. The authors hope that `ufunc.at` or an equivalent in NumPy or SciPy will eventually become fast enough to make this package redundant.
 
 ## Development
-This project was started by @ml31415 and the `numba` and `weave` implementations are by him. The pure 
-python and `numpy` implementations were written by @d1manson.
 
-The authors hope that `numpy`'s `ufunc.at` methods or some other implementation of `aggregate` within
-`numpy` or `scipy` will eventually be fast enough, to make this package redundant. Numpy 1.25 actually
-contained major [improvements on ufunc speed](https://numpy.org/doc/stable/release/1.25.0-notes.html), 
-which reduced the speed gap between numpy and the numba implementation a lot.
+```
+git clone https://github.com/ml31415/numpy-groupies
+cd numpy-groupies
+pip install -e ".[dev]"     # pytest, numba, pandas
+pytest
+```
+
+The repository uses [pre-commit](https://pre-commit.com/) (`pre-commit install`). Bug reports and pull requests are welcome in the [issue tracker](https://github.com/ml31415/numpy-groupies/issues). Release notes are on the [releases page](https://github.com/ml31415/numpy-groupies/releases).
+
+**Credits.** Started by [@ml31415](https://github.com/ml31415), who wrote the Numba implementation; the pure-Python and NumPy implementations were written by [@d1manson](https://github.com/d1manson). Currently maintained by Deepak Cherian ([@dcherian](https://github.com/dcherian)).
+
+## License
+
+BSD 2-Clause — see [LICENSE.txt](LICENSE.txt).
