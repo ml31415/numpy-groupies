@@ -5,16 +5,18 @@ Complete benchmark results for `aggregate`. A short summary is in the [README](.
 ## Setup
 
 - 500,000 indices, uniformly drawn from `[0, 1000)`.
-- The values of `a` are uniform on `[0, 1)`, and everything below `0.2` is then set to `0`, so that there are falsy values for the boolean functions.
-- For the `nan…` functions another 20% of the values are set to `nan`, leaving the rest on the interval `[0.2, 0.8)`.
-- Times in **milliseconds**, taking the minimum over 7 runs after discarding a warm-up run. Lower is better.
+- The values of `a` are uniform on `[0, 1)`, and everything above `0.8` is then set to `0`, so that there are falsy values for the boolean functions.
+- For the `nan…` functions, of the remaining values those below `0.2` are set to `nan` (about 20%), leaving the rest on the interval `[0.2, 0.8]`.
+- Times in **milliseconds**, taking the minimum over 5 timed runs after one untimed warm-up call (`repeat=5` in `numpy_groupies/benchmarks/generic.py`). Lower is better.
 - Machine: Intel i7-7560U at 2.40 GHz, Linux (x86_64), Python 3.14.2, NumPy 2.5.3, Numba 0.67.0, pandas 3.0.6.
 
 Absolute numbers depend heavily on the machine, Python and library versions, so rely on the ratios between columns rather than on the values. Re-run on your own hardware, from the repository root:
 
+```sh
+python -m numpy_groupies.benchmarks.generic --pandas
 ```
-python -m numpy_groupies.benchmarks.generic
-```
+
+Without `--pandas` the pandas column is omitted, and the pure-Python implementation only appears with `--purepy`.
 
 Columns: `ufunc` is the `ufunc.at`-based implementation (incomplete, for benchmarking only), `numpy` the default NumPy implementation, `numba` the Numba implementation, and `pandas` the pandas `groupby` wrapper. `----` means the function is not available in that implementation. The row `arbitrary` is a custom Python callable passed as `func`.
 
@@ -65,7 +67,7 @@ Columns: `ufunc` is the `ufunc.at`-based implementation (incomplete, for benchma
 
 ## Reading the table
 
-- **numba vs numpy:** Numba is faster for every function both provide, typically by 1.5–4.5× on reductions. The largest gap is `cumsum` (about 46×).
-- **numpy vs pandas:** the NumPy implementation is about 4× (`std`, `var`) to 13× (`sum`, `prod`, `len`) faster than pandas on common reductions. The exception is `median`, where pandas (24 ms) beats NumPy (53 ms) but not Numba (12 ms).
+- **numba vs numpy:** Numba is faster for every function both provide, typically by 1.5–5× on reductions (up to 5.1× for `argmin`). The largest gap is `cumsum` (about 46×).
+- **numpy vs pandas:** the NumPy implementation is about 4× (`std`, `var`) to 12× (`len`; `sum` 11×, `prod` 9×) faster than pandas on common reductions. The exception is `median`, where pandas (24 ms) beats NumPy (53 ms) but not Numba (12 ms).
 - **ufunc:** `ufunc.at` was historically slow; NumPy 1.25 narrowed the gap considerably, but this implementation remains incomplete and `all`/`any` are still very slow.
 - **Expensive everywhere:** `median`, `sort` and custom callables.

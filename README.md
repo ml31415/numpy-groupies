@@ -23,7 +23,7 @@ npg.aggregate(group_idx, a, func="sum", fill_value=0)
 
 Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
 
-![Diagram of aggregate: values are collected by group label and reduced](https://github.com/ml31415/numpy-groupies/raw/master/diagrams/aggregate.png)
+![Diagram of aggregate: values are collected by group label and reduced](https://github.com/ml31415/numpy-groupies/raw/master/docs/diagrams/aggregate.png)
 
 **Contents:**
 [Why numpy-groupies?](#why-numpy-groupies) ·
@@ -59,13 +59,13 @@ npg.aggregate(inverse, values)       # array([5., 2., 3.])  ->  groups "a", "b",
 
 ## Installation
 
-```
+```sh
 pip install numpy_groupies            # NumPy implementation
 pip install "numpy_groupies[fast]"    # + Numba for the fastest implementation
 conda install -c conda-forge numpy_groupies
 ```
 
-NumPy is the only declared dependency. Numba is optional, and the pure-Python implementation needs neither (see [Implementations](#implementations)).
+NumPy is the only declared dependency. Numba is optional and only the fastest implementation needs it; the pure-Python implementation runs without Numba but still imports NumPy (see [Implementations](#implementations)).
 
 If you only want one implementation, you can copy a single file (e.g. `aggregate_numpy.py`) into your project: paste the contents of `utils.py` at its top, replacing the `from .utils import (...)` line.
 
@@ -149,7 +149,7 @@ pd.Series(a).groupby(group_idx).sum().reindex(range(group_idx.max() + 1), fill_v
 |  4   | 2-D, shape *(d, n)*                  | 1-D, len *n* | —     | *d*-dimensional; `group_idx[:, i]` is the position of `a[i]` |
 |  5   | 2-D                                  | scalar     | —       | like form 4, scalar broadcast                   |
 
-![Diagram of the five input forms](https://github.com/ml31415/numpy-groupies/raw/master/diagrams/aggregate_dims.png)
+![Diagram of the five input forms](https://github.com/ml31415/numpy-groupies/raw/master/docs/diagrams/aggregate_dims.png)
 
 Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix it. Full parameter descriptions, plus notes on memory layout and performance, are in the [reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md).
 
@@ -241,7 +241,7 @@ npg.label_contiguous_1d(np.array([0, 3, 3, 0, 0, 5, 5, 5, 1, 1, 0, 2]))
 # array([0, 1, 1, 0, 0, 2, 2, 2, 3, 3, 0, 4])
 ```
 
-The output is a ready-made `group_idx` for "aggregate over each run of …" questions. The docstring flags the API of this function as not final.
+The output is a ready-made `group_idx` for "aggregate over each run of …" questions.
 
 ### `relabel_groups_unique` / `relabel_groups_masked`
 
@@ -287,7 +287,7 @@ All implementations share the calling syntax and produce the same results up to 
 | -------------- | ------------ | ----- |
 | **numba**      | numpy, numba | Fastest. Default if numba is installed. Lacks `sort` and `array`. |
 | **numpy**      | numpy        | Based on `np.bincount` and indexing tricks. Default without numba. Most complete. |
-| **pure python** | nothing     | Standard library only. Very slow; a last resort when NumPy is unavailable. |
+| **pure python** | numpy        | Plain Python loops, no Numba. Very slow; useful as a fallback or for porting. |
 | numpy ufunc    | numpy        | For benchmarking only: built on `ufunc.at` (`np.add.at`, …). Incomplete. |
 | pandas         | numpy, pandas | For reference only: wraps `groupby`. Skips NaN even in the plain functions (except `median`, `cumsum`). |
 
@@ -295,7 +295,7 @@ All implementations share the calling syntax and produce the same results up to 
 
 ## Performance
 
-Median time in milliseconds for 500,000 values in 1,000 groups (lower is better), taken from the maintainers' benchmark on an Intel i7-7560U laptop CPU (Linux, Python 3.14, NumPy 2.5, Numba 0.67, pandas 3.0):
+Best of five timed runs, in milliseconds, for 500,000 values in 1,000 groups (lower is better), taken from the maintainers' benchmark on an Intel i7-7560U laptop CPU (Linux, Python 3.14, NumPy 2.5, Numba 0.67, pandas 3.0):
 
 | function | numpy  | numba  | pandas |
 | -------- | -----: | -----: | -----: |
@@ -308,11 +308,11 @@ Median time in milliseconds for 500,000 values in 1,000 groups (lower is better)
 | `cumsum` |  53.28 |   1.15 |  13.43 |
 | custom callable | 161.54 | 50.94 | 131.86 |
 
-In short: the NumPy implementation is about 4–13× faster than pandas on common reductions, and Numba adds another 1.5–4.5× on top — and about 46× for `cumsum`. `median` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
+In short: the NumPy implementation is about 4–12× faster than pandas on common reductions, and Numba adds another 1.5–5× on top — and about 46× for `cumsum`. `median` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
 
-The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root:
+The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root (add `--pandas` for the pandas column, `--purepy` for the pure-Python one):
 
-```
+```sh
 python -m numpy_groupies.benchmarks.generic
 ```
 
@@ -320,7 +320,7 @@ The `numpy` and `numba` columns above are not the whole story: NumPy 1.25 brough
 
 ## Development
 
-```
+```sh
 git clone https://github.com/ml31415/numpy-groupies
 cd numpy-groupies
 pip install -e ".[dev]"     # pytest, numba, pandas

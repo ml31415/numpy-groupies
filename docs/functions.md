@@ -36,7 +36,7 @@ Exceptions are raised in most cases where `fill_value` and `dtype` are incompati
 
 ## Input forms in detail
 
-![The five input forms](https://github.com/ml31415/numpy-groupies/raw/master/diagrams/aggregate_dims.png)
+![The five input forms](diagrams/aggregate_dims.png)
 
 1. **1-D / 1-D.** `group_idx` and `a` are 1-D of equal length. Output is 1-D.
 2. **1-D / scalar.** `a` is broadcast to the length of `group_idx`. Mostly used for counting: `aggregate(group_idx, 1)`.
@@ -47,6 +47,7 @@ Exceptions are raised in most cases where `fill_value` and `dtype` are incompati
    aggregate(np.array([3, 3, 7, 0, 0]), a, axis=1).shape    # (3, 8)
    aggregate(np.array([3, 3, 7, 0, 0]), a.T, axis=0).shape  # (8, 3)
    ```
+
 4. **2-D / 1-D.** `a` is 1-D, `group_idx` is 2-D with shape `(d, n)` and `n == len(a)`. The output has `d` dimensions; `group_idx[:, 99]` gives the `(x, y, z)` position of `a[99]`.
 5. **2-D / scalar.** Form 4 with a scalar `a`. Mostly used for N-D histograms.
 

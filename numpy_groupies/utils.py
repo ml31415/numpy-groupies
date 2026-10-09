@@ -864,7 +864,7 @@ def multi_arange(n):
 
 def label_contiguous_1d(X):
     """
-    WARNING: API for this function is not liable to change!!!
+    WARNING: API for this function is liable to change!!!
 
     By example:
 

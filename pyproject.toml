@@ -7,7 +7,7 @@ name = "numpy-groupies"
 description = "Optimised tools for group-indexing operations: aggregated sum and more."
 dynamic = ["version"]
 readme = "README.md"
-license = "BSD-3-Clause"
+license = "BSD-2-Clause"
 license-files = ["LICENSE.txt"]
 authors = [
     {name = "Michael Löffler", email = "ml@occam.com.ua"},
@@ -70,3 +70,9 @@ write_to = "numpy_groupies/_version.py"
 [tool.codespell]
 ignore-words-list = "nd,"
 ignore-regex = ".*codespell-ignore$"
+
+[tool.rumdl]
+# House style is one paragraph per line plus wide table rows, so line length is not
+# enforced - MD013 would flag ~70 lines and can only be fixed by reflowing the text.
+disable = ["MD013"]
+respect-gitignore = true
