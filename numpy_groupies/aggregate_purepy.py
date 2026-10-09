@@ -1,6 +1,8 @@
 import itertools
 import math
 import operator
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any
 
 from .aggregate_common import (
     DEFAULT_FILL_VALUE,
@@ -15,26 +17,29 @@ from .aggregate_common import (
     aliasing_py as aliasing,
 )
 
+if TYPE_CHECKING:
+    import numpy.typing as npt
+
 # min, max, sum, all, any - builtin
 
 
-def _last(x):
+def _last(x: Sequence[Any]) -> Any:
     return x[-1]
 
 
-def _first(x):
+def _first(x: Sequence[Any]) -> Any:
     return x[0]
 
 
-def _array(x):
+def _array(x: Sequence[Any]) -> Sequence[Any]:
     return x
 
 
-def _mean(x):
+def _mean(x: Sequence[Any]) -> Any:
     return sum(x) / len(x)
 
 
-def _median(x):
+def _median(x: Sequence[Any]) -> Any:
     if any(v != v for v in x):
         # like np.median, any nan poisons the whole group
         return math.nan
@@ -52,7 +57,7 @@ def _median(x):
     return (lo + hi) / 2
 
 
-def _trapezoid(x, dx=1.0):
+def _trapezoid(x: Sequence[Any], dx: float = 1.0) -> float:
     # trapezoidal integration over the group, in array order; a group of a
     # single element (or none) integrates to zero
     s = 0.0
@@ -61,46 +66,46 @@ def _trapezoid(x, dx=1.0):
     return s * dx
 
 
-def _var(x, ddof=0):
+def _var(x: Sequence[Any], ddof: int = 0) -> Any:
     # the squared magnitude, so complex values give a real result like np.var
     mean = _mean(x)
     return sum(abs(xx - mean) ** 2 for xx in x) / (len(x) - ddof)
 
 
-def _std(x, ddof=0):
+def _std(x: Sequence[Any], ddof: int = 0) -> float:
     return math.sqrt(_var(x, ddof=ddof))
 
 
-def _prod(x):
+def _prod(x: Sequence[Any]) -> Any:
     r = x[0]
     for xx in x[1:]:
         r *= xx
     return r
 
 
-def _anynan(x):
+def _anynan(x: Sequence[Any]) -> bool:
     return any(xx != xx for xx in x)
 
 
-def _allnan(x):
+def _allnan(x: Sequence[Any]) -> bool:
     return all(xx != xx for xx in x)
 
 
-def _argmax(x_and_idx):
+def _argmax(x_and_idx) -> Any:
     return max(x_and_idx, key=operator.itemgetter(1))[0]
 
 
-_argmax.x_and_idx = True  # tell aggregate what to use as first arg
+_argmax.x_and_idx = True  # type: ignore[attr-defined]  # tell aggregate what to use as first arg
 
 
-def _argmin(x_and_idx):
+def _argmin(x_and_idx) -> Any:
     return min(x_and_idx, key=operator.itemgetter(1))[0]
 
 
-_argmin.x_and_idx = True  # tell aggregate what to use as first arg
+_argmin.x_and_idx = True  # type: ignore[attr-defined]  # tell aggregate what to use as first arg
 
 
-def _sort(group_idx, a, reverse=False):
+def _sort(group_idx, a: Any, reverse: bool = False) -> list[Any]:
     def _argsort(unordered):
         return sorted(range(len(unordered)), key=lambda k: unordered[k])
 
@@ -155,14 +160,14 @@ _impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not i
 _dispatch = build_dispatch(_impl_dict, aliasing)
 
 
-def _a_dtype(a):
+def _a_dtype(a: Sequence[Any]) -> type:
     # python numbers carry no dtype; the element types decide what a numpy
     # array of these values would have made of them - a mixed list of ints
     # and floats is a float array for numpy, complex makes it complex, and
     # everything else (including bool) counts as non-inexact.  numpy scalars
     # are recognised by their dtype, since e.g. complex64 is not a subclass
     # of the python complex type
-    dtype = int
+    dtype: type = int
     for v in a:
         kind = getattr(getattr(v, "dtype", None), "kind", None)
         if isinstance(v, complex) or kind == "c":
@@ -173,16 +178,16 @@ def _a_dtype(a):
 
 
 def aggregate(
-    group_idx,
-    a,
-    func="sum",
-    size=None,
-    fill_value=DEFAULT_FILL_VALUE,
-    order="C",
-    dtype=None,
-    axis=None,
-    **kwargs,
-):
+    group_idx: "npt.ArrayLike",
+    a: "npt.ArrayLike",
+    func: str | Callable[..., Any] = "sum",
+    size: int | None = None,
+    fill_value: Any = DEFAULT_FILL_VALUE,
+    order: str = "C",
+    dtype: "npt.DTypeLike" = None,
+    axis: int | None = None,
+    **kwargs: Any,
+) -> list[Any]:
     if axis is not None:
         raise NotImplementedError("axis arg not supported in purepy implementation.")
     if len(group_idx) == 0:
@@ -254,11 +259,11 @@ def aggregate(
     if not getattr(func, "x_and_idx", False):
         data = sorted(zip(group_idx, a), key=operator.itemgetter(0))
         for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
-            ret[ix] = func([val for _, val in group], **kwargs)
+            ret[ix] = func([val for _, val in group], **kwargs)  # type: ignore[operator]
     else:
-        data = sorted(zip(range(len(a)), group_idx, a), key=operator.itemgetter(1))
+        data = sorted(zip(range(len(a)), group_idx, a), key=operator.itemgetter(1))  # type: ignore[arg-type]
         for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
-            ret[ix] = func([(val_idx, val) for val_idx, _, val in group], **kwargs)
+            ret[ix] = func([(val_idx, val) for val_idx, _, val in group], **kwargs)  # type: ignore[operator,misc]
 
     return ret
 

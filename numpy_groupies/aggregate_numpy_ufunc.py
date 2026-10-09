@@ -1,4 +1,8 @@
+from collections.abc import Callable, Sequence
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 from .aggregate_common import (
     DEFAULT_FILL_VALUE,
@@ -17,15 +21,33 @@ from .utils import (
 )
 
 
-def _anynan(group_idx, a, size, fill_value, dtype=None):
+def _anynan(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    dtype: np.dtype | None = None,
+) -> np.ndarray:
     return _any(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
 
-def _allnan(group_idx, a, size, fill_value, dtype=None):
+def _allnan(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    dtype: np.dtype | None = None,
+) -> np.ndarray:
     return _all(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
 
-def _any(group_idx, a, size, fill_value, dtype=None):
+def _any(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    dtype: np.dtype | None = None,
+) -> np.ndarray:
     check_boolean(fill_value)
     ret = np.full(size, fill_value, dtype=bool)
     if fill_value:
@@ -34,7 +56,13 @@ def _any(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-def _all(group_idx, a, size, fill_value, dtype=None):
+def _all(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    dtype: np.dtype | None = None,
+) -> np.ndarray:
     check_boolean(fill_value)
     ret = np.full(size, fill_value, dtype=bool)
     if not fill_value:
@@ -43,7 +71,13 @@ def _all(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-def _sum(group_idx, a, size, fill_value, dtype=None):
+def _sum(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    dtype: np.dtype | None = None,
+) -> np.ndarray:
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != 0:
@@ -52,11 +86,23 @@ def _sum(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-def _len(group_idx, a, size, fill_value, dtype=None):
+def _len(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    dtype: np.dtype | None = None,
+) -> np.ndarray:
     return _sum(group_idx, 1, size, fill_value, dtype=int)
 
 
-def _prod(group_idx, a, size, fill_value, dtype=None):
+def _prod(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    dtype: np.dtype | None = None,
+) -> np.ndarray:
     """Same as aggregate_numpy.py"""
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
     ret = np.full(size, fill_value, dtype=dtype)
@@ -66,7 +112,13 @@ def _prod(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-def _min(group_idx, a, size, fill_value, dtype=None):
+def _min(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    dtype: np.dtype | None = None,
+) -> np.ndarray:
     """Same as aggregate_numpy.py"""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmax = maxval(fill_value, dtype)
@@ -79,7 +131,13 @@ def _min(group_idx, a, size, fill_value, dtype=None):
     return ret
 
 
-def _max(group_idx, a, size, fill_value, dtype=None):
+def _max(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    dtype: np.dtype | None = None,
+) -> np.ndarray:
     """Same as aggregate_numpy.py"""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmin = minval(fill_value, dtype)
@@ -108,16 +166,17 @@ _dispatch = build_dispatch(_impl_dict, aliasing)
 
 
 def aggregate(
-    group_idx,
-    a,
-    func="sum",
-    size=None,
-    fill_value=DEFAULT_FILL_VALUE,
-    order="C",
-    dtype=None,
-    axis=None,
-    **kwargs,
-):
+    group_idx: npt.ArrayLike,
+    a: npt.ArrayLike,
+    func: str | Callable[..., Any] = "sum",
+    size: int | Sequence[int] | None = None,
+    fill_value: Any = DEFAULT_FILL_VALUE,
+    order: str = "C",
+    dtype: npt.DTypeLike = None,
+    axis: int | None = None,
+    **kwargs: Any,
+) -> Any:
+    funcname: str | Callable[..., Any]
     try:
         funcname, _ = _dispatch[func]
     except (KeyError, TypeError):

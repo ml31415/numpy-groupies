@@ -1,6 +1,9 @@
+from collections.abc import Callable, Sequence
 from functools import partial
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from .aggregate_common import (
@@ -20,7 +23,16 @@ from .utils import (
 )
 
 
-def _wrapper(group_idx, a, size, fill_value, func="sum", dtype=None, ddof=0, **kwargs):
+def _wrapper(
+    group_idx: np.ndarray,
+    a: np.ndarray,
+    size: int | tuple[int, ...] | None,
+    fill_value: Any,
+    func: str | Callable[..., Any] = "sum",
+    dtype: np.dtype | None = None,
+    ddof: int = 0,
+    **kwargs: Any,
+) -> np.ndarray:
     if len(group_idx) == 0:
         raise ValueError("group_idx must not be empty")
     # scalar input needs broadcasting before anything group-based can run
@@ -86,7 +98,7 @@ _supported_funcs = [
     "cummax",
     "cummin",
 ]
-_impl_dict = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
+_impl_dict: dict[str, Callable[..., Any]] = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
 _impl_dict.update(
     ("nan" + fn, partial(_wrapper, func=fn)) for fn in _supported_funcs if fn not in funcs_no_separate_nan
 )
@@ -114,16 +126,16 @@ _dispatch = build_dispatch(_impl_dict, aliasing)
 
 
 def aggregate(
-    group_idx,
-    a,
-    func="sum",
-    size=None,
-    fill_value=DEFAULT_FILL_VALUE,
-    order="C",
-    dtype=None,
-    axis=None,
-    **kwargs,
-):
+    group_idx: npt.ArrayLike,
+    a: npt.ArrayLike,
+    func: str | Callable[..., Any] = "sum",
+    size: int | Sequence[int] | None = None,
+    fill_value: Any = DEFAULT_FILL_VALUE,
+    order: str = "C",
+    dtype: npt.DTypeLike = None,
+    axis: int | None = None,
+    **kwargs: Any,
+) -> Any:
     if iscomplexobj(a):
         # pandas' groupby kernels have no signatures for complex dtypes - the
         # numpy implementation handles complex values, scalars included

@@ -1,7 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from .aggregate_purepy import aggregate as aggregate_py
 
+if TYPE_CHECKING:
+    import numpy.typing as npt
 
-def dummy_no_impl(*args, **kwargs):
+
+def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
     raise NotImplementedError(
         "You may need to install another package (numpy or numba) to access a working implementation."
     )
@@ -29,6 +36,7 @@ else:
     )
 
 
+aggregate_nb: Any
 try:
     import numba
 except ImportError:
@@ -40,7 +48,7 @@ else:
     aggregate = aggregate_nb
 
 
-def uaggregate(group_idx, a, out=None, **kwargs):
+def uaggregate(group_idx: npt.ArrayLike, a: npt.ArrayLike, out: Any = None, **kwargs: Any) -> Any:
     """
     Aggregate the values of ``a`` by the groups in ``group_idx`` and broadcast the result
     back to the size of ``a``, so that every element carries the result of its own group.

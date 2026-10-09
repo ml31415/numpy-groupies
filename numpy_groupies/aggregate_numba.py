@@ -1,9 +1,12 @@
 import functools
 import hashlib
 import inspect
+import typing
+from collections.abc import Callable, Sequence
 
 import numba as nb
 import numpy as np
+import numpy.typing as npt
 
 from .aggregate_common import (
     DEFAULT_FILL_VALUE,
@@ -1041,18 +1044,18 @@ def _dtype_fill_plan(op, a_key, dtype, fill_value, n):
 
 
 def aggregate(
-    group_idx,
-    a,
-    func="sum",
-    size=None,
-    fill_value=DEFAULT_FILL_VALUE,
-    order="C",
-    dtype=None,
-    axis=None,
-    out=None,
-    cache=True,
-    **kwargs,
-):
+    group_idx: npt.ArrayLike,
+    a: npt.ArrayLike,
+    func: str | Callable[..., typing.Any] = "sum",
+    size: int | Sequence[int] | None = None,
+    fill_value: typing.Any = DEFAULT_FILL_VALUE,
+    order: str = "C",
+    dtype: npt.DTypeLike = None,
+    axis: int | None = None,
+    out: np.ndarray | None = None,
+    cache: bool = True,
+    **kwargs: typing.Any,
+) -> typing.Any:
     try:
         aggregate_op = _dispatch[func][1]
     except (KeyError, TypeError):

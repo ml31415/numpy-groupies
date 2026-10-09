@@ -4,6 +4,11 @@ This module must not import numpy - the pure python implementation is loaded
 before numpy is known to be available, and has to work without it.
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from typing import Any
+
 nan = float("nan")  # nan is just this float
 
 
@@ -127,7 +132,7 @@ class _DefaultFillValue:
         return (_get_default_fill_value, ())
 
 
-def _get_default_fill_value():
+def _get_default_fill_value() -> _DefaultFillValue:
     return DEFAULT_FILL_VALUE
 
 
@@ -169,7 +174,7 @@ _default_fill_values = {
 }
 
 
-def _fill_value_key(func):
+def _fill_value_key(func: str | Callable[..., Any]) -> str:
     """Map a function (name, alias or callable) onto a ``_default_fill_values`` key."""
     try:
         name = aliasing_py[func]
@@ -181,7 +186,7 @@ def _fill_value_key(func):
     return name
 
 
-def _is_inexact_dtype(dtype):
+def _is_inexact_dtype(dtype: Any) -> bool:
     """True for everything that can hold nan - numpy dtypes by kind, python types by identity."""
     kind = getattr(dtype, "kind", None)
     if kind is not None:  # a numpy dtype
@@ -191,7 +196,7 @@ def _is_inexact_dtype(dtype):
     return isinstance(dtype, type) and issubclass(dtype, (float, complex))
 
 
-def _is_complex_dtype(dtype):
+def _is_complex_dtype(dtype: Any) -> bool:
     """True for complex numpy dtypes, the complex builtin and complex dtype strings."""
     kind = getattr(dtype, "kind", None)
     if kind is not None:  # a numpy dtype
@@ -201,7 +206,7 @@ def _is_complex_dtype(dtype):
     return isinstance(dtype, type) and issubclass(dtype, complex)
 
 
-def resolve_fill_value(func, fill_value, dtype):
+def resolve_fill_value(func: str | Callable[..., Any], fill_value: Any, dtype: Any) -> Any:
     """Replace the ``DEFAULT_FILL_VALUE`` sentinel with the default of ``func``.
 
     Anything else than the sentinel is returned untouched.  ``nan`` is only
@@ -270,7 +275,7 @@ _alias_builtin = {
 }
 
 
-def get_aliasing(*extra):
+def get_aliasing(*extra: dict[Any, str]) -> dict[Any, str]:
     """
     Assembles a dictionary that maps both strings and functions to a list of supported function names.
 
@@ -280,7 +285,7 @@ def get_aliasing(*extra):
 
     This function should only be called during import.
     """
-    alias = {k: k for k in funcs_common}
+    alias: dict[Any, str] = {k: k for k in funcs_common}
     alias.update(_alias_str)
     alias.update((fn, fn) for fn in _alias_builtin.values())
     alias.update(_alias_builtin)
@@ -298,7 +303,9 @@ def get_aliasing(*extra):
 aliasing_py = get_aliasing()
 
 
-def get_func(func, aliasing, implementations):
+def get_func(
+    func: str | Callable[..., Any], aliasing: dict[Any, Any], implementations: Any
+) -> str | Callable[..., Any]:
     """Return the key of a found implementation or the func itself"""
     try:
         func_str = aliasing[func]
@@ -315,7 +322,9 @@ def get_func(func, aliasing, implementations):
     raise ValueError(f"func {func} is neither a valid function string nor a callable object")
 
 
-def build_dispatch(impl_dict, aliasing):
+def build_dispatch(
+    impl_dict: Mapping[str, Callable[..., Any]], aliasing: Mapping[Any, str]
+) -> dict[Any, tuple[str, Callable[..., Any]]]:
     """Fuse an aliasing and an implementation table for single-lookup dispatch.
 
     Returns a dict mapping every alias (string or callable) onto a
@@ -379,7 +388,7 @@ _complex_real_result = (
 )
 
 
-def check_complex_dtype(a_dtype, dtype, func_str):
+def check_complex_dtype(a_dtype: Any, dtype: Any, func_str: str) -> None:
     """Complain when a non-complex ``dtype`` is requested for complex input.
 
     ``resolve_output_dtype`` applies this for the backends that honour ``dtype``;

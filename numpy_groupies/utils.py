@@ -1,8 +1,13 @@
 """Numpy specific functionality shared by the numpy-based aggregate implementations."""
 
+from __future__ import annotations
+
 import platform
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from .aggregate_common import (
     DEFAULT_FILL_VALUE,
@@ -14,7 +19,7 @@ from .aggregate_common import (
 )
 
 
-def default_fill_value(func, dtype=None):
+def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike = None) -> Any:
     """The value ``aggregate`` uses for groups missing from ``group_idx``.
 
     ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your
@@ -24,7 +29,7 @@ def default_fill_value(func, dtype=None):
     return resolve_fill_value(func, DEFAULT_FILL_VALUE, np.dtype(dtype) if dtype is not None else np.float64)
 
 
-def check_nton_shape(ret, size, func):
+def check_nton_shape(ret: np.ndarray, size, func) -> None:
     """Complain early when a one-out-per-in function has to fill a hole.
 
     ``sort`` and the ``cum``-functions emit exactly one value per input item,
@@ -83,7 +88,7 @@ if hasattr(np, "trapezoid"):
 aliasing = get_aliasing(_alias_numpy)
 
 
-def check_boolean(x):
+def check_boolean(x: Any) -> None:
     if x not in (0, 1):
         raise ValueError("Value not boolean")
 
@@ -106,7 +111,7 @@ _next_float_dtype = {
 }
 
 
-def minimum_dtype(x, dtype=np.bool_):
+def minimum_dtype(x, dtype: np.dtype = np.bool_) -> np.dtype:
     """
     Returns the "most basic" dtype which represents `x` properly, which provides at least the same
     value range as the specified dtype.
@@ -142,7 +147,7 @@ def minimum_dtype(x, dtype=np.bool_):
         return type_loop(x, dtype, _next_int_dtype, default=np.float32)
 
 
-def minimum_dtype_scalar(x, dtype, a):
+def minimum_dtype_scalar(x, dtype: np.dtype | None, a) -> np.dtype:
     if dtype is None:
         dtype = np.dtype(type(a)) if isinstance(a, (int, float, complex)) else a.dtype
     return minimum_dtype(x, dtype)
@@ -191,7 +196,7 @@ _forced_same_type = {
 }
 
 
-def check_dtype(dtype, func_str, a, n):
+def check_dtype(dtype: npt.DTypeLike, func_str: str, a: np.ndarray, n: int | tuple[int, ...] | None) -> np.dtype:
     if np.isscalar(a) or not a.shape:
         if func_str not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
@@ -202,7 +207,9 @@ def check_dtype(dtype, func_str, a, n):
     return resolve_output_dtype(dtype, func_str, a_dtype, n)
 
 
-def resolve_output_dtype(dtype, func_str, a_dtype, n):
+def resolve_output_dtype(
+    dtype: npt.DTypeLike, func_str: str, a_dtype: np.dtype, n: int | tuple[int, ...] | None
+) -> np.dtype:
     """The dtype resolution of ``check_dtype`` given the input dtype directly.
 
     ``a_dtype`` is the dtype of the input data and ``n`` the number of values
@@ -263,7 +270,7 @@ def resolve_output_dtype(dtype, func_str, a_dtype, n):
                         return a_dtype
 
 
-def minval(fill_value, dtype):
+def minval(fill_value, dtype: np.dtype | None) -> Any:
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return -np.inf
@@ -277,7 +284,7 @@ def minval(fill_value, dtype):
     return np.finfo(dtype).min
 
 
-def maxval(fill_value, dtype):
+def maxval(fill_value, dtype: np.dtype | None) -> Any:
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return np.inf
@@ -300,7 +307,7 @@ def check_fill_value(fill_value, dtype, func=None):
             raise ValueError(f"fill_value must be convertible into {dtype.type.__name__}")
 
 
-def check_group_idx(group_idx, a=None, check_min=True):
+def check_group_idx(group_idx: np.ndarray, a: np.ndarray | None = None, check_min: bool = True) -> None:
     if a is not None and group_idx.size != a.size:
         raise ValueError("The size of group_idx must be the same as a.size")
     if not issubclass(group_idx.dtype.type, np.integer):
@@ -474,7 +481,7 @@ def input_validation(
 # General tools
 
 
-def unpack(group_idx, ret):
+def unpack(group_idx: npt.ArrayLike, ret: np.ndarray) -> np.ndarray:
     """
     Take an aggregate packed array and uncompress it to the size of group_idx. This is equivalent to
     ret[group_idx].
@@ -498,7 +505,7 @@ def nanlast(x):
     return x[~np.isnan(x)][-1]
 
 
-def multi_arange(n):
+def multi_arange(n: npt.ArrayLike) -> np.ndarray:
     """By example:
 
         #    0  1  2  3  4  5  6  7  8
@@ -523,7 +530,7 @@ def multi_arange(n):
     return np.cumsum(ret)[:-1]
 
 
-def label_contiguous_1d(X):
+def label_contiguous_1d(X: np.ndarray) -> np.ndarray:
     """
     WARNING: API for this function is liable to change!!!
 
@@ -561,7 +568,7 @@ def label_contiguous_1d(X):
     return L
 
 
-def relabel_groups_unique(group_idx):
+def relabel_groups_unique(group_idx: np.ndarray) -> np.ndarray:
     """
     See also ``relabel_groups_masked``.
 
@@ -580,7 +587,7 @@ def relabel_groups_unique(group_idx):
     return relabel_groups_masked(group_idx, keep_group)
 
 
-def relabel_groups_masked(group_idx, keep_group):
+def relabel_groups_masked(group_idx: np.ndarray, keep_group: npt.ArrayLike) -> np.ndarray:
     """
     group_idx: [0 3 3 3 0 2 5 2 0 1 1 0 3 5 5]
 
@@ -610,7 +617,7 @@ def relabel_groups_masked(group_idx, keep_group):
     return relabel[group_idx]
 
 
-def is_duck_array(value):
+def is_duck_array(value: Any) -> bool:
     """This function was copied from xarray/core/utils.py under the terms of Xarray's Apache-2 license."""
 
     if isinstance(value, np.ndarray):
@@ -624,7 +631,7 @@ def is_duck_array(value):
     )
 
 
-def iscomplexobj(x):
+def iscomplexobj(x: Any) -> bool:
     """Copied from np.iscomplexobj so that we place fewer requirements on duck array types."""
 
     try:

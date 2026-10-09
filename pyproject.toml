@@ -60,6 +60,9 @@ ignore = [
 [tool.setuptools.packages.find]
 include = ["numpy_groupies*"]
 
+[tool.setuptools.package-data]
+numpy_groupies = ["py.typed"]
+
 [tool.setuptools_scm]
 write_to = "numpy_groupies/_version.py"
 
