@@ -95,7 +95,7 @@ print(
 
 for name, f in testable_funcs.items():
     print(name.rjust(8), end="")
-    times = [None] * 5
+    times: list[float | None] = [None] * 5
     for ii, acc_func in enumerate(
         [
             aggregate_py,
@@ -111,7 +111,7 @@ for name, f in testable_funcs.items():
             times[ii] = (
                 timeit.Timer(lambda: acc_func(test_group_idx, test_a, func=func)).timeit(number=reps) / reps * 10
             )
-            print(f"{times[ii] * 1000:.1f}ms".rjust(13), end="")
+            print(f"{times[ii] * 1000:.1f}ms".rjust(13), end="")  # type: ignore[operator]  # always set unless the raise above
         except NotImplementedError:
             print("no-impl".rjust(13), end="")
 

@@ -137,15 +137,15 @@ class AggregateOp:
     cache and accumulating cache files on disk (see numba #6522).
     """
 
-    disk_cache = True
-    forced_fill_value = None
-    counter_fill_value = 1
-    counter_dtype = bool
-    mean_fill_value = None
-    mean_dtype = np.float64
-    outer = False
-    reverse = False
-    nans = False
+    disk_cache: bool = True
+    forced_fill_value: int | float | None = None
+    counter_fill_value: int | None = 1
+    counter_dtype: type = bool
+    mean_fill_value: float | None = None
+    mean_dtype: type | None = np.float64
+    outer: bool = False
+    reverse: bool = False
+    nans: bool = False
 
     def __init__(self, func=None, **kwargs):
         if func is None:

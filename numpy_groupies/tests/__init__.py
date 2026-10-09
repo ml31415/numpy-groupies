@@ -1,8 +1,12 @@
 from functools import wraps
+from typing import Any
 
 import pytest
 
 from .. import aggregate_numpy, aggregate_numpy_ufunc, aggregate_purepy
+
+aggregate_numba: Any
+aggregate_pandas: Any
 
 try:
     from .. import aggregate_numba
