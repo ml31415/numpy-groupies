@@ -30,6 +30,19 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
 
+      # Style checks are independent of the interpreter, so run them on the same single
+      # leg as the error reporter instead of once per Python version.
+      - name: Cache pre-commit environments
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: uvx pre-commit run --all-files
+
       - name: Install package and test dependencies
         run: uv sync --extra dev
 
