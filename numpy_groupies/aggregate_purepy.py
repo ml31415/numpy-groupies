@@ -2,9 +2,7 @@ import itertools
 import math
 import operator
 
-import numpy as np
-
-from .utils import (
+from .aggregate_common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     build_dispatch,
@@ -13,7 +11,9 @@ from .utils import (
     get_func,
     resolve_fill_value,
 )
-from .utils import aliasing_py as aliasing
+from .aggregate_common import (
+    aliasing_py as aliasing,
+)
 
 # min, max, sum, all, any - builtin
 
@@ -43,8 +43,9 @@ def _median(x):
     if len(srt) % 2 == 1:
         return srt[mid]
     lo, hi = srt[mid - 1], srt[mid]
-    if isinstance(lo, (bool, np.bool_, np.integer)):
-        # numpy scalars add in their own dtype, which overflows for narrow
+    if isinstance(lo, (bool, int)) or getattr(getattr(lo, "dtype", None), "kind", None) in ("b", "i", "u"):
+        # numpy scalar kinds b/i/u (i.e. np.bool_ and np.integer) add in their own dtype, which
+        # overflows for narrow
         # integers and makes bool addition a logical or - np.median promotes
         # to float before dividing, so do the same here
         return (float(lo) + float(hi)) / 2
@@ -154,6 +155,23 @@ _impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not i
 _dispatch = build_dispatch(_impl_dict, aliasing)
 
 
+def _a_dtype(a):
+    # python numbers carry no dtype; the element types decide what a numpy
+    # array of these values would have made of them - a mixed list of ints
+    # and floats is a float array for numpy, complex makes it complex, and
+    # everything else (including bool) counts as non-inexact.  numpy scalars
+    # are recognised by their dtype, since e.g. complex64 is not a subclass
+    # of the python complex type
+    dtype = int
+    for v in a:
+        kind = getattr(getattr(v, "dtype", None), "kind", None)
+        if isinstance(v, complex) or kind == "c":
+            return complex
+        if isinstance(v, float) or kind == "f":
+            dtype = float
+    return dtype
+
+
 def aggregate(
     group_idx,
     a,
@@ -207,11 +225,11 @@ def aggregate(
 
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it
-    fill_value = resolve_fill_value(func, fill_value, np.asarray(a).dtype)
+    fill_value = resolve_fill_value(func, fill_value, _a_dtype(a))
     if dtype is not None and isinstance(func, str):
         # python numbers carry no dtype at all, so this is the one place where
         # the pure python implementation has to reject a non-complex dtype
-        check_complex_dtype(np.asarray(a).dtype, dtype, func)
+        check_complex_dtype(_a_dtype(a), dtype, func)
 
     if isinstance(func, str):
         if func.startswith("nan"):
