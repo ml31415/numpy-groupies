@@ -127,14 +127,6 @@ class _DefaultFillValue:
     def __repr__(self):
         return "DEFAULT_FILL_VALUE"
 
-    def __reduce__(self):
-        # keep the singleton through pickling and deepcopy
-        return (_get_default_fill_value, ())
-
-
-def _get_default_fill_value() -> _DefaultFillValue:
-    return DEFAULT_FILL_VALUE
-
 
 DEFAULT_FILL_VALUE = _DefaultFillValue()
 
