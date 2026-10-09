@@ -41,6 +41,27 @@ else:
 
 
 def uaggregate(group_idx, a, out=None, **kwargs):
+    """
+    Aggregate the values of ``a`` by the groups in ``group_idx`` and broadcast the result
+    back to the size of ``a``, so that every element carries the result of its own group.
+    This is equivalent to ``unpack(group_idx, aggregate(group_idx, a, ...))``, i.e.
+    ``aggregate(...)[group_idx]``, and takes the same arguments as ``aggregate``.
+
+    By example:
+
+        group_idx = [3, 0, 0, 1, 0, 3, 5, 5, 0, 4]
+        a         = [13.2, 3.5, 3.5, -8.2, 3.0, 13.4, 99.2, -7.1, 0.0, 53.7]
+        ret       = [13.3, 2.5, 2.5, -8.2, 2.5, 13.3, 46.05, 46.05, 2.5, 53.7]
+
+    with ``func='mean'``. A typical use is demeaning within each group, as in
+    ``a - uaggregate(group_idx, a, func='mean')``.
+
+    Pass ``out`` to gather into an array provided by the caller, which has to match the
+    shape of ``ret[group_idx]`` and the dtype of ``ret``. Only the numba implementation
+    supports this, the others raise ``NotImplementedError``.
+
+    See also ``aggregate``, ``unpack``, ``unpack_into``.
+    """
     ret = aggregate(group_idx, a, **kwargs)
     if out is None:
         return unpack(group_idx, ret)

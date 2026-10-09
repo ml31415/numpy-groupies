@@ -171,11 +171,7 @@ Not every implementation supports every function — for example `sort` and `arr
 
 ## Helper tools
 
-Besides `aggregate`, the package exports a few small tools that tend to be useful around group operations.
-
-### `uaggregate` — aggregate and broadcast back
-
-Like `aggregate`, but the result is "unpacked" back to the length of the input, so each element receives the result of its group. This is `aggregate(...)[group_idx]` in one call — handy for normalising within groups.
+`uaggregate(group_idx, a, ...)` takes the same arguments as `aggregate` but broadcasts the result back to the size of `a`, so every element carries the result of its own group — `aggregate(...)[group_idx]` in one call:
 
 ```python
 group_idx = np.array([3, 0, 0, 1, 0, 3, 5, 5, 0, 4])
@@ -187,88 +183,7 @@ npg.uaggregate(group_idx, a, func="mean")
 a - npg.uaggregate(group_idx, a, func="mean")     # demean within each group
 ```
 
-With the Numba implementation you can pass `out=` to gather into a preallocated array (shape and dtype must match; other implementations raise `NotImplementedError`):
-
-```python
-out = np.empty_like(a)
-npg.uaggregate(group_idx, a, func="max", out=out)
-```
-
-### `unpack` / `unpack_into`
-
-`unpack(group_idx, ret)` expands a per-group result back to input length — it is simply `ret[group_idx]`. `unpack_into(group_idx, ret, out)` does the same into an existing array, using a jitted loop that is faster than fancy indexing for large 1-D inputs (Numba only).
-
-### `step_count` and `step_indices` — find runs of equal labels *(Numba only)*
-
-For a `group_idx` whose equal values are stored contiguously (e.g. data sorted by group), these find the run boundaries without sorting or hashing:
-
-```python
-group_idx = np.array([0, 0, 0, 2, 2, 5, 5, 5, 5, 1])
-
-npg.step_count(group_idx)       # 4   -> number of runs
-npg.step_indices(group_idx)     # array([ 0,  3,  5,  9, 10])   -> run edges, incl. start and end
-
-edges = npg.step_indices(group_idx)
-[group_idx[i:j] for i, j in zip(edges[:-1], edges[1:])]    # the four runs
-```
-
-Note that runs are counted as they appear: a label that shows up in two separate places counts as two runs.
-
-### `multi_arange`
-
-Concatenates `arange(n_i)` for every entry of `n` — a vectorised `np.hstack([np.arange(k) for k in n])`.
-
-```python
-npg.multi_arange(np.array([0, 0, 3, 0, 0, 2, 0, 2, 1]))
-# array([0, 1, 2, 0, 1, 0, 1, 0])
-```
-
-Combined with `np.bincount` it gives the rank of each item *within* its group, when the data is sorted by group:
-
-```python
-npg.multi_arange(np.bincount(np.array([0, 0, 0, 1, 1, 2])))
-# array([0, 1, 2, 0, 1, 0])
-```
-
-### `label_contiguous_1d`
-
-Labels consecutive blocks with 1, 2, 3, … and leaves zeros/`False` as 0. For boolean input each block of `True` gets a label; for other dtypes each block of identical non-zero values does.
-
-```python
-npg.label_contiguous_1d(np.array([False, True, True, False, False, True]))
-# array([0, 1, 1, 0, 0, 2])
-npg.label_contiguous_1d(np.array([0, 3, 3, 0, 0, 5, 5, 5, 1, 1, 0, 2]))
-# array([0, 1, 1, 0, 0, 2, 2, 2, 3, 3, 0, 4])
-```
-
-The output is a ready-made `group_idx` for "aggregate over each run of …" questions.
-
-### `relabel_groups_unique` / `relabel_groups_masked`
-
-Output size is `max(group_idx) + 1`, so sparse labels waste memory. These functions close the gaps while preserving order:
-
-```python
-g = np.array([0, 3, 3, 3, 0, 2, 5, 2, 0, 1, 1, 0, 3, 5, 5])
-
-npg.relabel_groups_unique(g)
-# array([0, 3, 3, 3, 0, 2, 4, 2, 0, 1, 1, 0, 3, 4, 4])     label 4 was unused, so 5 -> 4
-
-keep = np.array([0, 1, 0, 1, 1, 1])                         # drop group 2
-npg.relabel_groups_masked(g, keep)
-# array([0, 2, 2, 2, 0, 0, 4, 0, 0, 1, 1, 0, 2, 4, 4])     removed items become group 0
-```
-
-Group 0 plays a special role here: `keep[0]` is ignored, and removed groups are merged into 0.
-
-### `default_fill_value`
-
-`npg.default_fill_value(func, dtype=None)` returns the fill value `aggregate` would use for empty groups — useful when downstream code needs it without duplicating the [table](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md#fill-values).
-
-```python
-npg.default_fill_value("max")            # nan
-npg.default_fill_value("max", int)       # 0   (integers cannot hold nan)
-npg.default_fill_value("argmax")         # -1
-```
+The rest of the exports are small and situational: `unpack` and `unpack_into` (broadcast a per-group result back, optionally into a preallocated array), `step_count` and `step_indices` (runs of equal labels, Numba only), `multi_arange`, `label_contiguous_1d`, `relabel_groups_unique` and `relabel_groups_masked` (close gaps in sparse labels), and `default_fill_value`. All of them are described in the [reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md#helper-functions).
 
 ## Implementations
 

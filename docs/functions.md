@@ -1,6 +1,6 @@
 # aggregate: reference
 
-Full reference for `numpy_groupies.aggregate`. For an introduction see the [README](../README.md).
+Full reference for `numpy_groupies.aggregate`. For an introduction see the [README](../README.md). The few remaining exports of the package are small tools around `aggregate`, collected under [Helper functions](#helper-functions).
 
 **Contents:**
 [Signature and parameters](#signature-and-parameters) ·
@@ -9,6 +9,7 @@ Full reference for `numpy_groupies.aggregate`. For an introduction see the [READ
 [Function × implementation matrix](#function--implementation-matrix) ·
 [Fill values](#fill-values) ·
 [Complex values](#complex-values) ·
+[Helper functions](#helper-functions) ·
 [More examples](#more-examples)
 
 ## Signature and parameters
@@ -168,6 +169,71 @@ Complex input is supported wherever the result is well defined, following NumPy'
 - **Keep the complex dtype:** `sum`, `prod`, `mean`, `median`, `trapezoid`, `sort`, `first`, `last`, `array` and the `cumsum` functions. `median` and `sort` use NumPy's lexicographic ordering (real part first, then imaginary part).
 - **Return a real dtype:** `var`, `std` and `sumofsquares` measure squared magnitudes, like `np.var` on complex input.
 - **Order statistics** `min`, `max`, `argmin`, `argmax` and their `nan` counterparts follow the same lexicographic ordering everywhere — the real part decides, the imaginary part only breaks ties — including the Numba implementation, which compares the two parts itself since neither Python nor Numba orders complex numbers. As in NumPy, a value with a NaN in either part compares neither smaller nor greater.
+
+## Helper functions
+
+Small tools around `aggregate`, all exported from the package root. They need NumPy; the ones marked *(Numba only)* exist only when Numba is installed.
+
+| Function                                     | Result |
+| -------------------------------------------- | ------ |
+| `uaggregate(group_idx, a, ...)`              | Same arguments as `aggregate`, but the result is broadcast back to the size of `a`, so every element carries the result of its own group. Equivalent to `unpack(group_idx, aggregate(...))`. |
+| `unpack(group_idx, ret)`                     | `ret[group_idx]` — expand a per-group result back to input length. |
+| `unpack_into(group_idx, ret, out)` *(Numba only)* | Same, but gathered into a caller-provided `out`, which has to match the shape of `ret[group_idx]` and the dtype of `ret`. A jitted loop, noticeably faster than fancy indexing for large contiguous 1-D inputs. |
+| `step_count(group_idx)` *(Numba only)*       | Number of runs of equal, contiguous labels in `group_idx`. |
+| `step_indices(group_idx)` *(Numba only)*     | The edges of those runs, `step_count(group_idx) + 1` values including the start and the end. |
+| `multi_arange(n)`                            | The concatenation of `arange(k)` for every `k` in `n` — a vectorised `np.hstack([np.arange(k) for k in n])`. |
+| `label_contiguous_1d(X)`                     | Labels consecutive blocks 1, 2, 3, …, leaving `0` or `False` as 0. |
+| `relabel_groups_unique(group_idx)`           | Closes gaps in sparse labels while keeping their order. |
+| `relabel_groups_masked(group_idx, keep_group)` | Drops the groups where `keep_group` is false and shifts the remaining ones down; the dropped items end up in group 0. |
+| `default_fill_value(func, dtype=None)`       | The `fill_value` `aggregate` would use for empty groups, see [Fill values](#fill-values). `func` may be a name, an alias or a callable; pass the `dtype` of your real output to get the value that would actually be used. |
+
+`uaggregate` is the only one worth reaching for daily — it is `aggregate(...)[group_idx]` in one call, and a typical use is demeaning within groups:
+
+```python
+a - npg.uaggregate(group_idx, a, func="mean")
+```
+
+Since the output size of `aggregate` is `max(group_idx) + 1`, sparse labels waste memory. The two `relabel_…` functions close those gaps:
+
+```python
+g = np.array([0, 3, 3, 3, 0, 2, 5, 2, 0, 1, 1, 0, 3, 5, 5])
+
+npg.relabel_groups_unique(g)
+# array([0, 3, 3, 3, 0, 2, 4, 2, 0, 1, 1, 0, 3, 4, 4])     label 4 was unused, so 5 -> 4
+
+npg.relabel_groups_masked(g, np.array([0, 1, 0, 1, 1, 1]))
+# array([0, 2, 2, 2, 0, 0, 4, 0, 0, 1, 1, 0, 2, 4, 4])     group 2 dropped, its items merged into group 0
+```
+
+`keep_group[0]` is ignored — group 0 is where the dropped items go.
+
+`step_count` and `step_indices` look for runs of equal values as they are stored, without sorting or hashing, so they assume a `group_idx` whose equal labels are contiguous, e.g. data sorted by group. Runs are counted as they appear, hence a label that shows up in two separate places counts as two runs:
+
+```python
+gi = np.array([0, 0, 0, 2, 2, 5, 5, 5, 5, 1])
+
+npg.step_count(gi)              # 4
+npg.step_indices(gi)            # array([ 0,  3,  5,  9, 10])
+
+edges = npg.step_indices(gi)
+[gi[i:j] for i, j in zip(edges[:-1], edges[1:])]      # the four runs
+```
+
+`label_contiguous_1d` labels the runs of a boolean array, where every block of `True` is one run, or of an array where every block of identical non-zero values is one. The result is a ready-made `group_idx` for "aggregate over each run of …" questions:
+
+```python
+npg.label_contiguous_1d(np.array([False, True, True, False, False, True]))
+# array([0, 1, 1, 0, 0, 2])
+npg.label_contiguous_1d(np.array([0, 3, 3, 0, 0, 5, 5, 5, 1, 1, 0, 2]))
+# array([0, 1, 1, 0, 0, 2, 2, 2, 3, 3, 0, 4])
+```
+
+`multi_arange` together with `np.bincount` gives the rank of each item *within* its group, again for data sorted by group:
+
+```python
+npg.multi_arange(np.bincount(np.array([0, 0, 0, 1, 1, 2])))
+# array([0, 1, 2, 0, 1, 0])
+```
 
 ## More examples
 
