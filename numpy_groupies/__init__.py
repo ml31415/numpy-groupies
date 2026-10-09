@@ -13,7 +13,7 @@ try:
     import numpy as np
 except ImportError:
     aggregate_np = aggregate_ufunc = dummy_no_impl
-    multi_arange = multi_cumsum = label_contiguous_1d = dummy_no_impl
+    multi_arange = label_contiguous_1d = dummy_no_impl
 else:
     from .aggregate_numpy import aggregate
 
