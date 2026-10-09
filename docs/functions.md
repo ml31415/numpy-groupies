@@ -111,7 +111,7 @@ These do not reduce the data; the output has the size of the input. There are no
 
 ## Function × implementation matrix
 
-`x` = supported, `-` = raises `NotImplementedError` (checked against v0.12.3 by calling each implementation).
+`x` = supported, `-` = raises `NotImplementedError` (checked by calling each implementation).
 The nan-variants are supported wherever the plain function is (see the pandas note under [NaN-skipping variants](#nan-skipping-variants) for how NaN is treated there).
 
 | Function                       | numpy | numba | pure python | ufunc | pandas |
