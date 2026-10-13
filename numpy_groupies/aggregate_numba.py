@@ -646,7 +646,8 @@ class Min(AggregateOp):
 
 
 class ArgMax(AggregateOp):
-    mean_fill_value = np.nan
+    mean_fill_value = 0
+    mean_dtype = None
 
     @classmethod
     def callable(cls, nans=False, reverse=False, scalar=False):
