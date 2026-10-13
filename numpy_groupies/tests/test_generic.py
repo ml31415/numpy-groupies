@@ -31,6 +31,26 @@ def test_preserve_missing(aggregate_all):
         assert "int" in res.dtype.name
 
 
+@pytest.mark.parametrize("func", ["sumofsquares", "nansumofsquares"])
+@pytest.mark.parametrize("dtype", [np.int8, np.uint8, np.int16, np.uint16, np.int32, np.uint32])
+def test_numpy_integer_sumofsquares(func, dtype):
+    maximum = min(int(np.iinfo(dtype).max), 50000)
+    a = np.array([maximum, maximum - 1, maximum // 2, 1], dtype=dtype)
+    group_idx = np.array([0, 0, 1, 1])
+    expected = [sum(int(value) ** 2 for value in a[:2]), sum(int(value) ** 2 for value in a[2:]), -1]
+    result = aggregate_np(group_idx, a, func=func, size=3, fill_value=-1)
+    assert result.dtype == np.int64
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("func", ["sumofsquares", "nansumofsquares"])
+def test_numpy_integer_sumofsquares_float_output(func):
+    a = np.array([[20000, -20000], [10000, -10000]], dtype=np.int16)
+    result = aggregate_np(np.array([0, 0]), a, func=func, axis=1, dtype=np.float64)
+    assert result.dtype == np.float64
+    np.testing.assert_array_equal(result, [[800000000], [200000000]])
+
+
 @pytest.mark.parametrize("group_idx_type", [int, "uint32", "uint64"])
 def test_uint_group_idx(aggregate_all, group_idx_type):
     group_idx = np.array([1, 1, 2, 2, 2, 2, 4, 4], dtype=group_idx_type)

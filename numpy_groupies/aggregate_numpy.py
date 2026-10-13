@@ -363,6 +363,8 @@ def _sum_of_squres(
     fill_value: Any,
     dtype: np.dtype | None = np.dtype(np.float64),
 ) -> np.ndarray:
+    if np.issubdtype(a.dtype, np.integer):
+        a = a.astype(dtype, copy=False)
     if iscomplexobj(a):
         # the squared magnitude |a|^2 - the power of complex values, giving
         # a real result like np.var, instead of the complex a*a
