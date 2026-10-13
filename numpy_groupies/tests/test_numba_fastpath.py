@@ -99,6 +99,25 @@ def test_size_detection_matches_explicit():
     np.testing.assert_array_equal(aggregate(group_idx, a, func="sum"), ref)
 
 
+@pytest.mark.parametrize("func", ["argmin", "argmax", "nanargmin", "nanargmax"])
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+@pytest.mark.parametrize("size", [3, np.int64(3)])
+def test_integer_argreductions_preserve_comparisons(func, dtype, size):
+    base = int(np.iinfo(dtype).max) - 8
+    a = np.array([base + 1, base + 2, base + 2, base + 4, base + 3], dtype=dtype)
+    group_idx = np.array([0, 0, 0, 1, 1])
+    expected = [0, 4, -1] if "min" in func else [1, 3, -1]
+    np.testing.assert_array_equal(aggregate(group_idx, a, func=func, size=size), expected)
+
+
+@pytest.mark.parametrize("func", ["argmin", "argmax", "nanargmin", "nanargmax"])
+def test_integer_argreductions_along_axis(func):
+    a = np.array([[2**53 + 1, 2**53, 2**53 + 2], [-(2**53), -(2**53) - 1, -(2**53) - 2]])
+    expected = [[1, 2, -1], [1, 2, -1]] if "min" in func else [[0, 2, -1], [0, 2, -1]]
+    result = aggregate(np.array([0, 0, 1]), a, func=func, axis=1, size=3)
+    np.testing.assert_array_equal(result, expected)
+
+
 def test_errors_match_slow_path():
     rng = np.random.default_rng(46)
     group_idx = rng.integers(0, 5, 100)
