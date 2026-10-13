@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from .. import aggregate_np
-from ..utils import default_fill_value
+from ..utils import default_fill_value, minimum_dtype
 from . import (
     _deselect_not_implemented,
     _deselect_purepy,
@@ -49,6 +49,35 @@ def test_numpy_integer_sumofsquares_float_output(func):
     result = aggregate_np(np.array([0, 0]), a, func=func, axis=1, dtype=np.float64)
     assert result.dtype == np.float64
     np.testing.assert_array_equal(result, [[800000000], [200000000]])
+
+
+@pytest.mark.parametrize("dtype", [np.int8, np.uint8, np.int16, np.uint16, np.int32, np.uint32])
+def test_sum_dtype_guess_survives_single_group(aggregate_all, dtype):
+    # a single group receives every value - the sum overflow guess has to be
+    # based on the input length, not on the (here smaller) number of output
+    # groups, or the result silently wraps in the input dtype
+    maximum = int(np.iinfo(dtype).max)
+    group_idx = np.array([0, 0])
+    a = np.array([maximum, maximum], dtype=dtype)
+    # detected output size: one single group - the worst case for the guess
+    res = aggregate_all(group_idx, a, func="sum")
+    np.testing.assert_array_equal(res, [2 * maximum])
+    # an explicitly larger output size with fill values must not change this
+    res = aggregate_all(group_idx, a, func="sum", size=3, fill_value=-1)
+    np.testing.assert_array_equal(res, [2 * maximum, -1, -1])
+    if not isinstance(res, list):
+        assert res.dtype == minimum_dtype(2 * maximum, np.dtype(dtype))
+
+
+def test_sum_bool_dtype_guess_ignores_empty_groups(aggregate_all):
+    # empty groups inflate the output size, but never the number of values
+    # that get summed into one group - the bool sum guess stays narrow
+    res = aggregate_all(np.array([0, 0]), np.array([True, True]), func="sum", size=300)
+    values = np.asarray(res)
+    assert values[0] == 2
+    assert not values[1:].any()
+    if not isinstance(res, list):
+        assert res.dtype == np.int8
 
 
 @pytest.mark.parametrize("group_idx_type", [int, "uint32", "uint64"])

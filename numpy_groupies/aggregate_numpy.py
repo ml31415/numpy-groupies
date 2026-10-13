@@ -671,7 +671,10 @@ def _aggregate_base(
                         a = a[good]
                     group_idx = group_idx[good]
 
-        dtype = check_dtype(dtype, funcname, a, flat_size)
+        # the sum overflow guess needs the maximum number of values that can
+        # be summed into a single group, i.e. the (nan-filtered) input length
+        # - flat_size counts output groups and can be arbitrarily smaller
+        dtype = check_dtype(dtype, funcname, a, len(group_idx))
         fill_value = resolve_fill_value(funcname, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=funcname)
         ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)  # type: ignore[operator]

@@ -67,7 +67,9 @@ def _wrapper(
     else:
         result = getattr(grouped, funcname)(**kwargs)
 
-    dtype = check_dtype(dtype, funcname, a, size)
+    # the sum overflow guess needs the maximum number of values that can be
+    # summed into a single group, i.e. the input length - not the output size
+    dtype = check_dtype(dtype, funcname, a, len(group_idx))
     if funcname.startswith("cum"):
         ret = result.to_numpy()
     else:

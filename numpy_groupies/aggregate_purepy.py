@@ -20,7 +20,18 @@ from .aggregate_common import (
 if TYPE_CHECKING:
     import numpy.typing as npt
 
+
 # min, max, sum, all, any - builtin
+
+
+def _sum(x: Sequence[Any]) -> Any:
+    # builtin sum over numpy integers accumulates in the input dtype without
+    # promotion (NEP 50), so large groups silently wrap - python ints keep
+    # the per-group accumulation exact, floats keep the builtin behaviour
+    kind = getattr(getattr(x[0], "dtype", None), "kind", None)
+    if kind in ("i", "u"):
+        return sum(int(val) for val in x)
+    return sum(x)
 
 
 def _last(x: Sequence[Any]) -> Any:
@@ -136,7 +147,7 @@ def _propagate_nan(reduction):
 _impl_dict = {
     "min": _propagate_nan(min),
     "max": _propagate_nan(max),
-    "sum": sum,
+    "sum": _sum,
     "prod": _prod,
     "last": _last,
     "first": _first,
