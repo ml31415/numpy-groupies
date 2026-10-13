@@ -1,5 +1,6 @@
 import itertools
 import math
+import numbers
 import operator
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
@@ -21,15 +22,16 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
 
-# min, max, sum, all, any - builtin
+# min, max, all, any - builtin
 
 
 def _sum(x: Sequence[Any]) -> Any:
     # builtin sum over numpy integers accumulates in the input dtype without
     # promotion (NEP 50), so large groups silently wrap - python ints keep
-    # the per-group accumulation exact, floats keep the builtin behaviour
-    kind = getattr(getattr(x[0], "dtype", None), "kind", None)
-    if kind in ("i", "u"):
+    # the per-group accumulation exact, everything else (floats, complex,
+    # numpy bools, decimals) keeps the builtin behaviour; numbers is stdlib
+    # and numpy registers its integer scalars as Integral
+    if all(isinstance(val, numbers.Integral) for val in x):
         return sum(int(val) for val in x)
     return sum(x)
 

@@ -80,6 +80,16 @@ def test_sum_bool_dtype_guess_ignores_empty_groups(aggregate_all):
         assert res.dtype == np.int8
 
 
+def test_purepy_integer_sum_is_exact():
+    # a python int leading the group must not send the accumulation back to
+    # the wrapping numpy scalar arithmetic, and integer groups sum without
+    # the fixed dtype limits
+    res = aggregate_purepy.aggregate([0, 0], [1, np.uint64(2**64 - 1)], func="sum")
+    assert res[0] == 2**64
+    res = aggregate_purepy.aggregate([0, 0], np.array([2**64 - 1, 2**64 - 1], dtype=np.uint64), func="sum")
+    assert res[0] == 2**65 - 2
+
+
 @pytest.mark.parametrize("group_idx_type", [int, "uint32", "uint64"])
 def test_uint_group_idx(aggregate_all, group_idx_type):
     group_idx = np.array([1, 1, 2, 2, 2, 2, 4, 4], dtype=group_idx_type)
