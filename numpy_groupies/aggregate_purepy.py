@@ -7,11 +7,15 @@ from typing import TYPE_CHECKING, Any
 
 from .aggregate_common import (
     DEFAULT_FILL_VALUE,
+    EXACT_FLOAT64_INTEGER_LIMIT,
+    INT64_DEVIATION_LIMIT,
     aggregate_common_doc,
     build_dispatch,
     check_complex_dtype,
     funcs_no_separate_nan,
     get_func,
+    raise_integer_mean_overflow,
+    raise_integer_variance_span_overflow,
     resolve_fill_value,
 )
 from .aggregate_common import (
@@ -49,6 +53,10 @@ def _array(x: Sequence[Any]) -> Sequence[Any]:
 
 
 def _mean(x: Sequence[Any]) -> Any:
+    # like _sum, numpy integer scalars would accumulate in their own dtype
+    # (NEP 50) and silently wrap for large groups - python ints stay exact
+    if all(isinstance(val, numbers.Integral) for val in x):
+        return sum(int(val) for val in x) / len(x)
     return sum(x) / len(x)
 
 
@@ -80,7 +88,15 @@ def _trapezoid(x: Sequence[Any], dx: float = 1.0) -> float:
 
 
 def _var(x: Sequence[Any], ddof: int = 0) -> Any:
-    # the squared magnitude, so complex values give a real result like np.var
+    # the squared magnitude, so complex values give a real result like np.var;
+    # integer input is centered on its first value first - python ints keep
+    # the deviations exact, so a large common offset cannot erase the small
+    # deviations of a group after the conversion to float
+    if all(isinstance(val, numbers.Integral) for val in x):
+        origin = int(x[0])
+        devs = [int(val) - origin for val in x]
+        mean = sum(devs) / len(devs)
+        return sum(abs(dev - mean) ** 2 for dev in devs) / (len(x) - ddof)
     mean = _mean(x)
     return sum(abs(xx - mean) ** 2 for xx in x) / (len(x) - ddof)
 
@@ -190,6 +206,25 @@ def _a_dtype(a: Sequence[Any]) -> type:
     return dtype
 
 
+def _check_integer_precision(a: Sequence[Any], func: Callable[..., Any]) -> None:
+    """The backend-uniform overflow gates for integer mean/var/std.
+
+    Python ints could compute these exactly, but every backend has to refuse
+    the same inputs, so results never depend on the chosen implementation.
+    """
+    if _a_dtype(a) is not int or len(a) == 0:
+        return
+    values = [int(val) for val in a]
+    low = min(values)
+    high = max(values)
+    if func is _mean:
+        bound = max(high, -low)
+        if len(values) * bound > EXACT_FLOAT64_INTEGER_LIMIT:
+            raise_integer_mean_overflow(len(values), bound)
+    elif high - low > INT64_DEVIATION_LIMIT:
+        raise_integer_variance_span_overflow(low, high)
+
+
 def aggregate(
     group_idx: "npt.ArrayLike",
     a: "npt.ArrayLike",
@@ -266,6 +301,8 @@ def aggregate(
         func = _impl_dict[func]
     if func is _sort:
         return _sort(group_idx, a, reverse=kwargs.get("reverse", False))
+    if func in (_mean, _var, _std):
+        _check_integer_precision(a, func)
 
     # sort data and evaluate function on groups
     ret = [fill_value] * size
