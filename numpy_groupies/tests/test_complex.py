@@ -175,7 +175,7 @@ def test_complex_median(impl, a_dtype):
 
     res = impl.aggregate(group_idx, a, func="median", size=2)
     res = np.asarray(res)
-    if impl_name(impl) != "purepy":
+    if not is_purepy(impl):
         assert res.dtype == a_dtype
     expected = [np.median(vals) for vals in (a[:4], a[4:])]
     np.testing.assert_allclose(res, expected, rtol=1e-5)
@@ -200,7 +200,7 @@ def test_complex_empty_group(impl, a_dtype):
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, 4 - 3j]).astype(a_dtype)
 
     res = np.asarray(impl.aggregate(group_idx, a, func="mean", size=3))
-    if impl_name(impl) != "purepy":
+    if not is_purepy(impl):
         # the pure python implementation computes with python numbers, which
         # are always double precision
         assert res.dtype == a_dtype
@@ -322,7 +322,7 @@ def test_complex_accepts_the_real_result_dtypes(impl, func, dtype):
     a = np.array([1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j]).astype(np.complex64)
 
     res = np.asarray(impl.aggregate(group_idx, a, func=func, size=3, dtype=dtype))
-    if impl_name(impl) != "purepy":
+    if not is_purepy(impl):
         # the pure python implementation ignores the dtype argument entirely
         assert res.dtype == np.dtype(dtype)
 
