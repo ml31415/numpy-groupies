@@ -8,9 +8,10 @@ deviate from the reference behaviour (without raising) need an explicit
 ``deselect_if`` marker.
 """
 
-from functools import wraps
+from functools import cache, wraps
 from typing import Any
 
+import numpy as np
 import pytest
 
 from .. import aggregate_numpy, aggregate_numpy_ufunc, aggregate_purepy
@@ -64,6 +65,38 @@ def random_values(rng, size):
     Pass the ``rng`` fixture as generator.
     """
     return rng.standard_normal(size)
+
+
+@cache
+def is_supported(impl, func):
+    """True if the backend runs ``func``.
+
+    Probed with a tiny real-valued and a tiny complex-valued input: a func
+    counts as supported when the backend resolves it for either, so that
+    dtype-specific gaps (e.g. pandas implements sumofsquares only for
+    complex input) do not deselect testable combos. Combos failing for only
+    one dtype still skip at runtime via the backend proxy.
+
+    Accepts a backend module or its ``_BackendProxy``, and a function name
+    or callable.
+    """
+    if isinstance(impl, _BackendProxy):
+        impl = impl._module
+    if not isinstance(func, str):
+        func = getattr(func, "__name__", None)
+        if not isinstance(func, str):
+            return True
+    group_idx = np.array([0, 0, 1, 1])
+    inputs = (np.arange(4.0), np.array([1 + 1j, 2 + 2j, 3 + 3j, 4 + 4j]))
+    for a in inputs:
+        try:
+            impl.aggregate(group_idx, a, func=func)
+        except (NotImplementedError, ValueError):
+            continue
+        except Exception:  # noqa: BLE001 - unexpected, but the func runs
+            return True
+        return True
+    return False
 
 
 def _wrap_notimplemented_skip(impl, name=None):
