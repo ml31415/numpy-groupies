@@ -60,6 +60,9 @@ line-length = 120
 # `exclude: \.md$` for ruff-format.
 extend-exclude = ["*.md"]
 
+[tool.coverage.run]
+omit = ["numpy_groupies/benchmarks/*"]
+
 [tool.ruff.lint]
 ignore = [
     "B008", # np.dtype defaults in signatures are immutable singletons
