@@ -246,17 +246,30 @@ def _mean(
     if np.ndim(a) == 0:
         raise ValueError("cannot take mean with scalar a")
     counts = np.bincount(group_idx, minlength=size)
+    exact_integer = False
+    if a.dtype.kind in "iu":
+        bound = max(abs(int(a.min(initial=0))), abs(int(a.max(initial=0))))
+        exact_integer = a.size * bound > 2**53
     if iscomplexobj(a):
         # np.bincount does not take complex weights - accumulate the real and
         # imaginary parts separately
         sums = np.empty(size, dtype=dtype)
         sums.real = np.bincount(group_idx, weights=a.real, minlength=size)
         sums.imag = np.bincount(group_idx, weights=a.imag, minlength=size)
+    elif exact_integer:
+        # Round only the final mean; neither float64 nor fixed-width integer
+        # partial sums preserve every representable cancellation remainder.
+        sums = np.zeros(size, dtype=object)
+        np.add.at(sums, group_idx, a.astype(object))
     else:
         sums = np.bincount(group_idx, weights=a, minlength=size)
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        ret = sums / counts
+        if exact_integer:
+            ret = np.full(size, fill_value, dtype=np.float64)
+            np.divide(sums, counts, out=ret, where=counts != 0, casting="unsafe")
+        else:
+            ret = sums / counts
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
     return ret.astype(dtype, copy=False)
