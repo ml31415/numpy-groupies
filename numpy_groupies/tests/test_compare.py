@@ -10,7 +10,7 @@ from itertools import product
 import numpy as np
 import pytest
 
-from . import (
+from .helpers import (
     aggregate_numba,
     aggregate_numpy,
     aggregate_numpy_ufunc,

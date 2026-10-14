@@ -6,15 +6,9 @@ import warnings
 import numpy as np
 import pytest
 
-from .. import aggregate_np
+from .. import aggregate_np, aggregate_purepy
 from ..utils import default_fill_value, minimum_dtype
-from . import (
-    aggregate_purepy,
-    func_list,
-    impl_name,
-    is_purepy,
-    is_purepy_or_pandas,
-)
+from .helpers import func_list, impl_name, is_purepy, is_purepy_or_pandas
 
 
 def _reference_trapezoid(*args, **kwargs):

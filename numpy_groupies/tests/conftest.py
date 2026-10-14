@@ -2,7 +2,7 @@
 
 import pytest
 
-from . import _BackendProxy, _implementations, impl_name
+from .helpers import _BackendProxy, _implementations, impl_name
 
 
 @pytest.fixture(params=_implementations, ids=impl_name)

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from .. import aggregate_np, aggregate_ufunc
-from . import aggregate_numba, impl_name, is_purepy, is_purepy_or_pandas
+from .helpers import aggregate_numba, impl_name, is_purepy, is_purepy_or_pandas
 
 # functions with a well-defined complex result, following numpy semantics - the
 # order statistics included, as numpy orders complex values lexicographically
