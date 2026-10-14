@@ -554,21 +554,21 @@ def _cumsum(
     group_idx_srt = group_idx[sortidx]
     a_srt = a[sortidx]
 
-    nans_from = None
-    if np.issubdtype(a_srt.dtype, np.floating):
-        nans = np.isnan(a_srt)
-        if nans.any():
-            # nan-free running sums cannot be poisoned across group
-            # boundaries; the per-group prefix-count of nans (itself a
-            # nan-free cumsum) flags every position from the first nan of
-            # its group onwards.
-            a_srt = np.where(nans, 0, a_srt)
-            nan_prefix = _group_cumsum_sorted(group_idx_srt, nans.astype(np.int64))
-            nans_from = nan_prefix > 0
+    nans_from = {}
+    if np.issubdtype(a_srt.dtype, np.inexact):
+        parts = ("real", "imag") if iscomplexobj(a_srt) else ("real",)
+        for part in parts:
+            component = getattr(a_srt, part)
+            nans = np.isnan(component)
+            if nans.any():
+                # a_srt is a gathered copy; real and imaginary NaNs propagate separately.
+                component[nans] = 0
+                nan_prefix = _group_cumsum_sorted(group_idx_srt, nans.astype(np.int64))
+                nans_from[part] = nan_prefix > 0
 
     a_srt_cumsum = _group_cumsum_sorted(group_idx_srt, a_srt, dtype=dtype)
-    if nans_from is not None:
-        a_srt_cumsum[nans_from] = np.nan
+    for part, mask in nans_from.items():
+        getattr(a_srt_cumsum, part)[mask] = np.nan
 
     ret = np.empty_like(a_srt_cumsum)
     ret[sortidx] = a_srt_cumsum
