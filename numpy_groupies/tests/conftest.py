@@ -2,17 +2,16 @@
 
 import pytest
 
-from . import _BackendProxy, _impl_name, _implementations
+from . import _BackendProxy, _implementations, impl_name
 
 
-@pytest.fixture(params=_implementations, ids=_impl_name)
+@pytest.fixture(params=_implementations, ids=impl_name)
 def impl(request):
     """The current backend module under test, as a ``_BackendProxy``.
 
-    Tests use it like a module: ``impl.aggregate(...)``,
-    ``impl.step_count(...)`` etc. The ``aggregate`` attribute is wrapped
-    so that ``NotImplementedError`` from a backend that does not support
-    the requested ``func`` is converted to a ``pytest.skip``. All other
-    attributes are transparently forwarded to the backend module.
+    Tests use it like a module: ``impl.aggregate(...)``, ``impl.step_count(...)``
+    etc. ``NotImplementedError`` (missing functionality) and missing attributes
+    are translated into ``pytest.skip``. ``impl_name(impl)`` is the short backend
+    name ("purepy", "pandas", ...).
     """
-    return _BackendProxy(request.param, _impl_name(request.param))
+    return _BackendProxy(request.param)

@@ -11,14 +11,13 @@ import numpy as np
 import pytest
 
 from . import (
-    _impl_name,
-    _is_implemented,
     aggregate_numba,
     aggregate_numpy,
     aggregate_numpy_ufunc,
     aggregate_pandas,
     aggregate_purepy,
     func_list,
+    impl_name,
 )
 
 
@@ -51,7 +50,7 @@ def aggregate_cmp(request, seed=100):
 
         if not impl:
             pytest.skip("Implementation not available")
-        name = _impl_name(impl)
+        name = impl_name(impl)
         func = impl.aggregate
 
     rnd = np.random.RandomState(seed=seed)
@@ -71,16 +70,10 @@ def aggregate_cmp(request, seed=100):
     return AttrDict(locals())
 
 
-def _deselect_purepy(aggregate_cmp, *args, **kwargs):
+def is_purepy_pair(aggregate_cmp, *args, **kwargs):
     # purepy implementation does not handle ndim arrays
     # This is a won't fix and should be deselected instead of skipped
     return aggregate_cmp.endswith("py")
-
-
-def _deselect_not_implemented(aggregate_cmp, func, fill_value, *args, **kwargs):
-    impl_name = "purepy" if aggregate_cmp.endswith("py") else aggregate_cmp.split("/", 1)[0]
-    funcname = getattr(func, "__name__", func)
-    return not _is_implemented(impl_name, funcname)
 
 
 def func_arbitrary(iterator):
@@ -99,20 +92,29 @@ def func_preserve_order(iterator):
 
 @pytest.mark.filterwarnings("ignore::FutureWarning")  # handled pandas deprecation
 @pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("fill_value", [0, 1, np.nan])
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, "__name__", x))
 def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
     is_nanfunc = "nan" in getattr(func, "__name__", func)
+    if is_nanfunc and "arg" in func and aggregate_cmp.test_pair == "np/py":
+        pytest.skip("purepy nanargmin/nanargmax deviate from numpy without raising")
     a = aggregate_cmp.nana if is_nanfunc else aggregate_cmp.a
     try:
         ref = aggregate_cmp.func_ref(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
+    except NotImplementedError:
+        pytest.skip("Functionality not implemented")
     except ValueError:
-        with pytest.raises(ValueError):
-            aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
+        try:
+            with pytest.raises(ValueError):
+                aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
+        except NotImplementedError:
+            # the tested backend does not implement the function at all
+            pytest.skip("Functionality not implemented")
     else:
         try:
             res = aggregate_cmp.func(aggregate_cmp.group_idx, a, func=func, fill_value=fill_value)
+        except NotImplementedError:
+            pytest.skip("Functionality not implemented")
         except ValueError:
             if np.isnan(fill_value) and aggregate_cmp.test_pair.endswith("py"):
                 pytest.skip(
@@ -134,7 +136,7 @@ def test_cmp(aggregate_cmp, func, fill_value, decimal=10):
                 raise
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy_pair)
 @pytest.mark.parametrize(["ndim", "order"], list(product([2, 3], ["C", "F"])))
 def test_cmp_ndim(aggregate_cmp, ndim, order, outsize=100, decimal=14):
     nindices = int(outsize**ndim)

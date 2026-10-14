@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from .. import aggregate_np, aggregate_ufunc
-from . import _deselect_not_implemented, _deselect_purepy, _deselect_purepy_and_pandas, aggregate_numba
+from . import aggregate_numba, impl_name, is_purepy, is_purepy_or_pandas
 
 # functions with a well-defined complex result, following numpy semantics - the
 # order statistics included, as numpy orders complex values lexicographically
@@ -60,7 +60,7 @@ complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
 complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy_and_pandas)
+@pytest.mark.deselect_if(func=is_purepy_or_pandas)
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
 def test_complex_cumsum_nan_components_stay_in_group(impl, dtype):
     """A NaN in one component of a complex cumulative sum must not contaminate
@@ -136,11 +136,10 @@ def _complex_reference(func, group_idx, a, size):
     return ret
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 @pytest.mark.parametrize("func", complex_funcs, ids=str)
 def test_complex(impl, func, a_dtype):
-    if impl.__name__.endswith("purepy") and func in complex_arg_funcs:
+    if impl_name(impl) == "purepy" and func in complex_arg_funcs:
         pytest.skip("the pure python implementation reports the index inside the group")
     group_idx = np.array([0, 1, 1, 2, 2, 2])
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, -2 + 0j, 4 - 3j, 6 - 6j]).astype(a_dtype)
@@ -149,7 +148,7 @@ def test_complex(impl, func, a_dtype):
     expected = _complex_reference(func, group_idx, a, 3)
 
     res = np.asarray(res)
-    if impl.__name__.endswith("purepy"):
+    if impl_name(impl) == "purepy":
         # the pure python implementation computes with python numbers, which
         # are always double precision
         pass
@@ -176,7 +175,7 @@ def test_complex_median(impl, a_dtype):
 
     res = impl.aggregate(group_idx, a, func="median", size=2)
     res = np.asarray(res)
-    if not impl.__name__.endswith("purepy"):
+    if impl_name(impl) != "purepy":
         assert res.dtype == a_dtype
     expected = [np.median(vals) for vals in (a[:4], a[4:])]
     np.testing.assert_allclose(res, expected, rtol=1e-5)
@@ -201,7 +200,7 @@ def test_complex_empty_group(impl, a_dtype):
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, 4 - 3j]).astype(a_dtype)
 
     res = np.asarray(impl.aggregate(group_idx, a, func="mean", size=3))
-    if not impl.__name__.endswith("purepy"):
+    if impl_name(impl) != "purepy":
         # the pure python implementation computes with python numbers, which
         # are always double precision
         assert res.dtype == a_dtype
@@ -230,7 +229,6 @@ complex_nan_funcs = tuple(func for func in complex_funcs if func != "cumsum")
 complex_symmetric_funcs = tuple(func for func in complex_funcs if func not in complex_asymmetric_funcs)
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("func", complex_funcs, ids=str)
 def test_complex_matches_equivalent_real_input(impl, func):
     # values with a zero imaginary part have to aggregate exactly like the very
@@ -246,7 +244,6 @@ def test_complex_matches_equivalent_real_input(impl, func):
     np.testing.assert_allclose(res, expected.astype(np.complex128), rtol=1e-9, equal_nan=True)
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("func", complex_symmetric_funcs, ids=str)
 def test_complex_conjugation_symmetry(impl, func):
     # negating every imaginary part may only negate the imaginary part of the
@@ -263,7 +260,6 @@ def test_complex_conjugation_symmetry(impl, func):
         np.testing.assert_allclose(conj, np.conj(res), rtol=1e-6)
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("func", complex_nan_funcs, ids=str)
 def test_complex_nan_in_either_part(impl, func):
     # a nan in the imaginary part has to hit the result exactly like a nan in
@@ -296,7 +292,6 @@ def test_complex_nan_in_either_part(impl, func):
         np.testing.assert_allclose(imag_nan, np.conj(res), rtol=1e-6, equal_nan=True)
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("dtype", [np.float64, np.float32, np.int64, bool], ids=["float64", "float32", "int64", "bool"])
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "median", "first", "last", "trapezoid", "cumsum"])
 def test_complex_rejects_non_complex_dtype(impl, func, dtype):
@@ -311,7 +306,6 @@ def test_complex_rejects_non_complex_dtype(impl, func, dtype):
         assert "cannot aggregate complex values into the non-complex dtype" in str(raised.value)
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize(
     ("func", "dtype"),
     [
@@ -330,12 +324,11 @@ def test_complex_accepts_the_real_result_dtypes(impl, func, dtype):
     a = np.array([1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j]).astype(np.complex64)
 
     res = np.asarray(impl.aggregate(group_idx, a, func=func, size=3, dtype=dtype))
-    if not impl.__name__.endswith("purepy"):
+    if impl_name(impl) != "purepy":
         # the pure python implementation ignores the dtype argument entirely
         assert res.dtype == np.dtype(dtype)
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max"])
 def test_complex_scalar(impl, func):
     # a scalar is one and the same value in every group: sum and prod can do
@@ -378,7 +371,6 @@ complex_fill_cases = [
 ]
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize(("func", "fill"), complex_fill_cases)
 def test_complex_default_fill_value(impl, func, fill):
     group_idx = np.array([0, 0, 2, 2, 2])
@@ -406,7 +398,7 @@ def test_complex_explicit_fill_value(impl):
     np.testing.assert_allclose(res[1], 1 + 0j)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("axis", (0, 1))
 def test_complex_axis(impl, axis):
     # the labels run along the requested axis, the remaining axes are kept
@@ -425,7 +417,6 @@ def test_complex_axis(impl, axis):
     assert res.dtype == a.dtype
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("func", ["sum", "mean", "var", "max", "first", "last"])
 def test_complex_non_contiguous_input(impl, func):
     # a strided view is as valid an input as a contiguous array
@@ -470,7 +461,7 @@ def test_complex_order_functions_follow_numpy_lexicographic(impl, func):
             complex(float("inf"), float("inf")),  # the reduction may not start below it
         ]
     )
-    if impl.__name__.endswith("purepy") and func in complex_arg_funcs:
+    if impl_name(impl) == "purepy" and func in complex_arg_funcs:
         pytest.skip("the pure python implementation reports the index inside the group")
 
     res = np.asarray(impl.aggregate(group_idx, a, func=func, size=6))
@@ -492,14 +483,14 @@ def test_complex_order_functions_are_not_rejected_by_numba(func):
     np.testing.assert_array_equal(res, expected)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 def test_complex_nan_in_one_part_of_the_order_functions(impl):
     # a nan in either part is a nan of the value, wherever it sits in it.  The
     # value is built with complex(): `np.nan * 1j` puts a nan in both parts
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([1 + 2j, 2 + 3j, complex(1.0, np.nan), 4 + 5j, 5 + 6j, 6 + 7j, 7 + 8j, np.nan + 9j])
 
-    if impl.__name__.endswith("pandas"):
+    if impl_name(impl) == "pandas":
         pytest.skip("pandas decides on its own what a nan in a complex value is")
 
     for func, expected in (("argmin", [-1, -1]), ("argmax", [-1, -1])):

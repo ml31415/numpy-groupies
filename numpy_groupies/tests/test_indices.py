@@ -1,10 +1,6 @@
 import numpy as np
-import pytest
-
-from . import _deselect_no_step_count
 
 
-@pytest.mark.deselect_if(func=_deselect_no_step_count)
 def test_step_indices_length(impl):
     """``step_count`` and ``step_indices`` length agree with a numpy reference."""
     group_idx = np.array([1, 1, 1, 2, 2, 3, 3, 4, 4, 2, 2], dtype=int)
@@ -15,7 +11,6 @@ def test_step_indices_length(impl):
         assert len(impl.step_indices(group_idx)) == step_cnt_ref + 2
 
 
-@pytest.mark.deselect_if(func=_deselect_no_step_count)
 def test_step_indices_fields(impl):
     """``step_indices`` returns the run edges of ``group_idx``."""
     group_idx = np.array([1, 1, 1, 2, 2, 3, 3, 4, 5, 2, 2], dtype=int)
