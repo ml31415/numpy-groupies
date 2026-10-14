@@ -62,7 +62,7 @@ complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | comple
 
 @pytest.mark.deselect_if(func=is_purepy_or_pandas)
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
-def test_complex_cumsum_nan_components_stay_in_group(impl, dtype):
+def test_cumsum_nan_components_stay_in_group(impl, dtype):
     """A NaN in one component of a complex cumulative sum must not contaminate
     the other groups' other component. Pandas decides on its own what a nan
     in a complex value is, so it is excluded alongside purepy (which does
@@ -138,7 +138,7 @@ def _complex_reference(func, group_idx, a, size):
 
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 @pytest.mark.parametrize("func", complex_funcs, ids=str)
-def test_complex(impl, func, a_dtype):
+def test_matches_reference(impl, func, a_dtype):
     if is_purepy(impl) and func in complex_arg_funcs:
         pytest.skip("the pure python implementation reports the index inside the group")
     group_idx = np.array([0, 1, 1, 2, 2, 2])
@@ -167,7 +167,7 @@ def test_complex(impl, func, a_dtype):
 
 
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
-def test_complex_median(impl, a_dtype):
+def test_median(impl, a_dtype):
     # traps: by magnitude these would mediate to -1.5+0j and 2+0j, by the real
     # part alone to 1-1j - only numpy's lexicographic order answers 1+4j, 1+9j
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1])
@@ -182,7 +182,7 @@ def test_complex_median(impl, a_dtype):
 
 
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
-def test_complex_sort(impl, a_dtype):
+def test_sort(impl, a_dtype):
     # sorting follows numpy's lexicographic complex order
     group_idx = np.array([0, 0, 1, 1])
     a = np.array([3 + 1j, 1 + 2j, 1 - 5j, 1 + 5j]).astype(a_dtype)
@@ -194,7 +194,7 @@ def test_complex_sort(impl, a_dtype):
 
 
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
-def test_complex_empty_group(impl, a_dtype):
+def test_empty_group(impl, a_dtype):
     # an empty group takes the nan default, which complex dtypes can hold
     group_idx = np.array([0, 0, 2, 2])
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, 4 - 3j]).astype(a_dtype)
@@ -209,7 +209,7 @@ def test_complex_empty_group(impl, a_dtype):
     assert np.isnan(res[1].real) and np.isnan(res[1].imag)
 
 
-def test_complex_nan_handling(impl):
+def test_nan_handling(impl):
     group_idx = np.array([0, 0, 0, 1])
     a = np.array([1 + 2j, np.nan + 0j, 3 + 1j, 5 + 5j])
 
@@ -230,7 +230,7 @@ complex_symmetric_funcs = tuple(func for func in complex_funcs if func not in co
 
 
 @pytest.mark.parametrize("func", complex_funcs, ids=str)
-def test_complex_matches_equivalent_real_input(impl, rng, func):
+def test_matches_equivalent_real_input(impl, rng, func):
     # values with a zero imaginary part have to aggregate exactly like the very
     # same values as floats - representing them as complex may not change a result
     group_idx = np.repeat(np.arange(4), 5)
@@ -244,7 +244,7 @@ def test_complex_matches_equivalent_real_input(impl, rng, func):
 
 
 @pytest.mark.parametrize("func", complex_symmetric_funcs, ids=str)
-def test_complex_conjugation_symmetry(impl, rng, func):
+def test_conjugation_symmetry(impl, rng, func):
     # negating every imaginary part may only negate the imaginary part of the
     # result - the functions measuring a squared magnitude ignore it entirely
     group_idx = np.repeat(np.arange(3), 4)
@@ -259,7 +259,7 @@ def test_complex_conjugation_symmetry(impl, rng, func):
 
 
 @pytest.mark.parametrize("func", complex_nan_funcs, ids=str)
-def test_complex_nan_in_either_part(impl, func):
+def test_nan_in_either_part(impl, func):
     # a nan in the imaginary part has to hit the result exactly like a nan in
     # the real part - the nan check looks at both parts
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
@@ -292,7 +292,7 @@ def test_complex_nan_in_either_part(impl, func):
 
 @pytest.mark.parametrize("dtype", [np.float64, np.float32, np.int64, bool], ids=["float64", "float32", "int64", "bool"])
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "median", "first", "last", "trapezoid", "cumsum"])
-def test_complex_rejects_non_complex_dtype(impl, func, dtype):
+def test_rejects_non_complex_dtype(impl, func, dtype):
     # a non-complex dtype would silently throw the imaginary part away
     group_idx = np.array([0, 0, 1, 1, 2])
     a = np.array([1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j])
@@ -315,7 +315,7 @@ def test_complex_rejects_non_complex_dtype(impl, func, dtype):
         ("all", bool),
     ],
 )
-def test_complex_accepts_the_real_result_dtypes(impl, func, dtype):
+def test_accepts_the_real_result_dtypes(impl, func, dtype):
     # var, std and sumofsquares measure a real squared magnitude, and the
     # counting and testing functions never were complex to begin with
     group_idx = np.array([0, 0, 1, 1, 2])
@@ -328,7 +328,7 @@ def test_complex_accepts_the_real_result_dtypes(impl, func, dtype):
 
 
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max"])
-def test_complex_scalar(impl, func):
+def test_scalar(impl, func):
     # a scalar is one and the same value in every group: sum and prod can do
     # something with that, everything reducing over an array of them cannot
     group_idx = np.arange(0, 20, dtype=int).repeat(5)
@@ -370,7 +370,7 @@ complex_fill_cases = [
 
 
 @pytest.mark.parametrize(("func", "fill"), complex_fill_cases)
-def test_complex_default_fill_value(impl, func, fill):
+def test_default_fill_value(impl, func, fill):
     group_idx = np.array([0, 0, 2, 2, 2])
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, 4 - 3j, 6 + 1j])
 
@@ -384,7 +384,7 @@ def test_complex_default_fill_value(impl, func, fill):
         assert np.isnan(res[1].real) and np.isnan(res[1].imag)
 
 
-def test_complex_explicit_fill_value(impl):
+def test_explicit_fill_value(impl):
     group_idx = np.array([0, 0, 2, 2])
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, 4 - 3j])
 
@@ -398,7 +398,7 @@ def test_complex_explicit_fill_value(impl):
 
 @pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("axis", (0, 1))
-def test_complex_axis(impl, rng, axis):
+def test_axis(impl, rng, axis):
     # the labels run along the requested axis, the remaining axes are kept
     group_idx = np.array([1, 0, 0, 1])
     shape = (4, 3) if axis == 0 else (3, 4)
@@ -415,7 +415,7 @@ def test_complex_axis(impl, rng, axis):
 
 
 @pytest.mark.parametrize("func", ["sum", "mean", "var", "max", "first", "last"])
-def test_complex_non_contiguous_input(impl, rng, func):
+def test_non_contiguous_input(impl, rng, func):
     # a strided view is as valid an input as a contiguous array
     base = rng.random(40) + 1j * rng.random(40)
     a = base[::2]  # 20 values, stride 2 - and not contiguous
@@ -427,7 +427,7 @@ def test_complex_non_contiguous_input(impl, rng, func):
     np.testing.assert_allclose(res, expected, rtol=1e-9)
 
 
-def test_complex_list_input(impl):
+def test_list_input(impl):
     group_idx = np.array([0, 0, 1, 1, 1])
     a = [1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j]
 
@@ -437,7 +437,7 @@ def test_complex_list_input(impl):
 
 
 @pytest.mark.parametrize("func", complex_order_funcs + complex_arg_funcs)
-def test_complex_order_functions_follow_numpy_lexicographic(impl, func):
+def test_order_functions_follow_numpy_lexicographic(impl, func):
     # the traps tell magnitude, real part alone and lexicographic order apart;
     # -0.0 against 0.0 pins that a tie keeps the first of the two, like np.min
     group_idx = np.array([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
@@ -466,7 +466,7 @@ def test_complex_order_functions_follow_numpy_lexicographic(impl, func):
 
 
 @pytest.mark.parametrize("func", complex_order_funcs + complex_arg_funcs)
-def test_complex_order_functions_are_not_rejected_by_numba(func):
+def test_order_functions_are_not_rejected_by_numba(func):
     # the numba kernels used to refuse complex values here; they compare the two
     # parts themselves now, so they have to agree with the numpy implementation
     if aggregate_numba is None:
@@ -480,7 +480,7 @@ def test_complex_order_functions_are_not_rejected_by_numba(func):
 
 
 @pytest.mark.deselect_if(func=is_purepy)
-def test_complex_nan_in_one_part_of_the_order_functions(impl):
+def test_nan_in_one_part_of_the_order_functions(impl):
     # a nan in either part is a nan of the value, wherever it sits in it.  The
     # value is built with complex(): `np.nan * 1j` puts a nan in both parts
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
@@ -502,7 +502,7 @@ def test_complex_nan_in_one_part_of_the_order_functions(impl):
     np.testing.assert_array_equal(np.asarray(impl.aggregate(group_idx, a, func="nanmax", size=2)), [4 + 5j, 7 + 8j])
 
 
-def test_complex_order_functions_use_the_extreme_value_of_the_order():
+def test_order_functions_use_the_extreme_value_of_the_order():
     # the extreme of a complex dtype is inf+infj, not inf+0j: the reductions
     # seed with it, and the nan variants mask the nans with it
     group_idx = np.array([0, 1])
