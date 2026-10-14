@@ -7,11 +7,14 @@ from numpy_groupies import aggregate_np
 @pytest.mark.parametrize("func", ["sum", "nansum"])
 @pytest.mark.parametrize("dtype", [np.int64, np.uint64])
 @pytest.mark.parametrize("fill_value", [0, 7])
-def test_wide_integer_grouped_sum(func, dtype, fill_value):
+@pytest.mark.parametrize("explicit_output", [False, True])
+def test_wide_integer_grouped_sum(func, dtype, fill_value, explicit_output):
     groups = np.array([0, 2, 0, 2])
     values = np.array([2**60 + 1, 2**53 + 1, 2**60 + 2, 2**53 + 2], dtype=dtype)
     before = values.copy()
-    result = aggregate_np(groups, values, func=func, size=4, fill_value=fill_value)
+    result = aggregate_np(
+        groups, values, func=func, size=4, fill_value=fill_value, dtype=dtype if explicit_output else None
+    )
     expected = [sum(int(v) for v in values[groups == g]) if g in groups else fill_value for g in range(4)]
     np.testing.assert_array_equal(result, np.array(expected, dtype=result.dtype))
     np.testing.assert_array_equal(values, before)
