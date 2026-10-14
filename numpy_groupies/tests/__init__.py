@@ -87,6 +87,27 @@ def _wrap_notimplemented_skip(impl, name=None):
     return try_skip
 
 
+class _BackendProxy:
+    """Proxy around a backend module that wraps ``aggregate`` with the
+    ``NotImplementedError`` -> ``pytest.skip`` translation, and delegates
+    every other attribute (e.g. ``step_count``, ``step_indices``) to the
+    underlying module so tests can use ``impl.aggregate(...)``,
+    ``impl.step_count(...)`` etc. without caring whether the attribute
+    is wrapped or not.
+    """
+
+    def __init__(self, module, name):
+        self._module = module
+        self.aggregate = _wrap_notimplemented_skip(module.aggregate, f"aggregate_{name}")
+
+    def __getattr__(self, name):
+        return getattr(self._module, name)
+
+    @property
+    def __name__(self):
+        return self._module.__name__
+
+
 func_list = (
     "sum",
     "prod",
@@ -122,20 +143,20 @@ func_list = (
 )
 
 
-def _deselect_purepy(aggregate_all, *args, **kwargs):
+def _deselect_purepy(impl, *args, **kwargs):
     # purepy implementations does not handle nan values and ndim correctly.
     # So it needs to be excluded from several tests."""
-    return aggregate_all.__name__.endswith("purepy")
+    return impl.__name__.endswith("purepy")
 
 
-def _deselect_purepy_and_pandas(aggregate_all, *args, **kwargs):
+def _deselect_purepy_and_pandas(impl, *args, **kwargs):
     # purepy and pandas implementation handle some nan cases differently.
     # So they need to be excluded from several tests."""
-    return aggregate_all.__name__.endswith(("pandas", "purepy"))
+    return impl.__name__.endswith(("pandas", "purepy"))
 
 
-def _deselect_purepy_and_invalid_axis(aggregate_all, func, size, axis):
-    impl_name = aggregate_all.__name__.split("_")[-1]
+def _deselect_purepy_and_invalid_axis(impl, func, size, axis):
+    impl_name = impl.__name__.split("_")[-1]
     if impl_name == "purepy":
         # purepy does not handle axis parameter
         return True
@@ -144,13 +165,18 @@ def _deselect_purepy_and_invalid_axis(aggregate_all, func, size, axis):
     return not _is_implemented(impl_name, func)
 
 
-def _deselect_purepy_axis(aggregate_all, axis):
+def _deselect_purepy_axis(impl, axis):
     # purepy does not support axis, so deselect it whenever an axis is
     # requested. Use this for tests that do not need the full
     # _deselect_purepy_and_invalid_axis bookkeeping.
-    return aggregate_all.__name__.endswith("purepy") and axis is not None
+    return impl.__name__.endswith("purepy") and axis is not None
 
 
-def _deselect_not_implemented(aggregate_all, func, *args, **kwargs):
-    impl_name = aggregate_all.__name__.split("_")[-1]
+def _deselect_not_implemented(impl, func, *args, **kwargs):
+    impl_name = impl.__name__.split("_")[-1]
     return not _is_implemented(impl_name, func)
+
+
+def _deselect_no_step_count(impl, *args, **kwargs):
+    # Only numpy and numba backends expose step_count / step_indices.
+    return not hasattr(impl, "step_count")
