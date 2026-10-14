@@ -1,29 +1,31 @@
 import numpy as np
 import pytest
 
-from . import _impl_name, aggregate_numba
+from . import _impl_name, aggregate_numba, aggregate_numpy
 
-_implementations = [aggregate_numba]
-_implementations = [i for i in _implementations if i is not None]
+_index_implementations = [aggregate_numpy, aggregate_numba]
+_index_implementations = [i for i in _index_implementations if i is not None]
 
 
-@pytest.fixture(params=_implementations, ids=_impl_name)
-def aggregate_nb_wv(request):
+@pytest.fixture(params=_index_implementations, ids=_impl_name)
+def index_impl(request):
     if request.param is None:
         pytest.skip("Implementation not available")
     return request.param
 
 
-def test_step_indices_length(aggregate_nb_wv):
+def test_step_indices_length(index_impl):
+    """``step_count`` and ``step_indices`` length agree with a numpy reference."""
     group_idx = np.array([1, 1, 1, 2, 2, 3, 3, 4, 4, 2, 2], dtype=int)
     for _ in range(20):
         np.random.shuffle(group_idx)
         step_cnt_ref = np.count_nonzero(np.diff(group_idx))
-        assert aggregate_nb_wv.step_count(group_idx) == step_cnt_ref + 1
-        assert len(aggregate_nb_wv.step_indices(group_idx)) == step_cnt_ref + 2
+        assert index_impl.step_count(group_idx) == step_cnt_ref + 1
+        assert len(index_impl.step_indices(group_idx)) == step_cnt_ref + 2
 
 
-def test_step_indices_fields(aggregate_nb_wv):
+def test_step_indices_fields(index_impl):
+    """``step_indices`` returns the run edges of ``group_idx``."""
     group_idx = np.array([1, 1, 1, 2, 2, 3, 3, 4, 5, 2, 2], dtype=int)
-    steps = aggregate_nb_wv.step_indices(group_idx)
+    steps = index_impl.step_indices(group_idx)
     np.testing.assert_array_equal(steps, np.array([0, 3, 5, 7, 8, 9, 11]))

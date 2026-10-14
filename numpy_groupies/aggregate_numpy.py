@@ -27,6 +27,35 @@ from .utils import (
 )
 
 
+def step_count(group_idx):
+    """Return the number of contiguous runs in ``group_idx``.
+
+    A strictly increasing array of length ``n`` has ``n`` runs, an empty
+    array has 0, and an array of length 1 has 1. The return value matches
+    ``aggregate_numba.step_count`` exactly, so the two backends can be used
+    interchangeably.
+    """
+    group_idx = np.asarray(group_idx)
+    if group_idx.size < 1:
+        return 0
+    return 1 + int(np.count_nonzero(np.diff(group_idx) != 0))
+
+
+def step_indices(group_idx):
+    """Return the run-edge indices in ``group_idx``.
+
+    The first element is always 0, the last is always ``group_idx.size``,
+    and the interior elements are the start indices of each new run. An
+    empty input returns ``[0]`` to match the numba implementation.
+    """
+    group_idx = np.asarray(group_idx)
+    n = group_idx.size
+    if n < 1:
+        return np.array([0], dtype=np.int64)
+    starts = np.flatnonzero(np.diff(group_idx) != 0) + 1
+    return np.concatenate(([0], starts, [n])).astype(np.int64, copy=False)
+
+
 def _sum(
     group_idx: np.ndarray,
     a: np.ndarray,
