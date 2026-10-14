@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from .. import aggregate_np, aggregate_ufunc
-from . import _deselect_not_implemented, _deselect_purepy, aggregate_numba
+from . import _deselect_not_implemented, _deselect_purepy, _deselect_purepy_and_pandas, aggregate_numba
 
 # functions with a well-defined complex result, following numpy semantics - the
 # order statistics included, as numpy orders complex values lexicographically
@@ -60,8 +60,14 @@ complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
 complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
 
 
+@pytest.mark.deselect_if(func=_deselect_purepy_and_pandas)
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
-def test_numpy_cumsum_nan_components_stay_in_group(dtype):
+def test_complex_cumsum_nan_components_stay_in_group(aggregate_all, dtype):
+    """A NaN in one component of a complex cumulative sum must not contaminate
+    the other groups' other component. Pandas decides on its own what a nan
+    in a complex value is, so it is excluded alongside purepy (which does
+    not implement cumsum).
+    """
     group_idx = np.array([0, 1, 0, 1, 2, 2, 3])
     a = np.array([1 + 2j, 3 + 4j, complex(np.nan, 5), 2 + 1j, complex(7, np.nan), 1 + 3j, 4 + 6j], dtype=dtype)
     original = a.copy()
@@ -69,12 +75,10 @@ def test_numpy_cumsum_nan_components_stay_in_group(dtype):
     for group in range(4):
         positions = np.flatnonzero(group_idx == group)
         expected[positions] = np.cumsum(a[positions])
-    result = aggregate_np(group_idx, a, func="cumsum")
-    assert result.dtype == a.dtype
-    np.testing.assert_array_equal(result.real, expected.real)
-    np.testing.assert_array_equal(result.imag, expected.imag)
-    np.testing.assert_array_equal(a.real, original.real)
-    np.testing.assert_array_equal(a.imag, original.imag)
+    result = np.asarray(aggregate_all(group_idx, a, func="cumsum"))
+    np.testing.assert_array_equal(np.real(result), np.real(expected))
+    np.testing.assert_array_equal(np.imag(result), np.imag(expected))
+    np.testing.assert_array_equal(a, original)
 
 
 def _not_nan(vals):

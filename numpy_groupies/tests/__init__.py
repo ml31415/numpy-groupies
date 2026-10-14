@@ -144,6 +144,13 @@ def _deselect_purepy_and_invalid_axis(aggregate_all, func, size, axis):
     return not _is_implemented(impl_name, func)
 
 
+def _deselect_purepy_axis(aggregate_all, axis):
+    # purepy does not support axis, so deselect it whenever an axis is
+    # requested. Use this for tests that do not need the full
+    # _deselect_purepy_and_invalid_axis bookkeeping.
+    return aggregate_all.__name__.endswith("purepy") and axis is not None
+
+
 def _deselect_not_implemented(aggregate_all, func, *args, **kwargs):
     impl_name = aggregate_all.__name__.split("_")[-1]
     return not _is_implemented(impl_name, func)

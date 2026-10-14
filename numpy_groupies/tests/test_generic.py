@@ -13,6 +13,7 @@ from . import (
     _deselect_purepy,
     _deselect_purepy_and_invalid_axis,
     _deselect_purepy_and_pandas,
+    _deselect_purepy_axis,
     aggregate_purepy,
     func_list,
 )
@@ -80,10 +81,14 @@ def test_sum_bool_dtype_guess_ignores_empty_groups(aggregate_all):
         assert res.dtype == np.int8
 
 
-def test_purepy_integer_sum_is_exact():
-    # a python int leading the group must not send the accumulation back to
-    # the wrapping numpy scalar arithmetic, and integer groups sum without
-    # the fixed dtype limits
+def test_purepy_integer_sum_does_not_overflow():
+    """Integer group sums in purepy do not wrap when the result overflows
+    the input dtype.
+
+    A Python int in the group keeps the accumulation in Python-int arithmetic
+    and bypasses the wrapping numpy scalar path; integer groups therefore
+    sum without the fixed dtype limits.
+    """
     res = aggregate_purepy.aggregate([0, 0], [1, np.uint64(2**64 - 1)], func="sum")
     assert res[0] == 2**64
     res = aggregate_purepy.aggregate([0, 0], np.array([2**64 - 1, 2**64 - 1], dtype=np.uint64), func="sum")
@@ -889,3 +894,107 @@ def test_numba_callable_cache_construction(monkeypatch):
     # re-constructed on every call (dict.setdefault used to do exactly that)
     assert len(cache) == 1
     assert len(constructed) == 1
+
+
+@pytest.mark.parametrize("func", ["sum", "nansum"])
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+@pytest.mark.parametrize("fill_value", [0, 7])
+@pytest.mark.parametrize("explicit_output", [False, True])
+def test_wide_integer_grouped_sum(aggregate_all, func, dtype, fill_value, explicit_output):
+    """An integer group sum that fits the output dtype is exact, even when
+    the partial sums exceed float64 precision.
+
+    bincount accumulates its weights in float64, so a partial sum with a
+    magnitude above 2**53 loses integer precision before it completes. The
+    numpy backend routes wide-integer groups through an exact accumulation
+    in the resolved output dtype; the test runs the same expectation across
+    every backend so each impl proves it has not regressed to float64
+    partial sums. The parametrize covers int64/uint64 input and output
+    dtypes, with and without an explicit dtype request, and two fill
+    values for untouched groups.
+    """
+    groups = np.array([0, 2, 0, 2])
+    values = np.array([2**60 + 1, 2**53 + 1, 2**60 + 2, 2**53 + 2], dtype=dtype)
+    before = values.copy()
+    result = np.asarray(
+        aggregate_all(
+            groups,
+            values,
+            func=func,
+            size=4,
+            fill_value=fill_value,
+            dtype=dtype if explicit_output else None,
+        )
+    )
+    expected = [sum(int(v) for v in values[groups == g]) if g in groups else fill_value for g in range(4)]
+    np.testing.assert_array_equal(result, np.array(expected, dtype=result.dtype))
+    np.testing.assert_array_equal(values, before)
+
+
+@pytest.mark.parametrize("func", ["sum", "nansum"])
+@pytest.mark.parametrize(
+    "values, groups, expected",
+    [
+        # a sum of INT64_MIN and INT64_MAX yields -1; float64 partial sums
+        # round both ends away to zero and lose the cancellation remainder.
+        pytest.param(
+            np.array([2**60 + 1, np.iinfo(np.int64).min, -(2**60), np.iinfo(np.int64).max]),
+            np.array([0, 1, 0, 1]),
+            [1, -1],
+            id="cancellation",
+        ),
+        # values that stay within float64 precision must keep landing on
+        # the bincount path so ordinary int64 inputs are not slowed down.
+        pytest.param(
+            np.array([-(2**52), 2**52], dtype=np.int64),
+            np.zeros(2, dtype=int),
+            [0],
+            id="within_float_precision",
+        ),
+    ],
+)
+def test_integer_grouped_sum_cancellation(aggregate_all, func, values, groups, expected):
+    """Integer group sums stay exact at the dtype edge - both on the
+    INT64_MIN cancellation boundary and for value sets that fit float
+    precision and must therefore keep using the bincount path.
+    """
+    result = np.asarray(aggregate_all(groups, values, func=func, size=len(expected)))
+    np.testing.assert_array_equal(result, np.array(expected, dtype=result.dtype))
+
+
+@pytest.mark.deselect_if(func=_deselect_purepy_axis)
+@pytest.mark.parametrize("func", ["sum", "nansum"])
+@pytest.mark.parametrize("axis", [1])
+def test_integer_grouped_sum_axis(aggregate_all, func, axis):
+    """Integer group sums are exact along an axis too; purepy does not
+    implement axis and is skipped.
+    """
+    groups = np.zeros(2, dtype=int)
+    values = np.array([[2**60 + 1, -(2**60)], [2**53 + 1, -(2**53)]])
+    result = np.asarray(aggregate_all(groups, values, func=func, axis=axis))
+    np.testing.assert_array_equal(result, [[1], [1]])
+
+
+@pytest.mark.deselect_if(func=_deselect_not_implemented)
+@pytest.mark.deselect_if(func=_deselect_purepy_axis)
+@pytest.mark.parametrize("base", [2**53, 2**63, 2**64 - 8])
+@pytest.mark.parametrize("func", ["argmin", "argmax", "nanargmin", "nanargmax"])
+@pytest.mark.parametrize("axis", [None, -1])
+def test_uint64_argreductions_preserve_order(aggregate_all, base, func, axis):
+    """uint64 ordering is preserved through argmin/argmax and their nan
+    variants, even on value sets that float64 cannot distinguish.
+
+    The numpy backend used to lower the comparison dtype to float64 on
+    NaN-bearing paths, which folded all large uint64 values to the same
+    bucket and broke the argreduction. The invariant is shared across
+    backends so the test runs generically; ufunc does not implement these
+    functions, and purepy does not implement axis.
+    """
+    group_idx = np.array([0, 0, 2, 2, 2, 2])
+    a = np.array([base + 1, base, base + 2, base + 3, base + 2, base + 3], dtype=np.uint64)
+    expected = np.array([1, -1, 2]) if func.endswith("min") else np.array([0, -1, 3])
+    if axis is not None:
+        a = np.stack([a, a])
+        expected = np.stack([expected, expected])
+    result = np.asarray(aggregate_all(group_idx, a, func=func, axis=axis, fill_value=-1))
+    np.testing.assert_array_equal(result, expected)

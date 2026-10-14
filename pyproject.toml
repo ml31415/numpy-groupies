@@ -43,6 +43,10 @@ dev = [
     "pytest",
     "numba",
     "pandas",
+    # pre-commit 4 requires Python >= 3.11, but the project still supports
+    # 3.10, so stay on the 3.x line.
+    "pre-commit>=3.8,<4",
+    "ruff>=0.17",
 ]
 
 [project.urls]
@@ -51,6 +55,10 @@ tracker = "https://github.com/ml31415/numpy-groupies/issues"
 
 [tool.ruff]
 line-length = 120
+# rumdl owns the markdown layout (hand-aligned example output), so ruff
+# stays out of it. The pre-commit hooks mirror this with their own
+# `exclude: \.md$` for ruff-format.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 ignore = [
@@ -76,7 +84,5 @@ ignore-words-list = "nd,"
 ignore-regex = ".*codespell-ignore$"
 
 [tool.rumdl]
-# House style is one paragraph per line plus wide table rows, so line length is not
-# enforced - MD013 would flag ~70 lines and can only be fixed by reflowing the text.
 disable = ["MD013"]
 respect-gitignore = true
