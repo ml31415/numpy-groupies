@@ -19,6 +19,7 @@ EXACT_FLOAT64_INTEGER_LIMIT = 2**53
 # exactly; integer variance centers each group on its first value and needs
 # every deviation to stay within this bound
 INT64_DEVIATION_LIMIT = 2**63 - 1
+INT64_MIN = -(2**63)
 
 
 def raise_integer_mean_overflow(count: int, bound: int) -> None:
