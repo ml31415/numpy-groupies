@@ -11,6 +11,37 @@ from typing import Any
 
 nan = float("nan")  # nan is just this float
 
+# integers beyond this magnitude are not exactly representable in float64, so
+# once an exact integer sum can leave this window, a float64-accumulated mean
+# silently rounds (2**53 itself is still exact, hence the inclusive limit)
+EXACT_FLOAT64_INTEGER_LIMIT = 2**53
+# largest magnitude a two's-complement signed 64-bit deviation represents
+# exactly; integer variance centers each group on its first value and needs
+# every deviation to stay within this bound
+INT64_DEVIATION_LIMIT = 2**63 - 1
+
+
+def raise_integer_mean_overflow(count: int, bound: int) -> None:
+    """Refuse integer means that float64 cannot compute exactly.
+
+    Every implementation raises this for the same inputs, so the backends
+    never disagree silently on inexact integer means.
+    """
+    raise OverflowError(
+        f"cannot compute an exact mean of {count} integer values with magnitude up to {bound}: "
+        f"their sums can exceed +/-{EXACT_FLOAT64_INTEGER_LIMIT}, the range float64 represents "
+        f"exactly - cast the input to a float dtype to accept rounding, or use sum and len"
+    )
+
+
+def raise_integer_variance_span_overflow(low: int, high: int) -> None:
+    """Refuse integer variances whose exact centering would overflow int64."""
+    raise OverflowError(
+        f"cannot compute an exact variance: the integer values span [{low}, {high}], wider than "
+        f"+/-{INT64_DEVIATION_LIMIT}, so centering each group on its first value would overflow "
+        f"the signed 64-bit deviation - cast the input to a float dtype first"
+    )
+
 
 aggregate_common_doc = """
     See readme file at https://github.com/ml31415/numpy-groupies for a full

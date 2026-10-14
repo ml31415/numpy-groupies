@@ -6,10 +6,14 @@ import numpy.typing as npt
 
 from .aggregate_common import (
     DEFAULT_FILL_VALUE,
+    EXACT_FLOAT64_INTEGER_LIMIT,
+    INT64_DEVIATION_LIMIT,
     aggregate_common_doc,
     build_dispatch,
     funcs_no_separate_nan,
     get_func,
+    raise_integer_mean_overflow,
+    raise_integer_variance_span_overflow,
     resolve_fill_value,
 )
 from .utils import (
@@ -274,6 +278,13 @@ def _mean(
 ) -> np.ndarray:
     if np.ndim(a) == 0:
         raise ValueError("cannot take mean with scalar a")
+    if a.dtype.kind in "iu" and a.size:
+        # the sums are accumulated in float64; once the exact integer sums can
+        # leave the +/-2**53 window, the mean would silently round - refuse
+        # instead (every backend raises for the same inputs)
+        bound = max(int(a.max()), -int(a.min()))
+        if a.size * bound > EXACT_FLOAT64_INTEGER_LIMIT:
+            raise_integer_mean_overflow(a.size, bound)
     counts = np.bincount(group_idx, minlength=size)
     if iscomplexobj(a):
         # np.bincount does not take complex weights - accumulate the real and
@@ -433,6 +444,24 @@ def _var(
 ) -> np.ndarray:
     if np.ndim(a) == 0:
         raise ValueError("cannot take variance with scalar a")
+    if a.dtype.kind in "iu" and a.size:
+        # center each group on its first value: the deviations stay exact in
+        # int64 arithmetic, so a large common offset can no longer erase small
+        # deviations after the conversion to float64
+        low = int(a.min())
+        high = int(a.max())
+        if a.size * max(high, -low) > EXACT_FLOAT64_INTEGER_LIMIT:
+            if high - low > INT64_DEVIATION_LIMIT:
+                raise_integer_variance_span_overflow(low, high)
+            origins = _first(group_idx, a, size, 0, dtype=a.dtype)
+            if a.dtype == np.dtype(np.uint64):
+                # uint64 subtraction wraps modulo 2**64, which is the exact
+                # two's-complement deviation while |deviation| stays below
+                # 2**63 (guaranteed by the span check above) - reinterpret the
+                # bit pattern instead of letting a cast round the values
+                a = (a - origins[group_idx]).astype(np.int64)
+            else:
+                a = a.astype(np.int64) - origins.astype(np.int64)[group_idx]
     counts = np.bincount(group_idx, minlength=size)
     if iscomplexobj(a):
         # np.bincount does not take complex weights - accumulate the real and
