@@ -4,8 +4,8 @@ import pytest
 from .. import aggregate_np
 
 
-@pytest.mark.parametrize('func', ['mean', 'nanmean'])
-@pytest.mark.parametrize('fill', [0, 7, np.nan])
+@pytest.mark.parametrize("func", ["mean", "nanmean"])
+@pytest.mark.parametrize("fill", [0, 7, np.nan])
 def test_cancelling_integer_mean(func, fill):
     maximum = np.iinfo(np.int64).max
     values = np.array([maximum, -maximum + 1, maximum, maximum, maximum], dtype=np.int64)
@@ -17,8 +17,8 @@ def test_cancelling_integer_mean(func, fill):
     np.testing.assert_array_equal(values, original)
 
 
-@pytest.mark.parametrize('dtype', [np.int64, np.uint64])
-@pytest.mark.parametrize('func', ['mean', 'nanmean'])
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+@pytest.mark.parametrize("func", ["mean", "nanmean"])
 def test_integer_mean_rounds_after_division(dtype, func):
     values = np.array([2**53 + 1, 0, 0], dtype=dtype)
     expected = (2**53 + 1) / 3
@@ -26,7 +26,7 @@ def test_integer_mean_rounds_after_division(dtype, func):
     np.testing.assert_array_equal(result, [expected])
 
 
-@pytest.mark.parametrize('func', ['mean', 'nanmean'])
+@pytest.mark.parametrize("func", ["mean", "nanmean"])
 def test_cancelling_integer_mean_axis(func):
     maximum = np.iinfo(np.int64).max
     values = np.array([[maximum, -maximum + 1], [maximum, -maximum + 3]], dtype=np.int64)
