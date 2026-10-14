@@ -864,34 +864,6 @@ def test_empty_group_idx_raises(impl):
         impl.aggregate(np.array([], dtype=int), np.array([], dtype=float))
 
 
-def test_numba_callable_cache_construction(monkeypatch):
-    pytest.importorskip("numba")
-    from numpy_groupies import aggregate_numba
-
-    group_idx = np.array([0, 1, 1, 2])
-    a = np.arange(4.0)
-    func = lambda x: np.sum(x)
-
-    constructed = []
-    orig_init = aggregate_numba.AggregateGeneric.__init__
-
-    def counting_init(self, func, **kwargs):
-        constructed.append(func)
-        orig_init(self, func, **kwargs)
-
-    monkeypatch.setattr(aggregate_numba.AggregateGeneric, "__init__", counting_init)
-
-    cache = {}
-    aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
-    for _ in range(3):
-        aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
-
-    # one cache entry, and the cached op is reused instead of being
-    # re-constructed on every call (dict.setdefault used to do exactly that)
-    assert len(cache) == 1
-    assert len(constructed) == 1
-
-
 @pytest.mark.parametrize("func", ["sum", "nansum"])
 @pytest.mark.parametrize("dtype", [np.int64, np.uint64])
 @pytest.mark.parametrize("fill_value", [0, 7])
