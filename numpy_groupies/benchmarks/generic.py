@@ -7,7 +7,8 @@ from operator import itemgetter
 
 import numpy as np
 
-from numpy_groupies.tests import _implementations, aggregate_numpy
+from numpy_groupies import aggregate_numpy
+from numpy_groupies.tests.helpers import _implementations
 from numpy_groupies.utils import allnan, anynan, nanfirst, nanlast
 
 

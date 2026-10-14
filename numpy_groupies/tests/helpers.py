@@ -1,0 +1,198 @@
+"""Shared helpers for the test suite: backend registry, the ``impl`` fixture
+proxy and the collection-time deselection predicates.
+
+Backends signal missing functionality with ``NotImplementedError``. The
+``_BackendProxy`` translates that into ``pytest.skip`` at runtime, so no
+collection-time bookkeeping is needed for it. Only backends that silently
+deviate from the reference behaviour (without raising) need an explicit
+``deselect_if`` marker.
+"""
+
+from functools import cache, wraps
+from typing import Any
+
+import numpy as np
+import pytest
+
+from .. import aggregate_numpy, aggregate_numpy_ufunc, aggregate_purepy
+
+aggregate_numba: Any
+aggregate_pandas: Any
+
+try:
+    from .. import aggregate_numba
+except ImportError:
+    aggregate_numba = None
+try:
+    from .. import aggregate_pandas
+except ImportError:
+    aggregate_pandas = None
+
+# backend registry: module -> short name, in fixture-parametrization order
+_backend_names = {
+    module: name
+    for name, module in (
+        ("purepy", aggregate_purepy),
+        ("ufunc", aggregate_numpy_ufunc),
+        ("numpy", aggregate_numpy),
+        ("numba", aggregate_numba),
+        ("pandas", aggregate_pandas),
+    )
+    if module is not None
+}
+_implementations = list(_backend_names)
+
+
+def impl_name(impl):
+    """Short backend name ("purepy", "pandas", ...) for a backend module
+    or its ``_BackendProxy``."""
+    if isinstance(impl, _BackendProxy):
+        return impl._name
+    return _backend_names.get(impl)
+
+
+def random_group_idx(rng, size, n_groups):
+    """Random group labels in ``[0, n_groups)`` with the given shape.
+
+    Pass the ``rng`` fixture as generator.
+    """
+    return rng.integers(0, n_groups, size=size)
+
+
+def random_values(rng, size):
+    """Random normally distributed float values with the given shape.
+
+    Pass the ``rng`` fixture as generator.
+    """
+    return rng.standard_normal(size)
+
+
+@cache
+def is_supported(impl, func):
+    """True if the backend runs ``func``.
+
+    Probed with a tiny real-valued and a tiny complex-valued input: a func
+    counts as supported when the backend resolves it for either, so that
+    dtype-specific gaps (e.g. pandas implements sumofsquares only for
+    complex input) do not deselect testable combos. Combos failing for only
+    one dtype still skip at runtime via the backend proxy.
+
+    Accepts a backend module or its ``_BackendProxy``, and a function name
+    or callable.
+    """
+    if isinstance(impl, _BackendProxy):
+        impl = impl._module
+    if not isinstance(func, str):
+        func = getattr(func, "__name__", None)
+        if not isinstance(func, str):
+            return True
+    group_idx = np.array([0, 0, 1, 1])
+    inputs = (np.arange(4.0), np.array([1 + 1j, 2 + 2j, 3 + 3j, 4 + 4j]))
+    for a in inputs:
+        try:
+            impl.aggregate(group_idx, a, func=func)
+        except (NotImplementedError, ValueError):
+            continue
+        except Exception:  # noqa: BLE001 - unexpected, but the func runs
+            return True
+        return True
+    return False
+
+
+def _wrap_notimplemented_skip(impl, name=None):
+    """Backends raise ``NotImplementedError`` for missing functionality.
+    Translate that into ``pytest.skip`` instead of a test error."""
+
+    @wraps(impl)
+    def try_skip(*args, **kwargs):
+        try:
+            return impl(*args, **kwargs)
+        except NotImplementedError:
+            pytest.skip("Functionality not implemented")
+
+    if name:
+        try_skip.__name__ = name
+    return try_skip
+
+
+class _BackendProxy:
+    """Proxy around a backend module.
+
+    - ``aggregate`` is wrapped so that ``NotImplementedError`` becomes a
+      ``pytest.skip``.
+    - every other attribute is forwarded to the module; a missing attribute
+      (e.g. ``step_count`` on backends that do not provide it) also becomes
+      a ``pytest.skip``.
+    """
+
+    def __init__(self, module):
+        self._module = module
+        self._name = _backend_names[module]
+        self.aggregate = _wrap_notimplemented_skip(module.aggregate, f"aggregate_{self._name}")
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            # keep dunder/private probes (copy, pickle, introspection) honest
+            raise AttributeError(name)
+        try:
+            return getattr(self._module, name)
+        except AttributeError:
+            pytest.skip(f"{self._name} backend does not provide {name!r}")
+
+
+func_list = (
+    "sum",
+    "prod",
+    "min",
+    "max",
+    "all",
+    "any",
+    "mean",
+    "median",
+    "trapezoid",
+    "std",
+    "var",
+    "len",
+    "argmin",
+    "argmax",
+    "anynan",
+    "allnan",
+    "cumsum",
+    "sumofsquares",
+    "nansum",
+    "nanprod",
+    "nanmin",
+    "nanmax",
+    "nanmean",
+    "nanmedian",
+    "nantrapezoid",
+    "nanstd",
+    "nanvar",
+    "nanlen",
+    "nanargmin",
+    "nanargmax",
+    "nansumofsquares",
+)
+
+
+def is_purepy(impl, *args, **kwargs):
+    # purepy deviates from the reference behaviour for some inputs (e.g. nan
+    # handling) without raising NotImplementedError.
+    return impl_name(impl) == "purepy"
+
+
+def is_numpy(impl, *args, **kwargs):
+    """True for the numpy backend."""
+    return impl_name(impl) == "numpy"
+
+
+def is_pandas(impl, *args, **kwargs):
+    # pandas deviates from the reference behaviour in some nan cases without
+    # raising NotImplementedError.
+    return impl_name(impl) == "pandas"
+
+
+def is_purepy_or_pandas(impl, *args, **kwargs):
+    # purepy and pandas deviate from the reference behaviour in some nan
+    # cases without raising NotImplementedError.
+    return is_purepy(impl) or is_pandas(impl)

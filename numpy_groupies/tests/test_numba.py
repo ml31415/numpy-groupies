@@ -1,8 +1,10 @@
-"""Tests for the numba fast path (jitted entry)."""
+"""Tests for the numba backend: the jitted fast path, the slow-path
+fallback, the callable cache and the ``out=`` parameter."""
 
 import numpy as np
 import pytest
 
+from .. import uaggregate
 from ..aggregate_numba import aggregate
 from ..utils import resolve_output_dtype
 
@@ -53,8 +55,7 @@ def _make_inputs(func, adtype, rng):
     return group_idx, a
 
 
-def test_matches_slow_path(func, adtype):
-    rng = np.random.default_rng(42)
+def test_matches_slow_path(rng, func, adtype):
     group_idx, a = _make_inputs(func, adtype, rng)
     # a numpy-integer size bypasses the fast path and runs the full machinery
     ref = aggregate(group_idx, a, func=func, size=np.int64(6))
@@ -64,10 +65,9 @@ def test_matches_slow_path(func, adtype):
         np.testing.assert_array_equal(fast, ref)
 
 
-def test_nan_variants(func, adtype):
+def test_nan_variants(rng, func, adtype):
     if func in ("len", "prod", "sumofsquares", "trapezoid", "anynan", "allnan"):
         pytest.skip("no separate nan variant or covered elsewhere")
-    rng = np.random.default_rng(43)
     group_idx = rng.integers(0, 6, 300)
     a = rng.random(300)
     a[group_idx == 2] = np.nan
@@ -79,8 +79,7 @@ def test_nan_variants(func, adtype):
         np.testing.assert_array_equal(fast, ref)
 
 
-def test_argreductions():
-    rng = np.random.default_rng(44)
+def test_argreductions(rng):
     group_idx = rng.integers(0, 8, 400)
     a = rng.random(400)
     for func in ("argmax", "argmin", "nanargmax", "nanargmin"):
@@ -91,8 +90,7 @@ def test_argreductions():
         )
 
 
-def test_size_detection_matches_explicit():
-    rng = np.random.default_rng(45)
+def test_size_detection_matches_explicit(rng):
     group_idx = rng.integers(0, 9, 500)
     a = rng.random(500)
     ref = aggregate(group_idx, a, func="sum", size=int(group_idx.max()) + 1)
@@ -111,15 +109,14 @@ def test_integer_argreductions_preserve_comparisons(func, dtype, size):
 
 
 @pytest.mark.parametrize("func", ["argmin", "argmax", "nanargmin", "nanargmax"])
-def test_integer_argreductions_along_axis(func):
+def test_integer_argreductions_along_axis(rng, func):
     a = np.array([[2**53 + 1, 2**53, 2**53 + 2], [-(2**53), -(2**53) - 1, -(2**53) - 2]])
     expected = [[1, 2, -1], [1, 2, -1]] if "min" in func else [[0, 2, -1], [0, 2, -1]]
     result = aggregate(np.array([0, 0, 1]), a, func=func, axis=1, size=3)
     np.testing.assert_array_equal(result, expected)
 
 
-def test_errors_match_slow_path():
-    rng = np.random.default_rng(46)
+def test_errors_match_slow_path(rng):
     group_idx = rng.integers(0, 5, 100)
     a = rng.random(100)
     # index too large for a given size
@@ -143,9 +140,8 @@ def test_errors_match_slow_path():
         aggregate(group_idx, a[:-1], func="sum")
 
 
-def test_integer_sum_dtype_guess():
+def test_integer_sum_dtype_guess(rng):
     # the 'sum' overflow guess is length dependent, so check several lengths
-    rng = np.random.default_rng(47)
     for adtype in (np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint32, np.bool_):
         for n in (10, 1000):
             group_idx = rng.integers(0, 4, n)
@@ -157,9 +153,8 @@ def test_integer_sum_dtype_guess():
             np.testing.assert_array_equal(fast, ref)
 
 
-def test_slow_path_still_reachable():
+def test_slow_path_still_reachable(rng):
     """Inputs the fast path does not take must keep their behaviour."""
-    rng = np.random.default_rng(50)
     group_idx = rng.integers(0, 4, 100)
     a = rng.random(100)
     # scalar input
@@ -178,3 +173,102 @@ def test_slow_path_still_reachable():
     a3 = rng.random((100, 3))
     ref3 = aggregate(group_idx, a3, func="sum", axis=0, size=np.int64(4))
     np.testing.assert_array_equal(aggregate(group_idx, a3, func="sum", axis=0, size=4), ref3)
+
+
+def test_numba_callable_cache_construction(monkeypatch):
+    pytest.importorskip("numba")
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 1, 1, 2])
+    a = np.arange(4.0)
+    func = lambda x: np.sum(x)
+
+    constructed = []
+    orig_init = aggregate_numba.AggregateGeneric.__init__
+
+    def counting_init(self, func, **kwargs):
+        constructed.append(func)
+        orig_init(self, func, **kwargs)
+
+    monkeypatch.setattr(aggregate_numba.AggregateGeneric, "__init__", counting_init)
+
+    cache = {}
+    aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
+    for _ in range(3):
+        aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
+
+    # one cache entry, and the cached op is reused instead of being
+    # re-constructed on every call (dict.setdefault used to do exactly that)
+    assert len(cache) == 1
+    assert len(constructed) == 1
+
+
+def test_aggregate_out(rng):
+    group_idx = rng.integers(0, 6, 300)
+    a = rng.random(300)
+    ref = aggregate(group_idx, a, func="sum")
+    out = np.empty(6)
+    ret = aggregate(group_idx, a, func="sum", out=out)
+    assert ret is out
+    np.testing.assert_array_equal(out, ref)
+    # wrong shape or dtype is rejected
+    with pytest.raises(TypeError, match="out must have shape"):
+        aggregate(group_idx, a, func="sum", out=np.empty(5))
+    with pytest.raises(TypeError, match="out must have shape"):
+        aggregate(group_idx, a, func="sum", out=np.empty(6, dtype=np.float32))
+    # custom callables do not support out
+    with pytest.raises(NotImplementedError, match="out="):
+        aggregate(group_idx, a, func=lambda x: np.sum(x), out=out)
+
+
+def test_uaggregate_out(rng):
+    group_idx = rng.integers(0, 6, 300)
+    a = rng.random(300)
+    ref = uaggregate(group_idx, a, func="sum")
+    out = np.empty(300)
+    ret = uaggregate(group_idx, a, func="sum", out=out)
+    assert ret is out
+    np.testing.assert_array_equal(out, ref)
+    # shape of ret[group_idx] is enforced
+    with pytest.raises(ValueError, match="expected shape"):
+        uaggregate(group_idx, a, func="sum", out=np.empty(299))
+    with pytest.raises(TypeError, match="result dtype"):
+        uaggregate(group_idx, a, func="sum", out=np.empty(300, dtype=np.int64))
+    # multidimensional group_idx falls back to fancy indexing assignment
+    group_idx_2d = rng.integers(0, 3, (2, 40))
+    a2 = rng.random(40)
+    ref2 = uaggregate(group_idx_2d, a2, func="sum")
+    out2 = np.empty(ref2.shape)
+    ret2 = uaggregate(group_idx_2d, a2, func="sum", out=out2)
+    assert ret2 is out2
+    np.testing.assert_array_equal(out2, ref2)
+
+
+def test_aggregate_out_complex(rng):
+    group_idx = rng.integers(0, 6, 300)
+    a = rng.random(300) + 1j * rng.random(300)
+    ref = aggregate(group_idx, a, func="sum")
+    out = np.empty(6, dtype=np.complex128)
+    ret = aggregate(group_idx, a, func="sum", out=out)
+    assert ret is out
+    np.testing.assert_array_equal(out, ref)
+    # a real out= would throw the imaginary part away, so it is refused
+    with pytest.raises(TypeError, match="dtype complex128"):
+        aggregate(group_idx, a, func="sum", out=np.empty(6))
+    # var measures a real squared magnitude, so a real out= is the right shape
+    ref_var = aggregate(group_idx, a, func="var")
+    out_var = np.empty(6)
+    aggregate(group_idx, a, func="var", out=out_var)
+    np.testing.assert_allclose(out_var, ref_var)
+
+
+def test_uaggregate_out_complex(rng):
+    group_idx = rng.integers(0, 6, 300)
+    a = rng.random(300) + 1j * rng.random(300)
+    ref = uaggregate(group_idx, a, func="sum")
+    out = np.empty(300, dtype=np.complex128)
+    ret = uaggregate(group_idx, a, out=out, func="sum")
+    assert ret is out
+    np.testing.assert_array_equal(out, ref)
+    with pytest.raises(TypeError, match="does not match the result dtype"):
+        uaggregate(group_idx, a, out=np.empty(300), func="sum")

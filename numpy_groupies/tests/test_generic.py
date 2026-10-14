@@ -6,16 +6,15 @@ import warnings
 import numpy as np
 import pytest
 
-from .. import aggregate_np
+from .. import aggregate_np, aggregate_purepy
 from ..utils import default_fill_value, minimum_dtype
-from . import (
-    _deselect_not_implemented,
-    _deselect_purepy,
-    _deselect_purepy_and_invalid_axis,
-    _deselect_purepy_and_pandas,
-    _deselect_purepy_axis,
-    aggregate_purepy,
+from .helpers import (
     func_list,
+    is_pandas,
+    is_purepy,
+    is_purepy_or_pandas,
+    random_group_idx,
+    random_values,
 )
 
 
@@ -183,7 +182,6 @@ default_fill_funcs = tuple(fn for fn in func_list if "cum" not in fn)
 default_fill_funcs += ("first", "last", "nanfirst", "nanlast", "array")
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("a_dtype", ["float64", "int64"], ids=["float", "int"])
 @pytest.mark.parametrize("func", default_fill_funcs, ids=lambda x: getattr(x, "__name__", x))
 def test_default_fill_value(impl, func, a_dtype):
@@ -231,7 +229,7 @@ def test_default_fill_value_table(func, dtype, expected):
     assert repr(default_fill_value(func, dtype)) == repr(expected)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 def test_holes_in_multidim_size(impl):
     # multidimensional labels with the last column cut off, leaving group
     # (2, 3) without any item (issue #32)
@@ -246,7 +244,7 @@ def test_holes_in_multidim_size(impl):
     assert len(res[2, 3]) == 0
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("func", ["sort", "cumsum", "cumprod"])
 def test_one_out_per_in_cannot_fill(impl, func):
     # sort and the cum-functions emit one value per item, so they have
@@ -263,20 +261,20 @@ def test_array_ordering(impl, order, size=10):
     assert impl.aggregate(np.zeros(size, dtype=int), mat[0, :], order=order)[0] == sum(range(size))
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("size", [None, (10, 2)])
 def test_ndim_group_idx(impl, size):
     group_idx = np.vstack((np.repeat(np.arange(10), 10), np.repeat([0, 1], 50)))
     impl.aggregate(group_idx, 1, size=size)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize(["ndim", "order"], list(itertools.product([1, 2, 3], ["C", "F"])))
-def test_ndim_indexing(impl, ndim, order, outsize=10):
+def test_ndim_indexing(impl, rng, ndim, order, outsize=10):
     nindices = int(outsize**ndim)
     outshape = tuple([outsize] * ndim)
-    group_idx = np.random.randint(0, outsize, size=(ndim, nindices))
-    a = np.random.random(group_idx.shape[1])
+    group_idx = random_group_idx(rng, (ndim, nindices), outsize)
+    a = random_values(rng, group_idx.shape[1])
     res = impl.aggregate(group_idx, a, size=outshape, order=order)
     if ndim > 1 and order == "F":
         # 1d arrays always return False here
@@ -305,9 +303,9 @@ def test_len(impl, group_size=5):
         assert all(x == group_size for x in res)
 
 
-def test_nan_len(impl):
+def test_nan_len(impl, rng):
     group_idx = np.arange(0, 20, 2, dtype=int).repeat(5)
-    a = np.random.random(group_idx.size)
+    a = random_values(rng, group_idx.size)
     a[::4] = np.nan
     a[::5] = np.nan
     res = impl.aggregate(group_idx, a, func="nanlen")
@@ -349,9 +347,9 @@ def test_nan_first_last(impl, first_last, nanoffset):
 
 
 @pytest.mark.parametrize(["func", "ddof"], list(itertools.product(["var", "std"], [0, 1, 2])))
-def test_ddof(impl, func, ddof, size=20):
+def test_ddof(impl, rng, func, ddof, size=20):
     group_idx = np.zeros(20, dtype=int)
-    a = np.random.random(group_idx.size)
+    a = random_values(rng, group_idx.size)
     res = impl.aggregate(group_idx, a, func, ddof=ddof)
     ref_func = {"std": np.std, "var": np.var}.get(func)
     ref = ref_func(a, ddof=ddof)
@@ -371,11 +369,11 @@ def test_scalar_input(impl, func):
 
 
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max", "all", "any"])
-def test_nan_input(impl, func, groups=100):
-    if impl.__name__.endswith("pandas"):
+def test_nan_input(impl, rng, func, groups=100):
+    if is_pandas(impl):
         pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(5)
-    a = np.random.random(group_idx.size)
+    a = random_values(rng, group_idx.size)
     a[::2] = np.nan
 
     if func in ("all", "any"):
@@ -426,11 +424,11 @@ def test_nan_form_of_a_group_of_only_nan():
                 np.testing.assert_array_equal(res[:1], expected[:1])
 
 
-def test_nan_input_len(impl, groups=100, group_size=5):
-    if impl.__name__.endswith("pandas"):
+def test_nan_input_len(impl, rng, groups=100, group_size=5):
+    if is_pandas(impl):
         pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(group_size)
-    a = np.random.random(len(group_idx))
+    a = random_values(rng, len(group_idx))
     a[::2] = np.nan
     ref = np.full(groups, group_size, dtype=int)
     res = impl.aggregate(group_idx, a, func=len)
@@ -454,7 +452,7 @@ def test_min_max_nans(impl):
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([4, 3, np.nan, 1, 5, 9, 2, 7])
 
-    if impl.__name__.endswith("pandas"):
+    if is_pandas(impl):
         pytest.skip("pandas always skips nan values")
 
     res = impl.aggregate(group_idx, a, func="min", fill_value=np.nan)
@@ -464,9 +462,9 @@ def test_min_max_nans(impl):
     np.testing.assert_array_equal(res, [np.nan, 9])
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 def test_argmin_argmax_nans(impl):
-    if impl.__name__.endswith("pandas"):
+    if is_pandas(impl):
         pytest.skip("pandas always ignores nans")
 
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
@@ -479,9 +477,9 @@ def test_argmin_argmax_nans(impl):
     np.testing.assert_array_equal(res, [3, -1, -1, -1])
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 def test_nanargmin_nanargmax_nans(impl):
-    if impl.__name__.endswith("pandas"):
+    if is_pandas(impl):
         pytest.skip("pandas doesn't fill indices for all-nan groups with fill_value but with -inf instead")
 
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
@@ -558,7 +556,7 @@ def test_cumsum(impl):
     np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy_and_pandas)
+@pytest.mark.deselect_if(func=is_purepy_or_pandas)
 def test_nancumsum(impl):
     # https://github.com/ml31415/numpy-groupies/issues/79
     group_idx = [0, 0, 0, 1, 1, 0, 0]
@@ -611,7 +609,6 @@ def test_median_nan(impl):
     ],
     ids=["bool", "bool_zero", "int8", "uint8", "int16", "int64"],
 )
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 def test_median_even_group_promotes_integral_middles(impl, func, a, expected):
     # the two middles may not be summed in the dtype of the input, which
     # overflows for narrow integers and makes bool addition a logical or
@@ -621,13 +618,11 @@ def test_median_even_group_promotes_integral_middles(impl, func, a, expected):
 
 @pytest.mark.parametrize("func", ["median", "nanmedian"])
 @pytest.mark.parametrize("dtype", [np.bool_, np.int8, np.uint8, np.int16, np.uint16, np.int32])
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
-def test_median_narrow_dtypes_match_numpy(impl, func, dtype):
+def test_median_narrow_dtypes_match_numpy(impl, rng, func, dtype):
     # group sizes from one to five, so both the odd and the even branch of the
     # median are checked against numpy's own promotion rules
     counts = [1, 2, 3, 4, 5, 2, 4]
     group_idx = np.repeat(np.arange(len(counts)), counts)
-    rng = np.random.default_rng(42)
     if dtype is np.bool_:
         a = rng.integers(0, 2, group_idx.size, dtype=bool)
     else:
@@ -704,13 +699,15 @@ def test_sort(impl, order):
     np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy_and_invalid_axis)
-@pytest.mark.parametrize("axis", (0, 1))
-@pytest.mark.parametrize("size", ((12,), (12, 5)))
+@pytest.mark.parametrize(
+    ("size", "axis"),
+    [((12,), 0), ((12, 5), 0), ((12, 5), 1)],
+    ids=["(12,)-ax0", "(12,5)-ax0", "(12,5)-ax1"],
+)
 @pytest.mark.parametrize("func", func_list)
-def test_along_axis(impl, func, size, axis):
+def test_along_axis(impl, rng, func, size, axis):
     group_idx = np.zeros(size[axis], dtype=int)
-    a = np.random.randn(*size)
+    a = random_values(rng, size)
 
     # add some NaNs to test out nan-skipping
     if "nan" in func and "nanarg" not in func:
@@ -754,7 +751,7 @@ def test_along_axis(impl, func, size, axis):
     np.testing.assert_allclose(actual.squeeze(), expected)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 def test_not_last_axis_reduction(impl):
     group_idx = np.array([1, 2, 2, 0, 1])
     a = np.array([[1.0, 2.0], [4.0, 4.0], [5.0, 2.0], [np.nan, 3.0], [8.0, 7.0]])
@@ -766,7 +763,7 @@ def test_not_last_axis_reduction(impl):
     np.testing.assert_allclose(expected, actual)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("axis", (0, 1))
 def test_along_axis_multidim(impl, axis):
     # https://github.com/ml31415/numpy-groupies/issues/74
@@ -794,8 +791,8 @@ def test_along_axis_multidim(impl, axis):
     np.testing.assert_array_equal(impl.aggregate(group_idx, a, axis=axis, func="sum", size=3), expected)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
-def test_custom_callable(impl):
+@pytest.mark.deselect_if(func=is_purepy)
+def test_custom_callable(impl, rng):
     def custom_callable(x):
         return x.sum()
 
@@ -803,7 +800,7 @@ def test_custom_callable(impl):
     axis = -1
 
     group_idx = np.zeros(size, dtype=int)
-    a = np.random.randn(*size)
+    a = random_values(rng, size)
 
     expected = a.sum(axis=axis, keepdims=True)
     actual = impl.aggregate(group_idx, a, axis=axis, func=custom_callable, fill_value=0)
@@ -812,7 +809,7 @@ def test_custom_callable(impl):
     np.testing.assert_allclose(actual, expected)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 def test_argreduction_nD_array_1D_idx(impl):
     # https://github.com/ml31415/numpy-groupies/issues/41
     group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
@@ -822,9 +819,9 @@ def test_argreduction_nD_array_1D_idx(impl):
     np.testing.assert_equal(actual, expected)
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy)
+@pytest.mark.deselect_if(func=is_purepy)
 def test_argreduction_negative_fill_value(impl):
-    if impl.__name__.endswith("pandas"):
+    if is_pandas(impl):
         pytest.skip("pandas always skips nan values")
 
     group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
@@ -834,7 +831,6 @@ def test_argreduction_negative_fill_value(impl):
     np.testing.assert_equal(actual, expected)
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
 @pytest.mark.parametrize("nan_inds", (None, ([1, 4, 5], Ellipsis), (1, (0, 1, 2, 3))))
 @pytest.mark.parametrize("ddof", (0, 1))
 @pytest.mark.parametrize("func", ("nanvar", "nanstd"))
@@ -866,34 +862,6 @@ def test_cumsum_accuracy(impl):
 def test_empty_group_idx_raises(impl):
     with pytest.raises(ValueError, match="must not be empty"):
         impl.aggregate(np.array([], dtype=int), np.array([], dtype=float))
-
-
-def test_numba_callable_cache_construction(monkeypatch):
-    pytest.importorskip("numba")
-    from numpy_groupies import aggregate_numba
-
-    group_idx = np.array([0, 1, 1, 2])
-    a = np.arange(4.0)
-    func = lambda x: np.sum(x)
-
-    constructed = []
-    orig_init = aggregate_numba.AggregateGeneric.__init__
-
-    def counting_init(self, func, **kwargs):
-        constructed.append(func)
-        orig_init(self, func, **kwargs)
-
-    monkeypatch.setattr(aggregate_numba.AggregateGeneric, "__init__", counting_init)
-
-    cache = {}
-    aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
-    for _ in range(3):
-        aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
-
-    # one cache entry, and the cached op is reused instead of being
-    # re-constructed on every call (dict.setdefault used to do exactly that)
-    assert len(cache) == 1
-    assert len(constructed) == 1
 
 
 @pytest.mark.parametrize("func", ["sum", "nansum"])
@@ -962,7 +930,6 @@ def test_integer_grouped_sum_cancellation(impl, func, values, groups, expected):
     np.testing.assert_array_equal(result, np.array(expected, dtype=result.dtype))
 
 
-@pytest.mark.deselect_if(func=_deselect_purepy_axis)
 @pytest.mark.parametrize("func", ["sum", "nansum"])
 @pytest.mark.parametrize("axis", [1])
 def test_integer_grouped_sum_axis(impl, func, axis):
@@ -975,8 +942,6 @@ def test_integer_grouped_sum_axis(impl, func, axis):
     np.testing.assert_array_equal(result, [[1], [1]])
 
 
-@pytest.mark.deselect_if(func=_deselect_not_implemented)
-@pytest.mark.deselect_if(func=_deselect_purepy_axis)
 @pytest.mark.parametrize("base", [2**53, 2**63, 2**64 - 8])
 @pytest.mark.parametrize("func", ["argmin", "argmax", "nanargmin", "nanargmax"])
 @pytest.mark.parametrize("axis", [None, -1])

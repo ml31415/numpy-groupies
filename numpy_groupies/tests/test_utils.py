@@ -1,6 +1,7 @@
 import numpy as np
 
 from ..utils import check_dtype, unpack
+from .helpers import random_values
 
 
 def test_check_dtype():
@@ -8,16 +9,16 @@ def test_check_dtype():
     assert np.issubdtype(dtype, np.floating)
 
 
-def test_unpack():
+def test_unpack(rng):
     """Keep this test, in case unpack might get reimplemented again at some point."""
     group_idx = np.arange(10)
-    np.random.shuffle(group_idx)
+    rng.shuffle(group_idx)
     group_idx = np.repeat(group_idx, 3)
-    vals = np.random.randn(np.max(group_idx) + 1)
+    vals = random_values(rng, np.max(group_idx) + 1)
     np.testing.assert_array_equal(unpack(group_idx, vals), vals[group_idx])
 
 
-def test_unpack_long():
+def test_unpack_long(rng):
     group_idx = np.repeat(np.arange(10000), 20)
-    vals = np.random.randn(np.max(group_idx) + 1)
+    vals = random_values(rng, np.max(group_idx) + 1)
     np.testing.assert_array_equal(unpack(group_idx, vals), vals[group_idx])
