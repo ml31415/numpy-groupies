@@ -22,7 +22,7 @@ except ImportError:
     aggregate_np = aggregate_ufunc = dummy_no_impl
     multi_arange = label_contiguous_1d = dummy_no_impl
 else:
-    from .aggregate_numpy import aggregate
+    from .aggregate_numpy import aggregate, step_count, step_indices
 
     aggregate_np = aggregate
     from .aggregate_numpy_ufunc import aggregate as aggregate_ufunc
