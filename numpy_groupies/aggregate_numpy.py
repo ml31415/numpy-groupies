@@ -41,10 +41,22 @@ def _sum(
         if a != 1:
             ret *= a
     else:
+        exact_integer = False
+        if a.dtype.kind in "iu" and np.dtype(dtype).kind in "iu":
+            limits = np.iinfo(a.dtype)
+            bound = max(abs(int(limits.min)), int(limits.max))
+            if a.size * bound > 2**53:
+                bound = max(abs(int(a.min(initial=0))), abs(int(a.max(initial=0))))
+                exact_integer = a.size * bound > 2**53
         if iscomplexobj(a):
             ret = np.empty(size, dtype=dtype)
             ret.real = np.bincount(group_idx, weights=a.real, minlength=size)
             ret.imag = np.bincount(group_idx, weights=a.imag, minlength=size)
+        elif exact_integer:
+            # bincount converts weights to float64. Keep integer accumulation
+            # when its partial sums are not guaranteed exactly representable.
+            ret = np.zeros(size, dtype=dtype)
+            np.add.at(ret, group_idx, a.astype(dtype, copy=False))
         else:
             ret = np.bincount(group_idx, weights=a, minlength=size).astype(dtype, copy=False)
 
