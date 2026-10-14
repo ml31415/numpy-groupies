@@ -21,9 +21,6 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
-        # The docs keep hand-aligned example output (`# array([...])`) and small matrices,
-        # which ruff-format collapses; the markdown layout is owned by rumdl instead.
-        exclude: \.md$
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.13.1
