@@ -1,6 +1,9 @@
 name: CI
 on:
-  push: # run on every push to any branch
+  push:
+    branches:
+      - "master"
+      - "citest"
   pull_request:
     branches:
       - "*"
