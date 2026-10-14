@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from .. import aggregate_np, aggregate_ufunc
-from .helpers import aggregate_numba, impl_name, is_purepy, is_purepy_or_pandas
+from .helpers import aggregate_numba, is_pandas, is_purepy, is_purepy_or_pandas
 
 # functions with a well-defined complex result, following numpy semantics - the
 # order statistics included, as numpy orders complex values lexicographically
@@ -139,7 +139,7 @@ def _complex_reference(func, group_idx, a, size):
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 @pytest.mark.parametrize("func", complex_funcs, ids=str)
 def test_complex(impl, func, a_dtype):
-    if impl_name(impl) == "purepy" and func in complex_arg_funcs:
+    if is_purepy(impl) and func in complex_arg_funcs:
         pytest.skip("the pure python implementation reports the index inside the group")
     group_idx = np.array([0, 1, 1, 2, 2, 2])
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, -2 + 0j, 4 - 3j, 6 - 6j]).astype(a_dtype)
@@ -148,7 +148,7 @@ def test_complex(impl, func, a_dtype):
     expected = _complex_reference(func, group_idx, a, 3)
 
     res = np.asarray(res)
-    if impl_name(impl) == "purepy":
+    if is_purepy(impl):
         # the pure python implementation computes with python numbers, which
         # are always double precision
         pass
@@ -457,7 +457,7 @@ def test_complex_order_functions_follow_numpy_lexicographic(impl, func):
             complex(float("inf"), float("inf")),  # the reduction may not start below it
         ]
     )
-    if impl_name(impl) == "purepy" and func in complex_arg_funcs:
+    if is_purepy(impl) and func in complex_arg_funcs:
         pytest.skip("the pure python implementation reports the index inside the group")
 
     res = np.asarray(impl.aggregate(group_idx, a, func=func, size=6))
@@ -486,7 +486,7 @@ def test_complex_nan_in_one_part_of_the_order_functions(impl):
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([1 + 2j, 2 + 3j, complex(1.0, np.nan), 4 + 5j, 5 + 6j, 6 + 7j, 7 + 8j, np.nan + 9j])
 
-    if impl_name(impl) == "pandas":
+    if is_pandas(impl):
         pytest.skip("pandas decides on its own what a nan in a complex value is")
 
     for func, expected in (("argmin", [-1, -1]), ("argmax", [-1, -1])):

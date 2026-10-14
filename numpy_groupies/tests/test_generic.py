@@ -10,7 +10,7 @@ from .. import aggregate_np, aggregate_purepy
 from ..utils import default_fill_value, minimum_dtype
 from .helpers import (
     func_list,
-    impl_name,
+    is_pandas,
     is_purepy,
     is_purepy_or_pandas,
     random_group_idx,
@@ -370,7 +370,7 @@ def test_scalar_input(impl, func):
 
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max", "all", "any"])
 def test_nan_input(impl, rng, func, groups=100):
-    if impl_name(impl) == "pandas":
+    if is_pandas(impl):
         pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(5)
     a = random_values(rng, group_idx.size)
@@ -425,7 +425,7 @@ def test_nan_form_of_a_group_of_only_nan():
 
 
 def test_nan_input_len(impl, rng, groups=100, group_size=5):
-    if impl_name(impl) == "pandas":
+    if is_pandas(impl):
         pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(group_size)
     a = random_values(rng, len(group_idx))
@@ -452,7 +452,7 @@ def test_min_max_nans(impl):
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([4, 3, np.nan, 1, 5, 9, 2, 7])
 
-    if impl_name(impl) == "pandas":
+    if is_pandas(impl):
         pytest.skip("pandas always skips nan values")
 
     res = impl.aggregate(group_idx, a, func="min", fill_value=np.nan)
@@ -464,7 +464,7 @@ def test_min_max_nans(impl):
 
 @pytest.mark.deselect_if(func=is_purepy)
 def test_argmin_argmax_nans(impl):
-    if impl_name(impl) == "pandas":
+    if is_pandas(impl):
         pytest.skip("pandas always ignores nans")
 
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
@@ -479,7 +479,7 @@ def test_argmin_argmax_nans(impl):
 
 @pytest.mark.deselect_if(func=is_purepy)
 def test_nanargmin_nanargmax_nans(impl):
-    if impl_name(impl) == "pandas":
+    if is_pandas(impl):
         pytest.skip("pandas doesn't fill indices for all-nan groups with fill_value but with -inf instead")
 
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
@@ -821,7 +821,7 @@ def test_argreduction_nD_array_1D_idx(impl):
 
 @pytest.mark.deselect_if(func=is_purepy)
 def test_argreduction_negative_fill_value(impl):
-    if impl_name(impl) == "pandas":
+    if is_pandas(impl):
         pytest.skip("pandas always skips nan values")
 
     group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)

@@ -15,7 +15,8 @@ from .helpers import (
     aggregate_numpy,
     aggregate_purepy,
     func_list,
-    impl_name,
+    is_numpy,
+    is_pandas,
     is_purepy,
     random_group_idx,
     random_values,
@@ -26,7 +27,7 @@ from .helpers import (
 def reference(impl):
     """The reference backend as ``_BackendProxy``: numpy for all backends,
     purepy for numpy itself."""
-    if impl_name(impl) == "numpy":
+    if is_numpy(impl):
         return _BackendProxy(aggregate_purepy)
     return _BackendProxy(aggregate_numpy)
 
@@ -49,7 +50,7 @@ def compare_data(rng):
 @pytest.mark.parametrize("func", func_list, ids=lambda x: getattr(x, "__name__", x))
 def test_cmp(impl, reference, compare_data, func, fill_value, decimal=10):
     is_nanfunc = "nan" in getattr(func, "__name__", func)
-    if is_nanfunc and "arg" in func and impl_name(reference) == "purepy":
+    if is_nanfunc and "arg" in func and is_purepy(reference):
         pytest.skip("purepy nanargmin/nanargmax deviate from numpy without raising")
     group_idx, a, nana = compare_data
     a = nana if is_nanfunc else a
@@ -66,11 +67,11 @@ def test_cmp(impl, reference, compare_data, func, fill_value, decimal=10):
         try:
             res = impl.aggregate(group_idx, a, func=func, fill_value=fill_value)
         except ValueError:
-            if impl_name(reference) == "purepy" and np.isnan(fill_value):
+            if is_purepy(reference) and np.isnan(fill_value):
                 pytest.skip(
                     "pure python version uses lists and does not raise ValueErrors when inserting nan into integers"
                 )
-            elif impl_name(impl) == "pandas":
+            elif is_pandas(impl):
                 pytest.skip("pandas now raises ValueError on all-nan arrays")
             else:
                 raise
@@ -79,7 +80,7 @@ def test_cmp(impl, reference, compare_data, func, fill_value, decimal=10):
         try:
             np.testing.assert_allclose(res, ref, rtol=10**-decimal)
         except AssertionError:
-            if "arg" in func and impl_name(impl) == "pandas":
+            if "arg" in func and is_pandas(impl):
                 pytest.skip("pandas doesn't fill indices for all-nan groups with fill_value, but with -inf instead")
             else:
                 raise

@@ -181,7 +181,18 @@ def is_purepy(impl, *args, **kwargs):
     return impl_name(impl) == "purepy"
 
 
+def is_numpy(impl, *args, **kwargs):
+    """True for the numpy backend."""
+    return impl_name(impl) == "numpy"
+
+
+def is_pandas(impl, *args, **kwargs):
+    # pandas deviates from the reference behaviour in some nan cases without
+    # raising NotImplementedError.
+    return impl_name(impl) == "pandas"
+
+
 def is_purepy_or_pandas(impl, *args, **kwargs):
     # purepy and pandas deviate from the reference behaviour in some nan
     # cases without raising NotImplementedError.
-    return impl_name(impl) in ("purepy", "pandas")
+    return is_purepy(impl) or is_pandas(impl)
