@@ -50,6 +50,22 @@ def impl_name(impl):
     return _backend_names.get(impl)
 
 
+def random_group_idx(rng, size, n_groups):
+    """Random group labels in ``[0, n_groups)`` with the given shape.
+
+    Pass the ``rng`` fixture as generator.
+    """
+    return rng.integers(0, n_groups, size=size)
+
+
+def random_values(rng, size):
+    """Random normally distributed float values with the given shape.
+
+    Pass the ``rng`` fixture as generator.
+    """
+    return rng.standard_normal(size)
+
+
 def _wrap_notimplemented_skip(impl, name=None):
     """Backends raise ``NotImplementedError`` for missing functionality.
     Translate that into ``pytest.skip`` instead of a test error."""

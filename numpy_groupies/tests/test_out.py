@@ -7,8 +7,7 @@ from .. import uaggregate
 from ..aggregate_numba import aggregate
 
 
-def test_aggregate_out():
-    rng = np.random.default_rng(48)
+def test_aggregate_out(rng):
     group_idx = rng.integers(0, 6, 300)
     a = rng.random(300)
     ref = aggregate(group_idx, a, func="sum")
@@ -26,8 +25,7 @@ def test_aggregate_out():
         aggregate(group_idx, a, func=lambda x: np.sum(x), out=out)
 
 
-def test_uaggregate_out():
-    rng = np.random.default_rng(49)
+def test_uaggregate_out(rng):
     group_idx = rng.integers(0, 6, 300)
     a = rng.random(300)
     ref = uaggregate(group_idx, a, func="sum")
@@ -50,8 +48,7 @@ def test_uaggregate_out():
     np.testing.assert_array_equal(out2, ref2)
 
 
-def test_aggregate_out_complex():
-    rng = np.random.default_rng(50)
+def test_aggregate_out_complex(rng):
     group_idx = rng.integers(0, 6, 300)
     a = rng.random(300) + 1j * rng.random(300)
     ref = aggregate(group_idx, a, func="sum")
@@ -69,8 +66,7 @@ def test_aggregate_out_complex():
     np.testing.assert_allclose(out_var, ref_var)
 
 
-def test_uaggregate_out_complex():
-    rng = np.random.default_rng(51)
+def test_uaggregate_out_complex(rng):
     group_idx = rng.integers(0, 6, 300)
     a = rng.random(300) + 1j * rng.random(300)
     ref = uaggregate(group_idx, a, func="sum")

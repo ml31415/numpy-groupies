@@ -30,3 +30,12 @@ def pytest_collection_modifyitems(config, items):
     if removed:
         config.hook.pytest_deselected(items=removed)
         items[:] = kept
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--seed",
+        type=int,
+        default=42,
+        help="Seed for the module-wide random number generator (rng fixture).",
+    )

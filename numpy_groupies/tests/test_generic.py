@@ -8,7 +8,14 @@ import pytest
 
 from .. import aggregate_np, aggregate_purepy
 from ..utils import default_fill_value, minimum_dtype
-from .helpers import func_list, impl_name, is_purepy, is_purepy_or_pandas
+from .helpers import (
+    func_list,
+    impl_name,
+    is_purepy,
+    is_purepy_or_pandas,
+    random_group_idx,
+    random_values,
+)
 
 
 def _reference_trapezoid(*args, **kwargs):
@@ -263,11 +270,11 @@ def test_ndim_group_idx(impl, size):
 
 @pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize(["ndim", "order"], list(itertools.product([1, 2, 3], ["C", "F"])))
-def test_ndim_indexing(impl, ndim, order, outsize=10):
+def test_ndim_indexing(impl, rng, ndim, order, outsize=10):
     nindices = int(outsize**ndim)
     outshape = tuple([outsize] * ndim)
-    group_idx = np.random.randint(0, outsize, size=(ndim, nindices))
-    a = np.random.random(group_idx.shape[1])
+    group_idx = random_group_idx(rng, (ndim, nindices), outsize)
+    a = random_values(rng, group_idx.shape[1])
     res = impl.aggregate(group_idx, a, size=outshape, order=order)
     if ndim > 1 and order == "F":
         # 1d arrays always return False here
@@ -296,9 +303,9 @@ def test_len(impl, group_size=5):
         assert all(x == group_size for x in res)
 
 
-def test_nan_len(impl):
+def test_nan_len(impl, rng):
     group_idx = np.arange(0, 20, 2, dtype=int).repeat(5)
-    a = np.random.random(group_idx.size)
+    a = random_values(rng, group_idx.size)
     a[::4] = np.nan
     a[::5] = np.nan
     res = impl.aggregate(group_idx, a, func="nanlen")
@@ -340,9 +347,9 @@ def test_nan_first_last(impl, first_last, nanoffset):
 
 
 @pytest.mark.parametrize(["func", "ddof"], list(itertools.product(["var", "std"], [0, 1, 2])))
-def test_ddof(impl, func, ddof, size=20):
+def test_ddof(impl, rng, func, ddof, size=20):
     group_idx = np.zeros(20, dtype=int)
-    a = np.random.random(group_idx.size)
+    a = random_values(rng, group_idx.size)
     res = impl.aggregate(group_idx, a, func, ddof=ddof)
     ref_func = {"std": np.std, "var": np.var}.get(func)
     ref = ref_func(a, ddof=ddof)
@@ -362,11 +369,11 @@ def test_scalar_input(impl, func):
 
 
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max", "all", "any"])
-def test_nan_input(impl, func, groups=100):
+def test_nan_input(impl, rng, func, groups=100):
     if impl_name(impl) == "pandas":
         pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(5)
-    a = np.random.random(group_idx.size)
+    a = random_values(rng, group_idx.size)
     a[::2] = np.nan
 
     if func in ("all", "any"):
@@ -417,11 +424,11 @@ def test_nan_form_of_a_group_of_only_nan():
                 np.testing.assert_array_equal(res[:1], expected[:1])
 
 
-def test_nan_input_len(impl, groups=100, group_size=5):
+def test_nan_input_len(impl, rng, groups=100, group_size=5):
     if impl_name(impl) == "pandas":
         pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(group_size)
-    a = np.random.random(len(group_idx))
+    a = random_values(rng, len(group_idx))
     a[::2] = np.nan
     ref = np.full(groups, group_size, dtype=int)
     res = impl.aggregate(group_idx, a, func=len)
@@ -611,12 +618,11 @@ def test_median_even_group_promotes_integral_middles(impl, func, a, expected):
 
 @pytest.mark.parametrize("func", ["median", "nanmedian"])
 @pytest.mark.parametrize("dtype", [np.bool_, np.int8, np.uint8, np.int16, np.uint16, np.int32])
-def test_median_narrow_dtypes_match_numpy(impl, func, dtype):
+def test_median_narrow_dtypes_match_numpy(impl, rng, func, dtype):
     # group sizes from one to five, so both the odd and the even branch of the
     # median are checked against numpy's own promotion rules
     counts = [1, 2, 3, 4, 5, 2, 4]
     group_idx = np.repeat(np.arange(len(counts)), counts)
-    rng = np.random.default_rng(42)
     if dtype is np.bool_:
         a = rng.integers(0, 2, group_idx.size, dtype=bool)
     else:
@@ -699,9 +705,9 @@ def test_sort(impl, order):
     ids=["(12,)-ax0", "(12,5)-ax0", "(12,5)-ax1"],
 )
 @pytest.mark.parametrize("func", func_list)
-def test_along_axis(impl, func, size, axis):
+def test_along_axis(impl, rng, func, size, axis):
     group_idx = np.zeros(size[axis], dtype=int)
-    a = np.random.randn(*size)
+    a = random_values(rng, size)
 
     # add some NaNs to test out nan-skipping
     if "nan" in func and "nanarg" not in func:
@@ -786,7 +792,7 @@ def test_along_axis_multidim(impl, axis):
 
 
 @pytest.mark.deselect_if(func=is_purepy)
-def test_custom_callable(impl):
+def test_custom_callable(impl, rng):
     def custom_callable(x):
         return x.sum()
 
@@ -794,7 +800,7 @@ def test_custom_callable(impl):
     axis = -1
 
     group_idx = np.zeros(size, dtype=int)
-    a = np.random.randn(*size)
+    a = random_values(rng, size)
 
     expected = a.sum(axis=axis, keepdims=True)
     actual = impl.aggregate(group_idx, a, axis=axis, func=custom_callable, fill_value=0)

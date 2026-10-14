@@ -53,8 +53,7 @@ def _make_inputs(func, adtype, rng):
     return group_idx, a
 
 
-def test_matches_slow_path(func, adtype):
-    rng = np.random.default_rng(42)
+def test_matches_slow_path(rng, func, adtype):
     group_idx, a = _make_inputs(func, adtype, rng)
     # a numpy-integer size bypasses the fast path and runs the full machinery
     ref = aggregate(group_idx, a, func=func, size=np.int64(6))
@@ -64,10 +63,9 @@ def test_matches_slow_path(func, adtype):
         np.testing.assert_array_equal(fast, ref)
 
 
-def test_nan_variants(func, adtype):
+def test_nan_variants(rng, func, adtype):
     if func in ("len", "prod", "sumofsquares", "trapezoid", "anynan", "allnan"):
         pytest.skip("no separate nan variant or covered elsewhere")
-    rng = np.random.default_rng(43)
     group_idx = rng.integers(0, 6, 300)
     a = rng.random(300)
     a[group_idx == 2] = np.nan
@@ -79,8 +77,7 @@ def test_nan_variants(func, adtype):
         np.testing.assert_array_equal(fast, ref)
 
 
-def test_argreductions():
-    rng = np.random.default_rng(44)
+def test_argreductions(rng):
     group_idx = rng.integers(0, 8, 400)
     a = rng.random(400)
     for func in ("argmax", "argmin", "nanargmax", "nanargmin"):
@@ -91,8 +88,7 @@ def test_argreductions():
         )
 
 
-def test_size_detection_matches_explicit():
-    rng = np.random.default_rng(45)
+def test_size_detection_matches_explicit(rng):
     group_idx = rng.integers(0, 9, 500)
     a = rng.random(500)
     ref = aggregate(group_idx, a, func="sum", size=int(group_idx.max()) + 1)
@@ -111,15 +107,14 @@ def test_integer_argreductions_preserve_comparisons(func, dtype, size):
 
 
 @pytest.mark.parametrize("func", ["argmin", "argmax", "nanargmin", "nanargmax"])
-def test_integer_argreductions_along_axis(func):
+def test_integer_argreductions_along_axis(rng, func):
     a = np.array([[2**53 + 1, 2**53, 2**53 + 2], [-(2**53), -(2**53) - 1, -(2**53) - 2]])
     expected = [[1, 2, -1], [1, 2, -1]] if "min" in func else [[0, 2, -1], [0, 2, -1]]
     result = aggregate(np.array([0, 0, 1]), a, func=func, axis=1, size=3)
     np.testing.assert_array_equal(result, expected)
 
 
-def test_errors_match_slow_path():
-    rng = np.random.default_rng(46)
+def test_errors_match_slow_path(rng):
     group_idx = rng.integers(0, 5, 100)
     a = rng.random(100)
     # index too large for a given size
@@ -143,9 +138,8 @@ def test_errors_match_slow_path():
         aggregate(group_idx, a[:-1], func="sum")
 
 
-def test_integer_sum_dtype_guess():
+def test_integer_sum_dtype_guess(rng):
     # the 'sum' overflow guess is length dependent, so check several lengths
-    rng = np.random.default_rng(47)
     for adtype in (np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint32, np.bool_):
         for n in (10, 1000):
             group_idx = rng.integers(0, 4, n)
@@ -157,9 +151,8 @@ def test_integer_sum_dtype_guess():
             np.testing.assert_array_equal(fast, ref)
 
 
-def test_slow_path_still_reachable():
+def test_slow_path_still_reachable(rng):
     """Inputs the fast path does not take must keep their behaviour."""
-    rng = np.random.default_rng(50)
     group_idx = rng.integers(0, 4, 100)
     a = rng.random(100)
     # scalar input

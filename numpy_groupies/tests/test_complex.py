@@ -230,10 +230,9 @@ complex_symmetric_funcs = tuple(func for func in complex_funcs if func not in co
 
 
 @pytest.mark.parametrize("func", complex_funcs, ids=str)
-def test_complex_matches_equivalent_real_input(impl, func):
+def test_complex_matches_equivalent_real_input(impl, rng, func):
     # values with a zero imaginary part have to aggregate exactly like the very
     # same values as floats - representing them as complex may not change a result
-    rng = np.random.default_rng(11)
     group_idx = np.repeat(np.arange(4), 5)
     x = rng.random(group_idx.size) * 10 - 5
     if func.startswith("nan"):
@@ -245,10 +244,9 @@ def test_complex_matches_equivalent_real_input(impl, func):
 
 
 @pytest.mark.parametrize("func", complex_symmetric_funcs, ids=str)
-def test_complex_conjugation_symmetry(impl, func):
+def test_complex_conjugation_symmetry(impl, rng, func):
     # negating every imaginary part may only negate the imaginary part of the
     # result - the functions measuring a squared magnitude ignore it entirely
-    rng = np.random.default_rng(12)
     group_idx = np.repeat(np.arange(3), 4)
     a = (rng.random(group_idx.size) * 4 - 2) + 1j * (rng.random(group_idx.size) * 4 - 2)
 
@@ -400,10 +398,9 @@ def test_complex_explicit_fill_value(impl):
 
 @pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("axis", (0, 1))
-def test_complex_axis(impl, axis):
+def test_complex_axis(impl, rng, axis):
     # the labels run along the requested axis, the remaining axes are kept
     group_idx = np.array([1, 0, 0, 1])
-    rng = np.random.default_rng(14)
     shape = (4, 3) if axis == 0 else (3, 4)
     a = rng.random(shape) + 1j * rng.random(shape)
 
@@ -418,9 +415,8 @@ def test_complex_axis(impl, axis):
 
 
 @pytest.mark.parametrize("func", ["sum", "mean", "var", "max", "first", "last"])
-def test_complex_non_contiguous_input(impl, func):
+def test_complex_non_contiguous_input(impl, rng, func):
     # a strided view is as valid an input as a contiguous array
-    rng = np.random.default_rng(13)
     base = rng.random(40) + 1j * rng.random(40)
     a = base[::2]  # 20 values, stride 2 - and not contiguous
     assert not a.flags["C_CONTIGUOUS"] and not a.flags["F_CONTIGUOUS"]

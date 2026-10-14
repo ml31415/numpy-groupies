@@ -1,11 +1,11 @@
 import numpy as np
 
 
-def test_step_indices_length(impl):
+def test_step_indices_length(impl, rng):
     """``step_count`` and ``step_indices`` length agree with a numpy reference."""
     group_idx = np.array([1, 1, 1, 2, 2, 3, 3, 4, 4, 2, 2], dtype=int)
     for _ in range(20):
-        np.random.shuffle(group_idx)
+        rng.shuffle(group_idx)
         step_cnt_ref = np.count_nonzero(np.diff(group_idx))
         assert impl.step_count(group_idx) == step_cnt_ref + 1
         assert len(impl.step_indices(group_idx)) == step_cnt_ref + 2
