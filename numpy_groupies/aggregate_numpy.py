@@ -433,6 +433,13 @@ def _var(
 ) -> np.ndarray:
     if np.ndim(a) == 0:
         raise ValueError("cannot take variance with scalar a")
+    if a.dtype.kind in "iu":
+        bound = max(abs(int(a.min(initial=0))), abs(int(a.max(initial=0))))
+        if a.size * bound > 2**53:
+            # Center before float conversion so large integer offsets do not
+            # erase small deviations. Python integers also avoid wraparound.
+            origins = _first(group_idx, a, size, 0, dtype=a.dtype).astype(object)
+            a = (a.astype(object) - origins[group_idx]).astype(np.float64)
     counts = np.bincount(group_idx, minlength=size)
     if iscomplexobj(a):
         # np.bincount does not take complex weights - accumulate the real and

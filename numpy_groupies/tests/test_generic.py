@@ -963,3 +963,37 @@ def test_uint64_argreductions_preserve_order(impl, base, func, axis):
         expected = np.stack([expected, expected])
     result = np.asarray(impl.aggregate(group_idx, a, func=func, axis=axis, fill_value=-1))
     np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+@pytest.mark.parametrize("func", ["var", "std", "nanvar", "nanstd"])
+@pytest.mark.parametrize("ddof", [0, 1])
+def test_numpy_variance_large_integer_offset(dtype, func, ddof):
+    values = np.array([2**60, 2**60 + 1, 2**60 + 7, 2**60 + 10], dtype=dtype)
+    labels = np.array([0, 0, 1, 1])
+    expected = np.array([0.25, 2.25]) * (2 if ddof else 1)
+    if func.endswith("std"):
+        expected = np.sqrt(expected)
+    original = values.copy()
+    actual = aggregate_np(labels, values, func=func, ddof=ddof, size=3, fill_value=7)
+    np.testing.assert_array_equal(actual, np.r_[expected, 7])
+    np.testing.assert_array_equal(values, original)
+
+
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+@pytest.mark.parametrize("func", ["var", "std"])
+def test_numpy_variance_full_integer_range(dtype, func):
+    limits = np.iinfo(dtype)
+    values = np.array([limits.min, limits.max], dtype=dtype)
+    # The distance is a Python integer, including uint64 and opposite signs.
+    expected = (int(limits.max) - int(limits.min)) ** 2 / 4
+    if func == "std":
+        expected = np.sqrt(expected)
+    actual = aggregate_np(np.array([0, 0]), values, func=func)
+    np.testing.assert_allclose(actual, [expected], rtol=1e-15)
+
+
+def test_numpy_variance_large_integer_offset_axis():
+    values = np.array([[2**60, 2**60 + 1], [2**60 + 10, 2**60 + 13]], dtype=np.int64)
+    actual = aggregate_np(np.array([0, 0]), values, axis=1, func="var")
+    np.testing.assert_array_equal(actual, [[0.25], [2.25]])
