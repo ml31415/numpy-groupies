@@ -1,5 +1,6 @@
 import itertools
 import math
+import numbers
 import operator
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
@@ -20,7 +21,19 @@ from .aggregate_common import (
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-# min, max, sum, all, any - builtin
+
+# min, max, all, any - builtin
+
+
+def _sum(x: Sequence[Any]) -> Any:
+    # builtin sum over numpy integers accumulates in the input dtype without
+    # promotion (NEP 50), so large groups silently wrap - python ints keep
+    # the per-group accumulation exact, everything else (floats, complex,
+    # numpy bools, decimals) keeps the builtin behaviour; numbers is stdlib
+    # and numpy registers its integer scalars as Integral
+    if all(isinstance(val, numbers.Integral) for val in x):
+        return sum(int(val) for val in x)
+    return sum(x)
 
 
 def _last(x: Sequence[Any]) -> Any:
@@ -136,7 +149,7 @@ def _propagate_nan(reduction):
 _impl_dict = {
     "min": _propagate_nan(min),
     "max": _propagate_nan(max),
-    "sum": sum,
+    "sum": _sum,
     "prod": _prod,
     "last": _last,
     "first": _first,
