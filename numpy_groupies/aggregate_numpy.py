@@ -190,7 +190,8 @@ def _argmax(
 ) -> np.ndarray:
     # the mask value has to be the smallest value of numpy's order, which for a
     # complex dtype is -inf-infj and not -inf+0j (see minval and maxval)
-    a_ = np.where(np.isnan(a), minval(fill_value, a.dtype), a) if _nansqueeze else a
+    # Integer inputs have no NaNs; replacing them can promote uint64 to float64.
+    a_ = np.where(np.isnan(a), minval(fill_value, a.dtype), a) if _nansqueeze and a.dtype.kind in "fc" else a
     group_max = _max(group_idx, a_, size, np.nan)
     # nan should never be maximum, so use a and not a_
     is_max = a == group_max[group_idx]
@@ -211,7 +212,8 @@ def _argmin(
 ) -> np.ndarray:
     # the mask value has to be the largest value of numpy's order, which for a
     # complex dtype is inf+infj and not inf+0j (see minval and maxval)
-    a_ = np.where(np.isnan(a), maxval(fill_value, a.dtype), a) if _nansqueeze else a
+    # Integer inputs have no NaNs; replacing them can promote uint64 to float64.
+    a_ = np.where(np.isnan(a), maxval(fill_value, a.dtype), a) if _nansqueeze and a.dtype.kind in "fc" else a
     group_min = _min(group_idx, a_, size, np.nan)
     # nan should never be minimum, so use a and not a_
     is_min = a == group_min[group_idx]
