@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .compose import (
+    build_custom_kernel,
     build_kernel,
     complex_less,
     rule_bool,
@@ -15,6 +16,7 @@ from .compose import (
     rule_sumofsquares,
     rule_widen_int,
 )
+from .jit import njit_stable
 
 
 class ReductionState(typing.NamedTuple):
@@ -28,7 +30,7 @@ class ReductionState(typing.NamedTuple):
 
 
 class SelectionState(typing.NamedTuple):
-    """The state of the select-form reductions (first, min, max): ``out``
+    """The state of the select-form reductions (min, max): ``out``
     holds the selected value or the running best and doubles as the result,
     ``pending`` marks the groups that have not seen a value yet - their first
     value always wins, a nan poisons the group."""
@@ -189,20 +191,48 @@ last = build_kernel(
 )
 
 
-def _first_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
+def _first_driver_factory(nan_variant):
+    # The loop body is inlined on purpose: with numba >= 0.67 the composed
+    # driver plus a separate njit update call compiles ~12x slower here -
+    # see the note in argreductions._argmax_driver_factory.
+    @njit_stable
+    def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
+        # numba's np.max reduction is several times faster than a scalar
+        # loop here; negative indices slip through and are caught inside
+        # the loop below
+        size = np.max(group_idx) + 1
+        if size_arg >= 0:
+            # an explicit output size may be larger than the largest
+            # index, but never smaller
+            if size > size_arg:
+                raise ValueError("one or more indices in group_idx are too large")
+            size = size_arg
+        out = np.full(size, fill_value, out_dtype)
+        pending = np.ones(size, np.bool_)
+        # group_idx.shape[0] instead of len - the module global 'len' is the
+        # len kernel, not the builtin
+        for i in range(group_idx.shape[0]):
+            ri = group_idx[i]
+            if ri < 0:
+                raise ValueError("negative indices not supported")
+            if ri >= size:
+                raise ValueError("one or more indices in group_idx are too large")
+            val = a[i]
+            # the nan variant skips nans entirely, the plain one takes the
+            # first value whatever it is (folded away for the plain one)
+            if nan_variant and val != val:
+                continue
+            if pending[ri]:
+                pending[ri] = False
+                out[ri] = val
+        return out
+
+    return driver
 
 
-def _first_update(st, ri, i, val, fill_value, ddof):
-    if st.pending[ri]:
-        st.pending[ri] = False
-        st.out[ri] = val
-
-
-first = build_kernel(
+first = build_custom_kernel(
     "first",
-    init=_first_init,
-    update=_first_update,
+    driver_factory=_first_driver_factory,
     rule=rule_same,
     fill_default=np.nan,
     doc="First value of every group",
