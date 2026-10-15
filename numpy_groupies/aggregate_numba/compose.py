@@ -3,7 +3,8 @@
 Every operation is described by a ``State`` namedtuple - its named per-group
 scratch arrays - and a handful of tiny jitted building blocks:
 
-``init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value) -> state``
+``init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value,
+forced_fill) -> state``
     allocates the scratch arrays, including the ``out`` result array.  The
     auxiliary dtype carries the widened accumulation dtype of the dispersion
     kernels (the running deviation sum); every other operation ignores it.
@@ -22,6 +23,8 @@ scratch arrays - and a handful of tiny jitted building blocks:
     too few values return the fill value
 ``untouched(state) -> bool array``
     the groups that received no value, queried to apply a custom fill value
+    (empty whenever the fill value equals the forced default - the ops
+    then skip their untouched bookkeeping entirely)
 
 The factory assembles these into ONE compiled driver per operation that owns
 the group loop, bounds checks and pass structure, and exposes it as a plain
@@ -355,7 +358,7 @@ def build_kernel(
                 if size > size_arg:
                     raise ValueError("one or more indices in group_idx are too large")
                 size = size_arg
-            st = init_c(size, len(group_idx), out_dtype, aux_dtype, a.dtype, fill_value)
+            st = init_c(size, len(group_idx), out_dtype, aux_dtype, a.dtype, fill_value, forced_fill)
             seed_c(st, a)
             for i in range(len(group_idx)):
                 ri = group_idx[i]

@@ -140,19 +140,24 @@ class TrapezoidState(typing.NamedTuple):
     prev: npt.NDArray[np.generic]
     pending: npt.NDArray[np.bool_]
     untouched: npt.NDArray[np.bool_]
+    track: bool
 
 
-def _trapezoid_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+def _trapezoid_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    track = fill_value != forced_fill
+    untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return TrapezoidState(
         np.zeros(size, out_dtype),
         np.empty(size, in_dtype),
         np.ones(size, np.bool_),
-        np.ones(size, np.bool_),
+        untouched,
+        track,
     )
 
 
 def _trapezoid_update(st, ri, i, val, fill_value, ddof):
-    st.untouched[ri] = False
+    if st.track:
+        st.untouched[ri] = False
     if st.pending[ri]:
         # the first sample of a group has no predecessor to integrate with
         st.pending[ri] = False

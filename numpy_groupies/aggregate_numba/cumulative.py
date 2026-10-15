@@ -21,7 +21,7 @@ class CumulativeState(typing.NamedTuple):
     out: npt.NDArray[np.generic]
 
 
-def _cumsum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+def _cumsum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
     # every position of out is written in the same pass that fills running
     return CumulativeState(np.zeros(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
@@ -59,7 +59,7 @@ cumsum = build_kernel(
 )
 
 
-def _cumprod_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+def _cumprod_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
     return CumulativeState(np.ones(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
 
@@ -106,7 +106,7 @@ class CumExtremaState(typing.NamedTuple):
     pending: npt.NDArray[np.bool_]
 
 
-def _cummax_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+def _cummax_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
     return CumExtremaState(
         np.full(size, fill_value, out_dtype),
         np.full(n_input, fill_value, out_dtype),
@@ -149,7 +149,7 @@ cummax = build_kernel(
 )
 
 
-def _cummin_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+def _cummin_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
     return CumExtremaState(
         np.full(size, fill_value, out_dtype),
         np.full(n_input, fill_value, out_dtype),

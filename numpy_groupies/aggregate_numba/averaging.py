@@ -159,7 +159,7 @@ class MeanState(typing.NamedTuple):
     high: npt.NDArray[np.generic]
 
 
-def _mean_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+def _mean_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
     return MeanState(
         np.zeros(size, out_dtype),
         np.zeros(size, np.int64),
@@ -258,7 +258,7 @@ class StdState(typing.NamedTuple):
     high: npt.NDArray[np.generic]
 
 
-def _std_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+def _std_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
     return StdState(
         np.zeros(size, out_dtype),
         np.zeros(size, np.int64),
