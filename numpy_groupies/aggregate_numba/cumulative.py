@@ -35,7 +35,7 @@ def _cumsum_update_nan(st, ri, i, val, fill_value, ddof):
     # unchanged, the position still records it.  integer input has no nan
     # and keeps the plain path (a python literal 0 would unify uint64 with
     # int64 into float64)
-    if isinstance(val, (float, complex)):
+    if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.running[ri] += val if val == val else 0.0
     else:
         # integer and bool input have no nan, see _sum_update_nan
@@ -68,7 +68,7 @@ def _cumprod_update(st, ri, i, val, fill_value, ddof):
 
 
 def _cumprod_update_nan(st, ri, i, val, fill_value, ddof):
-    if isinstance(val, (float, complex)):
+    if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.running[ri] *= val if val == val else 1.0
     else:
         # integer and bool input have no nan, see _sum_update_nan

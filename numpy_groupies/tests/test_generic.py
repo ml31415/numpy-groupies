@@ -859,6 +859,29 @@ def test_cumsum_accuracy(impl):
     np.testing.assert_allclose(actual, expected)
 
 
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.complex64, np.complex128])
+@pytest.mark.parametrize("func", ["cumsum", "nancumsum"])
+@pytest.mark.parametrize("large", [2.0**60, np.inf, -np.inf, np.nan])
+def test_cumsum_groups_are_independent(impl, dtype, func, large):
+    if is_pandas(impl) and np.isinf(large):
+        # pandas' own groupby cumsum maps inf to nan at the group boundary
+        # ([inf, 2] -> [inf, nan]) - an upstream deviation from the numpy
+        # reference this test pins for every other backend
+        pytest.skip("pandas' groupby cumsum turns inf into nan")
+    group_idx = np.array([0, 1, 0, 1, 2, 2])
+    a = np.array([large, 1, large, 2, 3, 4], dtype=dtype)
+    if np.issubdtype(dtype, np.complexfloating):
+        a.imag = [large, 2, large, 3, 4, 5]
+    original = a.copy()
+    expected = np.empty_like(a)
+    for group in range(3):
+        positions = np.flatnonzero(group_idx == group)
+        expected[positions] = getattr(np, func)(a[positions])
+    result = impl.aggregate(group_idx, a, func=func, dtype=np.dtype(dtype))
+    np.testing.assert_array_equal(result, expected)
+    np.testing.assert_array_equal(a, original)
+
+
 def test_empty_group_idx_raises(impl):
     with pytest.raises(ValueError, match="must not be empty"):
         impl.aggregate(np.array([], dtype=int), np.array([], dtype=float))

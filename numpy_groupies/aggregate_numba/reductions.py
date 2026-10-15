@@ -62,10 +62,13 @@ def _sum_update_nan(st, ri, i, val, fill_value, ddof):
     # branchless select-form twin of _sum_update - nans contribute nothing
     # and do not ready their group for a custom fill value; the guarded
     # equivalent turns the loop scalar and compiles ~3x slower
+    # the tuple has to name the 32 bit numpy scalars explicitly - numba
+    # maps python float/complex to the 64 bit variants only, and a float32
+    # or complex64 nan taking the plain path would poison the accumulator
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
-    if isinstance(val, (float, complex)):
+    if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.out[ri] += val if valid else 0.0
     else:
         # integer and bool input have no nan - the plain path keeps wide
@@ -107,7 +110,7 @@ def _prod_update_nan(st, ri, i, val, fill_value, ddof):
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
-    if isinstance(val, (float, complex)):
+    if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.out[ri] *= val if valid else 1.0
     else:
         # integer and bool input have no nan, see _sum_update_nan
@@ -500,7 +503,7 @@ def _sumofsquares_update_nan(st, ri, i, val, fill_value, ddof):
         st.untouched[ri] = st.untouched[ri] & (val != val)
     if isinstance(val, bool):
         st.out[ri] += val * val
-    elif isinstance(val, (float, complex)):
+    elif isinstance(val, (float, complex, np.float32, np.complex64)):
         st.out[ri] += (val.real * val.real + val.imag * val.imag) if valid else 0.0
     else:
         # integer input has no nan, see _sum_update_nan
