@@ -11,6 +11,17 @@ import hashlib
 import inspect
 
 import numba as nb
+from numba.core import caching
+
+# Cache revision of this package - folded into the on-disk cache file names
+# below.  Numba keys its cache files by module and qualname of the compiled
+# function and pickles the index payload (which embeds the compiled-over
+# signatures and their types) BEFORE checking the source stamp - renaming a
+# class that appears in a signature therefore crashes the cache read with an
+# AttributeError on the dangling global.  Bumping the revision renames every
+# cache file of this package, orphaning the stale indexes (they keep lying
+# around, numba never reads them again).
+_cache_revision = "2"
 
 
 def njit_stable(py_func=None, cache=True, **options):
@@ -61,12 +72,23 @@ def njit_stable(py_func=None, cache=True, **options):
                 ]
             )
             disp._set_uuid(hashlib.sha256(fingerprint.encode()).hexdigest()[:16])
+            # move the on-disk cache of this dispatcher to revisioned file
+            # names - the numba defaults key by module and qualname only, so
+            # refactoring signature-relevant globals would crash the read of
+            # the stale index (see the comment on _cache_revision)
+            impl = disp._cache._impl
+            impl._filename_base = f"{impl._filename_base}-r{_cache_revision}"
+            disp._cache._cache_file = caching.IndexDataCacheFile(
+                cache_path=disp._cache._cache_path,
+                filename_base=impl.filename_base,
+                source_stamp=impl.locator.get_source_stamp(),
+            )
         except Exception:  # noqa: BLE001 - any numba internals change must degrade to no caching
             # numba internals changed: without a stable uuid the closure
             # hash differs in every process, the cache could never hit and
             # would grow without bound - disable caching for this
             # dispatcher instead of polluting the disk (numba #6522)
-            disp.targetoptions["cache"] = False
+            disp._cache = caching.NullCache()
         return disp
 
     if py_func is None:
