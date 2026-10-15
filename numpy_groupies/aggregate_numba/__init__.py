@@ -10,8 +10,8 @@ import numpy.typing as npt
 
 from ..aggregate_common import DEFAULT_FILL_VALUE, aggregate_common_doc, get_func
 from ..utils import aliasing
-from .base import AggregateGeneric
 from .gather import unpack_into
+from .ops import AggregateGeneric
 from .registry import _dispatch, _impl_dict
 from .steps import step_count, step_indices
 

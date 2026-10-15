@@ -1,83 +1,87 @@
 """Index-returning reductions: argmax and argmin."""
 
-from .base import AggregateOp, complex_less
-from .jit import njit_stable
+import typing
+
+import numpy as np
+
+from .compose import complex_less, kernel, rule_int64
 
 
-class ArgMax(AggregateOp):
-    mean_fill_value = 0
-    mean_dtype = None
+class ArgMaxState(typing.NamedTuple):
+    """``out`` holds the input position of the running maximum and doubles as
+    the result, ``running`` is the maximum itself and ``pending`` marks the
+    groups that have not seen a value.  A nan poisons its group: the running
+    value becomes a nan no finite value can beat and the result falls back to
+    the fill value."""
 
-    @classmethod
-    def callable(cls, nans=False, reverse=False, scalar=False):
-        # The loop body is inlined on purpose: with numba >= 0.67 the generic
-        # loop plus a separate njit `_inner` call compiles ~20x slower for this
-        # reduction. The inlined logic is equivalent to the former _inner:
-        #   first value of a group seeds ret/mean, nans reset the group to
-        #   fill_value, and for nans=True nans are skipped entirely.
-        if scalar or reverse:
-            # scalar/reverse argreductions are not meaningfully supported;
-            # keep the generic (lazy) path for unchanged behaviour.
-            return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
-
-        @njit_stable
-        def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
-            size = len(ret)
-            for i in range(len(group_idx)):
-                ri = group_idx[i]
-                if ri < 0:
-                    raise ValueError("negative indices not supported")
-                if ri >= size:
-                    raise ValueError("one or more indices in group_idx are too large")
-                cmp_val = a[i]
-                if cmp_val != cmp_val:
-                    if nans:
-                        continue
-                    counter[ri] = 0
-                    mean[ri] = cmp_val
-                    ret[ri] = fill_value
-                    continue
-                if counter[ri]:
-                    counter[ri] = 0
-                    mean[ri] = cmp_val
-                    ret[ri] = i
-                elif complex_less(mean[ri], cmp_val):
-                    mean[ri] = cmp_val
-                    ret[ri] = i
-
-        return loop
+    out: np.ndarray
+    running: np.ndarray
+    pending: np.ndarray
 
 
-class ArgMin(ArgMax):
-    @classmethod
-    def callable(cls, nans=False, reverse=False, scalar=False):
-        # inlined on purpose, see ArgMax.callable
-        if scalar or reverse:
-            return AggregateOp.callable(nans=nans, reverse=reverse, scalar=scalar)
+def _argmax_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return ArgMaxState(np.full(size, fill_value, out_dtype), np.empty(size, in_dtype), np.ones(size, np.bool_))
 
-        @njit_stable
-        def loop(group_idx, a, ret, counter, mean, outer, fill_value, ddof):
-            size = len(ret)
-            for i in range(len(group_idx)):
-                ri = group_idx[i]
-                if ri < 0:
-                    raise ValueError("negative indices not supported")
-                if ri >= size:
-                    raise ValueError("one or more indices in group_idx are too large")
-                cmp_val = a[i]
-                if cmp_val != cmp_val:
-                    if nans:
-                        continue
-                    counter[ri] = 0
-                    mean[ri] = cmp_val
-                    ret[ri] = fill_value
-                    continue
-                if counter[ri]:
-                    counter[ri] = 0
-                    mean[ri] = cmp_val
-                    ret[ri] = i
-                elif complex_less(cmp_val, mean[ri]):
-                    mean[ri] = cmp_val
-                    ret[ri] = i
 
-        return loop
+def _argmax_update(st, ri, i, val, fill_value, ddof):
+    if val != val:
+        st.pending[ri] = False
+        st.running[ri] = val
+        st.out[ri] = fill_value
+    elif st.pending[ri]:
+        st.pending[ri] = False
+        st.running[ri] = val
+        st.out[ri] = i
+    elif complex_less(st.running[ri], val):
+        st.running[ri] = val
+        st.out[ri] = i
+
+
+argmax = kernel(
+    "argmax",
+    init=_argmax_init,
+    update=_argmax_update,
+    rule=rule_int64,
+    fill_default=-1,
+    doc="Position of the maximum value of every group",
+)
+
+
+class ArgMinState(typing.NamedTuple):
+    """``out`` holds the input position of the running minimum and doubles as
+    the result, ``running`` is the minimum itself and ``pending`` marks the
+    groups that have not seen a value.  A nan poisons its group: the running
+    value becomes a nan no finite value can beat and the result falls back to
+    the fill value."""
+
+    out: np.ndarray
+    running: np.ndarray
+    pending: np.ndarray
+
+
+def _argmin_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return ArgMinState(np.full(size, fill_value, out_dtype), np.empty(size, in_dtype), np.ones(size, np.bool_))
+
+
+def _argmin_update(st, ri, i, val, fill_value, ddof):
+    if val != val:
+        st.pending[ri] = False
+        st.running[ri] = val
+        st.out[ri] = fill_value
+    elif st.pending[ri]:
+        st.pending[ri] = False
+        st.running[ri] = val
+        st.out[ri] = i
+    elif complex_less(val, st.running[ri]):
+        st.running[ri] = val
+        st.out[ri] = i
+
+
+argmin = kernel(
+    "argmin",
+    init=_argmin_init,
+    update=_argmin_update,
+    rule=rule_int64,
+    fill_default=-1,
+    doc="Position of the minimum value of every group",
+)

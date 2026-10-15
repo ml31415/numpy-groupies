@@ -23,7 +23,11 @@ def njit_stable(py_func=None, cache=True, **options):
     every run appends a new cache file instead (see numba #6522).  Pinning
     a content-derived uuid keeps the closure hash stable across processes,
     which makes the on-disk cache effective for the factory-nested loops
-    of this module.
+    of this module.  Measured against numba 0.68: the cache index of a
+    cached *caller* now survives unpinned closures, but the dispatcher-level
+    keys do not (direct driver calls recompile in every process) and the
+    cache directory keeps growing with duplicate entries - the pinning is
+    still required everywhere in a closure chain.
 
     The fingerprint covers module, qualname, source, options and the
     closure contents (dispatchers contribute their already pinned uuid),

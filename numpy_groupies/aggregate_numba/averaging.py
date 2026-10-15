@@ -2,19 +2,21 @@
 
 Integer input is centered on the first value of each group and the global
 min/max is tracked in the same accumulation pass; the exactness gates run
-between the two passes and raise ``OverflowError`` for the same inputs in
-every backend (see ``aggregate_common`` for the policy constants).
+between the passes and raise ``OverflowError`` for the same inputs in every
+backend (see ``aggregate_common`` for the policy constants).
 """
+
+import typing
 
 import numba as nb
 import numpy as np
 
 from ..aggregate_common import EXACT_FLOAT64_INTEGER_LIMIT, INT64_DEVIATION_LIMIT, INT64_MIN
-from .base import Aggregate2pass
+from .compose import kernel, rule_float, rule_real_float
 from .jit import njit_stable
 
 
-def _track_extrema(val, ret, origin):
+def _track_extrema(val, low, high):
     """Fold the global min/max tracking for the integer limit checks into the
     accumulation pass - replaced per dtype by the overload below, inexact
     input never tracks anything."""
@@ -22,47 +24,17 @@ def _track_extrema(val, ret, origin):
 
 
 @nb.extending.overload(_track_extrema)
-def _track_extrema_overload(val, ret, origin):
+def _track_extrema_overload(val, low, high):
     if isinstance(val, nb.types.Integer):
 
-        def _impl(val, ret, origin):
-            # the two slots behind the per-group origins of the output hold
-            # the running minimum and maximum
-            size = len(ret)
-            origin[size] = min(origin[size], val)
-            origin[size + 1] = max(origin[size + 1], val)
+        def _impl(val, low, high):
+            low[0] = min(low[0], val)
+            high[0] = max(high[0], val)
 
         return _impl
 
-    def _impl(val, ret, origin):
+    def _impl(val, low, high):
         pass
-
-    return _impl
-
-
-def _accumulate_mean(val, ret, counter, origin, ri):
-    """Accumulate one value into the running mean sums.
-
-    Replaced per dtype by the overload below: integer input also tracks the
-    global min/max for the limit check between the passes.
-    """
-    raise NotImplementedError  # replaced by the overload below
-
-
-@nb.extending.overload(_accumulate_mean)
-def _accumulate_mean_overload(val, ret, counter, origin, ri):
-    if isinstance(val, nb.types.Integer):
-
-        def _impl(val, ret, counter, origin, ri):
-            counter[ri] += 1
-            ret[ri] += val
-            _track_extrema(val, ret, origin)
-
-        return _impl
-
-    def _impl(val, ret, counter, origin, ri):
-        counter[ri] += 1
-        ret[ri] += val
 
     return _impl
 
@@ -142,65 +114,6 @@ def _mean_limit_check_overload(low, high, count):
     return _impl
 
 
-class Mean(Aggregate2pass):
-    forced_fill_value = 0
-    counter_fill_value = 0
-    counter_dtype = int
-    # track the global min/max inside the accumulation pass and run the exact-
-    # mean limit check between the passes - no extra data pass is spent
-    integer_gate = True
-
-    @staticmethod
-    def _gate_check(low, high, count):
-        _mean_limit_check(low, high, count)
-
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, origin, fill_value):
-        _accumulate_mean(val, ret, counter, origin, ri)
-
-    @staticmethod
-    def _2pass_inner(ri, ret, counter, mean, ddof):
-        return ret[ri] / counter[ri]
-
-
-def _accumulate_std(val, ret, counter, mean, origin, ri):
-    """Accumulate one value into the running var/std sums.
-
-    Replaced per dtype by the overload below: integer input is centered on
-    the first value of its group so that a large common offset cannot erase
-    small deviations, inexact input keeps the plain sums.
-    """
-    raise NotImplementedError  # replaced by the overload below
-
-
-@nb.extending.overload(_accumulate_std)
-def _accumulate_std_overload(val, ret, counter, mean, origin, ri):
-    if isinstance(val, nb.types.Integer):
-
-        def _impl(val, ret, counter, mean, origin, ri):
-            if counter[ri] == 1:
-                origin[ri] = val
-            # two's-complement deviation, exact in int64 because the gate
-            # check between the passes verified that the values span less
-            # than +/-2**63; uint64 input wraps into the correct signed bit
-            # pattern via the np.int64 casts
-            dev = np.int64(val) - np.int64(origin[ri])
-            mean[ri] += dev
-            dev_sq = np.float64(dev)
-            ret[ri] += dev_sq * dev_sq
-            _track_extrema(val, ret, origin)
-
-        return _impl
-
-    def _impl(val, ret, counter, mean, origin, ri):
-        mean[ri] += val
-        # the squared magnitude of the complex deviation is real, so ret stays
-        # real for complex input - matching np.var
-        ret[ri] += val.real * val.real + val.imag * val.imag
-
-    return _impl
-
-
 def _span_limit_check(low, high, count):
     """Refuse integer variances whose exact centering would overflow int64 -
     replaced per dtype by the overload below, a no-op for inexact input."""
@@ -234,40 +147,188 @@ def _span_limit_check_overload(low, high, count):
     return _impl
 
 
-class Std(Mean):
-    mean_fill_value = 0
-    # the running sums accumulate in float64 (complex input in complex128 via
-    # result_type): integer deviations must not wrap in an int64 accumulator,
-    # and for float32/complex64 input this matches the numpy accumulation
-    # precision
-    mean_dtype = np.float64
-    integer_centering = True
-    integer_gate = True
+class MeanState(typing.NamedTuple):
+    """``out`` doubles as the running sum until the finishing pass divides it
+    by ``count``; ``low``/``high`` are the single-element global extrema
+    scratch that feed the integer exactness gate."""
 
-    @staticmethod
-    def _gate_check(low, high, count):
-        _span_limit_check(low, high, count)
+    out: np.ndarray
+    count: np.ndarray
+    low: np.ndarray
+    high: np.ndarray
 
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, origin, fill_value):
-        counter[ri] += 1
-        if isinstance(val, bool):
-            mean[ri] += val
-            # bool has no .real in numba and keeps the plain val * val product
-            ret[ri] += val * val
-        else:
-            _accumulate_std(val, ret, counter, mean, origin, ri)
 
-    @staticmethod
-    def _2pass_inner(ri, ret, counter, mean, ddof):
-        m = mean[ri]
+def _mean_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return MeanState(
+        np.zeros(size, out_dtype),
+        np.zeros(size, np.int64),
+        np.empty(1, in_dtype),
+        np.empty(1, in_dtype),
+    )
+
+
+def _mean_seed(st, a):
+    # seed the global extrema scratch with the first value
+    if len(a) > 0:
+        st.low[0] = a[0]
+        st.high[0] = a[0]
+
+
+def _mean_update(st, ri, i, val, fill_value, ddof):
+    st.count[ri] += 1
+    st.out[ri] += val
+    _track_extrema(val, st.low, st.high)
+
+
+def _mean_gate(st, n_values):
+    _mean_limit_check(st.low[0], st.high[0], n_values)
+
+
+def _mean_finish(st, g, fill_value, ddof):
+    if st.count[g] > ddof:
+        return st.out[g] / st.count[g]
+    return fill_value
+
+
+mean = kernel(
+    "mean",
+    init=_mean_init,
+    update=_mean_update,
+    seed=_mean_seed,
+    gate=_mean_gate,
+    finish=_mean_finish,
+    forced_fill=0,
+    fill_default=float("nan"),
+    rule=rule_float,
+    doc="Arithmetic mean of the values of every group",
+)
+
+
+def _accumulate_std(val, st, ri):
+    """Accumulate one value into the running var/std sums.
+
+    Replaced per dtype by the overload below: integer input is centered on
+    the first value of its group so that a large common offset cannot erase
+    small deviations, inexact input keeps the plain sums."""
+    raise NotImplementedError  # replaced by the overload below
+
+
+@nb.extending.overload(_accumulate_std)
+def _accumulate_std_overload(val, st, ri):
+    if isinstance(val, nb.types.Integer):
+
+        def _impl(val, st, ri):
+            if st.count[ri] == 1:
+                st.first[ri] = val
+            # two's-complement deviation, exact in int64 because the gate
+            # check between the passes verified that the values span less
+            # than +/-2**63; uint64 input wraps into the correct signed bit
+            # pattern via the np.int64 casts
+            dev = np.int64(val) - np.int64(st.first[ri])
+            st.dev[ri] += dev
+            dev_sq = np.float64(dev)
+            st.out[ri] += dev_sq * dev_sq
+            _track_extrema(val, st.low, st.high)
+
+        return _impl
+
+    def _impl(val, st, ri):
+        st.dev[ri] += val
+        # the squared magnitude of the complex deviation is real, so out stays
+        # real for complex input - matching np.var
+        st.out[ri] += val.real * val.real + val.imag * val.imag
+
+    return _impl
+
+
+class StdState(typing.NamedTuple):
+    """The running sums of the dispersion kernels: ``out`` accumulates the
+    squared deviations in the real output dtype, ``dev`` the deviations
+    themselves in the widened auxiliary dtype (complex stays complex),
+    ``first`` anchors the integer centering and ``low``/``high`` feed the
+    exactness gate."""
+
+    out: np.ndarray
+    count: np.ndarray
+    dev: np.ndarray
+    first: np.ndarray
+    low: np.ndarray
+    high: np.ndarray
+
+
+def _std_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return StdState(
+        np.zeros(size, out_dtype),
+        np.zeros(size, np.int64),
+        np.zeros(size, aux_dtype),
+        np.empty(size, in_dtype),
+        np.empty(1, in_dtype),
+        np.empty(1, in_dtype),
+    )
+
+
+def _std_seed(st, a):
+    # seed the global extrema scratch with the first value
+    if len(a) > 0:
+        st.low[0] = a[0]
+        st.high[0] = a[0]
+
+
+def _std_update(st, ri, i, val, fill_value, ddof):
+    st.count[ri] += 1
+    if isinstance(val, bool):
+        st.dev[ri] += val
+        # bool has no .real in numba and keeps the plain val * val product
+        st.out[ri] += val * val
+    else:
+        _accumulate_std(val, st, ri)
+
+
+def _std_gate(st, n_values):
+    _span_limit_check(st.low[0], st.high[0], n_values)
+
+
+def _std_finish(st, g, fill_value, ddof):
+    if st.count[g] > ddof:
+        m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
-        return np.sqrt((ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof))
+        return np.sqrt((st.out[g] - mean2 / st.count[g]) / (st.count[g] - ddof))
+    return fill_value
 
 
-class Var(Std):
-    @staticmethod
-    def _2pass_inner(ri, ret, counter, mean, ddof):
-        m = mean[ri]
+std = kernel(
+    "std",
+    init=_std_init,
+    update=_std_update,
+    seed=_std_seed,
+    gate=_std_gate,
+    finish=_std_finish,
+    forced_fill=0,
+    fill_default=float("nan"),
+    rule=rule_real_float,
+    aux_widen=True,
+    doc="Standard deviation of the values of every group",
+)
+
+
+def _var_finish(st, g, fill_value, ddof):
+    if st.count[g] > ddof:
+        m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
-        return (ret[ri] - mean2 / counter[ri]) / (counter[ri] - ddof)
+        return (st.out[g] - mean2 / st.count[g]) / (st.count[g] - ddof)
+    return fill_value
+
+
+var = kernel(
+    "var",
+    init=_std_init,
+    update=_std_update,
+    seed=_std_seed,
+    gate=_std_gate,
+    finish=_var_finish,
+    forced_fill=0,
+    fill_default=float("nan"),
+    rule=rule_real_float,
+    aux_widen=True,
+    doc="Variance of the values of every group",
+)

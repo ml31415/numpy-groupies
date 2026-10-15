@@ -1,139 +1,412 @@
 """Streaming one-pass reductions: sums, products, lengths, logic, min/max."""
 
-from .base import AggregateOp, complex_less
+import typing
+
+import numpy as np
+
+from .compose import complex_less, kernel, rule_bool, rule_int64, rule_same, rule_sum, rule_sumofsquares, rule_widen_int
 
 
-class Sum(AggregateOp):
-    forced_fill_value = 0
+class SumState(typing.NamedTuple):
+    """``out`` accumulates the sum and doubles as the result; ``untouched``
+    marks the groups that have not received a value yet."""
 
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        counter[ri] = 0
-        ret[ri] += val
-
-
-class Prod(AggregateOp):
-    forced_fill_value = 1
-
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        counter[ri] = 0
-        ret[ri] *= val
+    out: np.ndarray
+    untouched: np.ndarray
 
 
-class Len(AggregateOp):
-    forced_fill_value = 0
-
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        counter[ri] = 0
-        ret[ri] += 1
+def _sum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    # the accumulation starts at 0 (the forced default) - a custom fill value
+    # is applied to the untouched groups after the loop
+    return SumState(np.zeros(size, out_dtype), np.ones(size, np.bool_))
 
 
-class All(AggregateOp):
-    forced_fill_value = 1
-
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        counter[ri] = 0
-        ret[ri] &= bool(val)
+def _sum_update(st, ri, i, val, fill_value, ddof):
+    st.untouched[ri] = False
+    st.out[ri] += val
 
 
-class Any(AggregateOp):
-    forced_fill_value = 0
-
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        counter[ri] = 0
-        ret[ri] |= bool(val)
+def _sum_untouched(st):
+    return st.untouched
 
 
-class Last(AggregateOp):
-    counter_fill_value = None
-
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        ret[ri] = val
-
-
-class First(Last):
-    reverse = True
-
-
-class AllNan(AggregateOp):
-    forced_fill_value = 1
-
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        counter[ri] = 0
-        ret[ri] &= val != val
+sum = kernel(
+    "sum",
+    init=_sum_init,
+    update=_sum_update,
+    untouched=_sum_untouched,
+    forced_fill=0,
+    fill_default=0,
+    rule=rule_sum,
+    doc="Sum of the values of every group",
+)
 
 
-class AnyNan(AggregateOp):
-    forced_fill_value = 0
+class ProdState(typing.NamedTuple):
+    """``out`` accumulates the product and doubles as the result;
+    ``untouched`` marks the groups that have not received a value yet."""
 
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        counter[ri] = 0
-        ret[ri] |= val != val
-
-
-class Max(AggregateOp):
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        # select-form on purpose: the branchy equivalent (see below) compiles
-        # ~15x slower under numba >= 0.66 when reached as a separate njit call.
-        # Note: ret[ri] must be read into a local first - repeating the
-        # subscript expression keeps the slow codegen (aliasing).
-        # val != val has to be tested explicitly - a nan compares neither
-        # smaller nor greater, in numpy's order for complex values as well as
-        # for floats, so `complex_less(cur, val)` alone would leave a group
-        # whose nan arrives after its first value at the finite value, unlike
-        # np.max (and unlike this module's own arg kernels, which do report
-        # such a group as invalid).  The nan variants are unaffected, they
-        # filter the nans out before the kernel runs.  The extra comparison is
-        # the cheapest way to get there: np.maximum in the non-first branch
-        # (which propagates nans on its own, but does not order complex values
-        # the way numpy does) and the branchy form below both measured ~45%
-        # slower than this, while for integer dtypes LLVM folds the test away
-        # entirely.
-        # if counter[ri]:
-        #     ret[ri] = val
-        #     counter[ri] = 0
-        # elif complex_less(ret[ri], val):
-        #     ret[ri] = val
-        first = counter[ri]
-        counter[ri] = 0
-        cur = ret[ri]
-        ret[ri] = val if (first or val != val or complex_less(cur, val)) else cur
+    out: np.ndarray
+    untouched: np.ndarray
 
 
-class Min(AggregateOp):
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        # select-form on purpose, see Max._inner (including why val != val is
-        # part of the condition and what it costs)
-        # if counter[ri]:
-        #     ret[ri] = val
-        #     counter[ri] = 0
-        # elif complex_less(val, ret[ri]):
-        #     ret[ri] = val
-        first = counter[ri]
-        counter[ri] = 0
-        cur = ret[ri]
-        ret[ri] = val if (first or val != val or complex_less(val, cur)) else cur
+def _prod_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return ProdState(np.ones(size, out_dtype), np.ones(size, np.bool_))
 
 
-class SumOfSquares(AggregateOp):
-    forced_fill_value = 0
+def _prod_update(st, ri, i, val, fill_value, ddof):
+    st.untouched[ri] = False
+    st.out[ri] *= val
 
-    @staticmethod
-    def _inner(ri, val, ret, counter, mean, fill_value):
-        counter[ri] = 0
-        # the squared magnitude of val - complex values give a real, sqrt-free
-        # result like np.var; bool has no .real in numba and keeps the plain
-        # val * val product (isinstance resolves at compile time per dtype)
-        if isinstance(val, bool):
-            ret[ri] += val * val
-        else:
-            ret[ri] += val.real * val.real + val.imag * val.imag
+
+def _prod_untouched(st):
+    return st.untouched
+
+
+prod = kernel(
+    "prod",
+    init=_prod_init,
+    update=_prod_update,
+    untouched=_prod_untouched,
+    forced_fill=1,
+    fill_default=1,
+    rule=rule_widen_int,
+    doc="Product of the values of every group",
+)
+
+
+class LenState(typing.NamedTuple):
+    """``out`` counts the values and doubles as the result; ``untouched``
+    marks the groups that have not received a value yet."""
+
+    out: np.ndarray
+    untouched: np.ndarray
+
+
+def _len_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return LenState(np.zeros(size, out_dtype), np.ones(size, np.bool_))
+
+
+def _len_update(st, ri, i, val, fill_value, ddof):
+    st.untouched[ri] = False
+    st.out[ri] += 1
+
+
+def _len_untouched(st):
+    return st.untouched
+
+
+len = kernel(
+    "len",
+    init=_len_init,
+    update=_len_update,
+    untouched=_len_untouched,
+    forced_fill=0,
+    fill_default=0,
+    rule=rule_int64,
+    doc="Amount of values of every group",
+)
+
+
+class AllState(typing.NamedTuple):
+    """``out`` folds the values logically and doubles as the result;
+    ``untouched`` marks the groups that have not received a value yet."""
+
+    out: np.ndarray
+    untouched: np.ndarray
+
+
+def _all_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return AllState(np.ones(size, np.bool_), np.ones(size, np.bool_))
+
+
+def _all_update(st, ri, i, val, fill_value, ddof):
+    st.untouched[ri] = False
+    st.out[ri] &= bool(val)
+
+
+def _all_untouched(st):
+    return st.untouched
+
+
+all = kernel(
+    "all",
+    init=_all_init,
+    update=_all_update,
+    untouched=_all_untouched,
+    forced_fill=1,
+    fill_default=False,
+    rule=rule_bool,
+    doc="Whether all values of every group are truthy",
+)
+
+
+class AnyState(typing.NamedTuple):
+    """``out`` folds the values logically and doubles as the result;
+    ``untouched`` marks the groups that have not received a value yet."""
+
+    out: np.ndarray
+    untouched: np.ndarray
+
+
+def _any_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return AnyState(np.zeros(size, np.bool_), np.ones(size, np.bool_))
+
+
+def _any_update(st, ri, i, val, fill_value, ddof):
+    st.untouched[ri] = False
+    st.out[ri] |= bool(val)
+
+
+def _any_untouched(st):
+    return st.untouched
+
+
+any = kernel(
+    "any",
+    init=_any_init,
+    update=_any_update,
+    untouched=_any_untouched,
+    forced_fill=0,
+    fill_default=False,
+    rule=rule_bool,
+    doc="Whether any value of every group is truthy",
+)
+
+
+class LastState(typing.NamedTuple):
+    """The output array carries the last value of each group itself."""
+
+    out: np.ndarray
+
+
+def _last_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    # untouched groups keep the fill value
+    return LastState(np.full(size, fill_value, out_dtype))
+
+
+def _last_update(st, ri, i, val, fill_value, ddof):
+    st.out[ri] = val
+
+
+last = kernel(
+    "last",
+    init=_last_init,
+    update=_last_update,
+    rule=rule_same,
+    fill_default=float("nan"),
+    doc="Last value of every group",
+)
+
+
+class FirstState(typing.NamedTuple):
+    """``out`` carries the first value of each group, ``taken`` marks the
+    groups whose first value is already stored."""
+
+    out: np.ndarray
+    taken: np.ndarray
+
+
+def _first_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return FirstState(np.full(size, fill_value, out_dtype), np.zeros(size, np.bool_))
+
+
+def _first_update(st, ri, i, val, fill_value, ddof):
+    if not st.taken[ri]:
+        st.taken[ri] = True
+        st.out[ri] = val
+
+
+first = kernel(
+    "first",
+    init=_first_init,
+    update=_first_update,
+    rule=rule_same,
+    fill_default=float("nan"),
+    doc="First value of every group",
+)
+
+
+class AllNanState(typing.NamedTuple):
+    """``out`` folds the nan checks logically and doubles as the result;
+    ``untouched`` marks the groups that have not received a value yet."""
+
+    out: np.ndarray
+    untouched: np.ndarray
+
+
+def _allnan_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return AllNanState(np.ones(size, np.bool_), np.ones(size, np.bool_))
+
+
+def _allnan_update(st, ri, i, val, fill_value, ddof):
+    st.untouched[ri] = False
+    st.out[ri] &= val != val
+
+
+def _allnan_untouched(st):
+    return st.untouched
+
+
+allnan = kernel(
+    "allnan",
+    init=_allnan_init,
+    update=_allnan_update,
+    untouched=_allnan_untouched,
+    forced_fill=1,
+    fill_default=False,
+    rule=rule_bool,
+    nans=False,
+    doc="Whether all values of every group are nan",
+)
+
+
+class AnyNanState(typing.NamedTuple):
+    """``out`` folds the nan checks logically and doubles as the result;
+    ``untouched`` marks the groups that have not received a value yet."""
+
+    out: np.ndarray
+    untouched: np.ndarray
+
+
+def _anynan_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return AnyNanState(np.zeros(size, np.bool_), np.ones(size, np.bool_))
+
+
+def _anynan_update(st, ri, i, val, fill_value, ddof):
+    st.untouched[ri] = False
+    st.out[ri] |= val != val
+
+
+def _anynan_untouched(st):
+    return st.untouched
+
+
+anynan = kernel(
+    "anynan",
+    init=_anynan_init,
+    update=_anynan_update,
+    untouched=_anynan_untouched,
+    forced_fill=0,
+    fill_default=False,
+    rule=rule_bool,
+    nans=False,
+    doc="Whether any value of every group is nan",
+)
+
+
+class MaxState(typing.NamedTuple):
+    """``out`` holds the running maximum and doubles as the result;
+    ``pending`` marks the groups that have not seen a value yet.  The first
+    value of a group always wins, a nan poisons the group (it compares
+    neither smaller nor greater)."""
+
+    out: np.ndarray
+    pending: np.ndarray
+
+
+def _max_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return MaxState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
+
+
+def _max_update(st, ri, i, val, fill_value, ddof):
+    # select-form on purpose: the branchy equivalent compiles ~15x slower
+    # under numba >= 0.66 when reached as a separate njit call.  Note: out[ri]
+    # must be read into a local first - repeating the subscript expression
+    # keeps the slow codegen (aliasing).  val != val has to be tested
+    # explicitly - a nan compares neither smaller nor greater, in numpy's
+    # order for complex values as well as for floats, so complex_less alone
+    # would leave a group whose nan arrives after its first value at the
+    # finite value, unlike np.max (and unlike the arg kernels, which report
+    # such a group as invalid).  The nan variants are unaffected, they filter
+    # the nans out before the kernel runs.  The extra comparison is the
+    # cheapest way to get there: np.maximum in the non-first branch (which
+    # propagates nans on its own, but does not order complex values the way
+    # numpy does) and the branchy form both measured ~45% slower, while for
+    # integer dtypes LLVM folds the test away entirely.
+    first = st.pending[ri]
+    st.pending[ri] = False
+    cur = st.out[ri]
+    st.out[ri] = val if (first or val != val or complex_less(cur, val)) else cur
+
+
+max = kernel(
+    "max",
+    init=_max_init,
+    update=_max_update,
+    rule=rule_same,
+    fill_default=float("nan"),
+    doc="Maximum value of every group",
+)
+
+
+class MinState(typing.NamedTuple):
+    """``out`` holds the running minimum and doubles as the result;
+    ``pending`` marks the groups that have not seen a value yet.  The first
+    value of a group always wins, a nan poisons the group (it compares
+    neither smaller nor greater)."""
+
+    out: np.ndarray
+    pending: np.ndarray
+
+
+def _min_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return MinState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
+
+
+def _min_update(st, ri, i, val, fill_value, ddof):
+    # select-form on purpose, see _max_update (including why val != val is
+    # part of the condition and what it costs)
+    first = st.pending[ri]
+    st.pending[ri] = False
+    cur = st.out[ri]
+    st.out[ri] = val if (first or val != val or complex_less(val, cur)) else cur
+
+
+min = kernel(
+    "min",
+    init=_min_init,
+    update=_min_update,
+    rule=rule_same,
+    fill_default=float("nan"),
+    doc="Minimum value of every group",
+)
+
+
+class SumOfSquaresState(typing.NamedTuple):
+    """``out`` accumulates the squared magnitudes and doubles as the result;
+    ``untouched`` marks the groups that have not received a value."""
+
+    out: np.ndarray
+    untouched: np.ndarray
+
+
+def _sumofsquares_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
+    return SumOfSquaresState(np.zeros(size, out_dtype), np.ones(size, np.bool_))
+
+
+def _sumofsquares_update(st, ri, i, val, fill_value, ddof):
+    st.untouched[ri] = False
+    # the squared magnitude of val - complex values give a real, sqrt-free
+    # result like np.var; bool has no .real in numba and keeps the plain
+    # val * val product (isinstance resolves at compile time per dtype)
+    if isinstance(val, bool):
+        st.out[ri] += val * val
+    else:
+        st.out[ri] += val.real * val.real + val.imag * val.imag
+
+
+def _sumofsquares_untouched(st):
+    return st.untouched
+
+
+sumofsquares = kernel(
+    "sumofsquares",
+    init=_sumofsquares_init,
+    update=_sumofsquares_update,
+    untouched=_sumofsquares_untouched,
+    forced_fill=0,
+    fill_default=0,
+    rule=rule_sumofsquares,
+    doc="Sum of the squared magnitudes of the values of every group",
+)
