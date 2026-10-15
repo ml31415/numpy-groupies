@@ -10,9 +10,7 @@ from .. import aggregate_np, aggregate_purepy
 from ..utils import default_fill_value, minimum_dtype
 from .helpers import (
     func_list,
-    is_pandas,
     is_purepy,
-    is_purepy_or_pandas,
     random_group_idx,
     random_values,
 )
@@ -370,8 +368,6 @@ def test_scalar_input(impl, func):
 
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max", "all", "any"])
 def test_nan_input(impl, rng, func, groups=100):
-    if is_pandas(impl):
-        pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(5)
     a = random_values(rng, group_idx.size)
     a[::2] = np.nan
@@ -425,8 +421,6 @@ def test_nan_form_of_a_group_of_only_nan():
 
 
 def test_nan_input_len(impl, rng, groups=100, group_size=5):
-    if is_pandas(impl):
-        pytest.skip("pandas always skips nan values")
     group_idx = np.arange(0, groups, dtype=int).repeat(group_size)
     a = random_values(rng, len(group_idx))
     a[::2] = np.nan
@@ -452,9 +446,6 @@ def test_min_max_nans(impl):
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([4, 3, np.nan, 1, 5, 9, 2, 7])
 
-    if is_pandas(impl):
-        pytest.skip("pandas always skips nan values")
-
     res = impl.aggregate(group_idx, a, func="min", fill_value=np.nan)
     np.testing.assert_array_equal(res, [np.nan, 2])
 
@@ -464,9 +455,6 @@ def test_min_max_nans(impl):
 
 @pytest.mark.deselect_if(func=is_purepy)
 def test_argmin_argmax_nans(impl):
-    if is_pandas(impl):
-        pytest.skip("pandas always ignores nans")
-
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, 3, 1, np.nan, 1, 2, 3])
 
@@ -479,9 +467,6 @@ def test_argmin_argmax_nans(impl):
 
 @pytest.mark.deselect_if(func=is_purepy)
 def test_nanargmin_nanargmax_nans(impl):
-    if is_pandas(impl):
-        pytest.skip("pandas doesn't fill indices for all-nan groups with fill_value but with -inf instead")
-
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, np.nan, 1, np.nan, np.nan, np.nan, np.nan])
 
@@ -556,7 +541,7 @@ def test_cumsum(impl):
     np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.deselect_if(func=is_purepy_or_pandas)
+@pytest.mark.deselect_if(func=is_purepy)
 def test_nancumsum(impl):
     # https://github.com/ml31415/numpy-groupies/issues/79
     group_idx = [0, 0, 0, 1, 1, 0, 0]
@@ -821,9 +806,6 @@ def test_argreduction_nD_array_1D_idx(impl):
 
 @pytest.mark.deselect_if(func=is_purepy)
 def test_argreduction_negative_fill_value(impl):
-    if is_pandas(impl):
-        pytest.skip("pandas always skips nan values")
-
     group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
     a = np.array([[1] * 12, [np.nan] * 12])
     actual = impl.aggregate(group_idx, a, axis=-1, fill_value=-1, func="argmax")
@@ -863,11 +845,6 @@ def test_cumsum_accuracy(impl):
 @pytest.mark.parametrize("func", ["cumsum", "nancumsum"])
 @pytest.mark.parametrize("large", [2.0**60, np.inf, -np.inf, np.nan])
 def test_cumsum_groups_are_independent(impl, dtype, func, large):
-    if is_pandas(impl) and np.isinf(large):
-        # pandas' own groupby cumsum maps inf to nan at the group boundary
-        # ([inf, 2] -> [inf, nan]) - an upstream deviation from the numpy
-        # reference this test pins for every other backend
-        pytest.skip("pandas' groupby cumsum turns inf into nan")
     group_idx = np.array([0, 1, 0, 1, 2, 2])
     a = np.array([large, 1, large, 2, 3, 4], dtype=dtype)
     if np.issubdtype(dtype, np.complexfloating):

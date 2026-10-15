@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from .. import aggregate_np, aggregate_ufunc
-from .helpers import aggregate_numba, is_pandas, is_purepy, is_purepy_or_pandas
+from .helpers import aggregate_numba, is_purepy
 
 # functions with a well-defined complex result, following numpy semantics - the
 # order statistics included, as numpy orders complex values lexicographically
@@ -60,7 +60,7 @@ complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
 complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
 
 
-@pytest.mark.deselect_if(func=is_purepy_or_pandas)
+@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
 def test_cumsum_nan_components_stay_in_group(impl, dtype):
     """A NaN in one component of a complex cumulative sum must not contaminate
@@ -499,9 +499,6 @@ def test_nan_in_one_part_of_the_order_functions(impl):
     # value is built with complex(): `np.nan * 1j` puts a nan in both parts
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([1 + 2j, 2 + 3j, complex(1.0, np.nan), 4 + 5j, 5 + 6j, 6 + 7j, 7 + 8j, np.nan + 9j])
-
-    if is_pandas(impl):
-        pytest.skip("pandas decides on its own what a nan in a complex value is")
 
     for func, expected in (("argmin", [-1, -1]), ("argmax", [-1, -1])):
         np.testing.assert_array_equal(np.asarray(impl.aggregate(group_idx, a, func=func, size=2)), expected)

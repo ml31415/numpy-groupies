@@ -17,16 +17,11 @@ import pytest
 from .. import aggregate_numpy, aggregate_numpy_ufunc, aggregate_purepy
 
 aggregate_numba: Any
-aggregate_pandas: Any
 
 try:
     from .. import aggregate_numba
 except ImportError:
     aggregate_numba = None
-try:
-    from .. import aggregate_pandas
-except ImportError:
-    aggregate_pandas = None
 
 # backend registry: module -> short name, in fixture-parametrization order
 _backend_names = {
@@ -36,7 +31,6 @@ _backend_names = {
         ("ufunc", aggregate_numpy_ufunc),
         ("numpy", aggregate_numpy),
         ("numba", aggregate_numba),
-        ("pandas", aggregate_pandas),
     )
     if module is not None
 }
@@ -44,7 +38,7 @@ _implementations = list(_backend_names)
 
 
 def impl_name(impl):
-    """Short backend name ("purepy", "pandas", ...) for a backend module
+    """Short backend name ("purepy", "numpy", ...) for a backend module
     or its ``_BackendProxy``."""
     if isinstance(impl, _BackendProxy):
         return impl._name
@@ -73,8 +67,8 @@ def is_supported(impl, func):
 
     Probed with a tiny real-valued and a tiny complex-valued input: a func
     counts as supported when the backend resolves it for either, so that
-    dtype-specific gaps (e.g. pandas implements sumofsquares only for
-    complex input) do not deselect testable combos. Combos failing for only
+    dtype-specific gaps (a backend implementing sumofsquares only for
+    complex input, say) do not deselect testable combos. Combos failing for only
     one dtype still skip at runtime via the backend proxy.
 
     Accepts a backend module or its ``_BackendProxy``, and a function name
@@ -184,15 +178,3 @@ def is_purepy(impl, *args, **kwargs):
 def is_numpy(impl, *args, **kwargs):
     """True for the numpy backend."""
     return impl_name(impl) == "numpy"
-
-
-def is_pandas(impl, *args, **kwargs):
-    # pandas deviates from the reference behaviour in some nan cases without
-    # raising NotImplementedError.
-    return impl_name(impl) == "pandas"
-
-
-def is_purepy_or_pandas(impl, *args, **kwargs):
-    # purepy and pandas deviate from the reference behaviour in some nan
-    # cases without raising NotImplementedError.
-    return is_purepy(impl) or is_pandas(impl)

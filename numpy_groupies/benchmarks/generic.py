@@ -8,10 +8,21 @@ from operator import itemgetter
 
 import numpy as np
 
-from numpy_groupies import aggregate_numpy
-from numpy_groupies.benchmarks._numbagg import implementation as numbagg_implementation
-from numpy_groupies.tests.helpers import _implementations
+from numpy_groupies import aggregate_numpy, aggregate_numpy_ufunc, aggregate_purepy
 from numpy_groupies.utils import allnan, anynan, nanfirst, nanlast
+
+try:
+    from numpy_groupies import aggregate_numba
+except ImportError:
+    aggregate_numba = None
+try:
+    from numpy_groupies.benchmarks import _numbagg
+except ImportError:
+    _numbagg = None
+try:
+    from numpy_groupies.benchmarks import _pandas
+except ImportError:
+    _pandas = None
 
 
 def aggregate_grouploop(*args, **kwargs):
@@ -108,12 +119,9 @@ def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, ver
         results = []
         if verbose:
             print(func_name.ljust(13), end="")
-        for impl in implementations:
-            if impl is None:
-                cells.append(None)
-                continue
+        for name, aggregate_fn in implementations:
             try:
-                res = impl.aggregate(group_idx, used_a, func=func)
+                res = aggregate_fn(group_idx, used_a, func=func)
             except NotImplementedError:
                 cells.append(None)
                 if verbose:
@@ -135,9 +143,7 @@ def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, ver
                         print("FAIL".rjust(14), end="")
                 else:
                     t0 = min(
-                        timeit.Timer(lambda: impl.aggregate(group_idx, used_a, func=func)).repeat(
-                            repeat=repeat, number=1
-                        )
+                        timeit.Timer(lambda: aggregate_fn(group_idx, used_a, func=func)).repeat(repeat=repeat, number=1)
                     )
                     cells.append(t0 * 1000)
                     if verbose:
@@ -177,7 +183,7 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
                     merged.append(next((c for c in col if c is not None), None))
             table[func_name] = merged
 
-    print(f"{'function':13}" + "".join(impl.__name__.rsplit("_", 1)[1].rjust(14) for impl in implementations))
+    print(f"{'function':13}" + "".join(name.rjust(14) for name, _ in implementations))
     print("-" * (13 + 14 * len(implementations)))
     for func in func_list:
         func_name = getattr(func, "__name__", func)
@@ -187,7 +193,7 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
             print(text.rjust(14), end="")
         print()
 
-    implementation_names = [impl.__name__.rsplit("_", 1)[1] for impl in implementations]
+    implementation_names = [name for name, _ in implementations]
     postfix = ""
     if "numba" in implementation_names:
         import numba
@@ -208,16 +214,28 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
 
 
 def _build_implementations(args):
-    """the participants in column order - numbagg joins before pandas,
-    which stays the right-most column"""
-    impls = list(_implementations if args.purepy else _implementations[1:])
-    if not args.pandas:
-        impls = impls[:-1]
+    """the participants as (column name, aggregate callable) pairs, in
+    column order - purepy first, numbagg before the right-most pandas"""
+    if aggregate_numba is None:
+        raise SystemExit("this benchmark needs the numba package installed")
+    impls = []
+    if args.purepy:
+        impls.append(("purepy", aggregate_purepy.aggregate))
+    impls.extend(
+        (
+            ("ufunc", aggregate_numpy_ufunc.aggregate),
+            ("numpy", aggregate_numpy.aggregate),
+            ("numba", aggregate_numba.aggregate),
+        )
+    )
     if args.numbagg:
-        if args.pandas:
-            impls.insert(-1, numbagg_implementation())
-        else:
-            impls.append(numbagg_implementation())
+        if _numbagg is None:
+            raise SystemExit("--numbagg needs the optional numbagg package installed")
+        impls.append(("numbagg", _numbagg.aggregate))
+    if args.pandas:
+        if _pandas is None:
+            raise SystemExit("--pandas needs the optional pandas package installed")
+        impls.append(("pandas", _pandas.aggregate))
     return impls
 
 
