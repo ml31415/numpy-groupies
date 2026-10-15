@@ -233,7 +233,7 @@ class KernelHandle(typing.NamedTuple):
     """The compiled artifact of one operation variant.
 
     ``stub``    the njit-callable function, exported via the ``kernels``
-                subpackage
+                module
     ``driver``  the raw compiled driver - the python-level ``aggregate()``
                 calls it with fully resolved arguments
     ``forced_fill`` the seeding default of the output (or None when the
@@ -241,6 +241,9 @@ class KernelHandle(typing.NamedTuple):
     ``aux_widen``   whether the auxiliary dtype is the input dtype widened
                 with float64 (the dispersion accumulators)
     ``nton``    whether the output has the input length (the cumulatives)
+    ``fallback``    python-level callable for input dtypes the compiled
+                driver cannot handle (complex medians go to the numpy
+                implementation - numba cannot partition complex values)
     """
 
     name: str
@@ -250,6 +253,7 @@ class KernelHandle(typing.NamedTuple):
     forced_fill: float | int | None
     aux_widen: bool
     nton: bool
+    fallback: typing.Callable[..., typing.Any] | None = None
 
 
 class KernelPair(typing.NamedTuple):
@@ -277,6 +281,7 @@ def kernel(
     ddof_default: float = 0,
     aux_widen: bool = False,
     nton: bool = False,
+    fallback: typing.Callable[..., typing.Any] | None = None,
     doc: str | None = None,
 ) -> KernelPair:
     """Compose the kernels of one operation from jitted building blocks.
@@ -368,6 +373,7 @@ def kernel(
             forced_fill=forced_fill,
             aux_widen=aux_widen,
             nton=nton,
+            fallback=fallback,
         )
 
     plain = build(False)
@@ -385,6 +391,7 @@ def custom_kernel(
     nans: bool = True,
     ddof_default: float = 0,
     aux_widen: bool = False,
+    fallback: typing.Callable[..., typing.Any] | None = None,
     doc: str | None = None,
 ) -> KernelPair:
     """Compose the kernels of an operation with a hand-written driver.
@@ -414,6 +421,7 @@ def custom_kernel(
             forced_fill=forced_fill,
             aux_widen=aux_widen,
             nton=False,
+            fallback=fallback,
         )
 
     plain = build(False)

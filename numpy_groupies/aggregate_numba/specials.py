@@ -13,33 +13,15 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
-from ..aggregate_common import DEFAULT_FILL_VALUE
 from ..aggregate_numpy import _aggregate_base
 from .compose import custom_kernel, kernel, rule_float
 from .jit import njit_stable
-from .ops import AggregateOp
 
 
-class MedianOp(AggregateOp):
+def _median_fallback(group_idx, a, func, size, fill_value, order, dtype, axis):
     """numba cannot partition complex values - the numpy implementation
     selects the middle of the lexicographically ordered values."""
-
-    def __call__(
-        self,
-        group_idx,
-        a,
-        size=None,
-        fill_value=DEFAULT_FILL_VALUE,
-        order="C",
-        dtype=None,
-        axis=None,
-        ddof=0,
-    ):
-        if not np.isscalar(a) and np.issubdtype(a.dtype, np.complexfloating):
-            return _aggregate_base(
-                group_idx, a, self.func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis
-            )
-        return super().__call__(group_idx, a, size, fill_value, order, dtype, axis, ddof)
+    return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
 
 
 def _median_count(group_idx, size):
@@ -143,6 +125,7 @@ median = custom_kernel(
     driver_factory=_median_driver_factory,
     rule=rule_float,
     fill_default=np.nan,
+    fallback=_median_fallback,
     doc="Median of the values of every group",
 )
 
@@ -194,21 +177,3 @@ trapezoid = kernel(
     ddof_default=1.0,
     doc="Trapezoidal integration of the samples of every group",
 )
-
-
-class TrapezoidOp(AggregateOp):
-    """The one float argument of this operation is the sample spacing ``dx``,
-    which the kernels expect in the position otherwise used for ``ddof``."""
-
-    def __call__(
-        self,
-        group_idx,
-        a,
-        size=None,
-        fill_value=DEFAULT_FILL_VALUE,
-        order="C",
-        dtype=None,
-        axis=None,
-        dx=1.0,
-    ):
-        return super().__call__(group_idx, a, size, fill_value, order, dtype, axis, dx)

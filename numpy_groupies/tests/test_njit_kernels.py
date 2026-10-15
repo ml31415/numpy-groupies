@@ -11,7 +11,7 @@ import numba as nb
 import numpy as np
 import pytest
 
-from .. import aggregate_numba
+from .. import aggregate_numba, aggregate_numpy
 from ..aggregate_numba import kernels
 
 GROUP_IDX = np.array([0, 0, 1, 1, 1, 3])  # group 2 stays empty
@@ -130,6 +130,35 @@ def test_njit_composition():
 def test_pure_python_call_raises():
     with pytest.raises(NotImplementedError, match="jitted"):
         kernels.aggregate_mean(GROUP_IDX, FLOAT_A)
+
+
+def test_median_rejects_complex_from_njit():
+    # the median driver partitions the values and numba has no order for
+    # complex dtypes - the kernel refuses to compile, aggregate() hands
+    # complex medians to the numpy implementation instead
+    @nb.njit
+    def wrapped(group_idx, a):
+        return kernels.aggregate_median(group_idx, a)
+
+    with pytest.raises(nb.TypingError):
+        wrapped(np.array([0, 1]), np.array([1 + 2j, 3 + 4j]))
+
+
+def test_median_complex_falls_back_to_numpy():
+    # the layer-2 wrapper keeps working for complex input via the handle's
+    # python-level fallback - it must agree with the numpy backend exactly
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
+    ret = aggregate_numba.aggregate(group_idx, a, func="median")
+    assert ret.dtype == np.complex128
+    np.testing.assert_array_equal(ret, aggregate_numpy.aggregate(group_idx, a, func="median"))
+
+
+def test_nanmedian_complex_falls_back_to_numpy():
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1 + 2j, np.nan * 1j, 5 + 6j])
+    ret = aggregate_numba.aggregate(group_idx, a, func="nanmedian")
+    np.testing.assert_array_equal(ret, aggregate_numpy.aggregate(group_idx, a, func="nanmedian"))
 
 
 def test_sum_bool_widens_int64():
