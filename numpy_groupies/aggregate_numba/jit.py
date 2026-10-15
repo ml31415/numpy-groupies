@@ -71,13 +71,20 @@ def njit_stable(py_func=None, cache=True, **options):
                     repr(cells),
                 ]
             )
-            disp._set_uuid(hashlib.sha256(fingerprint.encode()).hexdigest()[:16])
+            uuid = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
+            disp._set_uuid(uuid)
             # move the on-disk cache of this dispatcher to revisioned file
             # names - the numba defaults key by module and qualname only, so
             # refactoring signature-relevant globals would crash the read of
-            # the stale index (see the comment on _cache_revision)
+            # the stale index (see the comment on _cache_revision).  The uuid
+            # additionally separates same-named functions whose sources
+            # changed: numba's own index key only covers the bytecode and the
+            # closure bytes, and module-level functions have no closure - two
+            # versions of one function differing only in a constant (which
+            # lives in co_consts, not co_code) would otherwise share an index
+            # and could load each other's compiled artifacts.
             impl = disp._cache._impl
-            impl._filename_base = f"{impl._filename_base}-r{_cache_revision}"
+            impl._filename_base = f"{impl._filename_base}-r{_cache_revision}-{uuid}"
             disp._cache._cache_file = caching.IndexDataCacheFile(
                 cache_path=disp._cache._cache_path,
                 filename_base=impl.filename_base,
