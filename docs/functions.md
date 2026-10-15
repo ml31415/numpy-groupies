@@ -81,8 +81,6 @@ One value per group.
 
 Prefix with `nan` — `nansum`, `nanprod`, `nanlen`, `nansumofsquares`, `nanmean`, `nanmedian`, `nanvar`, `nanstd`, `nanmin`, `nanmax`, `nanfirst`, `nanlast`, `nanargmin`, `nanargmax`, `nantrapezoid`, `nanall`, `nanany`, and the cumulative `nancumsum`, `nancumprod`, `nancummin`, `nancummax` — to skip NaNs instead of propagating them. `nanlen` counts the non-NaN items. For `nantrapezoid` this means integrating over the remaining items, bridging the gap a NaN leaves.
 
-**Pandas implementation.** pandas skips NaN by default, so the `nan…` variants there are simply the plain function: `sum`, `prod`, `mean`, `var`, `std`, `min`, `max`, `first`, `last`, `argmin` and `argmax` give the same result as their `nan` forms (they skip NaN, unlike the NumPy and Numba implementations). `len` counts only the non-NaN items, i.e. it behaves like `nanlen`. Two plain functions are deliberately patched to propagate NaN like NumPy does: `median` and `cumsum`. For `all`/`any` the plain and `nan` forms differ for groups consisting only of NaN, so use `nanall`/`nanany` if you want NumPy-consistent results. The values listed in the other sections describe the NumPy and Numba implementations.
-
 ### Boolean
 
 Always return booleans. Their treatment of NaN differs from the above.
@@ -112,24 +110,24 @@ These do not reduce the data; the output has the size of the input. There are no
 ## Function × implementation matrix
 
 `x` = supported, `-` = raises `NotImplementedError` (checked by calling each implementation).
-The nan-variants are supported wherever the plain function is (see the pandas note under [NaN-skipping variants](#nan-skipping-variants) for how NaN is treated there).
+The nan-variants are supported wherever the plain function is.
 
-| Function                       | numpy | numba | pure python | ufunc | pandas |
-| ------------------------------ | :---: | :---: | :---------: | :---: | :----: |
-| `sum`, `prod`, `len`           |  x    |  x    |      x      |  x    |   x    |
-| `min`, `max`                   |  x    |  x    |      x      |  x    |   x    |
-| `all`, `any`                   |  x    |  x    |      x      |  x    |   x    |
-| `allnan`, `anynan`             |  x    |  x    |      x      |  x    |   x    |
-| `mean`, `median`, `var`, `std` |  x    |  x    |      x      |  -    |   x    |
-| `first`, `last`                |  x    |  x    |      x      |  -    |   x    |
-| `argmin`, `argmax`             |  x    |  x    |      x      |  -    |   x    |
-| `sumofsquares`                 |  x    |  x    |      -      |  -    |   -    |
-| `trapezoid`                    |  x    |  x    |      x      |  -    |   -    |
-| `cumsum`                       |  x    |  x    |      -      |  -    |   x    |
-| `cumprod`, `cummin`, `cummax`  |  -    |  x    |      -      |  -    |   x    |
-| `sort`, `array`                |  x    |  -    |      x      |  -    |   -    |
-| `nan…` variants of the above   |  x¹   |  x¹   |     x¹      |  -    |   x¹   |
-| custom callables               |  x    |  x²   |      x      |  -    |   x    |
+| Function                       | numpy | numba | pure python |
+| ------------------------------ | :---: | :---: | :---------: |
+| `sum`, `prod`, `len`           |  x    |  x    |      x      |
+| `min`, `max`                   |  x    |  x    |      x      |
+| `all`, `any`                   |  x    |  x    |      x      |
+| `allnan`, `anynan`             |  x    |  x    |      x      |
+| `mean`, `median`, `var`, `std` |  x    |  x    |      x      |
+| `first`, `last`                |  x    |  x    |      x      |
+| `argmin`, `argmax`             |  x    |  x    |      x      |
+| `sumofsquares`                 |  x    |  x    |      -      |
+| `trapezoid`                    |  x    |  x    |      x      |
+| `cumsum`                       |  x    |  x    |      -      |
+| `cumprod`, `cummin`, `cummax`  |  -    |  x    |      -      |
+| `sort`, `array`                |  x    |  -    |      x      |
+| `nan…` variants of the above   |  x¹   |  x¹   |     x¹      |
+| custom callables               |  x    |  x²   |      x      |
 
 ¹ For the same functions as in the plain row.
 ² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use `aggregate_np` instead.

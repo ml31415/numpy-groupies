@@ -16,7 +16,6 @@ from .helpers import (
     aggregate_purepy,
     func_list,
     is_numpy,
-    is_pandas,
     is_purepy,
     random_group_idx,
     random_values,
@@ -43,7 +42,6 @@ def compare_data(rng):
     return group_idx, a, nana
 
 
-@pytest.mark.filterwarnings("ignore::FutureWarning")  # handled pandas deprecation
 @pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
 @pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("fill_value", [0, 1, np.nan])
@@ -71,19 +69,11 @@ def test_cmp(impl, reference, compare_data, func, fill_value, decimal=10):
                 pytest.skip(
                     "pure python version uses lists and does not raise ValueErrors when inserting nan into integers"
                 )
-            elif is_pandas(impl):
-                pytest.skip("pandas now raises ValueError on all-nan arrays")
             else:
                 raise
         if isinstance(ref, np.ndarray):
             assert res.dtype == ref.dtype
-        try:
-            np.testing.assert_allclose(res, ref, rtol=10**-decimal)
-        except AssertionError:
-            if "arg" in func and is_pandas(impl):
-                pytest.skip("pandas doesn't fill indices for all-nan groups with fill_value, but with -inf instead")
-            else:
-                raise
+        np.testing.assert_allclose(res, ref, rtol=10**-decimal)
 
 
 @pytest.mark.deselect_if(func=is_purepy)

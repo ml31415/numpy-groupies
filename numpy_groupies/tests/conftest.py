@@ -15,7 +15,7 @@ def impl(request):
     Tests use it like a module: ``impl.aggregate(...)``, ``impl.step_count(...)``
     etc. ``NotImplementedError`` (missing functionality) and missing attributes
     are translated into ``pytest.skip``. ``impl_name(impl)`` is the short backend
-    name ("purepy", "pandas", ...).
+    name ("purepy", "numpy", ...).
     """
     return _BackendProxy(request.param)
 

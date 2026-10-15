@@ -9,17 +9,10 @@ every backend raises ``OverflowError`` instead.
 ``mean``/``nanmean`` raise ``OverflowError`` once the exact integer sums could
 leave the +/-2**53 window that float64 represents exactly - again for the same
 inputs in every backend, so the results never depend on the implementation.
-
-pandas is excluded: its groupby kernels have their own integer semantics.
 """
 
 import numpy as np
 import pytest
-
-from .helpers import is_pandas
-
-# ``impl`` is the conftest fixture parametrized over every backend
-pytestmark = pytest.mark.deselect_if(func=is_pandas)
 
 
 @pytest.mark.parametrize("ddof", [0, 1])
