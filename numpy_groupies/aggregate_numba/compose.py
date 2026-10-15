@@ -213,7 +213,14 @@ def _make_stub(stub_name, driver_getter, rule, fill_default, doc, ddof_default=0
     stub.__qualname__ = stub_name
     stub.__doc__ = f"{doc or f'Njit-callable {stub_name} kernel'} - see ``numpy_groupies.aggregate_numba.kernels``."
 
-    @nb.extending.overload(stub, jit_options={"cache": True})
+    # no jit_options cache here: the impl shim is compiled by numba's
+    # overload machinery OUTSIDE the revisioned ``njit_stable`` namespace,
+    # and its cache key does not reliably capture the identity of the
+    # captured driver - stale impls of earlier refactors then keep being
+    # served (observed as a nanfirst running plain-first machine code).
+    # The shim itself compiles in microseconds, the expensive compilation
+    # (the driver) stays cached through ``njit_stable``.
+    @nb.extending.overload(stub)
     def _overload(group_idx, a, ddof=ddof_default, size=-1, fill_value=None):
         driver = driver_getter()
         out_dtype, aux_dtype = rule(a)
