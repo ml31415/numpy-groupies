@@ -278,12 +278,13 @@ def _first_driver_factory(nan_variant):
     @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
         # numba's np.max reduction is several times faster than a scalar
-        # loop here; negative indices slip through and are caught inside
-        # the loop below
+        # loop here
         size = np.max(group_idx) + 1
         if size_arg >= 0:
             # an explicit output size may be larger than the largest
-            # index, but never smaller
+            # index, but never smaller - and once size is fixed, every
+            # index in group_idx is provably within [0, size): the loop
+            # below needs no bounds logic
             if size > size_arg:
                 raise ValueError("one or more indices in group_idx are too large")
             size = size_arg
@@ -291,25 +292,31 @@ def _first_driver_factory(nan_variant):
         pending = np.ones(size, np.bool_)
         # group_idx.shape[0] instead of len - the module global 'len' is the
         # len kernel, not the builtin
+        # negative indices are flagged in the loop and raised after it: a
+        # raise is a call, and a call inside the loop stops LLVM from sinking
+        # the value loads into the short-circuit (measured ~0.1ms per 500k
+        # values on nanfirst)
+        bad = False
         for i in range(group_idx.shape[0]):
             ri = group_idx[i]
             if ri < 0:
-                raise ValueError("negative indices not supported")
-            if ri >= size:
-                raise ValueError("one or more indices in group_idx are too large")
-            val = a[i]
+                bad = True
+                continue
             if nan_variant:
                 # early-exit form, matching numbagg: after the first value of
-                # a group the pending load short-circuits the rest (folded
+                # a group the pending load short-circuits the rest, so the
+                # value load only runs while groups are still pending (folded
                 # away for the plain one)
-                if pending[ri] and val == val:
+                if pending[ri] and not np.isnan(a[i]):
                     pending[ri] = False
-                    out[ri] = val
+                    out[ri] = a[i]
             else:
                 # the plain one takes the first value whatever it is
                 if pending[ri]:
                     pending[ri] = False
-                    out[ri] = val
+                    out[ri] = a[i]
+        if bad:
+            raise ValueError("negative indices not supported")
         return out
 
     return driver
