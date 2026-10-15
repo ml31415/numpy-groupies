@@ -12,7 +12,7 @@ import numpy as np
 from .compose import complex_less, kernel, rule_widen_int
 
 
-class CumSumState(typing.NamedTuple):
+class CumulativeState(typing.NamedTuple):
     """``running`` accumulates per group, ``out`` records the running value
     at every input position."""
 
@@ -22,7 +22,7 @@ class CumSumState(typing.NamedTuple):
 
 def _cumsum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
     # every position of out is written in the same pass that fills running
-    return CumSumState(np.zeros(size, out_dtype), np.full(n_input, fill_value, out_dtype))
+    return CumulativeState(np.zeros(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
 
 def _cumsum_update(st, ri, i, val, fill_value, ddof):
@@ -45,16 +45,8 @@ cumsum = kernel(
 )
 
 
-class CumProdState(typing.NamedTuple):
-    """``running`` accumulates per group, ``out`` records the running value
-    at every input position."""
-
-    running: np.ndarray
-    out: np.ndarray
-
-
 def _cumprod_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return CumProdState(np.ones(size, out_dtype), np.full(n_input, fill_value, out_dtype))
+    return CumulativeState(np.ones(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
 
 def _cumprod_update(st, ri, i, val, fill_value, ddof):
@@ -77,11 +69,14 @@ cumprod = kernel(
 )
 
 
-class CumMaxState(typing.NamedTuple):
-    """``running`` holds the maximum seen so far per group, ``out`` records
-    it at every input position and ``pending`` marks the groups that have not
-    seen a value yet (their first value always wins, a nan poisons the
-    group)."""
+class CumExtremaState(typing.NamedTuple):
+    """The state of the running extrema: ``running`` holds the best value
+    seen so far per group, ``out`` records it at every input position and
+    ``pending`` marks the groups that have not seen a value yet (their first
+    value always wins, a nan poisons the group).
+
+    Kept flat instead of extending ``CumulativeState`` - numba cannot type
+    inherited NamedTuples."""
 
     running: np.ndarray
     out: np.ndarray
@@ -89,7 +84,7 @@ class CumMaxState(typing.NamedTuple):
 
 
 def _cummax_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return CumMaxState(
+    return CumExtremaState(
         np.full(size, fill_value, out_dtype),
         np.full(n_input, fill_value, out_dtype),
         np.ones(size, np.bool_),
@@ -120,19 +115,8 @@ cummax = kernel(
 )
 
 
-class CumMinState(typing.NamedTuple):
-    """``running`` holds the minimum seen so far per group, ``out`` records
-    it at every input position and ``pending`` marks the groups that have not
-    seen a value yet (their first value always wins, a nan poisons the
-    group)."""
-
-    running: np.ndarray
-    out: np.ndarray
-    pending: np.ndarray
-
-
 def _cummin_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return CumMinState(
+    return CumExtremaState(
         np.full(size, fill_value, out_dtype),
         np.full(n_input, fill_value, out_dtype),
         np.ones(size, np.bool_),

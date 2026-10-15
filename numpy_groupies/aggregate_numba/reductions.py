@@ -7,18 +7,30 @@ import numpy as np
 from .compose import complex_less, kernel, rule_bool, rule_int64, rule_same, rule_sum, rule_sumofsquares, rule_widen_int
 
 
-class SumState(typing.NamedTuple):
-    """``out`` accumulates the sum and doubles as the result; ``untouched``
-    marks the groups that have not received a value yet."""
+class ReductionState(typing.NamedTuple):
+    """The state of the streaming reductions that fold every value into a
+    per-group accumulator: ``out`` accumulates the reduction and doubles as
+    the result, ``untouched`` marks the groups that have not received a value
+    yet (a custom fill value is applied to them after the loop)."""
 
     out: np.ndarray
     untouched: np.ndarray
 
 
+class SelectionState(typing.NamedTuple):
+    """The state of the select-form reductions (first, min, max): ``out``
+    holds the selected value or the running best and doubles as the result,
+    ``pending`` marks the groups that have not seen a value yet - their first
+    value always wins, a nan poisons the group."""
+
+    out: np.ndarray
+    pending: np.ndarray
+
+
 def _sum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
     # the accumulation starts at 0 (the forced default) - a custom fill value
     # is applied to the untouched groups after the loop
-    return SumState(np.zeros(size, out_dtype), np.ones(size, np.bool_))
+    return ReductionState(np.zeros(size, out_dtype), np.ones(size, np.bool_))
 
 
 def _sum_update(st, ri, i, val, fill_value, ddof):
@@ -42,16 +54,8 @@ sum = kernel(
 )
 
 
-class ProdState(typing.NamedTuple):
-    """``out`` accumulates the product and doubles as the result;
-    ``untouched`` marks the groups that have not received a value yet."""
-
-    out: np.ndarray
-    untouched: np.ndarray
-
-
 def _prod_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return ProdState(np.ones(size, out_dtype), np.ones(size, np.bool_))
+    return ReductionState(np.ones(size, out_dtype), np.ones(size, np.bool_))
 
 
 def _prod_update(st, ri, i, val, fill_value, ddof):
@@ -75,16 +79,8 @@ prod = kernel(
 )
 
 
-class LenState(typing.NamedTuple):
-    """``out`` counts the values and doubles as the result; ``untouched``
-    marks the groups that have not received a value yet."""
-
-    out: np.ndarray
-    untouched: np.ndarray
-
-
 def _len_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return LenState(np.zeros(size, out_dtype), np.ones(size, np.bool_))
+    return ReductionState(np.zeros(size, out_dtype), np.ones(size, np.bool_))
 
 
 def _len_update(st, ri, i, val, fill_value, ddof):
@@ -108,16 +104,8 @@ len = kernel(
 )
 
 
-class AllState(typing.NamedTuple):
-    """``out`` folds the values logically and doubles as the result;
-    ``untouched`` marks the groups that have not received a value yet."""
-
-    out: np.ndarray
-    untouched: np.ndarray
-
-
 def _all_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return AllState(np.ones(size, np.bool_), np.ones(size, np.bool_))
+    return ReductionState(np.ones(size, np.bool_), np.ones(size, np.bool_))
 
 
 def _all_update(st, ri, i, val, fill_value, ddof):
@@ -141,16 +129,8 @@ all = kernel(
 )
 
 
-class AnyState(typing.NamedTuple):
-    """``out`` folds the values logically and doubles as the result;
-    ``untouched`` marks the groups that have not received a value yet."""
-
-    out: np.ndarray
-    untouched: np.ndarray
-
-
 def _any_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return AnyState(np.zeros(size, np.bool_), np.ones(size, np.bool_))
+    return ReductionState(np.zeros(size, np.bool_), np.ones(size, np.bool_))
 
 
 def _any_update(st, ri, i, val, fill_value, ddof):
@@ -199,21 +179,13 @@ last = kernel(
 )
 
 
-class FirstState(typing.NamedTuple):
-    """``out`` carries the first value of each group, ``taken`` marks the
-    groups whose first value is already stored."""
-
-    out: np.ndarray
-    taken: np.ndarray
-
-
 def _first_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return FirstState(np.full(size, fill_value, out_dtype), np.zeros(size, np.bool_))
+    return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
 
 
 def _first_update(st, ri, i, val, fill_value, ddof):
-    if not st.taken[ri]:
-        st.taken[ri] = True
+    if st.pending[ri]:
+        st.pending[ri] = False
         st.out[ri] = val
 
 
@@ -227,16 +199,8 @@ first = kernel(
 )
 
 
-class AllNanState(typing.NamedTuple):
-    """``out`` folds the nan checks logically and doubles as the result;
-    ``untouched`` marks the groups that have not received a value yet."""
-
-    out: np.ndarray
-    untouched: np.ndarray
-
-
 def _allnan_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return AllNanState(np.ones(size, np.bool_), np.ones(size, np.bool_))
+    return ReductionState(np.ones(size, np.bool_), np.ones(size, np.bool_))
 
 
 def _allnan_update(st, ri, i, val, fill_value, ddof):
@@ -261,16 +225,8 @@ allnan = kernel(
 )
 
 
-class AnyNanState(typing.NamedTuple):
-    """``out`` folds the nan checks logically and doubles as the result;
-    ``untouched`` marks the groups that have not received a value yet."""
-
-    out: np.ndarray
-    untouched: np.ndarray
-
-
 def _anynan_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return AnyNanState(np.zeros(size, np.bool_), np.ones(size, np.bool_))
+    return ReductionState(np.zeros(size, np.bool_), np.ones(size, np.bool_))
 
 
 def _anynan_update(st, ri, i, val, fill_value, ddof):
@@ -295,18 +251,8 @@ anynan = kernel(
 )
 
 
-class MaxState(typing.NamedTuple):
-    """``out`` holds the running maximum and doubles as the result;
-    ``pending`` marks the groups that have not seen a value yet.  The first
-    value of a group always wins, a nan poisons the group (it compares
-    neither smaller nor greater)."""
-
-    out: np.ndarray
-    pending: np.ndarray
-
-
 def _max_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return MaxState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
+    return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
 
 
 def _max_update(st, ri, i, val, fill_value, ddof):
@@ -340,18 +286,8 @@ max = kernel(
 )
 
 
-class MinState(typing.NamedTuple):
-    """``out`` holds the running minimum and doubles as the result;
-    ``pending`` marks the groups that have not seen a value yet.  The first
-    value of a group always wins, a nan poisons the group (it compares
-    neither smaller nor greater)."""
-
-    out: np.ndarray
-    pending: np.ndarray
-
-
 def _min_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return MinState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
+    return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
 
 
 def _min_update(st, ri, i, val, fill_value, ddof):
@@ -373,16 +309,8 @@ min = kernel(
 )
 
 
-class SumOfSquaresState(typing.NamedTuple):
-    """``out`` accumulates the squared magnitudes and doubles as the result;
-    ``untouched`` marks the groups that have not received a value."""
-
-    out: np.ndarray
-    untouched: np.ndarray
-
-
 def _sumofsquares_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return SumOfSquaresState(np.zeros(size, out_dtype), np.ones(size, np.bool_))
+    return ReductionState(np.zeros(size, out_dtype), np.ones(size, np.bool_))
 
 
 def _sumofsquares_update(st, ri, i, val, fill_value, ddof):

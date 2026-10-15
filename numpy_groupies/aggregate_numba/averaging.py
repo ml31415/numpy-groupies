@@ -246,7 +246,8 @@ class StdState(typing.NamedTuple):
     squared deviations in the real output dtype, ``dev`` the deviations
     themselves in the widened auxiliary dtype (complex stays complex),
     ``first`` anchors the integer centering and ``low``/``high`` feed the
-    exactness gate."""
+    exactness gate.  Kept flat instead of extending ``MeanState`` - numba
+    cannot type inherited NamedTuples."""
 
     out: np.ndarray
     count: np.ndarray

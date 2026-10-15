@@ -7,12 +7,12 @@ import numpy as np
 from .compose import complex_less, kernel, rule_int64
 
 
-class ArgMaxState(typing.NamedTuple):
-    """``out`` holds the input position of the running maximum and doubles as
-    the result, ``running`` is the maximum itself and ``pending`` marks the
-    groups that have not seen a value.  A nan poisons its group: the running
-    value becomes a nan no finite value can beat and the result falls back to
-    the fill value."""
+class ArgState(typing.NamedTuple):
+    """``out`` holds the input position of the running best value and doubles
+    as the result, ``running`` is the best value itself and ``pending`` marks
+    the groups that have not seen a value.  A nan poisons its group: the
+    running value becomes a nan no finite value can beat and the result falls
+    back to the fill value."""
 
     out: np.ndarray
     running: np.ndarray
@@ -20,7 +20,7 @@ class ArgMaxState(typing.NamedTuple):
 
 
 def _argmax_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return ArgMaxState(np.full(size, fill_value, out_dtype), np.empty(size, in_dtype), np.ones(size, np.bool_))
+    return ArgState(np.full(size, fill_value, out_dtype), np.empty(size, in_dtype), np.ones(size, np.bool_))
 
 
 def _argmax_update(st, ri, i, val, fill_value, ddof):
@@ -47,20 +47,8 @@ argmax = kernel(
 )
 
 
-class ArgMinState(typing.NamedTuple):
-    """``out`` holds the input position of the running minimum and doubles as
-    the result, ``running`` is the minimum itself and ``pending`` marks the
-    groups that have not seen a value.  A nan poisons its group: the running
-    value becomes a nan no finite value can beat and the result falls back to
-    the fill value."""
-
-    out: np.ndarray
-    running: np.ndarray
-    pending: np.ndarray
-
-
 def _argmin_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
-    return ArgMinState(np.full(size, fill_value, out_dtype), np.empty(size, in_dtype), np.ones(size, np.bool_))
+    return ArgState(np.full(size, fill_value, out_dtype), np.empty(size, in_dtype), np.ones(size, np.bool_))
 
 
 def _argmin_update(st, ri, i, val, fill_value, ddof):
