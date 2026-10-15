@@ -11,6 +11,7 @@ sample spacing ``dx`` in the ``ddof`` slot.
 import typing
 
 import numpy as np
+import numpy.typing as npt
 
 from ..aggregate_common import DEFAULT_FILL_VALUE
 from ..aggregate_numpy import _aggregate_base
@@ -141,7 +142,7 @@ median = custom_kernel(
     "median",
     driver_factory=_median_driver_factory,
     rule=rule_float,
-    fill_default=float("nan"),
+    fill_default=np.nan,
     doc="Median of the values of every group",
 )
 
@@ -152,10 +153,10 @@ class TrapezoidState(typing.NamedTuple):
     whose first sample is still due and ``untouched`` the groups without
     values."""
 
-    out: np.ndarray
-    prev: np.ndarray
-    pending: np.ndarray
-    untouched: np.ndarray
+    out: npt.NDArray[np.inexact]
+    prev: npt.NDArray[np.generic]
+    pending: npt.NDArray[np.bool_]
+    untouched: npt.NDArray[np.bool_]
 
 
 def _trapezoid_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):

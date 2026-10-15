@@ -3,6 +3,7 @@
 import typing
 
 import numpy as np
+import numpy.typing as npt
 
 from .compose import complex_less, kernel, rule_int64
 
@@ -14,9 +15,9 @@ class ArgState(typing.NamedTuple):
     running value becomes a nan no finite value can beat and the result falls
     back to the fill value."""
 
-    out: np.ndarray
-    running: np.ndarray
-    pending: np.ndarray
+    out: npt.NDArray[np.int64]
+    running: npt.NDArray[np.generic]
+    pending: npt.NDArray[np.bool_]
 
 
 def _argmax_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):

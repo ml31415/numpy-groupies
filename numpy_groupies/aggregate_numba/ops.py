@@ -9,9 +9,11 @@ unravelling for the argreductions) is answered on the slow path.
 """
 
 import functools
+import typing
 
 import numba as nb
 import numpy as np
+import numpy.typing as npt
 
 from ..aggregate_common import DEFAULT_FILL_VALUE, resolve_fill_value
 from ..utils import (
@@ -21,6 +23,7 @@ from ..utils import (
     input_validation,
     resolve_output_dtype,
 )
+from .compose import KernelHandle
 from .steps import step_indices
 
 # input dtypes for which the 'sum' output dtype depends on the input length
@@ -32,7 +35,9 @@ _SCALAR_BOOL_TYPES = frozenset((bool, np.bool_))
 
 
 @functools.lru_cache(maxsize=256)
-def _dtype_fill_plan(op, a_key, dtype, fill_value, n):
+def _dtype_fill_plan(
+    op: "AggregateOp", a_key: np.dtype | type, dtype: npt.DTypeLike, fill_value: typing.Any, n: int
+) -> tuple[np.dtype, typing.Any]:
     """Memoized output-dtype and fill-value resolution.
 
     ``a_key`` is ``type(a)`` for scalar inputs and ``a.dtype`` otherwise.
@@ -54,7 +59,7 @@ def _dtype_fill_plan(op, a_key, dtype, fill_value, n):
     return out_dtype, fill_value
 
 
-def _aux_dtype(handle, a_dtype, out_dtype):
+def _aux_dtype(handle: KernelHandle, a_dtype: np.dtype, out_dtype: np.dtype) -> np.dtype:
     """The auxiliary (widened accumulation) dtype of the dispersion kernels."""
     if handle.aux_widen:
         return np.result_type(a_dtype, np.float64)
@@ -69,22 +74,22 @@ class AggregateOp:
     scalar input and delegates the actual aggregation to the jitted driver.
     """
 
-    def __init__(self, func, handle, nans=False):
+    def __init__(self, func: str, handle: KernelHandle, nans: bool = False) -> None:
         self.func = func
         self.nans = nans
         self.handle = handle
 
     def __call__(
         self,
-        group_idx,
-        a,
-        size=None,
-        fill_value=DEFAULT_FILL_VALUE,
-        order="C",
-        dtype=None,
-        axis=None,
-        ddof=0,
-    ):
+        group_idx: npt.ArrayLike,
+        a: npt.ArrayLike,
+        size: int | tuple[int, ...] | None = None,
+        fill_value: typing.Any = DEFAULT_FILL_VALUE,
+        order: str = "C",
+        dtype: npt.DTypeLike = None,
+        axis: int | None = None,
+        ddof: float = 0,
+    ) -> npt.NDArray[np.generic]:
         handle = self.handle
         # fast path: plain 1d-in/1d-out - the jitted driver does the bounds
         # check, size detection, allocation and the kernel in one compiled
@@ -181,22 +186,22 @@ class AggregateGeneric:
     trusted against false hits.
     """
 
-    def __init__(self, func, **kwargs):
+    def __init__(self, func: typing.Callable[..., typing.Any], **kwargs: typing.Any) -> None:
         self.func = func
         self.__dict__.update(kwargs)
         self._jitfunc = self._callable()
 
     def __call__(
         self,
-        group_idx,
-        a,
-        size=None,
-        fill_value=DEFAULT_FILL_VALUE,
-        order="C",
-        dtype=None,
-        axis=None,
-        ddof=0,
-    ):
+        group_idx: npt.ArrayLike,
+        a: npt.ArrayLike,
+        size: int | tuple[int, ...] | None = None,
+        fill_value: typing.Any = DEFAULT_FILL_VALUE,
+        order: str = "C",
+        dtype: npt.DTypeLike = None,
+        axis: int | None = None,
+        ddof: float = 0,
+    ) -> npt.NDArray[np.generic]:
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False)
         group_idx, a, flat_size, ndim_idx, size, _ = iv
 
@@ -216,7 +221,7 @@ class AggregateGeneric:
             ret = ret.reshape(size, order=order)
         return ret
 
-    def _callable(self):
+    def _callable(self) -> typing.Callable[..., typing.Any]:
         """Compile a jitted function and loop it over the sorted data."""
         func = nb.njit(self.func)
 

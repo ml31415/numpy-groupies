@@ -8,6 +8,7 @@ order (these operations are order-sensitive, unlike the reductions).
 import typing
 
 import numpy as np
+import numpy.typing as npt
 
 from .compose import complex_less, kernel, rule_widen_int
 
@@ -16,8 +17,8 @@ class CumulativeState(typing.NamedTuple):
     """``running`` accumulates per group, ``out`` records the running value
     at every input position."""
 
-    running: np.ndarray
-    out: np.ndarray
+    running: npt.NDArray[np.generic]
+    out: npt.NDArray[np.generic]
 
 
 def _cumsum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
@@ -78,9 +79,9 @@ class CumExtremaState(typing.NamedTuple):
     Kept flat instead of extending ``CumulativeState`` - numba cannot type
     inherited NamedTuples."""
 
-    running: np.ndarray
-    out: np.ndarray
-    pending: np.ndarray
+    running: npt.NDArray[np.generic]
+    out: npt.NDArray[np.generic]
+    pending: npt.NDArray[np.bool_]
 
 
 def _cummax_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):

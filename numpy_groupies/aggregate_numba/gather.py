@@ -1,15 +1,20 @@
 """Gather aggregated results back onto the input positions."""
 
 import numpy as np
+import numpy.typing as npt
 
 
-def _gather_1d(ret, group_idx, out):
+def _gather_1d(
+    ret: npt.NDArray[np.generic], group_idx: npt.NDArray[np.integer], out: npt.NDArray[np.generic]
+) -> npt.NDArray[np.generic]:
     for i in range(group_idx.size):
         out[i] = ret[group_idx[i]]
     return out
 
 
-def unpack_into(group_idx, ret, out):
+def unpack_into(
+    group_idx: npt.ArrayLike, ret: npt.NDArray[np.generic], out: npt.NDArray[np.generic]
+) -> npt.NDArray[np.generic]:
     """Like ``unpack``, but gathers into a caller-provided array.
 
     ``out`` must match the shape of ``ret[group_idx]`` and the dtype of

@@ -27,7 +27,7 @@ def aggregate(
     order: str = "C",
     dtype: npt.DTypeLike = None,
     axis: int | None = None,
-    out: np.ndarray | None = None,
+    out: npt.NDArray[np.generic] | None = None,
     cache: bool = True,
     **kwargs: typing.Any,
 ) -> typing.Any:

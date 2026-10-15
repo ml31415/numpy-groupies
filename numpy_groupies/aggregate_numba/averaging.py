@@ -10,6 +10,7 @@ import typing
 
 import numba as nb
 import numpy as np
+import numpy.typing as npt
 
 from ..aggregate_common import EXACT_FLOAT64_INTEGER_LIMIT, INT64_DEVIATION_LIMIT, INT64_MIN
 from .compose import kernel, rule_float, rule_real_float
@@ -152,10 +153,10 @@ class MeanState(typing.NamedTuple):
     by ``count``; ``low``/``high`` are the single-element global extrema
     scratch that feed the integer exactness gate."""
 
-    out: np.ndarray
-    count: np.ndarray
-    low: np.ndarray
-    high: np.ndarray
+    out: npt.NDArray[np.inexact]
+    count: npt.NDArray[np.int64]
+    low: npt.NDArray[np.generic]
+    high: npt.NDArray[np.generic]
 
 
 def _mean_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
@@ -198,7 +199,7 @@ mean = kernel(
     gate=_mean_gate,
     finish=_mean_finish,
     forced_fill=0,
-    fill_default=float("nan"),
+    fill_default=np.nan,
     rule=rule_float,
     doc="Arithmetic mean of the values of every group",
 )
@@ -249,12 +250,12 @@ class StdState(typing.NamedTuple):
     exactness gate.  Kept flat instead of extending ``MeanState`` - numba
     cannot type inherited NamedTuples."""
 
-    out: np.ndarray
-    count: np.ndarray
-    dev: np.ndarray
-    first: np.ndarray
-    low: np.ndarray
-    high: np.ndarray
+    out: npt.NDArray[np.floating]
+    count: npt.NDArray[np.int64]
+    dev: npt.NDArray[np.inexact]
+    first: npt.NDArray[np.generic]
+    low: npt.NDArray[np.generic]
+    high: npt.NDArray[np.generic]
 
 
 def _std_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
@@ -305,7 +306,7 @@ std = kernel(
     gate=_std_gate,
     finish=_std_finish,
     forced_fill=0,
-    fill_default=float("nan"),
+    fill_default=np.nan,
     rule=rule_real_float,
     aux_widen=True,
     doc="Standard deviation of the values of every group",
@@ -328,7 +329,7 @@ var = kernel(
     gate=_std_gate,
     finish=_var_finish,
     forced_fill=0,
-    fill_default=float("nan"),
+    fill_default=np.nan,
     rule=rule_real_float,
     aux_widen=True,
     doc="Variance of the values of every group",

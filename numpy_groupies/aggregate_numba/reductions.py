@@ -3,6 +3,7 @@
 import typing
 
 import numpy as np
+import numpy.typing as npt
 
 from .compose import complex_less, kernel, rule_bool, rule_int64, rule_same, rule_sum, rule_sumofsquares, rule_widen_int
 
@@ -13,8 +14,8 @@ class ReductionState(typing.NamedTuple):
     the result, ``untouched`` marks the groups that have not received a value
     yet (a custom fill value is applied to them after the loop)."""
 
-    out: np.ndarray
-    untouched: np.ndarray
+    out: npt.NDArray[np.generic]
+    untouched: npt.NDArray[np.bool_]
 
 
 class SelectionState(typing.NamedTuple):
@@ -23,8 +24,8 @@ class SelectionState(typing.NamedTuple):
     ``pending`` marks the groups that have not seen a value yet - their first
     value always wins, a nan poisons the group."""
 
-    out: np.ndarray
-    pending: np.ndarray
+    out: npt.NDArray[np.generic]
+    pending: npt.NDArray[np.bool_]
 
 
 def _sum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
@@ -157,7 +158,7 @@ any = kernel(
 class LastState(typing.NamedTuple):
     """The output array carries the last value of each group itself."""
 
-    out: np.ndarray
+    out: npt.NDArray[np.generic]
 
 
 def _last_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value):
@@ -174,7 +175,7 @@ last = kernel(
     init=_last_init,
     update=_last_update,
     rule=rule_same,
-    fill_default=float("nan"),
+    fill_default=np.nan,
     doc="Last value of every group",
 )
 
@@ -194,7 +195,7 @@ first = kernel(
     init=_first_init,
     update=_first_update,
     rule=rule_same,
-    fill_default=float("nan"),
+    fill_default=np.nan,
     doc="First value of every group",
 )
 
@@ -281,7 +282,7 @@ max = kernel(
     init=_max_init,
     update=_max_update,
     rule=rule_same,
-    fill_default=float("nan"),
+    fill_default=np.nan,
     doc="Maximum value of every group",
 )
 
@@ -304,7 +305,7 @@ min = kernel(
     init=_min_init,
     update=_min_update,
     rule=rule_same,
-    fill_default=float("nan"),
+    fill_default=np.nan,
     doc="Minimum value of every group",
 )
 

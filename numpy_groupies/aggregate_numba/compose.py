@@ -40,7 +40,7 @@ import numpy as np
 from .jit import njit_stable
 
 
-def complex_less(x, y):
+def complex_less(x: typing.Any, y: typing.Any) -> bool:
     """The ordering every reduction kernel of this package compares with.
 
     For real values this is plain ``<``.  numpy orders complex values
@@ -79,18 +79,18 @@ def _complex_less_overload(x, y):
 # returning the (out_dtype, aux_dtype) pair of np.dtypes
 
 
-def _as_np_dtype(a_type):
+def _as_np_dtype(a_type: nb.types.ArrayCTypes) -> np.dtype:
     """The np.dtype of the numba array type an overload builder sees."""
     return nb.np.numpy_support.as_dtype(a_type.dtype)
 
 
-def rule_same(a_type):
+def rule_same(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     """min/max/first/last: the input dtype passes through."""
     dt = _as_np_dtype(a_type)
     return dt, dt
 
 
-def rule_sum(a_type):
+def rule_sum(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     """sum: integers and bools widen to int64.
 
     This is the njit-kernel approximation - the python-level ``aggregate()``
@@ -103,7 +103,7 @@ def rule_sum(a_type):
     return dt, dt
 
 
-def rule_widen_int(a_type):
+def rule_widen_int(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     """prod and the cumulatives: integer input widens to int64, everything
     else (bool included) passes through - matching the python-level rules."""
     dt = _as_np_dtype(a_type)
@@ -112,7 +112,7 @@ def rule_widen_int(a_type):
     return dt, dt
 
 
-def rule_float(a_type):
+def rule_float(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     """mean/median/trapezoid: inexact input keeps its dtype, otherwise
     everything widens to float64."""
     dt = _as_np_dtype(a_type)
@@ -120,7 +120,7 @@ def rule_float(a_type):
     return out, out
 
 
-def rule_real_float(a_type):
+def rule_real_float(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     """var/std: real float passes through, complex input yields the real
     counterpart (complex64 -> float32), integers/bools widen to float64.
     The auxiliary dtype is the deviation-sum accumulator, which stays complex
@@ -135,7 +135,7 @@ def rule_real_float(a_type):
     return out, np.result_type(dt, np.float64)
 
 
-def rule_sumofsquares(a_type):
+def rule_sumofsquares(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     """sumofsquares: like var/std, except integers/bools widen to int64 - the
     exact squares of integers are integral."""
     dt = _as_np_dtype(a_type)
@@ -148,17 +148,17 @@ def rule_sumofsquares(a_type):
     return out, out
 
 
-def rule_bool(a_type):
+def rule_bool(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     out = np.dtype(np.bool_)
     return out, out
 
 
-def rule_int64(a_type):
+def rule_int64(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     out = np.dtype(np.int64)
     return out, out
 
 
-def _resolve_default_fill(fill_default, out_dtype):
+def _resolve_default_fill(fill_default: typing.Any, out_dtype: np.dtype) -> typing.Any:
     """The njit-kernel twin of the DEFAULT_FILL_VALUE resolution: a nan
     default only fits inexact outputs (a complex output needs the nan in both
     parts), integer and bool outputs fall back to 0."""
@@ -261,24 +261,24 @@ class KernelPair(typing.NamedTuple):
 
 
 def kernel(
-    name,
+    name: str,
     *,
-    init,
-    update,
-    rule,
-    fill_default=0,
-    forced_fill=None,
-    seed=None,
-    record=None,
-    gate=None,
-    finish=None,
-    untouched=None,
-    nans=True,
-    ddof_default=0,
-    aux_widen=False,
-    nton=False,
-    doc=None,
-):
+    init: typing.Callable[..., typing.Any],
+    update: typing.Callable[..., typing.Any],
+    rule: typing.Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
+    fill_default: typing.Any = 0,
+    forced_fill: float | None = None,
+    seed: typing.Callable[..., typing.Any] | None = None,
+    record: typing.Callable[..., typing.Any] | None = None,
+    gate: typing.Callable[..., typing.Any] | None = None,
+    finish: typing.Callable[..., typing.Any] | None = None,
+    untouched: typing.Callable[..., typing.Any] | None = None,
+    nans: bool = True,
+    ddof_default: float = 0,
+    aux_widen: bool = False,
+    nton: bool = False,
+    doc: str | None = None,
+) -> KernelPair:
     """Compose the kernels of one operation from jitted building blocks.
 
     See the module docstring for the building-block signatures.  Both the
@@ -376,17 +376,17 @@ def kernel(
 
 
 def custom_kernel(
-    name,
+    name: str,
     *,
-    driver_factory,
-    rule,
-    fill_default=0,
-    forced_fill=None,
-    nans=True,
-    ddof_default=0,
-    aux_widen=False,
-    doc=None,
-):
+    driver_factory: typing.Callable[[bool], typing.Any],
+    rule: typing.Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
+    fill_default: typing.Any = 0,
+    forced_fill: float | None = None,
+    nans: bool = True,
+    ddof_default: float = 0,
+    aux_widen: bool = False,
+    doc: str | None = None,
+) -> KernelPair:
     """Compose the kernels of an operation with a hand-written driver.
 
     ``driver_factory(nans)`` returns the compiled driver with the same
