@@ -50,6 +50,21 @@ def _sum_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] += val
 
 
+def _sum_update_nan(st, ri, i, val, fill_value, ddof):
+    # branchless select-form twin of _sum_update - nans contribute nothing
+    # and do not ready their group for a custom fill value; the guarded
+    # equivalent turns the loop scalar and compiles ~3x slower
+    valid = val == val
+    st.untouched[ri] = st.untouched[ri] & (val != val)
+    if isinstance(val, (float, complex)):
+        st.out[ri] += val if valid else 0.0
+    else:
+        # integer and bool input have no nan - the plain path keeps wide
+        # uint64 exact (a python literal 0 would unify uint64 with int64
+        # into float64)
+        st.out[ri] += val
+
+
 def _sum_untouched(st):
     return st.untouched
 
@@ -58,6 +73,7 @@ sum = build_kernel(
     "sum",
     init=_sum_init,
     update=_sum_update,
+    update_nan=_sum_update_nan,
     untouched=_sum_untouched,
     forced_fill=0,
     fill_default=0,
@@ -75,6 +91,16 @@ def _prod_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] *= val
 
 
+def _prod_update_nan(st, ri, i, val, fill_value, ddof):
+    valid = val == val
+    st.untouched[ri] = st.untouched[ri] & (val != val)
+    if isinstance(val, (float, complex)):
+        st.out[ri] *= val if valid else 1.0
+    else:
+        # integer and bool input have no nan, see _sum_update_nan
+        st.out[ri] *= val
+
+
 def _prod_untouched(st):
     return st.untouched
 
@@ -83,6 +109,7 @@ prod = build_kernel(
     "prod",
     init=_prod_init,
     update=_prod_update,
+    update_nan=_prod_update_nan,
     untouched=_prod_untouched,
     forced_fill=1,
     fill_default=1,
@@ -100,6 +127,12 @@ def _len_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] += 1
 
 
+def _len_update_nan(st, ri, i, val, fill_value, ddof):
+    valid = val == val
+    st.untouched[ri] = st.untouched[ri] & (val != val)
+    st.out[ri] += 1 if valid else 0
+
+
 def _len_untouched(st):
     return st.untouched
 
@@ -108,6 +141,7 @@ len = build_kernel(
     "len",
     init=_len_init,
     update=_len_update,
+    update_nan=_len_update_nan,
     untouched=_len_untouched,
     forced_fill=0,
     fill_default=0,
@@ -125,6 +159,11 @@ def _all_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] &= bool(val)
 
 
+def _all_update_nan(st, ri, i, val, fill_value, ddof):
+    st.untouched[ri] = st.untouched[ri] & (val != val)
+    st.out[ri] &= (val != val) | bool(val)
+
+
 def _all_untouched(st):
     return st.untouched
 
@@ -133,6 +172,7 @@ all = build_kernel(
     "all",
     init=_all_init,
     update=_all_update,
+    update_nan=_all_update_nan,
     untouched=_all_untouched,
     forced_fill=1,
     fill_default=False,
@@ -150,6 +190,12 @@ def _any_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] |= bool(val)
 
 
+def _any_update_nan(st, ri, i, val, fill_value, ddof):
+    valid = val == val
+    st.untouched[ri] = st.untouched[ri] & (val != val)
+    st.out[ri] |= bool(val) & valid
+
+
 def _any_untouched(st):
     return st.untouched
 
@@ -158,6 +204,7 @@ any = build_kernel(
     "any",
     init=_any_init,
     update=_any_update,
+    update_nan=_any_update_nan,
     untouched=_any_untouched,
     forced_fill=0,
     fill_default=False,
@@ -181,10 +228,19 @@ def _last_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] = val
 
 
+def _last_update_nan(st, ri, i, val, fill_value, ddof):
+    # select-form twin of _last_update - the current value must be read into
+    # a local first, repeating the subscript expression in the else branch
+    # keeps the slow codegen (aliasing, see the note in _max_update)
+    cur = st.out[ri]
+    st.out[ri] = val if val == val else cur
+
+
 last = build_kernel(
     "last",
     init=_last_init,
     update=_last_update,
+    update_nan=_last_update_nan,
     rule=rule_same,
     fill_default=np.nan,
     doc="Last value of every group",
@@ -218,13 +274,17 @@ def _first_driver_factory(nan_variant):
             if ri >= size:
                 raise ValueError("one or more indices in group_idx are too large")
             val = a[i]
-            # the nan variant skips nans entirely, the plain one takes the
-            # first value whatever it is (folded away for the plain one)
-            if nan_variant and val != val:
-                continue
-            if pending[ri]:
-                pending[ri] = False
-                out[ri] = val
+            if nan_variant:
+                # select-form: nans neither win nor clear the pending flag,
+                # the loop stays vectorizable (folded away for the plain one)
+                take = pending[ri] & (val == val)
+                pending[ri] = pending[ri] & (val != val)
+                out[ri] = val if take else out[ri]
+            else:
+                # the plain one takes the first value whatever it is
+                if pending[ri]:
+                    pending[ri] = False
+                    out[ri] = val
         return out
 
     return driver
@@ -305,7 +365,8 @@ def _max_update(st, ri, i, val, fill_value, ddof):
     # would leave a group whose nan arrives after its first value at the
     # finite value, unlike np.max (and unlike the arg kernels, which report
     # such a group as invalid).  The nan variants are unaffected, they filter
-    # the nans out before the kernel runs.  The extra comparison is the
+    # the nans out before the kernel runs; they use their own select-form bodies instead (see
+    # _max_update_nan).  The extra comparison is the
     # cheapest way to get there: np.maximum in the non-first branch (which
     # propagates nans on its own, but does not order complex values the way
     # numpy does) and the branchy form both measured ~45% slower, while for
@@ -316,10 +377,21 @@ def _max_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] = val if (first or val != val or complex_less(cur, val)) else cur
 
 
+def _max_update_nan(st, ri, i, val, fill_value, ddof):
+    # select-form twin of _max_update - nans neither win nor clear the
+    # pending flag
+    valid = val == val
+    first = st.pending[ri]
+    st.pending[ri] = first & (val != val)
+    cur = st.out[ri]
+    st.out[ri] = val if (valid & (first | complex_less(cur, val))) else cur
+
+
 max = build_kernel(
     "max",
     init=_max_init,
     update=_max_update,
+    update_nan=_max_update_nan,
     rule=rule_same,
     fill_default=np.nan,
     doc="Maximum value of every group",
@@ -339,10 +411,20 @@ def _min_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] = val if (first or val != val or complex_less(val, cur)) else cur
 
 
+def _min_update_nan(st, ri, i, val, fill_value, ddof):
+    # select-form twin of _min_update, see _max_update_nan
+    valid = val == val
+    first = st.pending[ri]
+    st.pending[ri] = first & (val != val)
+    cur = st.out[ri]
+    st.out[ri] = val if (valid & (first | complex_less(val, cur))) else cur
+
+
 min = build_kernel(
     "min",
     init=_min_init,
     update=_min_update,
+    update_nan=_min_update_nan,
     rule=rule_same,
     fill_default=np.nan,
     doc="Minimum value of every group",
@@ -364,6 +446,18 @@ def _sumofsquares_update(st, ri, i, val, fill_value, ddof):
         st.out[ri] += val.real * val.real + val.imag * val.imag
 
 
+def _sumofsquares_update_nan(st, ri, i, val, fill_value, ddof):
+    valid = val == val
+    st.untouched[ri] = st.untouched[ri] & (val != val)
+    if isinstance(val, bool):
+        st.out[ri] += val * val
+    elif isinstance(val, (float, complex)):
+        st.out[ri] += (val.real * val.real + val.imag * val.imag) if valid else 0.0
+    else:
+        # integer input has no nan, see _sum_update_nan
+        st.out[ri] += val.real * val.real + val.imag * val.imag
+
+
 def _sumofsquares_untouched(st):
     return st.untouched
 
@@ -372,6 +466,7 @@ sumofsquares = build_kernel(
     "sumofsquares",
     init=_sumofsquares_init,
     update=_sumofsquares_update,
+    update_nan=_sumofsquares_update_nan,
     untouched=_sumofsquares_untouched,
     forced_fill=0,
     fill_default=0,

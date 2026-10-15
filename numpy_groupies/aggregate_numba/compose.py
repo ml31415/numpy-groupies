@@ -284,6 +284,7 @@ def build_kernel(
     gate: typing.Callable[..., typing.Any] | None = None,
     finish: typing.Callable[..., typing.Any] | None = None,
     untouched: typing.Callable[..., typing.Any] | None = None,
+    update_nan: typing.Callable[..., typing.Any] | None = None,
     nans: bool = True,
     ddof_default: float = 0,
     aux_widen: bool = False,
@@ -294,11 +295,15 @@ def build_kernel(
     """Compose the kernels of one operation from jitted building blocks.
 
     See the module docstring for the building-block signatures.  Both the
-    plain and (unless ``nans=False``) the nan-guarded variant are built; the
-    nan guard skips values that are nan before they reach ``update``.
+    plain and (unless ``nans=False``) the nan-guarded variant are built.  The
+    nan variant uses ``update_nan`` when the operation provides one - a
+    branchless select-form body that folds the nan handling into its stores
+    so that LLVM keeps the loop vectorized - and otherwise falls back to the
+    generic guard that skips nan values before they reach ``update``.
     """
     init_c = njit_stable(init)
     update_c = njit_stable(update)
+    update_nan_c = njit_stable(update_nan) if update_nan is not None else None
     seed_c = njit_stable(seed) if seed is not None else _seed_none
     record_c = njit_stable(record) if record is not None else _record_none
     gate_c = njit_stable(gate) if gate is not None else _gate_none
@@ -325,13 +330,16 @@ def build_kernel(
 
     def build(nan_variant):
         if nan_variant:
+            if update_nan_c is not None:
+                update_ = update_nan_c
+            else:
 
-            @njit_stable
-            def guarded_update(st, ri, i, val, fill_value, ddof):
-                if val == val:
-                    update_c(st, ri, i, val, fill_value, ddof)
+                @njit_stable
+                def guarded_update(st, ri, i, val, fill_value, ddof):
+                    if val == val:
+                        update_c(st, ri, i, val, fill_value, ddof)
 
-            update_ = guarded_update
+                update_ = guarded_update
         else:
             update_ = update_c
 

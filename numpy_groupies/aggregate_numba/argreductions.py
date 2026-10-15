@@ -33,22 +33,22 @@ def _argmax_driver_factory(nan_variant):
             if ri >= size:
                 raise ValueError("one or more indices in group_idx are too large")
             val = a[i]
-            if val != val:
-                # a nan poisons its group - no finite value can beat it and
-                # the result falls back to the fill value; the nan variant
-                # skips the value instead (folded away for the plain one)
-                if nan_variant:
-                    continue
+            valid = val == val
+            best = complex_less(running[ri], val)
+            if nan_variant:
+                # select-form: nans neither win nor clear the pending flag,
+                # the loop stays vectorizable (folded away for the plain one)
+                win = valid & (pending[ri] | best)
+                pending[ri] = pending[ri] & (val != val)
+                running[ri] = val if win else running[ri]
+                out[ri] = i if win else out[ri]
+            else:
+                # a nan poisons its group: it wins outright and the result
+                # falls back to the fill value
+                win = (val != val) | pending[ri] | best
                 pending[ri] = False
-                running[ri] = val
-                out[ri] = fill_value
-            elif pending[ri]:
-                pending[ri] = False
-                running[ri] = val
-                out[ri] = i
-            elif complex_less(running[ri], val):
-                running[ri] = val
-                out[ri] = i
+                running[ri] = val if win else running[ri]
+                out[ri] = (i if valid else fill_value) if win else out[ri]
         return out
 
     return driver
@@ -82,19 +82,20 @@ def _argmin_driver_factory(nan_variant):
             if ri >= size:
                 raise ValueError("one or more indices in group_idx are too large")
             val = a[i]
-            if val != val:
-                if nan_variant:
-                    continue
+            valid = val == val
+            best = complex_less(val, running[ri])
+            if nan_variant:
+                # select-form, see _argmax_driver_factory
+                win = valid & (pending[ri] | best)
+                pending[ri] = pending[ri] & (val != val)
+                running[ri] = val if win else running[ri]
+                out[ri] = i if win else out[ri]
+            else:
+                # a nan poisons its group, see _argmax_driver_factory
+                win = (val != val) | pending[ri] | best
                 pending[ri] = False
-                running[ri] = val
-                out[ri] = fill_value
-            elif pending[ri]:
-                pending[ri] = False
-                running[ri] = val
-                out[ri] = i
-            elif complex_less(val, running[ri]):
-                running[ri] = val
-                out[ri] = i
+                running[ri] = val if win else running[ri]
+                out[ri] = (i if valid else fill_value) if win else out[ri]
         return out
 
     return driver

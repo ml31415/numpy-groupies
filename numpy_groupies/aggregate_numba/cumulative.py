@@ -30,6 +30,18 @@ def _cumsum_update(st, ri, i, val, fill_value, ddof):
     st.running[ri] += val
 
 
+def _cumsum_update_nan(st, ri, i, val, fill_value, ddof):
+    # select-form twin of _cumsum_update - a nan leaves the running value
+    # unchanged, the position still records it.  integer input has no nan
+    # and keeps the plain path (a python literal 0 would unify uint64 with
+    # int64 into float64)
+    if isinstance(val, (float, complex)):
+        st.running[ri] += val if val == val else 0.0
+    else:
+        # integer and bool input have no nan, see _sum_update_nan
+        st.running[ri] += val
+
+
 def _cumsum_record(st, ri, i):
     st.out[i] = st.running[ri]
 
@@ -38,6 +50,7 @@ cumsum = build_kernel(
     "cumsum",
     init=_cumsum_init,
     update=_cumsum_update,
+    update_nan=_cumsum_update_nan,
     record=_cumsum_record,
     rule=rule_widen_int,
     fill_default=0,
@@ -54,6 +67,14 @@ def _cumprod_update(st, ri, i, val, fill_value, ddof):
     st.running[ri] *= val
 
 
+def _cumprod_update_nan(st, ri, i, val, fill_value, ddof):
+    if isinstance(val, (float, complex)):
+        st.running[ri] *= val if val == val else 1.0
+    else:
+        # integer and bool input have no nan, see _sum_update_nan
+        st.running[ri] *= val
+
+
 def _cumprod_record(st, ri, i):
     st.out[i] = st.running[ri]
 
@@ -62,6 +83,7 @@ cumprod = build_kernel(
     "cumprod",
     init=_cumprod_init,
     update=_cumprod_update,
+    update_nan=_cumprod_update_nan,
     record=_cumprod_record,
     rule=rule_widen_int,
     fill_default=0,
@@ -100,6 +122,16 @@ def _cummax_update(st, ri, i, val, fill_value, ddof):
     st.running[ri] = val if (first or val != val or complex_less(cur, val)) else cur
 
 
+def _cummax_update_nan(st, ri, i, val, fill_value, ddof):
+    # select-form twin of _cummax_update - nans neither win nor clear the
+    # pending flag
+    valid = val == val
+    first = st.pending[ri]
+    st.pending[ri] = first & (val != val)
+    cur = st.running[ri]
+    st.running[ri] = val if (valid & (first | complex_less(cur, val))) else cur
+
+
 def _cummax_record(st, ri, i):
     st.out[i] = st.running[ri]
 
@@ -108,6 +140,7 @@ cummax = build_kernel(
     "cummax",
     init=_cummax_init,
     update=_cummax_update,
+    update_nan=_cummax_update_nan,
     record=_cummax_record,
     rule=rule_widen_int,
     fill_default=0,
@@ -132,6 +165,14 @@ def _cummin_update(st, ri, i, val, fill_value, ddof):
     st.running[ri] = val if (first or val != val or complex_less(val, cur)) else cur
 
 
+def _cummin_update_nan(st, ri, i, val, fill_value, ddof):
+    valid = val == val
+    first = st.pending[ri]
+    st.pending[ri] = first & (val != val)
+    cur = st.running[ri]
+    st.running[ri] = val if (valid & (first | complex_less(val, cur))) else cur
+
+
 def _cummin_record(st, ri, i):
     st.out[i] = st.running[ri]
 
@@ -140,6 +181,7 @@ cummin = build_kernel(
     "cummin",
     init=_cummin_init,
     update=_cummin_update,
+    update_nan=_cummin_update_nan,
     record=_cummin_record,
     rule=rule_widen_int,
     fill_default=0,
