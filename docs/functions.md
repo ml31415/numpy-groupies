@@ -112,22 +112,22 @@ These do not reduce the data; the output has the size of the input. There are no
 `x` = supported, `-` = raises `NotImplementedError` (checked by calling each implementation).
 The nan-variants are supported wherever the plain function is.
 
-| Function                       | numpy | numba | pure python | ufunc |
-| ------------------------------ | :---: | :---: | :---------: | :---: |
-| `sum`, `prod`, `len`           |  x    |  x    |      x      |  x    |
-| `min`, `max`                   |  x    |  x    |      x      |  x    |
-| `all`, `any`                   |  x    |  x    |      x      |  x    |
-| `allnan`, `anynan`             |  x    |  x    |      x      |  x    |
-| `mean`, `median`, `var`, `std` |  x    |  x    |      x      |  -    |
-| `first`, `last`                |  x    |  x    |      x      |  -    |
-| `argmin`, `argmax`             |  x    |  x    |      x      |  -    |
-| `sumofsquares`                 |  x    |  x    |      -      |  -    |
-| `trapezoid`                    |  x    |  x    |      x      |  -    |
-| `cumsum`                       |  x    |  x    |      -      |  -    |
-| `cumprod`, `cummin`, `cummax`  |  -    |  x    |      -      |  -    |
-| `sort`, `array`                |  x    |  -    |      x      |  -    |
-| `nan…` variants of the above   |  x¹   |  x¹   |     x¹      |  -    |
-| custom callables               |  x    |  x²   |      x      |  -    |
+| Function                       | numpy | numba | pure python |
+| ------------------------------ | :---: | :---: | :---------: |
+| `sum`, `prod`, `len`           |  x    |  x    |      x      |
+| `min`, `max`                   |  x    |  x    |      x      |
+| `all`, `any`                   |  x    |  x    |      x      |
+| `allnan`, `anynan`             |  x    |  x    |      x      |
+| `mean`, `median`, `var`, `std` |  x    |  x    |      x      |
+| `first`, `last`                |  x    |  x    |      x      |
+| `argmin`, `argmax`             |  x    |  x    |      x      |
+| `sumofsquares`                 |  x    |  x    |      -      |
+| `trapezoid`                    |  x    |  x    |      x      |
+| `cumsum`                       |  x    |  x    |      -      |
+| `cumprod`, `cummin`, `cummax`  |  -    |  x    |      -      |
+| `sort`, `array`                |  x    |  -    |      x      |
+| `nan…` variants of the above   |  x¹   |  x¹   |     x¹      |
+| custom callables               |  x    |  x²   |      x      |
 
 ¹ For the same functions as in the plain row.
 ² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use `aggregate_np` instead.

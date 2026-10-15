@@ -4,8 +4,9 @@ import timeit
 
 import numpy as np
 
-from numpy_groupies import aggregate_np, aggregate_py, aggregate_ufunc
+from numpy_groupies import aggregate_np, aggregate_py
 from numpy_groupies.benchmarks._pandas import aggregate as aggregate_pd
+from numpy_groupies.benchmarks._ufunc import aggregate as aggregate_ufunc
 from numpy_groupies.utils import aliasing
 
 

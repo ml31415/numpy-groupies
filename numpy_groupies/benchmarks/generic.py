@@ -8,7 +8,8 @@ from operator import itemgetter
 
 import numpy as np
 
-from numpy_groupies import aggregate_numpy, aggregate_numpy_ufunc, aggregate_purepy
+from numpy_groupies import aggregate_numpy, aggregate_purepy
+from numpy_groupies.benchmarks import _ufunc
 from numpy_groupies.utils import allnan, anynan, nanfirst, nanlast
 
 try:
@@ -223,7 +224,7 @@ def _build_implementations(args):
         impls.append(("purepy", aggregate_purepy.aggregate))
     impls.extend(
         (
-            ("ufunc", aggregate_numpy_ufunc.aggregate),
+            ("ufunc", _ufunc.aggregate),
             ("numpy", aggregate_numpy.aggregate),
             ("numba", aggregate_numba.aggregate),
         )

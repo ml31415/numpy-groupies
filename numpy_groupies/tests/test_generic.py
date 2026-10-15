@@ -952,8 +952,7 @@ def test_uint64_argreductions_preserve_order(impl, base, func, axis):
     The numpy backend used to lower the comparison dtype to float64 on
     NaN-bearing paths, which folded all large uint64 values to the same
     bucket and broke the argreduction. The invariant is shared across
-    backends so the test runs generically; ufunc does not implement these
-    functions, and purepy does not implement axis.
+    backends so the test runs generically; purepy does not implement axis.
     """
     group_idx = np.array([0, 0, 2, 2, 2, 2])
     a = np.array([base + 1, base, base + 2, base + 3, base + 2, base + 3], dtype=np.uint64)

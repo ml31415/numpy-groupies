@@ -4,14 +4,14 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from .aggregate_common import (
+from ..aggregate_common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     build_dispatch,
     get_func,
 )
-from .aggregate_numpy import _aggregate_base
-from .utils import (
+from ..aggregate_numpy import _aggregate_base
+from ..utils import (
     aliasing,
     check_boolean,
     maxval,

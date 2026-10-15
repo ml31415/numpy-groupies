@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from .. import aggregate_numpy, aggregate_numpy_ufunc, aggregate_purepy
+from .. import aggregate_numpy, aggregate_purepy
 
 aggregate_numba: Any
 
@@ -28,7 +28,6 @@ _backend_names = {
     module: name
     for name, module in (
         ("purepy", aggregate_purepy),
-        ("ufunc", aggregate_numpy_ufunc),
         ("numpy", aggregate_numpy),
         ("numba", aggregate_numba),
     )

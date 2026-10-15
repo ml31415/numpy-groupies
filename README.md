@@ -203,7 +203,7 @@ All implementations share the calling syntax and produce the same results up to 
 | **numba**      | numpy, numba | Fastest. Default if numba is installed. Lacks `sort` and `array`. |
 | **numpy**      | numpy        | Based on `np.bincount` and indexing tricks. Default without numba. Most complete. |
 | **pure python** | numpy        | Plain Python loops, no Numba. Very slow; useful as a fallback or for porting. |
-| numpy ufunc    | numpy        | For benchmarking only: built on `ufunc.at` (`np.add.at`, …). Incomplete. |
+| numpy ufunc    | numpy        | For benchmarking only: built on `ufunc.at` (`np.add.at`, …), in `numpy_groupies.benchmarks`. Incomplete. |
 | pandas         | numpy, pandas | For benchmarking only: wraps `groupby` (in `numpy_groupies.benchmarks`). Skips NaN even in the plain functions (except `median`, `cumsum`). |
 
 > **Gotchas:** with Numba installed, `aggregate(..., func="sort")` and `func="array"` raise `NotImplementedError`, and custom callables must be Numba-compilable (numeric code). For those cases call the NumPy implementation: `npg.aggregate_np(group_idx, a, func="sort")`.

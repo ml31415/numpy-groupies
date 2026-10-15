@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from .. import aggregate_np, aggregate_ufunc
+from .. import aggregate_np
 from .helpers import aggregate_numba, is_purepy
 
 # functions with a well-defined complex result, following numpy semantics - the
@@ -523,10 +523,6 @@ def test_order_functions_use_the_extreme_value_of_the_order():
         np.testing.assert_array_equal(np.asarray(aggregate_np(group_idx, a, func=func, size=2)), a)
     for func in ("argmin", "argmax", "nanargmin", "nanargmax"):
         np.testing.assert_array_equal(np.asarray(aggregate_np(group_idx, a, func=func, size=2)), [0, 1])
-    # the ufunc backend reduces min and max only - it has no arg functions and
-    # no nan variants to get the seed wrong with
-    for func in ("min", "max"):
-        np.testing.assert_array_equal(np.asarray(aggregate_ufunc(group_idx, a, func=func, size=2)), a)
 
     # masking with inf+0j would leave no value equal to the found minimum
     impls = [aggregate_np] + ([aggregate_numba.aggregate] if aggregate_numba is not None else [])
