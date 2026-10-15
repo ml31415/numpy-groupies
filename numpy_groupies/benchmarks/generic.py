@@ -100,6 +100,15 @@ def _numbagg_implementation():
     except ImportError as e:
         raise SystemExit("--numbagg needs the optional numbagg package installed") from e
 
+    import numba
+
+    # numbagg compiles its grouped reductions to parallel-target gufuncs -
+    # for a scatter reduction the per-call thread sync of that target
+    # dominates at this data size (measured 3.6ms against 0.5ms at one
+    # thread on a 6-core machine).  every other participant of this
+    # benchmark runs single threaded, so numbagg is held there too
+    numba.set_num_threads(1)
+
     funcs = {
         "sum": numbagg.group_nansum,
         "prod": numbagg.group_nanprod,
