@@ -3,6 +3,7 @@
 import platform
 import sys
 import timeit
+import types
 from operator import itemgetter
 
 import numpy as np
@@ -81,6 +82,81 @@ func_list = (
 )
 
 
+def _numbagg_implementation():
+    """The numbagg backend as a benchmark participant, included with
+    ``--numbagg`` (lazy import - numbagg is an optional dependency).
+
+    numbagg 0.9 ships nan-guarded grouped reductions only, so the plain
+    funcs run through their nan twins - the benchmark's plain data is
+    nan-free, where the results coincide.  ``ddof`` defaults to 0 like in
+    the rest of this package (numbagg's own default is 1).  Operations
+    without a numbagg counterpart raise NotImplementedError and are
+    reported as "----".  ``size``/``fill_value`` are accepted but ignored:
+    numbagg infers the group count and fills empty groups itself (the
+    benchmark data leaves no group empty).
+    """
+    try:
+        import numbagg
+    except ImportError as e:
+        raise SystemExit("--numbagg needs the optional numbagg package installed") from e
+
+    import numba
+
+    # numbagg compiles its grouped reductions to parallel-target gufuncs -
+    # for a scatter reduction the per-call thread sync of that target
+    # dominates at this data size (measured 3.6ms against 0.5ms at one
+    # thread on a 6-core machine).  every other participant of this
+    # benchmark runs single threaded, so numbagg is held there too
+    numba.set_num_threads(1)
+
+    funcs = {
+        "sum": numbagg.group_nansum,
+        "prod": numbagg.group_nanprod,
+        "len": numbagg.group_nancount,
+        "all": numbagg.group_nanall,
+        "any": numbagg.group_nanany,
+        "min": numbagg.group_nanmin,
+        "max": numbagg.group_nanmax,
+        "mean": numbagg.group_nanmean,
+        "std": numbagg.group_nanstd,
+        "var": numbagg.group_nanvar,
+        "first": numbagg.group_nanfirst,
+        "last": numbagg.group_nanlast,
+        "argmin": numbagg.group_nanargmin,
+        "argmax": numbagg.group_nanargmax,
+        "anynan": numbagg.group_nanany,
+        "allnan": numbagg.group_nanall,
+        "nansum": numbagg.group_nansum,
+        "nanprod": numbagg.group_nanprod,
+        "nanlen": numbagg.group_nancount,
+        "nanall": numbagg.group_nanall,
+        "nanany": numbagg.group_nanany,
+        "nanmin": numbagg.group_nanmin,
+        "nanmax": numbagg.group_nanmax,
+        "nanmean": numbagg.group_nanmean,
+        "nanstd": numbagg.group_nanstd,
+        "nanvar": numbagg.group_nanvar,
+        "nanfirst": numbagg.group_nanfirst,
+        "nanlast": numbagg.group_nanlast,
+        "nanargmin": numbagg.group_nanargmin,
+        "nanargmax": numbagg.group_nanargmax,
+    }
+    ddof_funcs = frozenset(("std", "var", "nanstd", "nanvar"))
+
+    def aggregate(group_idx, a, func="sum", size=None, fill_value=None, order="C", dtype=None, axis=None, ddof=0):
+        name = func if isinstance(func, str) else getattr(func, "__name__", None)
+        fn = funcs.get(name)
+        if fn is None:
+            raise NotImplementedError(f"numbagg has no grouped '{name}'")
+        if name in ddof_funcs:
+            return fn(a, group_idx, ddof=ddof)
+        return fn(a, group_idx)
+
+    mod = types.ModuleType("aggregate_numbagg")
+    mod.aggregate = aggregate
+    return mod
+
+
 def benchmark_data(size=5e5, seed=100):
     rnd = np.random.RandomState(seed=seed)
     group_idx = rnd.randint(0, int(1e3), int(size))
@@ -93,46 +169,93 @@ def benchmark_data(size=5e5, seed=100):
     return a, nana, group_idx
 
 
-def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False):
+def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1):
     a, nana, group_idx = benchmark_data(size=size, seed=seed)
 
-    print("function" + "".join(impl.__name__.rsplit("_", 1)[1].rjust(14) for impl in implementations))
-    print("-" * (9 + 14 * len(implementations)))
+    def single_run(verbose):
+        """One complete measurement pass - returns the table as
+        ``{func_name: [cell, ...]}``, where a cell is a float in
+        milliseconds, None for unavailable combinations or a marker string
+        ("ERROR"/"FAIL")."""
+        table = {}
+        for func in func_list:
+            func_name = getattr(func, "__name__", func)
+            used_a = nana if "nan" in func_name else a
+            cells = []
+            results = []
+            if verbose:
+                print(func_name.ljust(13), end="")
+            for impl in implementations:
+                if impl is None:
+                    cells.append(None)
+                    continue
+                try:
+                    res = impl.aggregate(group_idx, used_a, func=func)
+                except NotImplementedError:
+                    cells.append(None)
+                    if verbose:
+                        print("----".rjust(14), end="")
+                    continue
+                except Exception:
+                    if raise_errors:
+                        raise
+                    cells.append("ERROR")
+                    if verbose:
+                        print("ERROR".rjust(14), end="")
+                else:
+                    results.append(res)
+                    try:
+                        np.testing.assert_array_almost_equal(res, results[0])
+                    except AssertionError:
+                        cells.append("FAIL")
+                        if verbose:
+                            print("FAIL".rjust(14), end="")
+                    else:
+                        t0 = min(
+                            timeit.Timer(lambda: impl.aggregate(group_idx, used_a, func=func)).repeat(
+                                repeat=repeat, number=1
+                            )
+                        )
+                        cells.append(t0 * 1000)
+                        if verbose:
+                            print(f"{t0 * 1000:.3f}".rjust(14), end="")
+                if verbose:
+                    sys.stdout.flush()
+            if verbose:
+                print()
+            table[func_name] = cells
+        return table
+
+    tables = []
+    for r in range(runs):
+        if runs > 1:
+            print(f"run {r + 1}/{runs}", file=sys.stderr)
+        tables.append(single_run(verbose=runs == 1))
+
+    if runs == 1:
+        table = tables[0]
+    else:
+        # per-cell minimum over the complete runs - filters the system noise
+        # (cpu frequency, background load) that makes single runs wobble
+        table = {}
+        for func_name in tables[0]:
+            merged = []
+            for col in zip(*(t[func_name] for t in tables)):
+                numbers = [c for c in col if isinstance(c, float)]
+                if numbers:
+                    merged.append(min(numbers))
+                else:
+                    merged.append(next((c for c in col if c is not None), None))
+            table[func_name] = merged
+
+    print(f"{'function':13}" + "".join(impl.__name__.rsplit("_", 1)[1].rjust(14) for impl in implementations))
+    print("-" * (13 + 14 * len(implementations)))
     for func in func_list:
         func_name = getattr(func, "__name__", func)
-        print(func_name.ljust(9), end="")
-        results = []
-        used_a = nana if "nan" in func_name else a
-
-        for impl in implementations:
-            if impl is None:
-                print("----".rjust(14), end="")
-                continue
-            aggregatefunc = impl.aggregate
-
-            try:
-                res = aggregatefunc(group_idx, used_a, func=func)
-            except NotImplementedError:
-                print("----".rjust(14), end="")
-                continue
-            except Exception:
-                if raise_errors:
-                    raise
-                print("ERROR".rjust(14), end="")
-            else:
-                results.append(res)
-                try:
-                    np.testing.assert_array_almost_equal(res, results[0])
-                except AssertionError:
-                    print("FAIL".rjust(14), end="")
-                else:
-                    t0 = min(
-                        timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func)).repeat(
-                            repeat=repeat, number=1
-                        )
-                    )
-                    print(f"{t0 * 1000:.3f}".rjust(14), end="")
-            sys.stdout.flush()
+        print(func_name.ljust(13), end="")
+        for cell in table[func_name]:
+            text = "----" if cell is None else (f"{cell:.3f}" if isinstance(cell, float) else cell)
+            print(text.rjust(14), end="")
         print()
 
     implementation_names = [impl.__name__.rsplit("_", 1)[1] for impl in implementations]
@@ -153,5 +276,17 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False)
 
 if __name__ == "__main__":
     implementations = _implementations if "--purepy" in sys.argv else _implementations[1:]
-    implementations = implementations if "--pandas" in sys.argv else implementations[:-1]
-    benchmark(implementations, raise_errors=False)
+    with_pandas = "--pandas" in sys.argv
+    if not with_pandas:
+        implementations = implementations[:-1]
+    if "--numbagg" in sys.argv:
+        # numbagg joins before pandas, which stays the right-most column
+        if with_pandas:
+            implementations.insert(-1, _numbagg_implementation())
+        else:
+            implementations.append(_numbagg_implementation())
+    runs = 1
+    for arg in sys.argv:
+        if arg.startswith("--runs="):
+            runs = max(1, int(arg.rsplit("=", 1)[1]))
+    benchmark(implementations, raise_errors=False, runs=runs)

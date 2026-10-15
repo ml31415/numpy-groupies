@@ -1,0 +1,524 @@
+"""Streaming one-pass reductions: sums, products, lengths, logic, min/max."""
+
+import typing
+
+import numpy as np
+import numpy.typing as npt
+
+from .compose import (
+    build_custom_kernel,
+    build_kernel,
+    complex_less,
+    output_size,
+    rule_bool,
+    rule_int64,
+    rule_same,
+    rule_sum,
+    rule_sumofsquares,
+    rule_widen_int,
+)
+from .jit import njit_stable
+
+
+class ReductionState(typing.NamedTuple):
+    """The state of the streaming reductions that fold every value into a
+    per-group accumulator: ``out`` accumulates the reduction and doubles as
+    the result, ``untouched`` marks the groups that have not received a value
+    yet (a custom fill value is applied to them after the loop) and ``track``
+    says whether that bookkeeping runs at all - only a fill value differing
+    from the forced default needs it, the default keeps the per-element loop
+    free of the extra store (measured ~0.1ms per 500k values)."""
+
+    out: npt.NDArray[np.generic]
+    untouched: npt.NDArray[np.bool_]
+    track: bool
+
+
+class SelectionState(typing.NamedTuple):
+    """The state of the select-form reductions (min, max): ``out``
+    holds the selected value or the running best and doubles as the result,
+    ``pending`` marks the groups that have not seen a value yet - their first
+    value always wins, a nan poisons the group."""
+
+    out: npt.NDArray[np.generic]
+    pending: npt.NDArray[np.bool_]
+
+
+def _sum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    # the accumulation starts at 0 (the forced default) - a custom fill value
+    # is applied to the untouched groups after the loop
+    track = fill_value != forced_fill
+    untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
+    return ReductionState(np.zeros(size, out_dtype), untouched, track)
+
+
+def _sum_update(st, ri, i, val, fill_value, ddof):
+    if st.track:
+        st.untouched[ri] = False
+    st.out[ri] += val
+
+
+def _sum_update_nan(st, ri, i, val, fill_value, ddof):
+    # branchless select-form twin of _sum_update - nans contribute nothing
+    # and do not ready their group for a custom fill value; the guarded
+    # equivalent turns the loop scalar and compiles ~3x slower
+    valid = val == val
+    if st.track:
+        st.untouched[ri] = st.untouched[ri] & (val != val)
+    if isinstance(val, (float, complex)):
+        st.out[ri] += val if valid else 0.0
+    else:
+        # integer and bool input have no nan - the plain path keeps wide
+        # uint64 exact (a python literal 0 would unify uint64 with int64
+        # into float64)
+        st.out[ri] += val
+
+
+def _sum_untouched(st):
+    return st.untouched
+
+
+sum = build_kernel(
+    "sum",
+    init=_sum_init,
+    update=_sum_update,
+    update_nan=_sum_update_nan,
+    untouched=_sum_untouched,
+    forced_fill=0,
+    fill_default=0,
+    rule=rule_sum,
+    doc="Sum of the values of every group",
+)
+
+
+def _prod_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    track = fill_value != forced_fill
+    untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
+    return ReductionState(np.ones(size, out_dtype), untouched, track)
+
+
+def _prod_update(st, ri, i, val, fill_value, ddof):
+    if st.track:
+        st.untouched[ri] = False
+    st.out[ri] *= val
+
+
+def _prod_update_nan(st, ri, i, val, fill_value, ddof):
+    valid = val == val
+    if st.track:
+        st.untouched[ri] = st.untouched[ri] & (val != val)
+    if isinstance(val, (float, complex)):
+        st.out[ri] *= val if valid else 1.0
+    else:
+        # integer and bool input have no nan, see _sum_update_nan
+        st.out[ri] *= val
+
+
+def _prod_untouched(st):
+    return st.untouched
+
+
+prod = build_kernel(
+    "prod",
+    init=_prod_init,
+    update=_prod_update,
+    update_nan=_prod_update_nan,
+    untouched=_prod_untouched,
+    forced_fill=1,
+    fill_default=1,
+    rule=rule_widen_int,
+    doc="Product of the values of every group",
+)
+
+
+def _len_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    track = fill_value != forced_fill
+    untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
+    return ReductionState(np.zeros(size, out_dtype), untouched, track)
+
+
+def _len_update(st, ri, i, val, fill_value, ddof):
+    if st.track:
+        st.untouched[ri] = False
+    st.out[ri] += 1
+
+
+def _len_update_nan(st, ri, i, val, fill_value, ddof):
+    valid = val == val
+    if st.track:
+        st.untouched[ri] = st.untouched[ri] & (val != val)
+    st.out[ri] += 1 if valid else 0
+
+
+def _len_untouched(st):
+    return st.untouched
+
+
+len = build_kernel(
+    "len",
+    init=_len_init,
+    update=_len_update,
+    update_nan=_len_update_nan,
+    untouched=_len_untouched,
+    forced_fill=0,
+    fill_default=0,
+    rule=rule_int64,
+    doc="Amount of values of every group",
+)
+
+
+def _all_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    track = fill_value != forced_fill
+    untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
+    return ReductionState(np.ones(size, np.bool_), untouched, track)
+
+
+def _all_update(st, ri, i, val, fill_value, ddof):
+    if st.track:
+        st.untouched[ri] = False
+    st.out[ri] &= bool(val)
+
+
+def _all_update_nan(st, ri, i, val, fill_value, ddof):
+    if st.track:
+        st.untouched[ri] = st.untouched[ri] & (val != val)
+    st.out[ri] &= (val != val) | bool(val)
+
+
+def _all_untouched(st):
+    return st.untouched
+
+
+all = build_kernel(
+    "all",
+    init=_all_init,
+    update=_all_update,
+    update_nan=_all_update_nan,
+    untouched=_all_untouched,
+    forced_fill=1,
+    fill_default=False,
+    rule=rule_bool,
+    doc="Whether all values of every group are truthy",
+)
+
+
+def _any_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    track = fill_value != forced_fill
+    untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
+    return ReductionState(np.zeros(size, np.bool_), untouched, track)
+
+
+def _any_update(st, ri, i, val, fill_value, ddof):
+    if st.track:
+        st.untouched[ri] = False
+    st.out[ri] |= bool(val)
+
+
+def _any_update_nan(st, ri, i, val, fill_value, ddof):
+    valid = val == val
+    if st.track:
+        st.untouched[ri] = st.untouched[ri] & (val != val)
+    st.out[ri] |= bool(val) & valid
+
+
+def _any_untouched(st):
+    return st.untouched
+
+
+any = build_kernel(
+    "any",
+    init=_any_init,
+    update=_any_update,
+    update_nan=_any_update_nan,
+    untouched=_any_untouched,
+    forced_fill=0,
+    fill_default=False,
+    rule=rule_bool,
+    doc="Whether any value of every group is truthy",
+)
+
+
+class LastState(typing.NamedTuple):
+    """The output array carries the last value of each group itself."""
+
+    out: npt.NDArray[np.generic]
+
+
+def _last_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    # untouched groups keep the fill value
+    return LastState(np.full(size, fill_value, out_dtype))
+
+
+def _last_update(st, ri, i, val, fill_value, ddof):
+    st.out[ri] = val
+
+
+def _last_update_nan(st, ri, i, val, fill_value, ddof):
+    # select-form twin of _last_update - the current value must be read into
+    # a local first, repeating the subscript expression in the else branch
+    # keeps the slow codegen (aliasing, see the note in _max_update)
+    cur = st.out[ri]
+    st.out[ri] = val if val == val else cur
+
+
+last = build_kernel(
+    "last",
+    init=_last_init,
+    update=_last_update,
+    update_nan=_last_update_nan,
+    rule=rule_same,
+    fill_default=np.nan,
+    doc="Last value of every group",
+)
+
+
+def _first_driver_factory(nan_variant):
+    # The loop body is inlined on purpose: with numba >= 0.67 the composed
+    # driver plus a separate njit update call compiles ~12x slower here -
+    # see the note in argreductions._argmax_driver_factory.
+    @njit_stable
+    def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
+        size = output_size(group_idx, size_arg)
+        out = np.full(size, fill_value, out_dtype)
+        pending = np.ones(size, np.bool_)
+        # group_idx.shape[0] instead of len - the module global 'len' is the
+        # len kernel, not the builtin
+        # negative indices are flagged in the loop and raised after it: a
+        # raise is a call, and a call inside the loop stops LLVM from sinking
+        # the value loads into the short-circuit (measured ~0.1ms per 500k
+        # values on nanfirst)
+        bad = False
+        for i in range(group_idx.shape[0]):
+            ri = group_idx[i]
+            if ri < 0:
+                bad = True
+                continue
+            if nan_variant:
+                # early-exit form, matching numbagg: after the first value of
+                # a group the pending load short-circuits the rest, so the
+                # value load only runs while groups are still pending (folded
+                # away for the plain one)
+                if pending[ri] and not np.isnan(a[i]):
+                    pending[ri] = False
+                    out[ri] = a[i]
+            else:
+                # the plain one takes the first value whatever it is
+                if pending[ri]:
+                    pending[ri] = False
+                    out[ri] = a[i]
+        if bad:
+            raise ValueError("negative indices not supported")
+        return out
+
+    return driver
+
+
+first = build_custom_kernel(
+    "first",
+    driver_factory=_first_driver_factory,
+    rule=rule_same,
+    fill_default=np.nan,
+    doc="First value of every group",
+)
+
+
+def _allnan_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    track = fill_value != forced_fill
+    untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
+    return ReductionState(np.ones(size, np.bool_), untouched, track)
+
+
+def _allnan_update(st, ri, i, val, fill_value, ddof):
+    if st.track:
+        st.untouched[ri] = False
+    st.out[ri] &= val != val
+
+
+def _allnan_untouched(st):
+    return st.untouched
+
+
+allnan = build_kernel(
+    "allnan",
+    init=_allnan_init,
+    update=_allnan_update,
+    untouched=_allnan_untouched,
+    forced_fill=1,
+    fill_default=False,
+    rule=rule_bool,
+    nans=False,
+    doc="Whether all values of every group are nan",
+)
+
+
+def _anynan_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    track = fill_value != forced_fill
+    untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
+    return ReductionState(np.zeros(size, np.bool_), untouched, track)
+
+
+def _anynan_update(st, ri, i, val, fill_value, ddof):
+    if st.track:
+        st.untouched[ri] = False
+    st.out[ri] |= val != val
+
+
+def _anynan_untouched(st):
+    return st.untouched
+
+
+anynan = build_kernel(
+    "anynan",
+    init=_anynan_init,
+    update=_anynan_update,
+    untouched=_anynan_untouched,
+    forced_fill=0,
+    fill_default=False,
+    rule=rule_bool,
+    nans=False,
+    doc="Whether any value of every group is nan",
+)
+
+
+def _max_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
+
+
+def _max_update(st, ri, i, val, fill_value, ddof):
+    # select-form on purpose: the branchy equivalent compiles ~15x slower
+    # under numba >= 0.66 when reached as a separate njit call.  Note: out[ri]
+    # must be read into a local first - repeating the subscript expression
+    # keeps the slow codegen (aliasing).  val != val has to be tested
+    # explicitly - a nan compares neither smaller nor greater, in numpy's
+    # order for complex values as well as for floats, so complex_less alone
+    # would leave a group whose nan arrives after its first value at the
+    # finite value, unlike np.max (and unlike the arg kernels, which report
+    # such a group as invalid).  The nan variants are unaffected, they filter
+    # the nans out before the kernel runs; they use their own select-form bodies instead (see
+    # _max_update_nan).  The extra comparison is the
+    # cheapest way to get there: np.maximum in the non-first branch (which
+    # propagates nans on its own, but does not order complex values the way
+    # numpy does) and the branchy form both measured ~45% slower, while for
+    # integer dtypes LLVM folds the test away entirely.
+    first = st.pending[ri]
+    st.pending[ri] = False
+    cur = st.out[ri]
+    # the comparison is resolved into a local before the select
+    # expression - reaching it as a call defeats the branchless
+    # form (measured 2.5ms against 0.8ms per 500k values)
+    best = complex_less(cur, val)
+    st.out[ri] = val if (first or val != val or best) else cur
+
+
+def _max_update_nan(st, ri, i, val, fill_value, ddof):
+    # select-form twin of _max_update - nans neither win nor clear the
+    # pending flag
+    valid = val == val
+    first = st.pending[ri]
+    st.pending[ri] = first & (val != val)
+    cur = st.out[ri]
+    # the comparison is resolved into a local before the select
+    # expression - reaching it as a call defeats the branchless
+    # form (measured 2.5ms against 0.8ms per 500k values)
+    best = complex_less(cur, val)
+    st.out[ri] = val if (valid & (first | best)) else cur
+
+
+max = build_kernel(
+    "max",
+    init=_max_init,
+    update=_max_update,
+    update_nan=_max_update_nan,
+    rule=rule_same,
+    fill_default=np.nan,
+    doc="Maximum value of every group",
+)
+
+
+def _min_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
+
+
+def _min_update(st, ri, i, val, fill_value, ddof):
+    # select-form on purpose, see _max_update (including why val != val is
+    # part of the condition and what it costs)
+    first = st.pending[ri]
+    st.pending[ri] = False
+    cur = st.out[ri]
+    # the comparison is resolved into a local before the select
+    # expression - reaching it as a call defeats the branchless
+    # form (measured 2.5ms against 0.8ms per 500k values)
+    best = complex_less(val, cur)
+    st.out[ri] = val if (first or val != val or best) else cur
+
+
+def _min_update_nan(st, ri, i, val, fill_value, ddof):
+    # select-form twin of _min_update, see _max_update_nan
+    valid = val == val
+    first = st.pending[ri]
+    st.pending[ri] = first & (val != val)
+    cur = st.out[ri]
+    # the comparison is resolved into a local before the select
+    # expression - reaching it as a call defeats the branchless
+    # form (measured 2.5ms against 0.8ms per 500k values)
+    best = complex_less(val, cur)
+    st.out[ri] = val if (valid & (first | best)) else cur
+
+
+min = build_kernel(
+    "min",
+    init=_min_init,
+    update=_min_update,
+    update_nan=_min_update_nan,
+    rule=rule_same,
+    fill_default=np.nan,
+    doc="Minimum value of every group",
+)
+
+
+def _sumofsquares_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    track = fill_value != forced_fill
+    untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
+    return ReductionState(np.zeros(size, out_dtype), untouched, track)
+
+
+def _sumofsquares_update(st, ri, i, val, fill_value, ddof):
+    if st.track:
+        st.untouched[ri] = False
+    # the squared magnitude of val - complex values give a real, sqrt-free
+    # result like np.var; bool has no .real in numba and keeps the plain
+    # val * val product (isinstance resolves at compile time per dtype)
+    if isinstance(val, bool):
+        st.out[ri] += val * val
+    else:
+        st.out[ri] += val.real * val.real + val.imag * val.imag
+
+
+def _sumofsquares_update_nan(st, ri, i, val, fill_value, ddof):
+    valid = val == val
+    if st.track:
+        st.untouched[ri] = st.untouched[ri] & (val != val)
+    if isinstance(val, bool):
+        st.out[ri] += val * val
+    elif isinstance(val, (float, complex)):
+        st.out[ri] += (val.real * val.real + val.imag * val.imag) if valid else 0.0
+    else:
+        # integer input has no nan, see _sum_update_nan
+        st.out[ri] += val.real * val.real + val.imag * val.imag
+
+
+def _sumofsquares_untouched(st):
+    return st.untouched
+
+
+sumofsquares = build_kernel(
+    "sumofsquares",
+    init=_sumofsquares_init,
+    update=_sumofsquares_update,
+    update_nan=_sumofsquares_update_nan,
+    untouched=_sumofsquares_untouched,
+    forced_fill=0,
+    fill_default=0,
+    rule=rule_sumofsquares,
+    doc="Sum of the squared magnitudes of the values of every group",
+)

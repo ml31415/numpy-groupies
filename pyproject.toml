@@ -43,6 +43,7 @@ dev = [
     "pytest",
     "numba",
     "pandas",
+    "numbagg",
     # pre-commit 4 requires Python >= 3.11, but the project still supports
     # 3.10, so stay on the 3.x line.
     "pre-commit>=3.8,<4",

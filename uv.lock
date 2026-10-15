@@ -201,6 +201,21 @@ wheels = [
 ]
 
 [[package]]
+name = "numbagg"
+version = "0.9.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numba" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/f7/da588ebb82e20007e1e510ba76b4e561d3c5007d75625ce90a91b3d506ab/numbagg-0.9.6.tar.gz", hash = "sha256:f0b9abde33622025f38c2a2a01896a17b295acd27fda2f9f744d057691a1371d", size = 191857, upload-time = "2026-09-25T19:58:20.662Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/5d/f71b6b9de84f4c3369fc1fb2b1a9a86291aa71efcac2833300c0181848e9/numbagg-0.9.6-py3-none-any.whl", hash = "sha256:109b1ec37e72e3175f1d142ad9e95d8a13c2257c9ef561859f2a99523bd36c92", size = 97390, upload-time = "2026-09-25T19:58:19.178Z" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.2.6"
 source = { registry = "https://pypi.org/simple" }
@@ -442,6 +457,7 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "numba" },
+    { name = "numbagg" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pre-commit" },
@@ -456,6 +472,7 @@ fast = [
 requires-dist = [
     { name = "numba", marker = "extra == 'dev'" },
     { name = "numba", marker = "extra == 'fast'" },
+    { name = "numbagg", marker = "extra == 'dev'" },
     { name = "numpy" },
     { name = "pandas", marker = "extra == 'dev'" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.8,<4" },

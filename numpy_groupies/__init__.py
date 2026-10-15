@@ -48,7 +48,9 @@ else:
     aggregate = aggregate_nb
 
 
-def uaggregate(group_idx: npt.ArrayLike, a: npt.ArrayLike, out: Any = None, **kwargs: Any) -> Any:
+def uaggregate(
+    group_idx: npt.ArrayLike, a: npt.ArrayLike, out: npt.NDArray[np.generic] | None = None, **kwargs: Any
+) -> npt.NDArray[np.generic]:
     """
     Aggregate the values of ``a`` by the groups in ``group_idx`` and broadcast the result
     back to the size of ``a``, so that every element carries the result of its own group.
