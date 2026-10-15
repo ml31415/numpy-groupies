@@ -43,6 +43,7 @@ import numpy as np
 from .jit import njit_stable
 
 
+@njit_stable
 def complex_less(x: typing.Any, y: typing.Any) -> bool:
     """The ordering every reduction kernel of this package compares with.
 
@@ -54,27 +55,27 @@ def complex_less(x: typing.Any, y: typing.Any) -> bool:
     imaginary part at all once the real parts differ, but it does require both
     imaginary parts to be comparable for the real part to decide the order -
     which makes ``1+nanj < 2+1j`` False instead of True.
+
+    Written as a jitted function with an ``isinstance`` branch rather than as
+    an intrinsic plus ``@overload``: numba resolves the test at compile time,
+    so the real dtypes are left with a bare ``<`` and the lexicographic code
+    is only compiled for complex input.  The tuple names ``np.complex64`` as
+    well because numba maps the python class ``complex`` to complex128 only -
+    the 64 bit variant would otherwise fall through to ``<`` and fail to type.
+
+    Disk cached like its callers - numba cannot resolve an uncached callee
+    from cached caller code at all (the loaded module dies on a NULL ``descr``
+    in ``NRT_adapt_ndarray_to_python``).  It is therefore not inlined, which
+    the kernels account for by resolving the comparison into a local variable
+    before the select expression instead of calling inside it.
     """
-    raise NotImplementedError  # replaced by the overload below
-
-
-@nb.extending.overload(complex_less)
-def _complex_less_overload(x, y):
-    if isinstance(x, nb.types.Complex) and isinstance(y, nb.types.Complex):
-
-        def _impl(x, y):
-            if x.real < y.real:
-                return not (np.isnan(x.imag) or np.isnan(y.imag))
-            if x.real == y.real:
-                return x.imag < y.imag
-            return False
-
-        return _impl
-
-    def _impl(x, y):
-        return x < y
-
-    return _impl
+    if isinstance(x, (complex, np.complex64)):
+        if x.real < y.real:
+            return not (np.isnan(x.imag) or np.isnan(y.imag))
+        if x.real == y.real:
+            return x.imag < y.imag
+        return False
+    return x < y
 
 
 # ---------------------------------------------------------------------------

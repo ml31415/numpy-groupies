@@ -21,7 +21,7 @@ from numba.core import caching
 # AttributeError on the dangling global.  Bumping the revision renames every
 # cache file of this package, orphaning the stale indexes (they keep lying
 # around, numba never reads them again).
-_cache_revision = "3"
+_cache_revision = "4"
 
 
 def njit_stable(py_func=None, cache=True, **options):
