@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .compose import build_custom_kernel, complex_less, rule_int64
+from .compose import build_custom_kernel, complex_less, output_size, rule_int64
 from .jit import njit_stable
 
 
@@ -13,16 +13,7 @@ def _argmax_driver_factory(nan_variant):
     # numba's inline="always" does not help either, measured against 0.68).
     @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
-        # numba's np.max reduction is several times faster than a scalar
-        # loop here; negative indices slip through and are caught inside
-        # the loop below
-        size = np.max(group_idx) + 1
-        if size_arg >= 0:
-            # an explicit output size may be larger than the largest
-            # index, but never smaller
-            if size > size_arg:
-                raise ValueError("one or more indices in group_idx are too large")
-            size = size_arg
+        size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         running = np.empty(size, a.dtype)
         pending = np.ones(size, np.bool_)
@@ -67,11 +58,7 @@ def _argmin_driver_factory(nan_variant):
     # inlined on purpose, see _argmax_driver_factory
     @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
-        size = np.max(group_idx) + 1
-        if size_arg >= 0:
-            if size > size_arg:
-                raise ValueError("one or more indices in group_idx are too large")
-            size = size_arg
+        size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         running = np.empty(size, a.dtype)
         pending = np.ones(size, np.bool_)

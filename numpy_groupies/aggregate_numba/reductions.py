@@ -9,6 +9,7 @@ from .compose import (
     build_custom_kernel,
     build_kernel,
     complex_less,
+    output_size,
     rule_bool,
     rule_int64,
     rule_same,
@@ -277,17 +278,7 @@ def _first_driver_factory(nan_variant):
     # see the note in argreductions._argmax_driver_factory.
     @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
-        # numba's np.max reduction is several times faster than a scalar
-        # loop here
-        size = np.max(group_idx) + 1
-        if size_arg >= 0:
-            # an explicit output size may be larger than the largest
-            # index, but never smaller - and once size is fixed, every
-            # index in group_idx is provably within [0, size): the loop
-            # below needs no bounds logic
-            if size > size_arg:
-                raise ValueError("one or more indices in group_idx are too large")
-            size = size_arg
+        size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         pending = np.ones(size, np.bool_)
         # group_idx.shape[0] instead of len - the module global 'len' is the

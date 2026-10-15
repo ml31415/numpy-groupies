@@ -195,6 +195,22 @@ def _finish_none(st, g, fill_value, ddof):
     return st.out[g]
 
 
+@njit_stable
+def output_size(group_idx, size_arg):
+    """The resolved output size of one aggregation: one past the largest
+    group index, capped by an explicitly requested size.  Once this returns,
+    every index in ``group_idx`` is within ``[0, size)`` - the drivers use it
+    once per call instead of repeating the logic inline."""
+    size = np.max(group_idx) + 1
+    if size_arg >= 0:
+        # an explicit output size may be larger than the largest index, but
+        # never smaller
+        if size > size_arg:
+            raise ValueError("one or more indices in group_idx are too large")
+        size = size_arg
+    return size
+
+
 def _make_stub(stub_name, driver_getter, rule, fill_default, doc, ddof_default=0):
     """Create the njit-callable ``aggregate_*`` function of one variant.
 

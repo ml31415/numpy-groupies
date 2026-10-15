@@ -14,7 +14,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..aggregate_numpy import _aggregate_base
-from .compose import build_custom_kernel, build_kernel, rule_float
+from .compose import build_custom_kernel, build_kernel, output_size, rule_float
 from .jit import njit_stable
 
 
@@ -92,11 +92,7 @@ def _median_driver_factory(nans):
     @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
         # median is order-insensitive and takes no ddof - both slots unused
-        size = np.max(group_idx) + 1
-        if size_arg >= 0:
-            if size > size_arg:
-                raise ValueError("one or more indices in group_idx are too large")
-            size = size_arg
+        size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         counts = _count(group_idx, size)
         starts = _starts(counts)
