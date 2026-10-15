@@ -95,68 +95,71 @@ def benchmark_data(size=5e5, seed=100):
     return a, nana, group_idx
 
 
+def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, verbose):
+    """One complete measurement pass - returns the table as
+    ``{func_name: [cell, ...]}``, where a cell is a float in
+    milliseconds, None for unavailable combinations or a marker string
+    ("ERROR"/"FAIL")."""
+    table = {}
+    for func in func_list:
+        func_name = getattr(func, "__name__", func)
+        used_a = nana if "nan" in func_name else a
+        cells = []
+        results = []
+        if verbose:
+            print(func_name.ljust(13), end="")
+        for impl in implementations:
+            if impl is None:
+                cells.append(None)
+                continue
+            try:
+                res = impl.aggregate(group_idx, used_a, func=func)
+            except NotImplementedError:
+                cells.append(None)
+                if verbose:
+                    print("----".rjust(14), end="")
+                continue
+            except Exception:
+                if raise_errors:
+                    raise
+                cells.append("ERROR")
+                if verbose:
+                    print("ERROR".rjust(14), end="")
+            else:
+                results.append(res)
+                try:
+                    np.testing.assert_array_almost_equal(res, results[0])
+                except AssertionError:
+                    cells.append("FAIL")
+                    if verbose:
+                        print("FAIL".rjust(14), end="")
+                else:
+                    t0 = min(
+                        timeit.Timer(lambda: impl.aggregate(group_idx, used_a, func=func)).repeat(
+                            repeat=repeat, number=1
+                        )
+                    )
+                    cells.append(t0 * 1000)
+                    if verbose:
+                        print(f"{t0 * 1000:.3f}".rjust(14), end="")
+            if verbose:
+                sys.stdout.flush()
+        if verbose:
+            print()
+        table[func_name] = cells
+    return table
+
+
 def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1):
     a, nana, group_idx = benchmark_data(size=size, seed=seed)
-
-    def single_run(verbose):
-        """One complete measurement pass - returns the table as
-        ``{func_name: [cell, ...]}``, where a cell is a float in
-        milliseconds, None for unavailable combinations or a marker string
-        ("ERROR"/"FAIL")."""
-        table = {}
-        for func in func_list:
-            func_name = getattr(func, "__name__", func)
-            used_a = nana if "nan" in func_name else a
-            cells = []
-            results = []
-            if verbose:
-                print(func_name.ljust(13), end="")
-            for impl in implementations:
-                if impl is None:
-                    cells.append(None)
-                    continue
-                try:
-                    res = impl.aggregate(group_idx, used_a, func=func)
-                except NotImplementedError:
-                    cells.append(None)
-                    if verbose:
-                        print("----".rjust(14), end="")
-                    continue
-                except Exception:
-                    if raise_errors:
-                        raise
-                    cells.append("ERROR")
-                    if verbose:
-                        print("ERROR".rjust(14), end="")
-                else:
-                    results.append(res)
-                    try:
-                        np.testing.assert_array_almost_equal(res, results[0])
-                    except AssertionError:
-                        cells.append("FAIL")
-                        if verbose:
-                            print("FAIL".rjust(14), end="")
-                    else:
-                        t0 = min(
-                            timeit.Timer(lambda: impl.aggregate(group_idx, used_a, func=func)).repeat(
-                                repeat=repeat, number=1
-                            )
-                        )
-                        cells.append(t0 * 1000)
-                        if verbose:
-                            print(f"{t0 * 1000:.3f}".rjust(14), end="")
-                if verbose:
-                    sys.stdout.flush()
-            if verbose:
-                print()
-            table[func_name] = cells
-        return table
 
     tables = []
     for r in range(runs):
         if runs > 1:
             print(f"run {r + 1}/{runs}", file=sys.stderr)
-        tables.append(single_run(verbose=runs == 1))
+        tables.append(
+            single_run(implementations, group_idx, a, nana, repeat=repeat, raise_errors=raise_errors, verbose=runs == 1)
+        )
 
     if runs == 1:
         table = tables[0]
