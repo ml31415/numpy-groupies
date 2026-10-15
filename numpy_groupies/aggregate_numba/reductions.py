@@ -5,7 +5,16 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
-from .compose import complex_less, kernel, rule_bool, rule_int64, rule_same, rule_sum, rule_sumofsquares, rule_widen_int
+from .compose import (
+    build_kernel,
+    complex_less,
+    rule_bool,
+    rule_int64,
+    rule_same,
+    rule_sum,
+    rule_sumofsquares,
+    rule_widen_int,
+)
 
 
 class ReductionState(typing.NamedTuple):
@@ -43,7 +52,7 @@ def _sum_untouched(st):
     return st.untouched
 
 
-sum = kernel(
+sum = build_kernel(
     "sum",
     init=_sum_init,
     update=_sum_update,
@@ -68,7 +77,7 @@ def _prod_untouched(st):
     return st.untouched
 
 
-prod = kernel(
+prod = build_kernel(
     "prod",
     init=_prod_init,
     update=_prod_update,
@@ -93,7 +102,7 @@ def _len_untouched(st):
     return st.untouched
 
 
-len = kernel(
+len = build_kernel(
     "len",
     init=_len_init,
     update=_len_update,
@@ -118,7 +127,7 @@ def _all_untouched(st):
     return st.untouched
 
 
-all = kernel(
+all = build_kernel(
     "all",
     init=_all_init,
     update=_all_update,
@@ -143,7 +152,7 @@ def _any_untouched(st):
     return st.untouched
 
 
-any = kernel(
+any = build_kernel(
     "any",
     init=_any_init,
     update=_any_update,
@@ -170,7 +179,7 @@ def _last_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] = val
 
 
-last = kernel(
+last = build_kernel(
     "last",
     init=_last_init,
     update=_last_update,
@@ -190,7 +199,7 @@ def _first_update(st, ri, i, val, fill_value, ddof):
         st.out[ri] = val
 
 
-first = kernel(
+first = build_kernel(
     "first",
     init=_first_init,
     update=_first_update,
@@ -213,7 +222,7 @@ def _allnan_untouched(st):
     return st.untouched
 
 
-allnan = kernel(
+allnan = build_kernel(
     "allnan",
     init=_allnan_init,
     update=_allnan_update,
@@ -239,7 +248,7 @@ def _anynan_untouched(st):
     return st.untouched
 
 
-anynan = kernel(
+anynan = build_kernel(
     "anynan",
     init=_anynan_init,
     update=_anynan_update,
@@ -277,7 +286,7 @@ def _max_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] = val if (first or val != val or complex_less(cur, val)) else cur
 
 
-max = kernel(
+max = build_kernel(
     "max",
     init=_max_init,
     update=_max_update,
@@ -300,7 +309,7 @@ def _min_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] = val if (first or val != val or complex_less(val, cur)) else cur
 
 
-min = kernel(
+min = build_kernel(
     "min",
     init=_min_init,
     update=_min_update,
@@ -329,7 +338,7 @@ def _sumofsquares_untouched(st):
     return st.untouched
 
 
-sumofsquares = kernel(
+sumofsquares = build_kernel(
     "sumofsquares",
     init=_sumofsquares_init,
     update=_sumofsquares_update,

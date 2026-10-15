@@ -14,7 +14,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..aggregate_numpy import _aggregate_base
-from .compose import custom_kernel, kernel, rule_float
+from .compose import build_custom_kernel, build_kernel, rule_float
 from .jit import njit_stable
 
 
@@ -120,7 +120,7 @@ def _median_driver_factory(nans):
     return driver
 
 
-median = custom_kernel(
+median = build_custom_kernel(
     "median",
     driver_factory=_median_driver_factory,
     rule=rule_float,
@@ -166,7 +166,7 @@ def _trapezoid_untouched(st):
     return st.untouched
 
 
-trapezoid = kernel(
+trapezoid = build_kernel(
     "trapezoid",
     init=_trapezoid_init,
     update=_trapezoid_update,

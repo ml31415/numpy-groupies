@@ -13,7 +13,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..aggregate_common import EXACT_FLOAT64_INTEGER_LIMIT, INT64_DEVIATION_LIMIT, INT64_MIN
-from .compose import kernel, rule_float, rule_real_float
+from .compose import build_kernel, rule_float, rule_real_float
 from .jit import njit_stable
 
 
@@ -191,7 +191,7 @@ def _mean_finish(st, g, fill_value, ddof):
     return fill_value
 
 
-mean = kernel(
+mean = build_kernel(
     "mean",
     init=_mean_init,
     update=_mean_update,
@@ -298,7 +298,7 @@ def _std_finish(st, g, fill_value, ddof):
     return fill_value
 
 
-std = kernel(
+std = build_kernel(
     "std",
     init=_std_init,
     update=_std_update,
@@ -321,7 +321,7 @@ def _var_finish(st, g, fill_value, ddof):
     return fill_value
 
 
-var = kernel(
+var = build_kernel(
     "var",
     init=_std_init,
     update=_std_update,

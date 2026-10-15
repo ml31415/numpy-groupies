@@ -11,7 +11,7 @@ import numpy.typing as npt
 from ..aggregate_common import DEFAULT_FILL_VALUE, aggregate_common_doc, get_func
 from ..utils import aliasing
 from .gather import unpack_into
-from .ops import _dispatch, _impl_dict, create_generic_aggregate
+from .ops import _dispatch, _impl_dict, build_generic_aggregate
 from .steps import step_count, step_indices
 
 __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
@@ -65,13 +65,13 @@ def _aggregate_custom(
     if not isinstance(func, str):
         if cache in (None, False):
             # Keep None and False in order to accept empty dictionaries
-            aggregate_op = create_generic_aggregate(func)
+            aggregate_op = build_generic_aggregate(func)
         elif cache is True:
             aggregate_op = _get_cached_generic(func)
         else:
             aggregate_op = cache.get(func)
             if aggregate_op is None:
-                aggregate_op = create_generic_aggregate(func)
+                aggregate_op = build_generic_aggregate(func)
                 cache[func] = aggregate_op
         return aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
     else:
@@ -82,7 +82,7 @@ def _aggregate_custom(
 @functools.lru_cache(maxsize=128)
 def _get_cached_generic(func):
     """LRU-cache generic aggregate loops per user callable (bounded)."""
-    return create_generic_aggregate(func)
+    return build_generic_aggregate(func)
 
 
 aggregate.__doc__ = (

@@ -10,7 +10,7 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
-from .compose import complex_less, kernel, rule_widen_int
+from .compose import build_kernel, complex_less, rule_widen_int
 
 
 class CumulativeState(typing.NamedTuple):
@@ -34,7 +34,7 @@ def _cumsum_record(st, ri, i):
     st.out[i] = st.running[ri]
 
 
-cumsum = kernel(
+cumsum = build_kernel(
     "cumsum",
     init=_cumsum_init,
     update=_cumsum_update,
@@ -58,7 +58,7 @@ def _cumprod_record(st, ri, i):
     st.out[i] = st.running[ri]
 
 
-cumprod = kernel(
+cumprod = build_kernel(
     "cumprod",
     init=_cumprod_init,
     update=_cumprod_update,
@@ -104,7 +104,7 @@ def _cummax_record(st, ri, i):
     st.out[i] = st.running[ri]
 
 
-cummax = kernel(
+cummax = build_kernel(
     "cummax",
     init=_cummax_init,
     update=_cummax_update,
@@ -136,7 +136,7 @@ def _cummin_record(st, ri, i):
     st.out[i] = st.running[ri]
 
 
-cummin = kernel(
+cummin = build_kernel(
     "cummin",
     init=_cummin_init,
     update=_cummin_update,

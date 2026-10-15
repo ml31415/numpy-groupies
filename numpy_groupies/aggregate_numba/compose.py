@@ -264,7 +264,7 @@ class KernelPair(typing.NamedTuple):
     nan: KernelHandle | None
 
 
-def kernel(
+def build_kernel(
     name: str,
     *,
     init: typing.Callable[..., typing.Any],
@@ -381,7 +381,7 @@ def kernel(
     return KernelPair(plain, nan_variant)
 
 
-def custom_kernel(
+def build_custom_kernel(
     name: str,
     *,
     driver_factory: typing.Callable[[bool], typing.Any],

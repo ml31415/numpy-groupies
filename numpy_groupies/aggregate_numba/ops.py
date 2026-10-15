@@ -74,7 +74,7 @@ def _aux_dtype(handle: KernelHandle, a_dtype: np.dtype, out_dtype: np.dtype) -> 
     return out_dtype
 
 
-def create_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., typing.Any]:
+def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., typing.Any]:
     """Create the python-level wrapper around one compiled kernel.
 
     The wrapper holds no kernel machinery of its own: it resolves dtype and
@@ -199,7 +199,7 @@ def _compiled_group_loop(func: typing.Callable[..., typing.Any]) -> typing.Calla
     return loop
 
 
-def create_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
+def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
     """Create the aggregation loop for an arbitrary user callable.
 
     The callable is applied to the values of every group, the data is
@@ -299,10 +299,10 @@ def get_funcs() -> dict[str, typing.Callable[..., typing.Any]]:
     """Create the wrapper function of every registered operation variant."""
     funcs: dict[str, typing.Callable[..., typing.Any]] = {}
     for funcname, pair in _TABLE:
-        op = create_aggregate_op(funcname, pair.plain)
+        op = build_aggregate_op(funcname, pair.plain)
         funcs[funcname] = _dx_argument(op) if funcname == "trapezoid" else op
         if funcname not in funcs_no_separate_nan:
-            op = create_aggregate_op("nan" + funcname, pair.nan)
+            op = build_aggregate_op("nan" + funcname, pair.nan)
             funcs["nan" + funcname] = _dx_argument(op) if funcname == "trapezoid" else op
     return funcs
 

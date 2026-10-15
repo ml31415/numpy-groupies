@@ -5,7 +5,7 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
-from .compose import complex_less, kernel, rule_int64
+from .compose import build_kernel, complex_less, rule_int64
 
 
 class ArgState(typing.NamedTuple):
@@ -38,7 +38,7 @@ def _argmax_update(st, ri, i, val, fill_value, ddof):
         st.out[ri] = i
 
 
-argmax = kernel(
+argmax = build_kernel(
     "argmax",
     init=_argmax_init,
     update=_argmax_update,
@@ -66,7 +66,7 @@ def _argmin_update(st, ri, i, val, fill_value, ddof):
         st.out[ri] = i
 
 
-argmin = kernel(
+argmin = build_kernel(
     "argmin",
     init=_argmin_init,
     update=_argmin_update,
