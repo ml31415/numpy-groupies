@@ -580,24 +580,32 @@ def _generic_callable(
 
 def _group_cumsum_sorted(group_idx_srt: np.ndarray, a_srt: np.ndarray, dtype: np.dtype | None = None) -> np.ndarray:
     """
-    Cumsum within each group of a group-sorted nan-free array.
+    Cumsum within each contiguous group, with independent accumulators.
 
-    group_idx_srt is sorted, so each group occupies one contiguous block and
-    the cumulative sum of every group simply needs offsetting by the value
-    of its first element (minus the preceding groups' sums, which the
-    global cumsum already includes).
+    Subtracting offsets from a global cumsum loses small increments after
+    large groups, and nonfinite values contaminate subsequent groups.
     """
-    a_srt_cumsum = np.cumsum(a_srt, dtype=dtype)
-
     new_group = np.empty(group_idx_srt.size, dtype=bool)
     new_group[0] = True
     np.not_equal(group_idx_srt[1:], group_idx_srt[:-1], out=new_group[1:])
-    start_positions = np.flatnonzero(new_group)
-    group_starts = start_positions[np.cumsum(new_group) - 1]
-    # First subtract large numbers
-    a_srt_cumsum -= a_srt_cumsum[group_starts]
-    # Then add potentially small numbers
-    a_srt_cumsum += a_srt[group_starts]
+    starts = np.flatnonzero(new_group)
+    ends = np.append(starts[1:], group_idx_srt.size)
+    # Match cumsum's default integer promotion, including for singleton groups.
+    result_dtype = np.cumsum(a_srt[:0], dtype=dtype).dtype
+    a_srt_cumsum = a_srt.astype(result_dtype, copy=True)
+    counts = ends - starts
+    # Batch equal-length groups into rows, keeping every accumulator separate
+    # without a Python call for each short group. Singleton groups are done.
+    for count in np.unique(counts[counts > 1]):
+        selected = starts[counts == count]
+        if selected.size == starts.size:
+            np.cumsum(a_srt.reshape(-1, count), axis=1, dtype=dtype, out=a_srt_cumsum.reshape(-1, count))
+        elif selected.size == 1:
+            start = selected[0]
+            np.cumsum(a_srt[start : start + count], dtype=dtype, out=a_srt_cumsum[start : start + count])
+        else:
+            positions = selected[:, None] + np.arange(count)
+            a_srt_cumsum[positions] = np.cumsum(a_srt[positions], axis=1, dtype=dtype)
     return a_srt_cumsum
 
 
@@ -624,21 +632,7 @@ def _cumsum(
     group_idx_srt = group_idx[sortidx]
     a_srt = a[sortidx]
 
-    nans_from = {}
-    if np.issubdtype(a_srt.dtype, np.inexact):
-        parts = ("real", "imag") if iscomplexobj(a_srt) else ("real",)
-        for part in parts:
-            component = getattr(a_srt, part)
-            nans = np.isnan(component)
-            if nans.any():
-                # a_srt is a gathered copy; real and imaginary NaNs propagate separately.
-                component[nans] = 0
-                nan_prefix = _group_cumsum_sorted(group_idx_srt, nans.astype(np.int64))
-                nans_from[part] = nan_prefix > 0
-
     a_srt_cumsum = _group_cumsum_sorted(group_idx_srt, a_srt, dtype=dtype)
-    for part, mask in nans_from.items():
-        getattr(a_srt_cumsum, part)[mask] = np.nan
 
     ret = np.empty_like(a_srt_cumsum)
     ret[sortidx] = a_srt_cumsum
