@@ -160,46 +160,93 @@ def benchmark_data(size=5e5, seed=100):
     return a, nana, group_idx
 
 
-def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False):
+def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1):
     a, nana, group_idx = benchmark_data(size=size, seed=seed)
+
+    def single_run(verbose):
+        """One complete measurement pass - returns the table as
+        ``{func_name: [cell, ...]}``, where a cell is a float in
+        milliseconds, None for unavailable combinations or a marker string
+        ("ERROR"/"FAIL")."""
+        table = {}
+        for func in func_list:
+            func_name = getattr(func, "__name__", func)
+            used_a = nana if "nan" in func_name else a
+            cells = []
+            results = []
+            if verbose:
+                print(func_name.ljust(13), end="")
+            for impl in implementations:
+                if impl is None:
+                    cells.append(None)
+                    continue
+                try:
+                    res = impl.aggregate(group_idx, used_a, func=func)
+                except NotImplementedError:
+                    cells.append(None)
+                    if verbose:
+                        print("----".rjust(14), end="")
+                    continue
+                except Exception:
+                    if raise_errors:
+                        raise
+                    cells.append("ERROR")
+                    if verbose:
+                        print("ERROR".rjust(14), end="")
+                else:
+                    results.append(res)
+                    try:
+                        np.testing.assert_array_almost_equal(res, results[0])
+                    except AssertionError:
+                        cells.append("FAIL")
+                        if verbose:
+                            print("FAIL".rjust(14), end="")
+                    else:
+                        t0 = min(
+                            timeit.Timer(lambda: impl.aggregate(group_idx, used_a, func=func)).repeat(
+                                repeat=repeat, number=1
+                            )
+                        )
+                        cells.append(t0 * 1000)
+                        if verbose:
+                            print(f"{t0 * 1000:.3f}".rjust(14), end="")
+                if verbose:
+                    sys.stdout.flush()
+            if verbose:
+                print()
+            table[func_name] = cells
+        return table
+
+    tables = []
+    for r in range(runs):
+        if runs > 1:
+            print(f"run {r + 1}/{runs}", file=sys.stderr)
+        tables.append(single_run(verbose=runs == 1))
+
+    if runs == 1:
+        table = tables[0]
+    else:
+        # per-cell minimum over the complete runs - filters the system noise
+        # (cpu frequency, background load) that makes single runs wobble
+        table = {}
+        for func_name in tables[0]:
+            merged = []
+            for col in zip(*(t[func_name] for t in tables)):
+                numbers = [c for c in col if isinstance(c, float)]
+                if numbers:
+                    merged.append(min(numbers))
+                else:
+                    merged.append(next((c for c in col if c is not None), None))
+            table[func_name] = merged
 
     print(f"{'function':13}" + "".join(impl.__name__.rsplit("_", 1)[1].rjust(14) for impl in implementations))
     print("-" * (13 + 14 * len(implementations)))
     for func in func_list:
         func_name = getattr(func, "__name__", func)
         print(func_name.ljust(13), end="")
-        results = []
-        used_a = nana if "nan" in func_name else a
-
-        for impl in implementations:
-            if impl is None:
-                print("----".rjust(14), end="")
-                continue
-            aggregatefunc = impl.aggregate
-
-            try:
-                res = aggregatefunc(group_idx, used_a, func=func)
-            except NotImplementedError:
-                print("----".rjust(14), end="")
-                continue
-            except Exception:
-                if raise_errors:
-                    raise
-                print("ERROR".rjust(14), end="")
-            else:
-                results.append(res)
-                try:
-                    np.testing.assert_array_almost_equal(res, results[0])
-                except AssertionError:
-                    print("FAIL".rjust(14), end="")
-                else:
-                    t0 = min(
-                        timeit.Timer(lambda: aggregatefunc(group_idx, used_a, func=func)).repeat(
-                            repeat=repeat, number=1
-                        )
-                    )
-                    print(f"{t0 * 1000:.3f}".rjust(14), end="")
-            sys.stdout.flush()
+        for cell in table[func_name]:
+            text = "----" if cell is None else (f"{cell:.3f}" if isinstance(cell, float) else cell)
+            print(text.rjust(14), end="")
         print()
 
     implementation_names = [impl.__name__.rsplit("_", 1)[1] for impl in implementations]
@@ -229,4 +276,8 @@ if __name__ == "__main__":
             implementations.insert(-1, _numbagg_implementation())
         else:
             implementations.append(_numbagg_implementation())
-    benchmark(implementations, raise_errors=False)
+    runs = 1
+    for arg in sys.argv:
+        if arg.startswith("--runs="):
+            runs = max(1, int(arg.rsplit("=", 1)[1]))
+    benchmark(implementations, raise_errors=False, runs=runs)

@@ -10,7 +10,7 @@ Complete benchmark results for `aggregate`. A short summary is in the [README](.
 - Times in **milliseconds**, taking the minimum over 5 timed runs after one untimed warm-up call (`repeat=5` in `numpy_groupies/benchmarks/generic.py`). Lower is better.
 - Machine: Intel i7-7560U at 2.40 GHz, Linux (x86_64), Python 3.14.2, NumPy 2.5.3, Numba 0.67.0, pandas 3.0.6.
 
-Absolute numbers depend heavily on the machine, Python and library versions, so rely on the ratios between columns rather than on the values. Re-run on your own hardware, from the repository root:
+Absolute numbers depend heavily on the machine, Python and library versions, so rely on the ratios between columns rather than on the values. On shared machines single runs wobble - `--runs=3` takes the per-cell minimum of three complete runs. Re-run on your own hardware, from the repository root:
 
 ```sh
 python -m numpy_groupies.benchmarks.generic --pandas --numbagg
