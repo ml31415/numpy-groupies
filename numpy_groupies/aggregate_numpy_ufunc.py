@@ -22,32 +22,32 @@ from .utils import (
 
 
 def _anynan(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
     fill_value: Any,
     dtype: np.dtype | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.bool_]:
     return _any(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
 
 def _allnan(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
     fill_value: Any,
     dtype: np.dtype | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.bool_]:
     return _all(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
 
 
 def _any(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.bool_],
     size: int | tuple[int, ...] | None,
     fill_value: Any,
     dtype: np.dtype | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.bool_]:
     check_boolean(fill_value)
     ret = np.full(size, fill_value, dtype=bool)
     if fill_value:
@@ -57,12 +57,12 @@ def _any(
 
 
 def _all(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.bool_],
     size: int | tuple[int, ...] | None,
     fill_value: Any,
     dtype: np.dtype | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.bool_]:
     check_boolean(fill_value)
     ret = np.full(size, fill_value, dtype=bool)
     if not fill_value:
@@ -72,12 +72,12 @@ def _all(
 
 
 def _sum(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
     fill_value: Any,
     dtype: np.dtype | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.generic]:
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != 0:
@@ -87,22 +87,22 @@ def _sum(
 
 
 def _len(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
     fill_value: Any,
     dtype: np.dtype | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.int64]:
     return _sum(group_idx, 1, size, fill_value, dtype=int)
 
 
 def _prod(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
     fill_value: Any,
     dtype: np.dtype | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.generic]:
     """Same as aggregate_numpy.py"""
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
     ret = np.full(size, fill_value, dtype=dtype)
@@ -113,12 +113,12 @@ def _prod(
 
 
 def _min(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
     fill_value: Any,
     dtype: np.dtype | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.generic]:
     """Same as aggregate_numpy.py"""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmax = maxval(fill_value, dtype)
@@ -132,12 +132,12 @@ def _min(
 
 
 def _max(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
     fill_value: Any,
     dtype: np.dtype | None = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.generic]:
     """Same as aggregate_numpy.py"""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmin = minval(fill_value, dtype)
@@ -175,7 +175,7 @@ def aggregate(
     dtype: npt.DTypeLike = None,
     axis: int | None = None,
     **kwargs: Any,
-) -> Any:
+) -> npt.NDArray[np.generic]:
     funcname: str | Callable[..., Any]
     try:
         funcname, _ = _dispatch[func]

@@ -210,25 +210,25 @@ All implementations share the calling syntax and produce the same results up to 
 
 ## Performance
 
-Best of five timed runs, in milliseconds, for 500,000 values in 1,000 groups (lower is better), taken from the maintainers' benchmark on an Intel i7-7560U laptop CPU (Linux, Python 3.14, NumPy 2.5, Numba 0.67, pandas 3.0):
+Best of five timed runs, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
 
-| function | numpy  | numba  | pandas |
-| -------- | -----: | -----: | -----: |
-| `sum`    |   1.24 |   0.72 |  13.76 |
-| `mean`   |   1.82 |   0.99 |  13.91 |
-| `max`    |   2.76 |   0.88 |  13.11 |
-| `std`    |   4.18 |   1.14 |  14.98 |
-| `nansum` |   5.13 |   1.69 |  18.96 |
-| `median` |  53.34 |  11.71 |  24.28 |
-| `cumsum` |  53.28 |   1.15 |  13.43 |
-| custom callable | 161.54 | 50.94 | 131.86 |
+| function | numpy  | numba  | numbagg | pandas |
+| -------- | -----: | -----: | ------: | -----: |
+| `sum`    |   0.88 |   0.43 |   0.44 |  15.45 |
+| `mean`   |   1.53 |   0.50 |   0.54 |  16.11 |
+| `max`    |   1.69 |   0.62 |   0.86 |  15.01 |
+| `std`    |   3.15 |   0.68 |   0.67 |  16.31 |
+| `nansum` |   4.19 |   0.44 |   1.75 |  20.57 |
+| `median` |  47.33 |  11.70 |    --- |  28.35 |
+| `cumsum` |  45.38 |   0.62 |    --- |   7.36 |
+| custom callable | 141.83 |  43.56 |     --- | 107.55 |
 
-In short: the NumPy implementation is about 4–12× faster than pandas on common reductions, and Numba adds another 1.5–5× on top — and about 46× for `cumsum`. `median` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
+In short: the NumPy implementation is about 5–18× faster than pandas on common reductions, and Numba adds another 1.7–6.3× on top — and about 73× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives or `trapezoid`. `median` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
 
-The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root (add `--pandas` for the pandas column, `--purepy` for the pure-Python one):
+The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root (add `--pandas --numbagg` for those columns, `--purepy` for the pure-Python one):
 
 ```sh
-python -m numpy_groupies.benchmarks.generic
+python -m numpy_groupies.benchmarks.generic --pandas --numbagg
 ```
 
 The `numpy` and `numba` columns above are not the whole story: NumPy 1.25 brought major [speed improvements to ufuncs](https://numpy.org/doc/stable/release/1.25.0-notes.html), which narrowed the gap between the NumPy and Numba implementations considerably. The authors hope that `ufunc.at` or an equivalent in NumPy or SciPy will eventually become fast enough to make this package redundant.

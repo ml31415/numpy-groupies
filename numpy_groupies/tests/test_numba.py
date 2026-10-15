@@ -184,13 +184,13 @@ def test_numba_callable_cache_construction(monkeypatch):
     func = lambda x: np.sum(x)
 
     constructed = []
-    orig_init = aggregate_numba.AggregateGeneric.__init__
+    orig_build = aggregate_numba.build_generic_aggregate
 
-    def counting_init(self, func, **kwargs):
+    def counting(func):
         constructed.append(func)
-        orig_init(self, func, **kwargs)
+        return orig_build(func)
 
-    monkeypatch.setattr(aggregate_numba.AggregateGeneric, "__init__", counting_init)
+    monkeypatch.setattr(aggregate_numba, "build_generic_aggregate", counting)
 
     cache = {}
     aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
