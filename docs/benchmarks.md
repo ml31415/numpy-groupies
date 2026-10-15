@@ -13,12 +13,12 @@ Complete benchmark results for `aggregate`. A short summary is in the [README](.
 Absolute numbers depend heavily on the machine, Python and library versions, so rely on the ratios between columns rather than on the values. Re-run on your own hardware, from the repository root:
 
 ```sh
-python -m numpy_groupies.benchmarks.generic --pandas
+python -m numpy_groupies.benchmarks.generic --pandas --numbagg
 ```
 
-Without `--pandas` the pandas column is omitted, and the pure-Python implementation only appears with `--purepy`.
+Without `--pandas` the pandas column is omitted, and the pure-Python implementation only appears with `--purepy`. The optional numbagg column (from the `numbagg` package, included in the dev extras) appears with `--numbagg`. numbagg ships nan-guarded grouped reductions only, so its plain-func numbers run through the nan twins - on the benchmark's nan-free plain data the results coincide.
 
-Columns: `ufunc` is the `ufunc.at`-based implementation (incomplete, for benchmarking only), `numpy` the default NumPy implementation, `numba` the Numba implementation, and `pandas` the pandas `groupby` wrapper. `----` means the function is not available in that implementation. The row `arbitrary` is a custom Python callable passed as `func`.
+Columns: `ufunc` is the `ufunc.at`-based implementation (incomplete, for benchmarking only), `numpy` the default NumPy implementation, `numba` the Numba implementation, `numbagg` the numbagg grouped-reduction wrapper, and `pandas` the pandas `groupby` wrapper. `----` means the function is not available in that implementation. The row `arbitrary` is a custom Python callable passed as `func`.
 
 ## Results
 
