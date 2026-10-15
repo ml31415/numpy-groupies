@@ -304,6 +304,20 @@ def test_rejects_non_complex_dtype(impl, func, dtype):
         assert "cannot aggregate complex values into the non-complex dtype" in str(raised.value)
 
 
+@pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
+@pytest.mark.parametrize("func", ["sum", "prod", "mean"])
+@pytest.mark.parametrize("as_list", [False, True])
+def test_accepts_complex_scalar_dtype_classes(impl, dtype, func, as_list):
+    group_idx = np.array([0, 0, 1, 1, 2])
+    a = np.array([1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j], dtype=np.complex64)
+    expected = [getattr(np, func)(a[group_idx == group], dtype=np.dtype(dtype)) for group in range(3)]
+    values = list(a) if as_list else a
+    result = np.asarray(impl.aggregate(group_idx, values, func=func, dtype=dtype))
+    np.testing.assert_allclose(result, expected, rtol=1e-6)
+    if not is_purepy(impl):
+        assert result.dtype == np.dtype(dtype)
+
+
 @pytest.mark.parametrize(
     ("func", "dtype"),
     [

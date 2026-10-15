@@ -227,7 +227,11 @@ def _is_complex_dtype(dtype: Any) -> bool:
         return kind == "c"
     if isinstance(dtype, str):
         return dtype.startswith("complex")
-    return isinstance(dtype, type) and issubclass(dtype, complex)
+    # NumPy's complex64 and clongdouble do not inherit from Python's complex.
+    # Inspect the public scalar base without importing the optional dependency.
+    return isinstance(dtype, type) and any(
+        base is complex or (base.__module__ == "numpy" and base.__name__ == "complexfloating") for base in dtype.__mro__
+    )
 
 
 def resolve_fill_value(func: str | Callable[..., Any], fill_value: Any, dtype: Any) -> Any:
