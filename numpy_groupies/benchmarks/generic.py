@@ -1,14 +1,15 @@
 #!/usr/bin/python -B
 
+import argparse
 import platform
 import sys
 import timeit
-import types
 from operator import itemgetter
 
 import numpy as np
 
 from numpy_groupies import aggregate_numpy
+from numpy_groupies.benchmarks._numbagg import implementation as numbagg_implementation
 from numpy_groupies.tests.helpers import _implementations
 from numpy_groupies.utils import allnan, anynan, nanfirst, nanlast
 
@@ -80,81 +81,6 @@ func_list = (
     arbitrary,
     "sort",
 )
-
-
-def _numbagg_implementation():
-    """The numbagg backend as a benchmark participant, included with
-    ``--numbagg`` (lazy import - numbagg is an optional dependency).
-
-    numbagg 0.9 ships nan-guarded grouped reductions only, so the plain
-    funcs run through their nan twins - the benchmark's plain data is
-    nan-free, where the results coincide.  ``ddof`` defaults to 0 like in
-    the rest of this package (numbagg's own default is 1).  Operations
-    without a numbagg counterpart raise NotImplementedError and are
-    reported as "----".  ``size``/``fill_value`` are accepted but ignored:
-    numbagg infers the group count and fills empty groups itself (the
-    benchmark data leaves no group empty).
-    """
-    try:
-        import numbagg
-    except ImportError as e:
-        raise SystemExit("--numbagg needs the optional numbagg package installed") from e
-
-    import numba
-
-    # numbagg compiles its grouped reductions to parallel-target gufuncs -
-    # for a scatter reduction the per-call thread sync of that target
-    # dominates at this data size (measured 3.6ms against 0.5ms at one
-    # thread on a 6-core machine).  every other participant of this
-    # benchmark runs single threaded, so numbagg is held there too
-    numba.set_num_threads(1)
-
-    funcs = {
-        "sum": numbagg.group_nansum,
-        "prod": numbagg.group_nanprod,
-        "len": numbagg.group_nancount,
-        "all": numbagg.group_nanall,
-        "any": numbagg.group_nanany,
-        "min": numbagg.group_nanmin,
-        "max": numbagg.group_nanmax,
-        "mean": numbagg.group_nanmean,
-        "std": numbagg.group_nanstd,
-        "var": numbagg.group_nanvar,
-        "first": numbagg.group_nanfirst,
-        "last": numbagg.group_nanlast,
-        "argmin": numbagg.group_nanargmin,
-        "argmax": numbagg.group_nanargmax,
-        "anynan": numbagg.group_nanany,
-        "allnan": numbagg.group_nanall,
-        "nansum": numbagg.group_nansum,
-        "nanprod": numbagg.group_nanprod,
-        "nanlen": numbagg.group_nancount,
-        "nanall": numbagg.group_nanall,
-        "nanany": numbagg.group_nanany,
-        "nanmin": numbagg.group_nanmin,
-        "nanmax": numbagg.group_nanmax,
-        "nanmean": numbagg.group_nanmean,
-        "nanstd": numbagg.group_nanstd,
-        "nanvar": numbagg.group_nanvar,
-        "nanfirst": numbagg.group_nanfirst,
-        "nanlast": numbagg.group_nanlast,
-        "nanargmin": numbagg.group_nanargmin,
-        "nanargmax": numbagg.group_nanargmax,
-    }
-    ddof_funcs = frozenset(("std", "var", "nanstd", "nanvar"))
-
-    def aggregate(group_idx, a, func="sum", size=None, fill_value=None, order="C", dtype=None, axis=None, ddof=0):
-        name = func if isinstance(func, str) else getattr(func, "__name__", None)
-        fn = funcs.get(name)
-        if fn is None:
-            raise NotImplementedError(f"numbagg has no grouped '{name}'")
-        if name in ddof_funcs:
-            return fn(a, group_idx, ddof=ddof)
-        return fn(a, group_idx)
-
-    mod = types.ModuleType("aggregate_numbagg")
-    mod.aggregate = aggregate
-    return mod
 
 
 def benchmark_data(size=5e5, seed=100):
@@ -264,6 +190,10 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
         import numba
 
         postfix += f", Numba {numba.__version__}"
+    if "numbagg" in implementation_names:
+        import numbagg
+
+        postfix += f", numbagg {numbagg.__version__}"
     if "pandas" in implementation_names:
         import pandas
 
@@ -274,19 +204,52 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
     )
 
 
-if __name__ == "__main__":
-    implementations = _implementations if "--purepy" in sys.argv else _implementations[1:]
-    with_pandas = "--pandas" in sys.argv
-    if not with_pandas:
-        implementations = implementations[:-1]
-    if "--numbagg" in sys.argv:
-        # numbagg joins before pandas, which stays the right-most column
-        if with_pandas:
-            implementations.insert(-1, _numbagg_implementation())
+def _build_implementations(args):
+    """the participants in column order - numbagg joins before pandas,
+    which stays the right-most column"""
+    impls = list(_implementations if args.purepy else _implementations[1:])
+    if not args.pandas:
+        impls = impls[:-1]
+    if args.numbagg:
+        if args.pandas:
+            impls.insert(-1, numbagg_implementation())
         else:
-            implementations.append(_numbagg_implementation())
-    runs = 1
-    for arg in sys.argv:
-        if arg.startswith("--runs="):
-            runs = max(1, int(arg.rsplit("=", 1)[1]))
-    benchmark(implementations, raise_errors=False, runs=runs)
+            impls.append(numbagg_implementation())
+    return impls
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="python -m numpy_groupies.benchmarks.generic",
+        description="Benchmark the aggregate implementations against each other "
+        "(default columns: ufunc, numpy, numba).",
+    )
+    parser.add_argument("--purepy", action="store_true", help="include the pure-Python implementation")
+    parser.add_argument("--pandas", action="store_true", help="include the pandas implementation")
+    parser.add_argument(
+        "--numbagg", action="store_true", help="include the numbagg implementation (optional dependency, dev extras)"
+    )
+    parser.add_argument(
+        "--runs", type=int, default=1, help="complete measurement passes, the per-cell minimum is reported (default: 1)"
+    )
+    parser.add_argument(
+        "--repeat", type=int, default=5, help="timed executions per cell, the fastest counts (default: 5)"
+    )
+    parser.add_argument("--size", type=float, default=5e5, help="number of values in the benchmark data (default: 5e5)")
+    parser.add_argument(
+        "--raise-errors",
+        action="store_true",
+        help="abort on the first failing implementation instead of printing ERROR",
+    )
+    args = parser.parse_args(argv)
+    benchmark(
+        _build_implementations(args),
+        repeat=args.repeat,
+        size=args.size,
+        raise_errors=args.raise_errors,
+        runs=max(1, args.runs),
+    )
+
+
+if __name__ == "__main__":
+    main()
