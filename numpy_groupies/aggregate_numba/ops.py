@@ -101,9 +101,12 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
         # check, size detection, allocation and the kernel in one compiled
         # call, everything else falls through to the full validation machinery
         if (
-            not handle.nton
+            # the cumulatives emit one value per input item and derive the
+            # group count from the indices when no size is given, so they
+            # take the fast path as well - without it they pay a second
+            # max scan plus the validation machinery (~0.09ms per 500k)
+            (size is None or (type(size) is int and not handle.nton))
             and axis is None
-            and (size is None or type(size) is int)
             and type(group_idx) is np.ndarray
             and group_idx.ndim == 1
             and group_idx.dtype.kind in "iu"
