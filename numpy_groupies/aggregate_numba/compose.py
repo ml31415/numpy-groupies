@@ -174,28 +174,6 @@ def _resolve_default_fill(fill_default: typing.Any, out_dtype: np.dtype) -> typi
     return fill_default
 
 
-# synthesized no-ops for unused building blocks - all of them get inlined and
-# folded away, the driver never branches on their presence
-@njit_stable
-def _seed_none(st, a):
-    pass
-
-
-@njit_stable
-def _record_none(st, ri, i):
-    pass
-
-
-@njit_stable
-def _gate_none(st, n_values):
-    pass
-
-
-@njit_stable
-def _finish_none(st, g, fill_value, ddof):
-    return st.out[g]
-
-
 @njit_stable
 def output_size(group_idx, size_arg):
     """The resolved output size of one aggregation: one past the largest
@@ -324,10 +302,32 @@ def build_kernel(
     init_c = njit_stable(init)
     update_c = njit_stable(update)
     update_nan_c = njit_stable(update_nan) if update_nan is not None else None
-    seed_c = njit_stable(seed) if seed is not None else _seed_none
-    record_c = njit_stable(record) if record is not None else _record_none
-    gate_c = njit_stable(gate) if gate is not None else _gate_none
-    finish_c = njit_stable(finish) if finish is not None else _finish_none
+
+    # synthesized no-ops for the unused building blocks - all of them get
+    # inlined and folded away, the driver never branches on their presence.
+    # Every operation builds its own copies on purpose: numba 0.68 reuses the
+    # compiled specialization of a shared helper across the dispatchers of two
+    # operations with matching signatures in a way that corrupts the boxing of
+    # the second driver's return array (RuntimeError "In
+    # 'NRT_adapt_ndarray_to_python', 'descr' is NULL", reproduced by calling
+    # the nan variants of sum and sumofsquares in that order) - per-operation
+    # copies keep the callers apart
+    def _seed_none(st, a):
+        pass
+
+    def _record_none(st, ri, i):
+        pass
+
+    def _gate_none(st, n_values):
+        pass
+
+    def _finish_none(st, g, fill_value, ddof):
+        return st.out[g]
+
+    seed_c = njit_stable(seed) if seed is not None else njit_stable(_seed_none)
+    record_c = njit_stable(record) if record is not None else njit_stable(_record_none)
+    gate_c = njit_stable(gate) if gate is not None else njit_stable(_gate_none)
+    finish_c = njit_stable(finish) if finish is not None else njit_stable(_finish_none)
     if untouched is not None:
         untouched_c = njit_stable(untouched)
 
