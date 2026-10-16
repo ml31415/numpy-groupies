@@ -62,6 +62,12 @@ def _dtype_fill_plan(
     else:
         a_dtype = a_key
     out_dtype = resolve_output_dtype(dtype, func, a_dtype, n)
+    if func == "sort":
+        # sort writes the input values back unchanged - the numpy twin
+        # allocates ``np.empty_like(a)`` and the pure python one rebuilds the
+        # list, so both hand out the input dtype whatever was requested, and
+        # the compiled rule of the kernel (``rule_same``) says the same
+        out_dtype = a_dtype
     fill_value = resolve_fill_value(func, fill_value, out_dtype)
     check_fill_value(fill_value, out_dtype, func=func)
     return out_dtype, fill_value
@@ -274,6 +280,7 @@ _TABLE = (
     ("cumprod", cumulative.cumprod),
     ("cummax", cumulative.cummax),
     ("cummin", cumulative.cummin),
+    ("sort", specials.sort),
 )
 
 
@@ -298,15 +305,47 @@ def _dx_argument(op: typing.Callable[..., typing.Any]) -> typing.Callable[..., t
     return trapezoid_op
 
 
+def _sort_arguments(op: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
+    """Expose ``reverse`` and keep the driver arguments jittable.
+
+    The flag reaches the kernel in the position otherwise used for ``ddof``,
+    and the empty list the shared fill value resolution hands out for ``sort``
+    - it tells the python twins to leave an absent group alone - becomes the
+    scalar the compiled driver expects, since sort emits one value per input
+    item and never fills a hole.
+    """
+
+    def sort_op(
+        group_idx: npt.ArrayLike,
+        a: npt.ArrayLike,
+        size: int | tuple[int, ...] | None = None,
+        fill_value: typing.Any = DEFAULT_FILL_VALUE,
+        order: str = "C",
+        dtype: npt.DTypeLike = None,
+        axis: int | None = None,
+        reverse: bool = False,
+    ) -> npt.NDArray[np.generic]:
+        if fill_value is DEFAULT_FILL_VALUE:
+            fill_value = 0
+        return op(group_idx, a, size, fill_value, order, dtype, axis, 1.0 if reverse else 0.0)
+
+    return sort_op
+
+
+# operations whose public keyword argument is not the plain ddof of the kernel
+_ARGUMENT_WRAPPERS = {"trapezoid": _dx_argument, "sort": _sort_arguments}
+
+
 def get_funcs() -> dict[str, typing.Callable[..., typing.Any]]:
     """Create the wrapper function of every registered operation variant."""
     funcs: dict[str, typing.Callable[..., typing.Any]] = {}
     for funcname, pair in _TABLE:
+        wrap = _ARGUMENT_WRAPPERS.get(funcname)
         op = build_aggregate_op(funcname, pair.plain)
-        funcs[funcname] = _dx_argument(op) if funcname == "trapezoid" else op
+        funcs[funcname] = op if wrap is None else wrap(op)
         if funcname not in funcs_no_separate_nan:
             op = build_aggregate_op("nan" + funcname, pair.nan)
-            funcs["nan" + funcname] = _dx_argument(op) if funcname == "trapezoid" else op
+            funcs["nan" + funcname] = op if wrap is None else wrap(op)
     return funcs
 
 

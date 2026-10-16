@@ -125,7 +125,8 @@ The nan-variants are supported wherever the plain function is.
 | `trapezoid`                    |  x    |  x    |      x      |
 | `cumsum`                       |  x    |  x    |      -      |
 | `cumprod`, `cummin`, `cummax`  |  -    |  x    |      -      |
-| `sort`, `array`                |  x    |  -    |      x      |
+| `sort`                         |  x    |  x    |      x      |
+| `array`                        |  x    |  -    |      x      |
 | `nan…` variants of the above   |  x¹   |  x¹   |     x¹      |
 | custom callables               |  x    |  x²   |      x      |
 

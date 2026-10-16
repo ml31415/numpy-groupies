@@ -54,6 +54,8 @@ _FLOAT_OPS = [
     ("nancumsum", {}),
     ("cummax", {}),
     ("nancummax", {}),
+    ("sort", {}),
+    ("sort", {"ddof": 1}),
 ]
 _INT_OPS = [
     ("sum", {}),
@@ -71,8 +73,17 @@ _INT_OPS = [
     ("cumprod", {}),
     ("cummax", {}),
     ("cummin", {}),
+    ("sort", {}),
+    ("sort", {"ddof": 1}),
 ]
-_BOOL_OPS = [("all", {}), ("nanall", {}), ("any", {}), ("nanany", {})]
+_BOOL_OPS = [
+    ("all", {}),
+    ("nanall", {}),
+    ("any", {}),
+    ("nanany", {}),
+    ("sort", {}),
+    ("sort", {"ddof": 1}),
+]
 
 
 def _kernel_result(name, values, ddof=0):
@@ -90,6 +101,9 @@ def _layer2_result(name, values, ddof=0):
     if name in ("trapezoid", "nantrapezoid"):
         # the python-level wrapper carries the sample spacing as dx
         return aggregate_numba.aggregate(GROUP_IDX, values, func=name, dx=ddof)
+    if name == "sort":
+        # ... and the reverse flag of the sort kernel as its third argument
+        return aggregate_numba.aggregate(GROUP_IDX, values, func=name, reverse=bool(ddof))
     return aggregate_numba.aggregate(GROUP_IDX, values, func=name, ddof=ddof)
 
 
@@ -159,6 +173,32 @@ def test_nanmedian_complex_falls_back_to_numpy():
     a = np.array([1 + 2j, np.nan * 1j, 5 + 6j])
     ret = aggregate_numba.aggregate(group_idx, a, func="nanmedian")
     np.testing.assert_array_equal(ret, aggregate_numpy.aggregate(group_idx, a, func="nanmedian"))
+
+
+def test_sort_complex_falls_back_to_numpy():
+    # layer 2 hands complex to numpy like it does for the median, even though
+    # the sort kernel itself could order complex values
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
+    ret = aggregate_numba.aggregate(group_idx, a, func="sort")
+    assert ret.dtype == np.complex128
+    np.testing.assert_array_equal(ret, aggregate_numpy.aggregate(group_idx, a, func="sort"))
+
+
+def test_sort_orders_complex_from_njit_like_numpy():
+    # the kernel jitted code reaches does follow numpy's lexicographic order:
+    # numba compares the real part first, the imaginary part on a tie, and
+    # leaves a nan behind every value it cannot compare with
+    @nb.njit
+    def wrapped(group_idx, a):
+        return kernels.aggregate_sort(group_idx, a)
+
+    group_idx = np.array([0, 0, 0, 0])
+    for a in (
+        np.array([1 + 5j, 1 + complex(np.nan, 0), 3 + 0j, 1 + 2j]),
+        np.array([3 + 0j, 1 + 2j, 1 + complex(np.nan, 0), 1 + 5j]),
+    ):
+        np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_numpy.aggregate(group_idx, a, func="sort"))
 
 
 def test_sum_bool_widens_int64():

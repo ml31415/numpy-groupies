@@ -167,7 +167,7 @@ Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix 
 | Sorting (size of input)         | `sort` (`reverse=True` for descending) |
 | Collect group members           | `array` |
 
-Not every implementation supports every function — for example `sort` and `array` are **not** available in the Numba implementation. The [function reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md) has the exact semantics, default fill values, complex-number behaviour and a function × implementation matrix.
+Not every implementation supports every function — for example `array` is **not** available in the Numba implementation. The [function reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md) has the exact semantics, default fill values, complex-number behaviour and a function × implementation matrix.
 
 ## Helper tools
 
@@ -200,13 +200,13 @@ All implementations share the calling syntax and produce the same results up to 
 
 | Implementation | Needs        | Notes |
 | -------------- | ------------ | ----- |
-| **numba**      | numpy, numba | Fastest. Default if numba is installed. Lacks `sort` and `array`. |
+| **numba**      | numpy, numba | Fastest. Default if numba is installed. Lacks `array`. |
 | **numpy**      | numpy        | Based on `np.bincount` and indexing tricks. Default without numba. Most complete. |
 | **pure python** | numpy        | Plain Python loops, no Numba. Very slow; useful as a fallback or for porting. |
 | numpy ufunc    | numpy        | For benchmarking only: built on `ufunc.at` (`np.add.at`, …), in `numpy_groupies.benchmarks`. Incomplete. |
 | pandas         | numpy, pandas | For benchmarking only: wraps `groupby` (in `numpy_groupies.benchmarks`). Skips NaN even in the plain functions (except `median`, `cumsum`). |
 
-> **Gotchas:** with Numba installed, `aggregate(..., func="sort")` and `func="array"` raise `NotImplementedError`, and custom callables must be Numba-compilable (numeric code). For those cases call the NumPy implementation: `npg.aggregate_np(group_idx, a, func="sort")`.
+> **Gotchas:** with Numba installed, `aggregate(..., func="array")` raises `NotImplementedError`, and custom callables must be Numba-compilable (numeric code). For those cases call the NumPy implementation: `npg.aggregate_np(group_idx, a, func="array")`.
 
 ## Performance
 
@@ -214,16 +214,17 @@ Best of five timed runs, in milliseconds, for 500,000 values in 1,000 groups (lo
 
 | function | numpy  | numba  | numbagg | pandas |
 | -------- | -----: | -----: | ------: | -----: |
-| `sum`    |   0.88 |   0.43 |   0.44 |  15.45 |
-| `mean`   |   1.53 |   0.50 |   0.54 |  16.11 |
-| `max`    |   1.69 |   0.62 |   0.86 |  15.01 |
-| `std`    |   3.15 |   0.68 |   0.67 |  16.31 |
-| `nansum` |   4.19 |   0.44 |   1.75 |  20.57 |
-| `median` |  47.33 |  11.70 |    --- |  28.35 |
-| `cumsum` |  45.38 |   0.62 |    --- |   7.36 |
-| custom callable | 141.83 |  43.56 |     --- | 107.55 |
+| `sum`    |   0.93 |   0.46 |   0.47 |  15.87 |
+| `mean`   |   1.50 |   0.49 |   0.53 |  15.98 |
+| `max`    |   1.76 |   0.62 |   0.87 |  15.22 |
+| `std`    |   3.09 |   0.70 |   0.70 |  16.04 |
+| `nansum` |   4.12 |   0.44 |   1.76 |  20.54 |
+| `median` |  47.69 |  11.46 |    --- |  27.53 |
+| `sort`   | 136.02 |  26.03 |    --- |    --- |
+| `cumsum` |  44.51 |   0.60 |    --- |   7.17 |
+| custom callable | 143.04 |  42.30 |     --- | 107.74 |
 
-In short: the NumPy implementation is about 5–18× faster than pandas on common reductions, and Numba adds another 1.7–6.3× on top — and about 73× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives or `trapezoid`. `median` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
+In short: the NumPy implementation is about 5–17× faster than pandas on common reductions, and Numba adds another 1.4–13× on top — and about 75× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives, `trapezoid` or `sort`. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
 
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root (add `--pandas --numbagg` for those columns, `--purepy` for the pure-Python one):
 
