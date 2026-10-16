@@ -354,15 +354,34 @@ def test_ddof(impl, rng, func, ddof, size=20):
     assert abs(res[0] - ref) < 1e-10
 
 
+# every spelling of "one value instead of a column": python numbers carry no
+# dtype at all, numpy scalars and 0d arrays carry their own
+scalar_input_values = [
+    pytest.param(1, id="python int"),
+    pytest.param(2.5, id="python float"),
+    pytest.param(True, id="python bool"),
+    pytest.param(np.float64(2.5), id="float64"),
+    pytest.param(np.float32(2.5), id="float32"),
+    pytest.param(np.int64(3), id="int64"),
+    pytest.param(np.int32(3), id="int32"),
+    pytest.param(np.bool_(True), id="bool"),
+    pytest.param(np.complex64(2.5 + 1j), id="complex64"),
+    pytest.param(np.array(2.5), id="0d float64"),
+    pytest.param(np.array(np.float32(2.5)), id="0d float32"),
+    pytest.param(np.array(True), id="0d bool"),
+]
+
+
+@pytest.mark.parametrize("value", scalar_input_values)
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std"])
-def test_scalar_input(impl, func):
+def test_scalar_input(impl, func, value):
     group_idx = np.arange(0, 100, dtype=int).repeat(5)
-    if func not in ("sum", "prod"):
+    if func not in ("sum", "prod", "len"):
         with pytest.raises((ValueError, NotImplementedError)):
-            impl.aggregate(group_idx, 1, func=func)
+            impl.aggregate(group_idx, value, func=func)
     else:
-        res = impl.aggregate(group_idx, 1, func=func)
-        ref = impl.aggregate(group_idx, np.ones_like(group_idx, dtype=int), func=func)
+        res = impl.aggregate(group_idx, value, func=func)
+        ref = impl.aggregate(group_idx, np.full(group_idx.size, value), func=func)
         np.testing.assert_array_equal(res, ref)
 
 
