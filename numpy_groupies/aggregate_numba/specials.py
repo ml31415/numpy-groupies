@@ -22,10 +22,11 @@ from .jit import njit_stable
 
 
 def _numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis):
-    """Hand an input dtype the compiled drivers cannot order to numpy.
+    """Hand an input dtype the compiled drivers cannot handle to numpy.
 
-    Reached for complex input: numba can neither partition complex values
-    (median) nor compare them with numpy's partial lexicographic order (sort).
+    Reached for complex input of ``median``: numba can neither partition
+    complex values nor select a middle one of them.  ``sort`` does not need
+    this - ``np.sort`` of numba orders complex like numpy does.
     """
     return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
 
@@ -159,8 +160,12 @@ def _sort_blocks(a_sorted, counts, starts, reverse):
     for g in range(len(counts)):
         begin, size_g = starts[g], counts[g]
         if size_g > 1:
-            # the insertion pass compares with ``<``, which complex values have
-            # no definition of - they go to the library sort of the other branch
+            # the insertion pass needs a comparison that decides every pair, and
+            # complex values have none: numpy compares them partially, leaving
+            # a value with a nan in either part neither smaller nor greater,
+            # which an insertion sort would simply leave where it sits.  The
+            # library sort of the other branch does put those at the end, like
+            # numpy does, so complex blocks go there
             if size_g <= _INSERTION_SORT_LIMIT and not isinstance(a_sorted[begin], (complex, np.complex64)):
                 for i in range(1, size_g):
                     v = a_sorted[begin + i]
@@ -237,7 +242,6 @@ sort = build_custom_kernel(
     rule=rule_same,
     nans=False,
     nton=True,
-    fallback=_numpy_fallback,
     doc="Values of every group in ascending, or with reverse=True in descending order",
 )
 

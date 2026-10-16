@@ -182,14 +182,40 @@ def test_median(impl, a_dtype):
 
 
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
-def test_sort(impl, a_dtype):
+@pytest.mark.parametrize("reverse", [False, True], ids=["ascending", "descending"])
+def test_sort(impl, a_dtype, reverse):
     # sorting follows numpy's lexicographic complex order
     group_idx = np.array([0, 0, 1, 1])
     a = np.array([3 + 1j, 1 + 2j, 1 - 5j, 1 + 5j]).astype(a_dtype)
 
-    res = np.asarray(impl.aggregate(group_idx, a, func="sort"))
+    res = np.asarray(impl.aggregate(group_idx, a, func="sort", reverse=reverse))
     assert res.dtype == a_dtype
-    expected = np.concatenate([np.sort(a[group_idx == grp]) for grp in range(2)])
+    order = slice(None, None, -1) if reverse else slice(None)
+    expected = np.concatenate([np.sort(a[group_idx == grp])[order] for grp in range(2)])
+    np.testing.assert_array_equal(res, expected)
+
+
+@pytest.mark.deselect_if(func=is_purepy)
+@pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
+@pytest.mark.parametrize("reverse", [False, True], ids=["ascending", "descending"])
+def test_sort_moves_the_incomparable_values_last(impl, a_dtype, reverse):
+    # numpy reaches a value with a nan in either part by no comparison at all -
+    # also one whose real part differs from the others - and sorts it behind
+    # every value it cannot be compared with, in either direction.  The pure
+    # python implementation orders with the same partial comparison its sorted()
+    # uses, which leaves such a value where it happens to sit.
+    nan = complex(np.nan, 0)
+    nanj = complex(0, np.nan)
+    group_idx = np.array([0, 0, 0, 0, 0, 0, 1, 1, 1])
+    a = np.array(
+        [3 + 1j, 1 + 2j, 1 - 5j, 1 + 5j, 1 + nanj, nan + 1j, 0 - 0j, 0 + 0j, 2 + nanj],
+        dtype=a_dtype,
+    )
+
+    res = np.asarray(impl.aggregate(group_idx, a, func="sort", reverse=reverse))
+    assert res.dtype == a_dtype
+    # not the ascending order turned around: the incomparable values stay last
+    expected = aggregate_np(group_idx, a, func="sort", reverse=reverse)
     np.testing.assert_array_equal(res, expected)
 
 

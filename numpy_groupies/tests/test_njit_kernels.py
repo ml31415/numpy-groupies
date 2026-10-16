@@ -175,29 +175,21 @@ def test_nanmedian_complex_falls_back_to_numpy():
     np.testing.assert_array_equal(ret, aggregate_numpy.aggregate(group_idx, a, func="nanmedian"))
 
 
-def test_sort_complex_falls_back_to_numpy():
-    # layer 2 hands complex to numpy like it does for the median, even though
-    # the sort kernel itself could order complex values
-    group_idx = np.array([0, 0, 1])
-    a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
-    ret = aggregate_numba.aggregate(group_idx, a, func="sort")
-    assert ret.dtype == np.complex128
-    np.testing.assert_array_equal(ret, aggregate_numpy.aggregate(group_idx, a, func="sort"))
-
-
 def test_sort_orders_complex_from_njit_like_numpy():
-    # the kernel jitted code reaches does follow numpy's lexicographic order:
-    # numba compares the real part first, the imaginary part on a tie, and
-    # leaves a nan behind every value it cannot compare with
+    # the kernel jitted code reaches orders complex like numpy does: numba
+    # compares the real part first, the imaginary part on a tie, and leaves a
+    # value it cannot compare with - one with a nan in either part, even when
+    # the real parts differ - behind everything it is reached by
     @nb.njit
     def wrapped(group_idx, a):
         return kernels.aggregate_sort(group_idx, a)
 
-    group_idx = np.array([0, 0, 0, 0])
     for a in (
         np.array([1 + 5j, 1 + complex(np.nan, 0), 3 + 0j, 1 + 2j]),
         np.array([3 + 0j, 1 + 2j, 1 + complex(np.nan, 0), 1 + 5j]),
+        np.array([1 + complex(0, np.nan), 2 + 1j, 2 + 0j, 1 + 0j]),
     ):
+        group_idx = np.zeros(a.size, dtype=int)
         np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_numpy.aggregate(group_idx, a, func="sort"))
 
 
