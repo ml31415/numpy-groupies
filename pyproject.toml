@@ -41,6 +41,7 @@ fast = [
 ]
 dev = [
     "pytest",
+    "pytest-xdist",
     "numba",
     "pandas",
     "numbagg",
@@ -63,6 +64,11 @@ extend-exclude = ["*.md"]
 
 [tool.coverage.run]
 omit = ["numpy_groupies/benchmarks/*"]
+
+[tool.pytest.ini_options]
+# the suite is dominated by numba compilation, which splits across processes
+# -n 0 runs single tests in the controlling process again (pdb, -s)
+addopts = "-n auto"
 
 [tool.ruff.lint]
 ignore = [
