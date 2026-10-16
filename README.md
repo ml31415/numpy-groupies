@@ -214,17 +214,17 @@ Best of five timed runs, in milliseconds, for 500,000 values in 1,000 groups (lo
 
 | function | numpy  | numba  | numbagg | pandas |
 | -------- | -----: | -----: | ------: | -----: |
-| `sum`    |   0.93 |   0.46 |   0.47 |  15.87 |
-| `mean`   |   1.50 |   0.49 |   0.53 |  15.98 |
-| `max`    |   1.76 |   0.62 |   0.87 |  15.22 |
-| `std`    |   3.09 |   0.70 |   0.70 |  16.04 |
-| `nansum` |   4.12 |   0.44 |   1.76 |  20.54 |
-| `median` |  47.69 |  11.46 |    --- |  27.53 |
-| `sort`   | 136.02 |  26.03 |    --- |    --- |
-| `cumsum` |  44.51 |   0.60 |    --- |   7.17 |
-| custom callable | 143.04 |  42.30 |     --- | 107.74 |
+| `sum`    |   0.92 |   0.43 |   0.49 |  15.89 |
+| `mean`   |   1.56 |   0.51 |   0.56 |  15.99 |
+| `max`    |   1.71 |   0.64 |   0.88 |  15.15 |
+| `std`    |   3.09 |   0.67 |   0.68 |  16.82 |
+| `nansum` |   4.17 |   0.44 |   1.76 |  22.26 |
+| `median` |  48.41 |  11.49 |    --- |  27.70 |
+| `sort`   | 135.15 |  25.99 |    --- |    --- |
+| `cumsum` |  44.84 |   0.58 |    --- |   7.32 |
+| custom callable | 144.10 |  42.97 |     --- | 108.59 |
 
-In short: the NumPy implementation is about 5–17× faster than pandas on common reductions, and Numba adds another 1.4–13× on top — and about 75× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives, `trapezoid` or `sort`. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
+In short: the NumPy implementation is about 5–17× faster than pandas on common reductions, and Numba adds another 1.4–13× on top — and about 77× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives, `trapezoid` or `sort`. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
 
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root (add `--pandas --numbagg` for those columns, `--purepy` for the pure-Python one):
 
