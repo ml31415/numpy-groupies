@@ -38,24 +38,12 @@ Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
 
 ## Why numpy-groupies?
 
-The idea behind `aggregate` is an old one: Matlab's [`accumarray`](https://www.mathworks.com/help/matlab/ref/accumarray.html), the pandas [`groupby`](https://pandas.pydata.org/docs/user_guide/groupby.html), the [MapReduce](https://en.wikipedia.org/wiki/MapReduce) paradigm, or simply a [histogram](https://en.wikipedia.org/wiki/Histogram). What this package adds is a single, consistent array-in/array-out function that covers many reductions.
-
-|                                    | `np.bincount` | `pandas.groupby` | `numpy_groupies.aggregate` |
-| ---------------------------------- | :-----------: | :--------------: | :------------------------: |
-| Works on bare NumPy arrays         |      yes      |  via a Series    |            yes             |
-| Reductions beyond sum / count      |      no       |       yes        |            yes             |
-| Multi-dimensional output (N-D bins)|      no       |   via MultiIndex |            yes             |
-| Arbitrary labels (strings, ...)    |      no       |       yes        |   no — non-negative ints   |
-| Speed on plain arrays              |     fast      |      slower      |       fast (see below)     |
-
-Use it when your data already lives in NumPy arrays, your groups are (or can cheaply be turned into) integer labels, and you want group statistics without the overhead of building a DataFrame. If your labels are strings or other objects, map them to integers first:
-
-```python
-labels = np.array(["b", "a", "b", "c", "a"])
-values = np.arange(5.0)
-uniques, inverse = np.unique(labels, return_inverse=True)
-npg.aggregate(inverse, values)  # array([5., 2., 3.])  ->  groups "a", "b", "c"
-```
+- **Fast.** With Numba installed, `aggregate` is the fastest group-by aggregation for plain NumPy arrays. See [Performance](#performance).
+- **One call, many functions.** The usual reductions plus `median`, `sort` (ascending or descending), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
+- **Array in, array out.** Plain NumPy arrays, no DataFrame and no index. The result is an array indexed by group label, with empty groups filled with the value you choose. Multi-dimensional output (N-D binning) and aggregation along an `axis` are built in.
+- **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops.
+- **Numerically careful.** Integer sums, means and variances accumulate in a dtype wide enough not to wrap around, NaN handling follows NumPy, and complex and `float16` input are supported.
+- **Light on dependencies.** NumPy is the only requirement; Numba is optional and only makes things faster. A pure-Python implementation is included as a fallback.
 
 ## Installation
 
@@ -71,7 +59,7 @@ If you only want one implementation, you can copy a single file (e.g. `aggregate
 
 ## Quickstart
 
-**Counting, and other reductions.** The default function is `sum`; pass a scalar to count items per group (this is what `np.bincount` does under the hood in the NumPy implementation).
+**Counting, and other reductions.** The default function is `sum`; pass a scalar to count items per group (this is what `np.bincount` does under the hood in the NumPy implementation). Labels must be non-negative integers. For strings or other objects, map them first with `np.unique(labels, return_inverse=True)` and pass the inverse as `group_idx`. `a` are the values that you want to run your reductions on.
 
 ```python
 npg.aggregate(group_idx, 1)  # items per group
@@ -82,12 +70,12 @@ npg.aggregate(group_idx, a, func="mean", fill_value=-1)
 **Ignoring NaNs.** Every common reduction has a `nan…` variant, as in NumPy.
 
 ```python
-g = np.array([0, 0, 0, 1, 1, 2])
-v = np.array([1.0, 2.0, np.nan, 4.0, np.nan, np.nan])
+group_idx = np.array([0, 0, 0, 1, 1, 2])
+a = np.array([1.0, 2.0, np.nan, 4.0, np.nan, np.nan])
 
-npg.aggregate(g, v, func="nanmean")  # array([1.5, 4. , nan])
-npg.aggregate(g, v, func="nanvar")  # array([0.25, 0.  , nan])
-npg.aggregate(g, v, func="var")  # array([nan, nan, nan])  (plain var propagates NaN)
+npg.aggregate(group_idx, a, func="nanmean")  # array([1.5, 4. , nan])
+npg.aggregate(group_idx, a, func="nanvar")  # array([0.25, 0.  , nan])
+npg.aggregate(group_idx, a, func="var")  # array([nan, nan, nan])  (plain var propagates NaN)
 ```
 
 **Cumulative functions** don't reduce; the output has the same length as the input.
@@ -100,10 +88,25 @@ npg.aggregate(np.array([0, 1, 0, 1, 0]), np.array([1, 2, 3, 4, 5]), func="cumsum
 **Custom functions.** Any callable works. Non-numeric output needs `dtype=object`, and since the default fill value of a custom function cannot be guessed, give one explicitly. Use the NumPy implementation for this: Numba can only compile numeric functions, so with Numba installed the plain `aggregate` fails on the string example below.
 
 ```python
-g = np.array([1, 0, 1, 4, 1])
-v = np.array([12.0, 3.2, -15, 88, 12.9])
-npg.aggregate_np(g, v, func=lambda x: " or ".join(map(str, x)), fill_value="", dtype=object)
+group_idx = np.array([1, 0, 1, 4, 1])
+a = np.array([12.0, 3.2, -15, 88, 12.9])
+npg.aggregate_np(group_idx, a, func=lambda x: " or ".join(map(str, x)), fill_value="", dtype=object)
 # array(['3.2', '12.0 or -15.0 or 12.9', '', '', '88.0'], dtype=object)
+```
+
+**Integration into own jitted functions.** Every kernel is `@njit`-callable, so group statistics can sit inside a compiled loop of your own:
+
+```python
+import numba as nb
+import numpy as np
+from numpy_groupies.aggregate_numba import kernels
+
+@nb.njit
+def zscore(group_idx, a):
+    mean = kernels.aggregate_mean(group_idx, a)
+    std = kernels.aggregate_std(group_idx, a)
+    scale = np.where(std > 0, std, 1.0)
+    return (a - mean[group_idx]) / scale[group_idx]
 ```
 
 **Multi-dimensional output.** Give `group_idx` one row per output dimension — here, 1000 values binned into a 15×15×15 cube:
@@ -131,8 +134,15 @@ npg.aggregate(group_idx, a, axis=1)
 **Coming from pandas?** These are equivalent:
 
 ```python
+import pandas as pd
+
+group_idx = np.array([3, 0, 0, 1, 0, 3, 5, 5, 0, 4])
+a = np.array([13.2, 3.5, 3.5, -8.2, 3.0, 13.4, 99.2, -7.1, 0.0, 53.7])
+
 npg.aggregate(group_idx, a, func="sum", fill_value=0)
+# array([ 10. ,  -8.2,   0. ,  26.6,  53.7,  92.1])
 pd.Series(a).groupby(group_idx).sum().reindex(range(group_idx.max() + 1), fill_value=0).to_numpy()
+# array([ 10. ,  -8.2,   0. ,  26.6,  53.7,  92.1])
 ```
 
 ## Input forms
@@ -212,17 +222,17 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 
 | function        | numpy  | numba  | numbagg | pandas |
 | --------------- | -----: | -----: | ------: | -----: |
-| `sum`            |   0.95 |   0.44 |   0.47 |  15.96 |
-| `mean`           |   1.52 |   0.51 |   0.55 |  16.98 |
-| `max`            |   1.68 |   0.63 |   0.85 |  16.26 |
-| `std`            |   3.09 |   0.66 |   0.69 |  17.02 |
-| `nansum`         |   4.24 |   0.45 |   1.78 |  21.71 |
-| `median`         |  48.77 |  11.52 |    --- |  28.57 |
-| `sort`           | 136.16 |  25.96 |    --- |    --- |
-| `cumsum`         |  45.88 |   0.58 |    --- |   7.57 |
-| custom callable  | 142.54 |  43.16 |    --- | 109.89 |
+| `sum`            |   0.92 |   0.44 |   0.46 |  16.05 |
+| `mean`           |   1.59 |   0.58 |   0.55 |  16.37 |
+| `max`            |   1.74 |   0.62 |   0.87 |  15.83 |
+| `std`            |   3.21 |   0.72 |   0.70 |  16.67 |
+| `nansum`         |   4.16 |   0.45 |   1.76 |  21.44 |
+| `median`         |  48.30 |  11.54 |    --- |  27.98 |
+| `sort`           | 137.69 |  26.21 |    --- |    --- |
+| `cumsum`         |  44.65 |   0.62 |    --- |   7.27 |
+| custom callable  | 143.21 |  42.99 |    --- | 109.29 |
 
-In short: the NumPy implementation is about 5–18× faster than pandas on common reductions, and Numba adds another 2–10× on top — and about 79× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives, `trapezoid` or `sort`. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
+Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root — `--help` explains which columns to ask for:
 
@@ -241,7 +251,7 @@ pip install -e ".[dev]"     # pytest, numba, pandas
 pytest
 ```
 
-The repository uses [pre-commit](https://pre-commit.com/) (`pre-commit install`). Bug reports and pull requests are welcome in the [issue tracker](https://github.com/ml31415/numpy-groupies/issues). Release notes are on the [releases page](https://github.com/ml31415/numpy-groupies/releases).
+The repository uses [pre-commit](https://pre-commit.com/) (`pre-commit install`). Release notes are on the [releases page](https://github.com/ml31415/numpy-groupies/releases).
 
 **Credits.** Started by [@ml31415](https://github.com/ml31415), who wrote the Numba implementation; the pure-Python and NumPy implementations were written by [@d1manson](https://github.com/d1manson). Currently maintained by Deepak Cherian ([@dcherian](https://github.com/dcherian)).
 

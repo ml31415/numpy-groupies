@@ -16,60 +16,52 @@ Absolute numbers depend heavily on the machine, Python and library versions, so 
 python -m numpy_groupies.benchmarks --ufunc --numbagg --pandas --runs=3
 ```
 
-Which columns are measured by default, what the optional ones are and how the output arrives is what `--help` explains. `----` in the table below means the function is not available in that implementation, the row `arbitrary` is a custom Python callable passed as `func`.
+See `--help` for further options. `----` in the table below means the function is not available in that implementation, the row `arbitrary` is a custom Python callable passed as `func`.
 
 ## Results
 
 | function     |        numpy |        numba |        ufunc |      numbagg |       pandas |
 | ------------ | -----------: | -----------: | -----------: | -----------: | -----------: |
-| sum          |        0.953 |        0.444 |        0.903 |        0.472 |       15.961 |
-| prod         |        0.886 |        0.456 |        0.909 |        0.443 |       15.274 |
-| min          |        1.675 |        0.618 |        1.687 |        0.837 |       16.073 |
-| max          |        1.684 |        0.632 |        1.767 |        0.849 |       16.259 |
-| len          |        0.845 |        0.382 |        0.929 |        0.488 |       15.132 |
-| all          |        1.756 |        0.819 |       32.878 |        1.575 |       16.028 |
-| any          |        2.465 |        0.650 |       30.555 |        1.562 |       16.047 |
-| anynan       |        0.920 |        0.614 |        5.350 |        2.658 |       15.452 |
-| allnan       |        2.109 |        0.831 |        7.601 |        3.289 |       15.752 |
-| mean         |        1.524 |        0.511 |         ---- |        0.545 |       16.978 |
-| median       |       48.770 |       11.517 |         ---- |         ---- |       28.566 |
-| trapezoid    |        3.814 |        0.653 |         ---- |         ---- |         ---- |
-| std          |        3.093 |        0.656 |         ---- |        0.693 |       17.020 |
-| var          |        3.133 |        0.667 |         ---- |        0.685 |       16.854 |
-| first        |        1.790 |        0.293 |         ---- |        0.308 |       15.966 |
-| last         |        0.938 |        0.366 |         ---- |        0.425 |       15.951 |
-| argmax       |        2.625 |        0.624 |         ---- |        0.908 |       15.760 |
-| argmin       |        5.136 |        0.583 |         ---- |        0.847 |       15.562 |
-| nansum       |        4.237 |        0.446 |         ---- |        1.778 |       21.705 |
-| nanprod      |        4.159 |        0.449 |         ---- |        1.741 |       21.129 |
-| nanmin       |        4.844 |        0.936 |         ---- |        1.996 |       21.081 |
-| nanmax       |        4.923 |        1.005 |         ---- |        2.083 |       21.219 |
-| nanlen       |        2.495 |        0.448 |         ---- |        1.713 |       20.246 |
-| nanall       |        4.929 |        1.057 |         ---- |        3.270 |       21.970 |
-| nanany       |        5.698 |        0.642 |         ---- |        2.656 |       21.667 |
-| nanmean      |        4.705 |        1.650 |         ---- |        1.797 |       21.271 |
-| nanmedian    |       42.596 |       10.618 |         ---- |         ---- |       30.263 |
-| nantrapezoid |        6.610 |        1.771 |         ---- |         ---- |         ---- |
-| nanvar       |        6.111 |        1.860 |         ---- |        1.922 |       21.491 |
-| nanstd       |        6.135 |        1.863 |         ---- |        1.934 |       21.645 |
-| nanfirst     |        4.872 |        0.348 |         ---- |        0.317 |       21.347 |
-| nanlast      |        4.224 |        0.449 |         ---- |        1.610 |       21.495 |
-| nanargmin    |        6.409 |        0.758 |         ---- |        1.939 |       16.622 |
-| nanargmax    |        3.947 |        0.794 |         ---- |        2.019 |       16.535 |
-| cumsum       |       45.878 |        0.583 |         ---- |         ---- |        7.567 |
-| cumprod      |         ---- |        0.563 |         ---- |         ---- |       13.840 |
-| cummax       |         ---- |        0.750 |         ---- |         ---- |       14.388 |
-| cummin       |         ---- |        0.761 |         ---- |         ---- |       13.083 |
-| arbitrary    |      142.543 |       43.163 |         ---- |         ---- |      109.890 |
-| sort         |      136.157 |       25.961 |         ---- |         ---- |         ---- |
-
-## Reading the table
-
-- **numba vs numpy:** Numba is faster for every function both provide - by 1.5-6.1× across the plain reductions (`sum` 2.1×, `first` 6.1×), by 2.9-14× on the nan ones (`nanmean` 2.9×, `nanfirst` 14×), by 4.2-8.8× on the argreductions (`argmin` 8.8×), by 5.2× on `sort` (26 ms against 136 ms), and by far the most on `cumsum` (about 79×).
-- **numba vs numbagg:** par on the light scans (`sum` 0.44 against 0.47 ms, `first` 0.29 against 0.31 ms, while `prod` and `nanfirst` go to numbagg by a few per cent); numba leads wherever the nan handling branches per value (`anynan` 4.3×, `nansum` 4.0×, `nanlen` 3.8×, `nanlast` 3.6×, `nanargmax` 2.5×), and is the only one of the two with `median`, the cumulatives, `trapezoid` and `sort`.
-- **numpy vs pandas:** the NumPy implementation is 5.4× (`var`) to 17.9× (`len`) faster on the plain reductions, up to 8.1× on the nan ones (`nanlen`) and 2.6-6.0× on the argreductions. The exceptions are `median` and `nanmedian`, where pandas (28.6 ms and 30.3 ms) beats NumPy (48.8 ms and 42.6 ms) but not Numba (11.5 ms and 10.6 ms), and the cumulatives, where pandas is six times faster than NumPy (`cumsum` 7.6 against 45.9 ms) and still thirteen times slower than Numba (0.58 ms).
-- **ufunc:** `ufunc.at` was historically slow; NumPy 1.25 brought [major speed improvements](https://numpy.org/doc/stable/release/1.25.0-notes.html) and on the arithmetic scans the column now stands level with NumPy (`sum` 0.90 against 0.95 ms, `prod`, `min`, `max` and `len` within a few per cent). It is six times behind on `anynan` and twelve to nineteen times on `all` and `any`, and the implementation remains incomplete.
-- **Expensive everywhere:** `median`, `sort` and custom callables.
+| sum          |        0.919 |        0.439 |        0.901 |        0.459 |       16.053 |
+| prod         |        0.883 |        0.474 |        0.882 |        0.469 |       15.363 |
+| min          |        1.719 |        0.607 |        1.714 |        0.803 |       15.224 |
+| max          |        1.744 |        0.622 |        1.699 |        0.874 |       15.833 |
+| len          |        0.830 |        0.362 |        0.959 |        0.477 |       15.086 |
+| all          |        1.820 |        0.793 |       32.965 |        1.573 |       16.437 |
+| any          |        2.609 |        0.666 |       31.230 |        1.565 |       16.608 |
+| anynan       |        0.868 |        0.605 |        5.324 |        2.686 |       15.910 |
+| allnan       |        2.160 |        0.809 |        7.862 |        3.293 |       15.802 |
+| mean         |        1.588 |        0.577 |         ---- |        0.552 |       16.371 |
+| median       |       48.304 |       11.541 |         ---- |         ---- |       27.979 |
+| trapezoid    |        3.953 |        0.656 |         ---- |         ---- |         ---- |
+| std          |        3.212 |        0.724 |         ---- |        0.698 |       16.670 |
+| var          |        3.140 |        0.669 |         ---- |        0.686 |       16.458 |
+| first        |        1.761 |        0.318 |         ---- |        0.300 |       15.679 |
+| last         |        1.000 |        0.393 |         ---- |        0.474 |       15.768 |
+| argmax       |        2.646 |        0.621 |         ---- |        0.897 |       14.987 |
+| argmin       |        5.005 |        0.593 |         ---- |        0.820 |       14.562 |
+| nansum       |        4.157 |        0.448 |         ---- |        1.760 |       21.438 |
+| nanprod      |        4.319 |        0.452 |         ---- |        1.770 |       21.030 |
+| nanmin       |        4.965 |        0.949 |         ---- |        2.014 |       21.308 |
+| nanmax       |        4.855 |        0.999 |         ---- |        2.078 |       21.198 |
+| nanlen       |        2.583 |        0.446 |         ---- |        1.726 |       20.939 |
+| nanall       |        4.986 |        1.052 |         ---- |        3.294 |       22.110 |
+| nanany       |        5.715 |        0.637 |         ---- |        2.675 |       21.507 |
+| nanmean      |        4.879 |        1.652 |         ---- |        1.757 |       21.891 |
+| nanmedian    |       43.631 |       10.752 |         ---- |         ---- |       30.445 |
+| nantrapezoid |        6.525 |        1.751 |         ---- |         ---- |         ---- |
+| nanvar       |        6.098 |        1.860 |         ---- |        1.901 |       21.978 |
+| nanstd       |        6.103 |        1.850 |         ---- |        1.920 |       21.679 |
+| nanfirst     |        4.893 |        0.370 |         ---- |        0.305 |       20.334 |
+| nanlast      |        4.178 |        0.446 |         ---- |        1.598 |       21.074 |
+| nanargmin    |        6.139 |        0.796 |         ---- |        1.950 |       15.376 |
+| nanargmax    |        3.993 |        0.807 |         ---- |        2.052 |       16.154 |
+| cumsum       |       44.652 |        0.616 |         ---- |         ---- |        7.265 |
+| cumprod      |         ---- |        0.629 |         ---- |         ---- |       14.633 |
+| cummax       |         ---- |        0.796 |         ---- |         ---- |       13.526 |
+| cummin       |         ---- |        0.804 |         ---- |         ---- |       13.140 |
+| arbitrary    |      143.205 |       42.987 |         ---- |         ---- |      109.294 |
+| sort         |      137.691 |       26.210 |         ---- |         ---- |         ---- |
 
 ## Sorting across group counts
 

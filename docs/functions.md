@@ -195,12 +195,12 @@ a - npg.uaggregate(group_idx, a, func="mean")
 Since the output size of `aggregate` is `max(group_idx) + 1`, sparse labels waste memory. The two `relabel_…` functions close those gaps:
 
 ```python
-g = np.array([0, 3, 3, 3, 0, 2, 5, 2, 0, 1, 1, 0, 3, 5, 5])
+group_idx = np.array([0, 3, 3, 3, 0, 2, 5, 2, 0, 1, 1, 0, 3, 5, 5])
 
-npg.relabel_groups_unique(g)
+npg.relabel_groups_unique(group_idx)
 # array([0, 3, 3, 3, 0, 2, 4, 2, 0, 1, 1, 0, 3, 4, 4])     label 4 was unused, so 5 -> 4
 
-npg.relabel_groups_masked(g, np.array([0, 1, 0, 1, 1, 1]))
+npg.relabel_groups_masked(group_idx, np.array([0, 1, 0, 1, 1, 1]))
 # array([0, 2, 2, 2, 0, 0, 4, 0, 0, 1, 1, 0, 2, 4, 4])     group 2 dropped, its items merged into group 0
 ```
 
@@ -267,7 +267,7 @@ Custom function producing strings (NumPy implementation; Numba cannot compile th
 ```python
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
-npg.aggregate_np(group_idx, a, func=lambda g: " or maybe ".join(str(gg) for gg in g),
+npg.aggregate_np(group_idx, a, func=lambda x: " or maybe ".join(str(item) for item in x),
                  fill_value="", dtype=object)
 # ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
