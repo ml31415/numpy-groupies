@@ -71,6 +71,8 @@ omit = ["numpy_groupies/benchmarks/*"]
 addopts = "-n auto"
 
 [tool.ruff.lint]
+# relative imports are not used anywhere in the package
+extend-select = ["TID252"]
 ignore = [
     "B008", # np.dtype defaults in signatures are immutable singletons
     "PLR0124", # val != val is the idiomatic NaN check

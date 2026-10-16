@@ -5,7 +5,7 @@ import inspect
 import numpy as np
 import pytest
 
-from .helpers import _BackendProxy, _implementations, impl_name, is_supported
+from numpy_groupies.tests.helpers import _BackendProxy, _implementations, impl_name, is_supported
 
 
 @pytest.fixture(params=_implementations, ids=impl_name)

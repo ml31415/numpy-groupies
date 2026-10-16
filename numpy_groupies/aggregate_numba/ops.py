@@ -17,14 +17,17 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from ..aggregate_common import (
+from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     build_dispatch,
     funcs_no_separate_nan,
     is_scalar_input,
     resolve_fill_value,
 )
-from ..utils import (
+from numpy_groupies.aggregate_numba import argreductions, averaging, cumulative, reductions, specials
+from numpy_groupies.aggregate_numba.compose import KernelHandle
+from numpy_groupies.aggregate_numba.steps import step_indices
+from numpy_groupies.utils import (
     aliasing,
     check_dtype,
     check_fill_value,
@@ -33,9 +36,6 @@ from ..utils import (
     resolve_output_dtype,
     scalar_dtype,
 )
-from . import argreductions, averaging, cumulative, reductions, specials
-from .compose import KernelHandle
-from .steps import step_indices
 
 # input dtypes for which the 'sum' output dtype depends on the input length
 # (the overflow guesses in resolve_output_dtype)

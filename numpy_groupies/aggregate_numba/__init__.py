@@ -8,11 +8,11 @@ from collections.abc import Callable, Sequence
 import numpy as np
 import numpy.typing as npt
 
-from ..aggregate_common import DEFAULT_FILL_VALUE, aggregate_common_doc, get_func
-from ..utils import aliasing
-from .gather import unpack_into
-from .ops import _dispatch, _impl_dict, build_generic_aggregate
-from .steps import step_count, step_indices
+from numpy_groupies.aggregate_common import DEFAULT_FILL_VALUE, aggregate_common_doc, get_func
+from numpy_groupies.aggregate_numba.gather import unpack_into
+from numpy_groupies.aggregate_numba.ops import _dispatch, _impl_dict, build_generic_aggregate
+from numpy_groupies.aggregate_numba.steps import step_count, step_indices
+from numpy_groupies.utils import aliasing
 
 __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 

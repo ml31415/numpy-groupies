@@ -40,7 +40,7 @@ import typing
 import numba as nb
 import numpy as np
 
-from .jit import njit_stable
+from numpy_groupies.aggregate_numba.jit import njit_stable
 
 
 @njit_stable

@@ -12,9 +12,9 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from ..aggregate_common import EXACT_FLOAT64_INTEGER_LIMIT, INT64_DEVIATION_LIMIT, INT64_MIN
-from .compose import build_kernel, rule_float, rule_real_float
-from .jit import njit_stable
+from numpy_groupies.aggregate_common import EXACT_FLOAT64_INTEGER_LIMIT, INT64_DEVIATION_LIMIT, INT64_MIN
+from numpy_groupies.aggregate_numba.compose import build_kernel, rule_float, rule_real_float
+from numpy_groupies.aggregate_numba.jit import njit_stable
 
 
 def _track_extrema(val, low, high):

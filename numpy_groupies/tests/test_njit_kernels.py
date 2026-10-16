@@ -11,8 +11,8 @@ import numba as nb
 import numpy as np
 import pytest
 
-from .. import aggregate_numba, aggregate_numpy
-from ..aggregate_numba import kernels
+from numpy_groupies import aggregate_numba, aggregate_numpy
+from numpy_groupies.aggregate_numba import kernels
 
 GROUP_IDX = np.array([0, 0, 1, 1, 1, 3])  # group 2 stays empty
 FLOAT_A = np.array([3.0, 1.0, np.nan, 2.0, 5.0, 4.0])

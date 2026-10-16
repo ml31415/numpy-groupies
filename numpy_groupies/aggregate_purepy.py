@@ -5,7 +5,7 @@ import operator
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
-from .aggregate_common import (
+from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
@@ -19,7 +19,7 @@ from .aggregate_common import (
     raise_integer_variance_span_overflow,
     resolve_fill_value,
 )
-from .aggregate_common import (
+from numpy_groupies.aggregate_common import (
     aliasing_py as aliasing,
 )
 

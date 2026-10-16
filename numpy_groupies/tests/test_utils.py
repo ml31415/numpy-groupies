@@ -1,7 +1,7 @@
 import numpy as np
 
-from ..utils import check_dtype, unpack
-from .helpers import random_values
+from numpy_groupies.tests.helpers import random_values
+from numpy_groupies.utils import check_dtype, unpack
 
 
 def test_check_dtype():

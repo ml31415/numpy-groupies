@@ -25,7 +25,7 @@ overflow guesses for narrow integers are approximated by widening to int64 -
 ``aggregate()`` keeps the exact length-dependent dtype rules.
 """
 
-from . import argreductions, averaging, cumulative, reductions, specials
+from numpy_groupies.aggregate_numba import argreductions, averaging, cumulative, reductions, specials
 
 aggregate_sum = reductions.sum.plain.stub
 aggregate_nansum = reductions.sum.nan.stub

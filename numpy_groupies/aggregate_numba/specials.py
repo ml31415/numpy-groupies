@@ -16,9 +16,9 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
-from ..aggregate_numpy import _aggregate_base
-from .compose import build_custom_kernel, build_kernel, output_size, rule_float, rule_same
-from .jit import njit_stable
+from numpy_groupies.aggregate_numba.compose import build_custom_kernel, build_kernel, output_size, rule_float, rule_same
+from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.aggregate_numpy import _aggregate_base
 
 
 def _numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis):

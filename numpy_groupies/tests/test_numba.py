@@ -4,9 +4,9 @@ fallback, the callable cache and the ``out=`` parameter."""
 import numpy as np
 import pytest
 
-from .. import uaggregate
-from ..aggregate_numba import aggregate
-from ..utils import resolve_output_dtype
+from numpy_groupies import uaggregate
+from numpy_groupies.aggregate_numba import aggregate
+from numpy_groupies.utils import resolve_output_dtype
 
 
 @pytest.fixture(

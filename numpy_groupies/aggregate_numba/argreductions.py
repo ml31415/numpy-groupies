@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from .compose import build_custom_kernel, complex_less, output_size, rule_int64
-from .jit import njit_stable
+from numpy_groupies.aggregate_numba.compose import build_custom_kernel, complex_less, output_size, rule_int64
+from numpy_groupies.aggregate_numba.jit import njit_stable
 
 
 def _argmax_driver_factory(nan_variant):

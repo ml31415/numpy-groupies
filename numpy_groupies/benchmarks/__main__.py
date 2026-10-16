@@ -2,7 +2,7 @@
 
 import signal
 
-from . import main
+from numpy_groupies.benchmarks import main
 
 if hasattr(signal, "SIGPIPE"):
     # a reader that went away (``| head``) ends the run quietly, as it does for
