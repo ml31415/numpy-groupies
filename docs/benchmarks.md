@@ -83,9 +83,9 @@ python -m numpy_groupies.benchmarks.generic --sort --runs=3
 
 | groups | values per group | numpy   | numba  |
 | -----: | ---------------: | ------: | -----: |
-|    100 |             5000 | 125.849 | 34.331 |
-|   1000 |              500 | 140.831 | 26.241 |
-|  10000 |               50 | 156.002 | 22.529 |
-| 100000 |                5 | 172.206 | 34.078 |
+|    100 |             5000 | 122.143 | 34.234 |
+|   1000 |              500 | 139.460 | 25.638 |
+|  10000 |               50 | 154.306 | 20.231 |
+| 100000 |                5 | 164.134 | 11.292 |
 
-NumPy slows down monotonically as the groups multiply. The Numba column dips in the middle: with few large groups the comparison sort itself dominates, with many tiny ones the per-group bookkeeping does. The other implementations have no column here because none of them provides `sort`.
+NumPy slows down monotonically as the groups multiply. The Numba column dips in the middle: with few large groups the comparison sort of a whole block is what costs, while many tiny groups are ordered by insertion sort in the flat array, without the per-group view that a library sort has to build - which is three times the speed it had before at five values per group. The other implementations have no column here because none of them provides `sort`.

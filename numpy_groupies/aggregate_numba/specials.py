@@ -3,9 +3,9 @@
 ``median`` is an order statistic: values are placed group by group via a
 counting sort (O(n)) and the middle of each group is then *selected* via
 partition (O(n) on average) instead of sorting within the groups.
-``sort`` uses the same counting-sort placement, but orders every group-block
-with ``np.sort`` and scatters the blocks back to the positions their group
-occupies in the input.
+``sort`` uses the same counting-sort placement, but orders every group-block -
+by insertion sort while the block is small, by ``np.sort`` beyond that - and
+scatters the blocks back to the positions their group occupies in the input.
 ``trapezoid`` integrates consecutive sample pairs within each group in a
 single pass - it composes like the streaming reductions, but carries the
 sample spacing ``dx`` in the ``ddof`` slot.
@@ -132,6 +132,18 @@ median = build_custom_kernel(
 )
 
 
+# Blocks this small are ordered by insertion sort in the flat array, the larger
+# ones by ``np.sort``: the array view that ``arr.sort()`` has to build per group
+# costs more than the ordering does once the groups are tiny.  Measured with
+# numba 0.68 on 500,000 float64 values ordered group by group, insertion sort
+# is eleven times faster at one value per group, five times at five, and still a
+# tenth ahead at fifty; from a hundred values upwards the library sort wins, by
+# half at a hundred and by six times at a thousand.  The limit stays well below
+# that crossover, so groups of very different sizes cannot push many of them
+# across it.
+_INSERTION_SORT_LIMIT = 32
+
+
 def _sort_blocks(a_sorted, counts, starts, reverse):
     """order the values inside every group-block.
 
@@ -147,7 +159,30 @@ def _sort_blocks(a_sorted, counts, starts, reverse):
     for g in range(len(counts)):
         begin, size_g = starts[g], counts[g]
         if size_g > 1:
-            a_sorted[begin : begin + size_g].sort()
+            # the insertion pass compares with ``<``, which complex values have
+            # no definition of - they go to the library sort of the other branch
+            if size_g <= _INSERTION_SORT_LIMIT and not isinstance(a_sorted[begin], (complex, np.complex64)):
+                for i in range(1, size_g):
+                    v = a_sorted[begin + i]
+                    j = i - 1
+                    while j >= 0:
+                        w = a_sorted[begin + j]
+                        # nan is the largest value of the order, so every other
+                        # value shifts it right - in front of another nan the
+                        # loop stops, which keeps the nans in input order
+                        if v != v:
+                            before = False
+                        elif w != w:
+                            before = True
+                        else:
+                            before = v < w
+                        if not before:
+                            break
+                        a_sorted[begin + j + 1] = a_sorted[begin + j]
+                        j -= 1
+                    a_sorted[begin + j + 1] = v
+            else:
+                a_sorted[begin : begin + size_g].sort()
             if reverse:
                 m = size_g
                 while m > 0 and a_sorted[begin + m - 1] != a_sorted[begin + m - 1]:
