@@ -102,7 +102,9 @@ def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, fun
     ("ERROR"/"FAIL").
 
     ``on_row(label, cells)`` is called after every function, so the caller can
-    report the row as it is measured instead of waiting for the pass."""
+    report the row as it is measured instead of waiting for the pass.  ``repeat``
+    is the number of timed executions of a cell, capped per column by
+    ``MAX_REPEAT``."""
     table = {}
     for func in funcs:
         func_name = getattr(func, "__name__", func)
@@ -126,9 +128,8 @@ def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, fun
                 except AssertionError:
                     cells.append("FAIL")
                 else:
-                    t0 = min(
-                        timeit.Timer(lambda: aggregate_fn(group_idx, used_a, func=func)).repeat(repeat=repeat, number=1)
-                    )
+                    timer = timeit.Timer(lambda: aggregate_fn(group_idx, used_a, func=func))
+                    t0 = min(timer.repeat(repeat=min(repeat, MAX_REPEAT.get(name, repeat)), number=1))
                     cells.append(t0 * 1000)
         table[func_name] = cells
         if on_row is not None:
@@ -158,6 +159,10 @@ def _merge_runs(tables):
 # terminal when the cells are padded, and padding does not hurt the rendering.
 CELL_WIDTH = 12
 NO_IMPL = "----"
+# The slowest columns are timed once whatever --repeat asks for: several
+# seconds of waiting would buy a marginally better minimum, and the whole
+# measurement would take a multiple of its own runtime for one such column.
+MAX_REPEAT = {"purepy": 1}
 
 
 def _cell_text(cell):
@@ -383,7 +388,10 @@ the two coincide.""",
         "--runs", type=int, default=1, help="complete measurement passes, the per-cell minimum is reported (default: 1)"
     )
     parser.add_argument(
-        "--repeat", type=int, default=5, help="timed executions per cell, the fastest counts (default: 5)"
+        "--repeat",
+        type=int,
+        default=5,
+        help="timed executions per cell, the fastest counts, the pure-Python column excepted (default: 5)",
     )
     parser.add_argument("--size", type=float, default=5e5, help="number of values in the benchmark data (default: 5e5)")
     parser.add_argument(
