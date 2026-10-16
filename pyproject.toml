@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 keywords = ["accumarray", "aggregate", "groupby", "grouping", "indexing"]
-requires-python = ">=3.10"
+requires-python = ">=3.10" # 0.15 will raise this to ">=3.11"
 dependencies = ["numpy"]
 
 [project.optional-dependencies]
