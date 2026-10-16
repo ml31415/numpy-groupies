@@ -72,3 +72,20 @@ Columns: `ufunc` is the `ufunc.at`-based implementation (incomplete, for benchma
 - **numpy vs pandas:** the NumPy implementation is about 5× (`std`, `var`) to 17× (`len`, `sum`; `prod` 16×) faster than pandas on common reductions. The exception is `median`, where pandas (28 ms) beats NumPy (48 ms) but not Numba (11 ms).
 - **ufunc:** `ufunc.at` was historically slow; NumPy 1.25 narrowed the gap considerably, but this implementation remains incomplete and `all`/`any` are still very slow.
 - **Expensive everywhere:** `median`, `sort` and custom callables.
+
+## Sorting across group counts
+
+`sort` emits one value per input item and orders every group on its own, so its cost turns on the group *size* - a few large blocks to order against many small ones. `--sort` measures that function alone over a hundredth, one, ten and a hundred times the group count of the table above, on the same 500,000 values:
+
+```sh
+python -m numpy_groupies.benchmarks.generic --sort --runs=3
+```
+
+| groups | values per group | numpy   | numba  |
+| -----: | ---------------: | ------: | -----: |
+|    100 |             5000 | 125.849 | 34.331 |
+|   1000 |              500 | 140.831 | 26.241 |
+|  10000 |               50 | 156.002 | 22.529 |
+| 100000 |                5 | 172.206 | 34.078 |
+
+NumPy slows down monotonically as the groups multiply. The Numba column dips in the middle: with few large groups the comparison sort itself dominates, with many tiny ones the per-group bookkeeping does. The other implementations have no column here because none of them provides `sort`.
