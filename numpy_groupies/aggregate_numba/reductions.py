@@ -279,7 +279,6 @@ def _first_driver_factory(nan_variant):
     # The loop body is inlined on purpose: with numba >= 0.67 the composed
     # driver plus a separate njit update call compiles ~12x slower here -
     # see the note in argreductions._argmax_driver_factory.
-    @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
@@ -313,7 +312,7 @@ def _first_driver_factory(nan_variant):
             raise ValueError("negative indices not supported")
         return out
 
-    return driver
+    return njit_stable(driver, name=f"{'nan' if nan_variant else ''}first_driver")
 
 
 first = build_custom_kernel(

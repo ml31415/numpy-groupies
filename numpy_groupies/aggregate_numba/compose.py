@@ -324,14 +324,16 @@ def build_kernel(
     def _finish_none(st, g, fill_value, ddof):
         return st.out[g]
 
-    seed_c = njit_stable(seed) if seed is not None else njit_stable(_seed_none)
-    record_c = njit_stable(record) if record is not None else njit_stable(_record_none)
-    gate_c = njit_stable(gate) if gate is not None else njit_stable(_gate_none)
-    finish_c = njit_stable(finish) if finish is not None else njit_stable(_finish_none)
+    # the same story in the other direction: the qualname is part of numba's
+    # mangled symbol, so nested blocks of this factory need the operation in
+    # their name to keep their environments apart (see njit_stable)
+    seed_c = njit_stable(seed) if seed is not None else njit_stable(_seed_none, name=f"{name}_seed_none")
+    record_c = njit_stable(record) if record is not None else njit_stable(_record_none, name=f"{name}_record_none")
+    gate_c = njit_stable(gate) if gate is not None else njit_stable(_gate_none, name=f"{name}_gate_none")
+    finish_c = njit_stable(finish) if finish is not None else njit_stable(_finish_none, name=f"{name}_finish_none")
     if untouched is not None:
         untouched_c = njit_stable(untouched)
 
-        @njit_stable
         def fill_untouched(st, size, fill_value):
             # a custom fill value also belongs to the groups that never
             # received a value - their output was seeded with the forced
@@ -344,26 +346,29 @@ def build_kernel(
 
     else:
 
-        @njit_stable
         def fill_untouched(st, size, fill_value):
             pass
 
+    fill_untouched = njit_stable(fill_untouched, name=f"{name}_fill_untouched")
+
     def build(nan_variant):
+        # plain and nan variant are two compiled artifacts of the same source
+        # block - without the prefix in the name their drivers share a symbol
+        # too, which is what ``last`` and ``nanlast`` were caught doing
+        op_name = name if not nan_variant else f"nan{name}"
         if nan_variant:
             if update_nan_c is not None:
                 update_ = update_nan_c
             else:
 
-                @njit_stable
                 def guarded_update(st, ri, i, val, fill_value, ddof):
                     if val == val:
                         update_c(st, ri, i, val, fill_value, ddof)
 
-                update_ = guarded_update
+                update_ = njit_stable(guarded_update, name=f"{op_name}_guarded_update")
         else:
             update_ = update_c
 
-        @njit_stable
         def kernel(group_idx, a, st, fill_value, ddof, size):
             # a function of its own on purpose: with the arrays living in the
             # caller's frame (allocated there, reached through the state) the
@@ -379,7 +384,8 @@ def build_kernel(
                 update_(st, ri, i, a[i], fill_value, ddof)
                 record_c(st, ri, i)
 
-        @njit_stable
+        kernel = njit_stable(kernel, name=f"{op_name}_kernel")
+
         def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
             # numba's np.max reduction is several times faster than a scalar
             # loop here; negative indices slip through and are caught by the
@@ -400,9 +406,10 @@ def build_kernel(
             fill_untouched(st, size, fill_value)
             return st.out
 
-        stub_name_variant = name if not nan_variant else "nan" + name
+        driver = njit_stable(driver, name=f"{op_name}_driver")
+
         stub = _make_stub(
-            stub_name_variant,
+            op_name,
             lambda: driver,
             rule,
             fill_default,
@@ -410,7 +417,7 @@ def build_kernel(
             ddof_default,
         )
         return KernelHandle(
-            name=stub_name_variant,
+            name=op_name,
             nans=nan_variant,
             stub=stub,
             driver=driver,

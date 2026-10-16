@@ -7,6 +7,8 @@ layer-2 results is the contract here; the explicitly documented deviations
 their own tests.
 """
 
+from importlib import import_module
+
 import numba as nb
 import numpy as np
 import pytest
@@ -280,3 +282,48 @@ def test_layer1_layer2_share_the_driver():
     result = _kernel_result(name, values, ddof=1)
     assert result.dtype == expected.dtype
     assert result.tobytes() == expected.tobytes()
+
+
+_OP_MODULES = ("reductions", "averaging", "cumulative", "argreductions", "specials")
+
+
+def _all_drivers():
+    """``(operation name, driver)`` of every operation of the numba backend."""
+    for module_name in _OP_MODULES:
+        module = import_module(f"numpy_groupies.aggregate_numba.{module_name}")
+        for pair in vars(module).values():
+            if type(pair).__name__ != "KernelPair":
+                continue
+            for handle in (pair.plain, pair.nan):
+                if handle is not None:
+                    yield handle.name, handle.driver
+
+
+def _identity(function):
+    return function.__module__, function.__qualname__, function.__code__.co_firstlineno
+
+
+def test_no_two_operations_share_a_compiled_identity():
+    """Numba mangles the symbol of a compiled function from module, qualname and
+    signature - two operations that share those share one symbol, and the driver
+    loaded from disk then binds its building blocks to the other operation's
+    environment (observed for ``last`` against ``nanlast``, both taking an int64
+    and a float64 array).  Distinct qualnames are what keeps them apart.
+    """
+    identities = {}
+    for name, driver in _all_drivers():
+        identity = _identity(driver.py_func)
+        assert identity not in identities, f"{name} shares its compiled identity with {identities[identity]}"
+        identities[identity] = name
+    # plain and nan variant of every operation, so more names than operations
+    assert len(identities) > 24
+
+
+def test_the_plain_and_nan_variant_of_one_operation_are_distinct():
+    """The nan variant is a second compiled artifact of the same source block -
+    the collision of ``last`` and ``nanlast`` came out of exactly that.
+    """
+    drivers = dict(_all_drivers())
+    for name in ("last", "first", "sum", "mean"):
+        assert _identity(drivers[name].py_func) != _identity(drivers[f"nan{name}"].py_func)
+        assert drivers[f"nan{name}"].py_func.__qualname__ == f"nan{name}_driver"

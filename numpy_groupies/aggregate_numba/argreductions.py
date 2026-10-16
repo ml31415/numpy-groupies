@@ -2,7 +2,12 @@
 
 import numpy as np
 
-from numpy_groupies.aggregate_numba.compose import build_custom_kernel, complex_less, output_size, rule_int64
+from numpy_groupies.aggregate_numba.compose import (
+    build_custom_kernel,
+    complex_less,
+    output_size,
+    rule_int64,
+)
 from numpy_groupies.aggregate_numba.jit import njit_stable
 
 
@@ -83,7 +88,6 @@ def _argmax_driver_factory(nan_variant):
 
         kernel = kernel_plain
 
-    @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
         # once this resolved, every index is within [0, size) - the loop does
         # not need an upper bounds check (negative ones are flagged and raised
@@ -95,7 +99,7 @@ def _argmax_driver_factory(nan_variant):
         kernel(group_idx, a, out, running, pending, fill_value)
         return out
 
-    return driver
+    return njit_stable(driver, name=f"{'nan' if nan_variant else ''}argmax_driver")
 
 
 argmax = build_custom_kernel(
@@ -162,7 +166,6 @@ def _argmin_driver_factory(nan_variant):
 
         kernel = kernel_plain
 
-    @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
@@ -171,7 +174,7 @@ def _argmin_driver_factory(nan_variant):
         kernel(group_idx, a, out, running, pending, fill_value)
         return out
 
-    return driver
+    return njit_stable(driver, name=f"{'nan' if nan_variant else ''}argmin_driver")
 
 
 argmin = build_custom_kernel(
