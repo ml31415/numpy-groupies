@@ -208,21 +208,21 @@ All implementations share the calling syntax and produce the same results up to 
 
 ## Performance
 
-Best of five timed runs, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
+Best of three passes of five timed runs each, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
 
-| function | numpy  | numba  | numbagg | pandas |
-| -------- | -----: | -----: | ------: | -----: |
-| `sum`    |   0.92 |   0.43 |   0.49 |  15.89 |
-| `mean`   |   1.56 |   0.51 |   0.56 |  15.99 |
-| `max`    |   1.71 |   0.64 |   0.88 |  15.15 |
-| `std`    |   3.09 |   0.67 |   0.68 |  16.82 |
-| `nansum` |   4.17 |   0.44 |   1.76 |  22.26 |
-| `median` |  48.41 |  11.49 |    --- |  27.70 |
-| `sort`   | 135.15 |  25.99 |    --- |    --- |
-| `cumsum` |  44.84 |   0.58 |    --- |   7.32 |
-| custom callable | 144.10 |  42.97 |     --- | 108.59 |
+| function        | numpy  | numba  | numbagg | pandas |
+| --------------- | -----: | -----: | ------: | -----: |
+| `sum`            |   0.95 |   0.44 |   0.47 |  15.96 |
+| `mean`           |   1.52 |   0.51 |   0.55 |  16.98 |
+| `max`            |   1.68 |   0.63 |   0.85 |  16.26 |
+| `std`            |   3.09 |   0.66 |   0.69 |  17.02 |
+| `nansum`         |   4.24 |   0.45 |   1.78 |  21.71 |
+| `median`         |  48.77 |  11.52 |    --- |  28.57 |
+| `sort`           | 136.16 |  25.96 |    --- |    --- |
+| `cumsum`         |  45.88 |   0.58 |    --- |   7.57 |
+| custom callable  | 142.54 |  43.16 |    --- | 109.89 |
 
-In short: the NumPy implementation is about 5–24× faster than pandas on common reductions, and Numba adds another 2–10× on top — and about 77× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives, `trapezoid` or `sort`. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
+In short: the NumPy implementation is about 5–18× faster than pandas on common reductions, and Numba adds another 2–10× on top — and about 79× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives, `trapezoid` or `sort`. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
 
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root — `--help` explains which columns to ask for:
 
