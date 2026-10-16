@@ -216,17 +216,17 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 
 | function        | numpy  | numba  | numbagg | pandas |
 | --------------- | -----: | -----: | ------: | -----: |
-| `sum`            |   0.95 |   0.44 |   0.47 |  15.96 |
-| `mean`           |   1.52 |   0.51 |   0.55 |  16.98 |
-| `max`            |   1.68 |   0.63 |   0.85 |  16.26 |
-| `std`            |   3.09 |   0.66 |   0.69 |  17.02 |
-| `nansum`         |   4.24 |   0.45 |   1.78 |  21.71 |
-| `median`         |  48.77 |  11.52 |    --- |  28.57 |
-| `sort`           | 136.16 |  25.96 |    --- |    --- |
-| `cumsum`         |  45.88 |   0.58 |    --- |   7.57 |
-| custom callable  | 142.54 |  43.16 |    --- | 109.89 |
+| `sum`            |   0.92 |   0.46 |   0.47 |  16.99 |
+| `mean`           |   1.53 |   0.55 |   0.56 |  17.06 |
+| `max`            |   1.73 |   0.62 |   0.88 |  16.27 |
+| `std`            |   3.17 |   0.66 |   0.69 |  16.63 |
+| `nansum`         |   4.37 |   0.44 |   1.77 |  21.31 |
+| `median`         |  48.49 |  11.70 |    --- |  28.60 |
+| `sort`           | 138.18 |  26.23 |    --- |    --- |
+| `cumsum`         |  45.70 |   0.57 |    --- |   7.95 |
+| custom callable  | 141.60 |  43.17 |    --- | 109.82 |
 
-In short: the NumPy implementation is about 5–18× faster than pandas on common reductions, and Numba adds another 2–10× on top — and about 79× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives, `trapezoid` or `sort`. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
+In short: Numba is the fastest column of the table on every function it provides, apart from `first`, `nanfirst` and `prod`, which go to numbagg by a few per cent - and numbagg has no `median`, no cumulatives, no `trapezoid` and no `sort`, so for most of these functions it is not in the running at all. pandas sits well back on everything the three have in common. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root — `--help` explains which columns to ask for:
 
