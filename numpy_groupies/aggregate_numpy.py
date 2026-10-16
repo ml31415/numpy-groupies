@@ -529,7 +529,17 @@ def _sort(
     dtype: np.dtype | None = None,
     reverse: bool = False,
 ) -> npt.NDArray[np.generic]:
-    sortidx = np.lexsort((-a if reverse else a, group_idx))
+    if reverse:
+        # the descending key.  Bitwise inversion reverses the order of the
+        # integral and boolean dtypes exactly, where negation does not: the
+        # smallest value of a signed dtype survives negation as itself, and a
+        # zero of an unsigned one stays the smallest key of all.  The inexact
+        # dtypes have no inversion and negate cleanly - a nan stays last
+        # either way, and -0.0 compares equal to 0.0.
+        key = ~a if a.dtype.kind in "iub" else -a
+    else:
+        key = a
+    sortidx = np.lexsort((key, group_idx))
     # Unsort back into original order, but preserving the groupwise value
     # sorting: scattering through the group-stable argsort is exactly the
     # inverse permutation, avoiding the classic argsort-of-argsort.

@@ -685,6 +685,40 @@ def test_sort(impl, order):
 
 
 @pytest.mark.parametrize(
+    ("a", "ref"),
+    [
+        (np.array([-128, 5, 0, -3], dtype=np.int8), [5, 0, -3, -128]),
+        (np.array([3, 1, 0, 200], dtype=np.uint8), [200, 3, 1, 0]),
+        (np.array([1, 0, 2**63, 2], dtype=np.uint64), [2**63, 2, 1, 0]),
+        (np.array([True, False, True]), [True, True, False]),
+    ],
+    ids=["int8-min", "uint8-zero", "uint64-zero", "bool"],
+)
+def test_sort_reverse_descends(impl, a, ref):
+    # reversing must not come from negating the values: the smallest value of a
+    # signed dtype survives negation as itself, a zero of an unsigned one stays
+    # the smallest key, and booleans cannot be negated at all
+    group_idx = np.zeros(a.size, dtype=int)
+    res = impl.aggregate(group_idx, a, func="sort", reverse=True)
+    np.testing.assert_array_equal(np.asarray(res), ref)
+
+
+@pytest.mark.deselect_if(func=is_purepy)
+def test_sort_leaves_nan_at_the_end(impl):
+    # numpy orders a nan as the largest value, so it ends up last - and since
+    # the descending pass only flips the ordered part of a group, it stays last
+    # there too.  The builtin sorted the pure python implementation orders with
+    # compares a nan neither way, which leaves it wherever it happened to sit.
+    group_idx = np.array([0, 0, 0, 0, 1, 1])
+    a = np.array([np.nan, 2.0, 1.0, np.nan, np.nan, 0.5])
+
+    np.testing.assert_array_equal(impl.aggregate(group_idx, a, func="sort"), [1.0, 2.0, np.nan, np.nan, 0.5, np.nan])
+    np.testing.assert_array_equal(
+        impl.aggregate(group_idx, a, func="sort", reverse=True), [2.0, 1.0, np.nan, np.nan, 0.5, np.nan]
+    )
+
+
+@pytest.mark.parametrize(
     ("size", "axis"),
     [((12,), 0), ((12, 5), 0), ((12, 5), 1)],
     ids=["(12,)-ax0", "(12,5)-ax0", "(12,5)-ax1"],

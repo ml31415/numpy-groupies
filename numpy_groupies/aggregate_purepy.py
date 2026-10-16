@@ -138,9 +138,24 @@ def _sort(group_idx, a: Any, reverse: bool = False) -> list[Any]:
     def _argsort(unordered):
         return sorted(range(len(unordered)), key=lambda k: unordered[k])
 
-    sortidx = _argsort(list(zip(group_idx, -a if reverse else a)))
+    # ascending in both directions: a descending key would have to negate the
+    # values, which is not order reversing for the integral dtypes (the smallest
+    # signed value survives negation as itself, and a zero of an unsigned one
+    # stays the smallest key) - and plain python lists cannot be negated at all
+    sortidx = _argsort(list(zip(group_idx, a)))
     revidx = _argsort(_argsort(group_idx))
     a_srt = [a[si] for si in sortidx]
+    if reverse:
+        # flip each group's run of values instead - the labels are sorted, so
+        # every group is one contiguous run of the result
+        labels = [group_idx[si] for si in sortidx]
+        begin = 0
+        while begin < len(a_srt):
+            end = begin
+            while end + 1 < len(a_srt) and labels[end + 1] == labels[begin]:
+                end += 1
+            a_srt[begin : end + 1] = reversed(a_srt[begin : end + 1])
+            begin = end + 1
     return [a_srt[ri] for ri in revidx]
 
 
