@@ -7,11 +7,18 @@ enclosing function never hits (numba #6522).  Every jitted callable of this
 package therefore goes through ``njit_stable``.
 """
 
+import contextlib
 import hashlib
 import inspect
+import os
 
 import numba as nb
 from numba.core import caching
+
+try:
+    from fcntl import LOCK_EX, LOCK_SH, LOCK_UN, flock
+except ImportError:  # pragma: no cover - windows
+    flock = None
 
 # Cache revision of this package - folded into the on-disk cache file names
 # below.  Numba keys its cache files by module and qualname of the compiled
@@ -22,6 +29,61 @@ from numba.core import caching
 # cache file of this package, orphaning the stale indexes (they keep lying
 # around, numba never reads them again).
 _cache_revision = "4"
+
+
+@contextlib.contextmanager
+def _advisory_lock(path, shared):
+    """An advisory whole-file lock on *path*, held for the duration of the block.
+
+    Without ``fcntl`` (windows) this is a no-op: the platform has no ``flock``
+    and numba's own cache is not safe there either.
+    """
+    if flock is None:  # pragma: no cover - windows
+        yield
+        return
+    # ``a+`` creates the lock file without truncating an existing one
+    with open(path, "a+") as handle:
+        flock(handle.fileno(), LOCK_SH if shared else LOCK_EX)
+        try:
+            yield
+        finally:
+            flock(handle.fileno(), LOCK_UN)
+
+
+class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
+    """Numba's index-and-data cache file with the writers of one machine excluded.
+
+    ``IndexDataCacheFile.save`` reloads the index, takes the first data file
+    number the reloaded index does not mention, writes the index announcing
+    that number and only then writes the data file it announces.  Two
+    processes that miss the same signature therefore both pick number 1, both
+    write an index mapping their own key onto it, and both write their machine
+    code into ``.1.nbc``: whichever index write came last names a key whose
+    data file now holds the *other* process' machine.  Loading that is a
+    correctly typed, silently wrong kernel - it showed up as one or two
+    mismatching cells in the numba column of the test suite, and as an
+    exception when the machine did not fit the arguments at all.
+
+    The lock covers the whole of ``save`` so index and data file are written
+    as one transaction, and ``load`` shared so no writer can recycle a data
+    file number (a source edit empties the index and makes every number look
+    free) while a reader is still reading it.
+    """
+
+    def _lock_path(self):
+        return os.path.join(self._cache_path, f"{self._index_name}.lock")
+
+    def save(self, key, data):
+        with _advisory_lock(self._lock_path(), shared=False):
+            return super().save(key, data)
+
+    def load(self, key):
+        with _advisory_lock(self._lock_path(), shared=True):
+            return super().load(key)
+
+    def flush(self):
+        with _advisory_lock(self._lock_path(), shared=False):
+            return super().flush()
 
 
 def njit_stable(py_func=None, cache=True, **options):
@@ -85,7 +147,7 @@ def njit_stable(py_func=None, cache=True, **options):
             # and could load each other's compiled artifacts.
             impl = disp._cache._impl
             impl._filename_base = f"{impl._filename_base}-r{_cache_revision}-{uuid}"
-            disp._cache._cache_file = caching.IndexDataCacheFile(
+            disp._cache._cache_file = _ProcessSafeCacheFile(
                 cache_path=disp._cache._cache_path,
                 filename_base=impl.filename_base,
                 source_stamp=impl.locator.get_source_stamp(),
