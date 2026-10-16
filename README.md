@@ -227,7 +227,7 @@ In short: the NumPy implementation is about 5–24× faster than pandas on commo
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root (add `--pandas --numbagg` for those columns, `--purepy` for the pure-Python one):
 
 ```sh
-python -m numpy_groupies.benchmarks.generic --pandas --numbagg
+python -m numpy_groupies.benchmarks --pandas --numbagg
 ```
 
 The `numpy` and `numba` columns above are not the whole story: NumPy 1.25 brought major [speed improvements to ufuncs](https://numpy.org/doc/stable/release/1.25.0-notes.html), which narrowed the gap between the NumPy and Numba implementations considerably. The authors hope that `ufunc.at` or an equivalent in NumPy or SciPy will eventually become fast enough to make this package redundant.

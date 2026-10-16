@@ -7,16 +7,16 @@ Complete benchmark results for `aggregate`. A short summary is in the [README](.
 - 500,000 indices, uniformly drawn from `[0, 1000)`.
 - The values of `a` are uniform on `[0, 1)`, and everything above `0.8` is then set to `0`, so that there are falsy values for the boolean functions.
 - For the `nan…` functions, of the remaining values those below `0.2` are set to `nan` (about 20%), leaving the rest on the interval `[0.2, 0.8]`.
-- Times in **milliseconds**, taking the minimum over 5 timed runs after one untimed warm-up call (`repeat=5` in `numpy_groupies/benchmarks/generic.py`). Lower is better.
+- Times in **milliseconds**, taking the minimum over 5 timed runs after one untimed warm-up call (`repeat=5` of `numpy_groupies.benchmarks`). Lower is better.
 - Software: Python 3.14.7, NumPy 2.5.4, Numba 0.68.0, pandas 3.0.6, numbagg 0.9.6 (Linux, x86_64).
 
 Absolute numbers depend heavily on the machine, Python and library versions, so rely on the ratios between columns rather than on the values. On shared machines single runs wobble - `--runs=3` takes the per-cell minimum of three complete runs. Re-run on your own hardware, from the repository root:
 
 ```sh
-python -m numpy_groupies.benchmarks.generic --pandas --numbagg
+python -m numpy_groupies.benchmarks --pandas --numbagg
 ```
 
-Without `--pandas` the pandas column is omitted, and the pure-Python implementation only appears with `--purepy`. The optional numbagg column (from the `numbagg` package, included in the dev extras) appears with `--numbagg`. numbagg ships nan-guarded grouped reductions only, so its plain-func numbers run through the nan twins - on the benchmark's nan-free plain data the results coincide.
+Without `--pandas` the pandas column is omitted, and the pure-Python implementation only appears with `--purepy`. The optional numbagg column (from the `numbagg` package, included in the dev extras) appears with `--numbagg`. numbagg ships nan-guarded grouped reductions only, so its plain-func numbers run through the nan twins - on the benchmark's nan-free plain data the results coincide. `--grouploop` adds the same NumPy implementation with its fast path disabled (the function wrapped in a lambda), which is what a `func` the implementation does not recognise costs.
 
 Columns: `ufunc` is the `ufunc.at`-based implementation (incomplete, for benchmarking only), `numpy` the default NumPy implementation, `numba` the Numba implementation, `numbagg` the numbagg grouped-reduction wrapper, and `pandas` the pandas `groupby` wrapper. `----` means the function is not available in that implementation. The row `arbitrary` is a custom Python callable passed as `func`.
 
@@ -78,7 +78,7 @@ Columns: `ufunc` is the `ufunc.at`-based implementation (incomplete, for benchma
 `sort` emits one value per input item and orders every group on its own, so its cost turns on the group *size* - a few large blocks to order against many small ones. `--sort` measures that function alone over a hundredth, one, ten and a hundred times the group count of the table above, on the same 500,000 values:
 
 ```sh
-python -m numpy_groupies.benchmarks.generic --sort --runs=3
+python -m numpy_groupies.benchmarks --sort --runs=3
 ```
 
 | groups | values per group | numpy   | numba  |
