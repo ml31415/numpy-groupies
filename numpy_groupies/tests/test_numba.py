@@ -9,7 +9,10 @@ from ..aggregate_numba import aggregate
 from ..utils import resolve_output_dtype
 
 
-@pytest.fixture(params=[np.float64, np.float32, np.float16, np.int64, np.int32, np.int8, np.bool_], ids=str)
+@pytest.fixture(
+    params=[np.float64, np.float32, np.float16, np.int64, np.int32, np.int8, np.bool_],
+    ids=lambda t: np.dtype(t).name,
+)
 def adtype(request):
     return request.param
 
