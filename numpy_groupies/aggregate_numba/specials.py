@@ -16,7 +16,13 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import build_custom_kernel, build_kernel, output_size, rule_float, rule_same
+from numpy_groupies.aggregate_numba.compose import (
+    build_custom_kernel,
+    build_kernel,
+    output_size,
+    rule_float,
+    rule_same,
+)
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numpy import _aggregate_base
 
@@ -96,7 +102,6 @@ def _median_driver_factory(nans):
     _valid = njit_stable(_median_valid)
     _middle = njit_stable(_median_middle)
 
-    @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
         # median is order-insensitive and takes no ddof - both slots unused
         size = output_size(group_idx, size_arg)
@@ -120,7 +125,7 @@ def _median_driver_factory(nans):
                 out[g] = _middle(buf[:m])
         return out
 
-    return driver
+    return njit_stable(driver, name=f"{'nan' if nans else ''}median_driver")
 
 
 median = build_custom_kernel(
@@ -226,7 +231,6 @@ def _sort_driver_factory(nans):
     _blocks = njit_stable(_sort_blocks)
     _scatter = njit_stable(_sort_scatter)
 
-    @njit_stable
     def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
         # sort emits one value per input item, so neither the group count nor
         # the fill value is of any use here; the reverse flag arrives in the
@@ -241,7 +245,7 @@ def _sort_driver_factory(nans):
         _scatter(group_idx, a_sorted, starts, out)
         return out
 
-    return driver
+    return njit_stable(driver, name=f"{'nan' if nans else ''}sort_driver")
 
 
 sort = build_custom_kernel(

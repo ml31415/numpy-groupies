@@ -28,7 +28,7 @@ except ImportError:  # pragma: no cover - windows
 # AttributeError on the dangling global.  Bumping the revision renames every
 # cache file of this package, orphaning the stale indexes (they keep lying
 # around, numba never reads them again).
-_cache_revision = "4"
+_cache_revision = "5"
 
 
 @contextlib.contextmanager
@@ -86,7 +86,7 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
             return super().flush()
 
 
-def njit_stable(py_func=None, cache=True, **options):
+def njit_stable(py_func=None, cache=True, name=None, **options):
     """``nb.njit`` plus a deterministic dispatcher identity.
 
     Numba draws a dispatcher's uuid lazily from ``uuid.uuid4()`` and embeds
@@ -109,9 +109,22 @@ def njit_stable(py_func=None, cache=True, **options):
     ``njit_stable(func, **options)`` or ``@njit_stable`` /
     ``@njit_stable(**options)``.  Disk caching is enabled by default
     (``cache=True``), which is the main point of this wrapper.
+
+    A ``name`` keyword is not passed on to numba: it becomes the qualname of
+    the function, before it is fingerprinted and before numba mangles its
+    symbol.  Numba mangles that symbol from module, qualname and argument
+    signature, so two functions that differ only in their closure share a
+    symbol - and a dispatcher loaded from the on-disk cache then binds its
+    calls into the environment of the other function, which is correct types
+    and wrong results.  Blocks compiled per operation therefore pass the name
+    of their operation; ``compose.build_kernel`` tells the case in full.
     """
 
     def wrap(func):
+        if name is not None:
+            # both the fingerprint and the mangled symbol read the qualname,
+            # so the rename has to happen before nb.njit is reached
+            func.__qualname__ = func.__name__ = name
         disp = nb.njit(func, cache=cache, **options)
         try:
             cells = []
