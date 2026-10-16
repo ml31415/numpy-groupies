@@ -316,7 +316,11 @@ def test_nan_in_either_part(impl, func):
         np.testing.assert_allclose(imag_nan, np.conj(res), rtol=1e-6, equal_nan=True)
 
 
-@pytest.mark.parametrize("dtype", [np.float64, np.float32, np.int64, bool], ids=["float64", "float32", "int64", "bool"])
+@pytest.mark.parametrize(
+    "dtype",
+    [np.float64, np.float32, np.float16, np.int64, bool],
+    ids=["float64", "float32", "float16", "int64", "bool"],
+)
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "median", "first", "last", "trapezoid", "cumsum"])
 def test_rejects_non_complex_dtype(impl, func, dtype):
     # a non-complex dtype would silently throw the imaginary part away

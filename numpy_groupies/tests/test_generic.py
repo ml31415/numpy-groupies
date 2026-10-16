@@ -180,7 +180,7 @@ default_fill_funcs = tuple(fn for fn in func_list if "cum" not in fn)
 default_fill_funcs += ("first", "last", "nanfirst", "nanlast", "array")
 
 
-@pytest.mark.parametrize("a_dtype", ["float64", "int64"], ids=["float", "int"])
+@pytest.mark.parametrize("a_dtype", ["float64", "int64", "float16"], ids=["float", "int", "float16"])
 @pytest.mark.parametrize("func", default_fill_funcs, ids=lambda x: getattr(x, "__name__", x))
 def test_default_fill_value(impl, func, a_dtype):
     # group 1 has no items at all, so it takes the function specific default
@@ -344,14 +344,20 @@ def test_nan_first_last(impl, first_last, nanoffset):
     np.testing.assert_array_equal(res, ref)
 
 
+@pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64], ids=["float16", "float32", "float64"])
 @pytest.mark.parametrize(["func", "ddof"], list(itertools.product(["var", "std"], [0, 1, 2])))
-def test_ddof(impl, rng, func, ddof, size=20):
+def test_ddof(impl, rng, func, ddof, dtype, size=20):
     group_idx = np.zeros(20, dtype=int)
-    a = random_values(rng, group_idx.size)
+    a = random_values(rng, group_idx.size).astype(dtype)
     res = impl.aggregate(group_idx, a, func, ddof=ddof)
     ref_func = {"std": np.std, "var": np.var}.get(func)
-    ref = ref_func(a, ddof=ddof)
-    assert abs(res[0] - ref) < 1e-10
+    ref = ref_func(a.astype(np.float64), ddof=ddof)
+    # the tolerance follows the input precision - a float16 keeps roughly
+    # three decimal digits, and the pure python implementation accumulates its
+    # squares in float16 steps, so the reduced statistic may sit a hundredth
+    # off the exact value; float32 keeps seven
+    tol = {np.float16: 1e-2, np.float32: 1e-6, np.float64: 1e-10}[dtype]
+    assert abs(res[0] - ref) < tol
 
 
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std"])
@@ -366,16 +372,17 @@ def test_scalar_input(impl, func):
         np.testing.assert_array_equal(res, ref)
 
 
+@pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64], ids=["float16", "float32", "float64"])
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max", "all", "any"])
-def test_nan_input(impl, rng, func, groups=100):
+def test_nan_input(impl, rng, func, dtype, groups=100):
     group_idx = np.arange(0, groups, dtype=int).repeat(5)
-    a = random_values(rng, group_idx.size)
+    a = random_values(rng, group_idx.size).astype(dtype)
     a[::2] = np.nan
 
     if func in ("all", "any"):
         ref = np.ones(groups, dtype=bool)
     else:
-        ref = np.full(groups, np.nan, dtype=float)
+        ref = np.full(groups, np.nan, dtype=dtype)
     res = impl.aggregate(group_idx, a, func=func)
     np.testing.assert_array_equal(res, ref)
 
@@ -706,7 +713,9 @@ def test_sort_reverse_descends(impl, a, ref):
 @pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("size", [1, 2, 3, 8, 16, 31, 32, 33, 40])
 @pytest.mark.parametrize(
-    "dtype", [np.float64, np.float32, np.int64, np.uint8, np.bool_], ids=["f8", "f4", "i8", "u1", "b1"]
+    "dtype",
+    [np.float64, np.float32, np.float16, np.int64, np.uint8, np.bool_],
+    ids=["float64", "float32", "float16", "int64", "uint8", "bool"],
 )
 def test_sort_of_a_small_group_matches_the_numpy_twin(impl, size, dtype):
     # a block of a few dozen values is ordered by insertion sort in the flat
