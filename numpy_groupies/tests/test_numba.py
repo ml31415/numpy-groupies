@@ -9,7 +9,7 @@ from ..aggregate_numba import aggregate
 from ..utils import resolve_output_dtype
 
 
-@pytest.fixture(params=[np.float64, np.float32, np.int64, np.int32, np.int8, np.bool_], ids=str)
+@pytest.fixture(params=[np.float64, np.float32, np.float16, np.int64, np.int32, np.int8, np.bool_], ids=str)
 def adtype(request):
     return request.param
 
@@ -272,3 +272,16 @@ def test_uaggregate_out_complex(rng):
     np.testing.assert_array_equal(out, ref)
     with pytest.raises(TypeError, match="does not match the result dtype"):
         uaggregate(group_idx, a, out=np.empty(300), func="sum")
+
+
+def test_float16_follows_the_float32_plan():
+    # numba has no float16: the input is widened to float32, the kernel runs
+    # in the float32 plan and an inexact result is rounded back once.  The
+    # numpy twin instead rounds after every step in float16, so on values
+    # whose partial sums a float16 cannot represent the two legitimately
+    # differ - this pins the float32 plan as the numba behaviour.
+    group_idx = np.array([0, 0, 0, 0, 1, 1])
+    a = np.array([1.1, 2.2, 3.3, 4.4, 5.5, 6.6], dtype=np.float16)
+
+    ref = aggregate(group_idx, a.astype(np.float32), func="cumsum").astype(np.float16)
+    np.testing.assert_array_equal(aggregate(group_idx, a, func="cumsum"), ref)

@@ -30,14 +30,24 @@ def aggregate(
     cache: bool = True,
     **kwargs: typing.Any,
 ) -> typing.Any:
+    # numba has no float16: the values survive the widening cast to float32
+    # exactly, so the kernels run on float32 and an inexact result is rounded
+    # back - like the numpy twin does, whose bincount accumulates in float64
+    # and rounds once at the end
+    is16 = getattr(a, "dtype", None) == np.float16
+    if is16:
+        a = a.astype(np.float32)
     try:
         aggregate_op = _dispatch[func][1]
     except (KeyError, TypeError):
         # a custom callable, or an unknown name that get_func complains about
         if out is not None:
             raise NotImplementedError("out= is only supported for named functions") from None
-        return _aggregate_custom(group_idx, a, func, size, fill_value, order, dtype, axis, cache, **kwargs)
-    ret = aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+        ret = _aggregate_custom(group_idx, a, func, size, fill_value, order, dtype, axis, cache, **kwargs)
+    else:
+        ret = aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+    if is16 and dtype is None and ret.dtype.kind == "f":
+        ret = ret.astype(np.float16)
     if out is not None:
         if out.shape != ret.shape or out.dtype != ret.dtype:
             raise TypeError(
