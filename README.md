@@ -222,17 +222,17 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 
 | function        | numpy  | numba  | numbagg | pandas |
 | --------------- | -----: | -----: | ------: | -----: |
-| `sum`            |   0.92 |   0.46 |   0.47 |  16.99 |
-| `mean`           |   1.53 |   0.55 |   0.56 |  17.06 |
-| `max`            |   1.73 |   0.62 |   0.88 |  16.27 |
-| `std`            |   3.17 |   0.66 |   0.69 |  16.63 |
-| `nansum`         |   4.37 |   0.44 |   1.77 |  21.31 |
-| `median`         |  48.49 |  11.70 |    --- |  28.60 |
-| `sort`           | 138.18 |  26.23 |    --- |    --- |
-| `cumsum`         |  45.70 |   0.57 |    --- |   7.95 |
-| custom callable  | 141.60 |  43.17 |    --- | 109.82 |
+| `sum`            |   0.92 |   0.44 |   0.46 |  16.05 |
+| `mean`           |   1.59 |   0.58 |   0.55 |  16.37 |
+| `max`            |   1.74 |   0.62 |   0.87 |  15.83 |
+| `std`            |   3.21 |   0.72 |   0.70 |  16.67 |
+| `nansum`         |   4.16 |   0.45 |   1.76 |  21.44 |
+| `median`         |  48.30 |  11.54 |    --- |  27.98 |
+| `sort`           | 137.69 |  26.21 |    --- |    --- |
+| `cumsum`         |  44.65 |   0.62 |    --- |   7.27 |
+| custom callable  | 143.21 |  42.99 |    --- | 109.29 |
 
-In short: Numba is the fastest column of the table on every function it provides, apart from `first`, `nanfirst` and `prod`, which go to numbagg by a few per cent - and numbagg has no `median`, no cumulatives, no `trapezoid` and no `sort`, so for most of these functions it is not in the running at all. pandas sits well back on everything the three have in common. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
+Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root — `--help` explains which columns to ask for:
 
