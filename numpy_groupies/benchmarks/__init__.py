@@ -159,10 +159,10 @@ def _merge_runs(tables):
 # terminal when the cells are padded, and padding does not hurt the rendering.
 CELL_WIDTH = 12
 NO_IMPL = "----"
-# The slowest columns are timed once whatever --repeat asks for: several
-# seconds of waiting would buy a marginally better minimum, and the whole
-# measurement would take a multiple of its own runtime for one such column.
-MAX_REPEAT = {"purepy": 1}
+# The reference paths are timed once whatever --repeat asks for: their number
+# is a ratio rather than a result this package competes on, and every further
+# execution only makes the whole measurement wait for them.
+MAX_REPEAT = {"purepy": 1, "grouploop": 1}
 
 
 def _cell_text(cell):
@@ -391,7 +391,10 @@ the two coincide.""",
         "--repeat",
         type=int,
         default=5,
-        help="timed executions per cell, the fastest counts, the pure-Python column excepted (default: 5)",
+        help=(
+            "timed executions per cell, the fastest counts, except for the pure-Python and "
+            "the group-loop column (default: 5)"
+        ),
     )
     parser.add_argument("--size", type=float, default=5e5, help="number of values in the benchmark data (default: 5e5)")
     parser.add_argument(
