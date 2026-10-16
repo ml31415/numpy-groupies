@@ -95,9 +95,9 @@ func_list = (
 )
 
 
-def benchmark_data(size=5e5, seed=100):
+def benchmark_data(size=5e5, seed=100, groups=1000):
     rnd = np.random.RandomState(seed=seed)
-    group_idx = rnd.randint(0, int(1e3), int(size))
+    group_idx = rnd.randint(0, int(groups), int(size))
     a = rnd.random_sample(group_idx.size)
     a[a > 0.8] = 0
     nana = a.copy()
@@ -107,33 +107,33 @@ def benchmark_data(size=5e5, seed=100):
     return a, nana, group_idx
 
 
-def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, verbose):
+def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, verbose, funcs=func_list):
     """One complete measurement pass - returns the table as
     ``{func_name: [cell, ...]}``, where a cell is a float in
     milliseconds, None for unavailable combinations or a marker string
     ("ERROR"/"FAIL")."""
     table = {}
-    for func in func_list:
+    for func in funcs:
         func_name = getattr(func, "__name__", func)
         used_a = nana if "nan" in func_name else a
         cells = []
         results = []
         if verbose:
-            print(func_name.ljust(13), end="")
+            print(func_name.ljust(13), end="", file=sys.stderr)
         for name, aggregate_fn in implementations:
             try:
                 res = aggregate_fn(group_idx, used_a, func=func)
             except NotImplementedError:
                 cells.append(None)
                 if verbose:
-                    print("----".rjust(14), end="")
+                    print("----".rjust(14), end="", file=sys.stderr)
                 continue
             except Exception:
                 if raise_errors:
                     raise
                 cells.append("ERROR")
                 if verbose:
-                    print("ERROR".rjust(14), end="")
+                    print("ERROR".rjust(14), end="", file=sys.stderr)
             else:
                 results.append(res)
                 try:
@@ -141,59 +141,53 @@ def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, ver
                 except AssertionError:
                     cells.append("FAIL")
                     if verbose:
-                        print("FAIL".rjust(14), end="")
+                        print("FAIL".rjust(14), end="", file=sys.stderr)
                 else:
                     t0 = min(
                         timeit.Timer(lambda: aggregate_fn(group_idx, used_a, func=func)).repeat(repeat=repeat, number=1)
                     )
                     cells.append(t0 * 1000)
                     if verbose:
-                        print(f"{t0 * 1000:.3f}".rjust(14), end="")
+                        print(f"{t0 * 1000:.3f}".rjust(14), end="", file=sys.stderr)
             if verbose:
-                sys.stdout.flush()
+                sys.stderr.flush()
         if verbose:
-            print()
+            print(file=sys.stderr)
         table[func_name] = cells
     return table
 
 
-def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1):
-    a, nana, group_idx = benchmark_data(size=size, seed=seed)
+def _merge_runs(tables):
+    """Per-cell minimum over the complete runs - filters the system noise
+    (cpu frequency, background load) that makes single runs wobble."""
+    if len(tables) == 1:
+        return tables[0]
+    table = {}
+    for func_name in tables[0]:
+        merged = []
+        for col in zip(*(t[func_name] for t in tables)):
+            numbers = [c for c in col if isinstance(c, float)]
+            if numbers:
+                merged.append(min(numbers))
+            else:
+                merged.append(next((c for c in col if c is not None), None))
+        table[func_name] = merged
+    return table
 
-    tables = []
-    for r in range(runs):
-        if runs > 1:
-            print(f"run {r + 1}/{runs}", file=sys.stderr)
-        tables.append(
-            single_run(implementations, group_idx, a, nana, repeat=repeat, raise_errors=raise_errors, verbose=runs == 1)
-        )
 
-    if runs == 1:
-        table = tables[0]
-    else:
-        # per-cell minimum over the complete runs - filters the system noise
-        # (cpu frequency, background load) that makes single runs wobble
-        table = {}
-        for func_name in tables[0]:
-            merged = []
-            for col in zip(*(t[func_name] for t in tables)):
-                numbers = [c for c in col if isinstance(c, float)]
-                if numbers:
-                    merged.append(min(numbers))
-                else:
-                    merged.append(next((c for c in col if c is not None), None))
-            table[func_name] = merged
-
-    print(f"{'function':13}" + "".join(name.rjust(14) for name, _ in implementations))
+def _print_table(header, rows, implementations):
+    """``rows`` are (row label, cells) pairs as produced by ``single_run``."""
+    print(f"{header:13}" + "".join(name.rjust(14) for name, _ in implementations))
     print("-" * (13 + 14 * len(implementations)))
-    for func in func_list:
-        func_name = getattr(func, "__name__", func)
-        print(func_name.ljust(13), end="")
-        for cell in table[func_name]:
+    for label, cells in rows:
+        print(label.ljust(13), end="")
+        for cell in cells:
             text = "----" if cell is None else (f"{cell:.3f}" if isinstance(cell, float) else cell)
             print(text.rjust(14), end="")
         print()
 
+
+def _print_versions(implementations):
     implementation_names = [name for name, _ in implementations]
     postfix = ""
     if "numba" in implementation_names:
@@ -212,6 +206,60 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
         f"{platform.system()}({platform.machine()}), Python {sys.version.split()[0]}, Numpy {np.version.version}"
         f"{postfix}"
     )
+
+
+def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1):
+    a, nana, group_idx = benchmark_data(size=size, seed=seed)
+
+    tables = []
+    for r in range(runs):
+        if runs > 1:
+            print(f"run {r + 1}/{runs}", file=sys.stderr)
+        tables.append(
+            single_run(implementations, group_idx, a, nana, repeat=repeat, raise_errors=raise_errors, verbose=runs == 1)
+        )
+
+    table = _merge_runs(tables)
+    _print_table(
+        "function",
+        [(name, table[name]) for name in (getattr(func, "__name__", func) for func in func_list)],
+        implementations,
+    )
+    _print_versions(implementations)
+
+
+# The group counts of the ``--sort`` series - the default of the main table and
+# a hundredth and a hundred times it.  ``sort`` orders every group on its own,
+# so its cost turns on the group SIZE (a few large blocks against many small
+# ones) and the main table would only ever show one point of that curve.
+SORT_GROUPS = (100, 1_000, 10_000, 100_000)
+
+
+def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1):
+    """Measure ``func='sort'`` alone, over the group counts of ``SORT_GROUPS``."""
+    rows = []
+    for groups in SORT_GROUPS:
+        a, nana, group_idx = benchmark_data(size=size, seed=seed, groups=min(groups, int(size)))
+        tables = []
+        for r in range(runs):
+            if runs > 1:
+                print(f"groups {groups}: run {r + 1}/{runs}", file=sys.stderr)
+            tables.append(
+                single_run(
+                    implementations,
+                    group_idx,
+                    a,
+                    nana,
+                    repeat=repeat,
+                    raise_errors=raise_errors,
+                    verbose=False,
+                    funcs=("sort",),
+                )
+            )
+        rows.append((str(groups), _merge_runs(tables)["sort"]))
+
+    _print_table("groups", rows, implementations)
+    _print_versions(implementations)
 
 
 def _build_implementations(args):
@@ -252,6 +300,11 @@ def main(argv=None):
         "--numbagg", action="store_true", help="include the numbagg implementation (optional dependency, dev extras)"
     )
     parser.add_argument(
+        "--sort",
+        action="store_true",
+        help=f"measure 'sort' only, over the group counts {'-'.join(str(g) for g in SORT_GROUPS)} instead of the full table",
+    )
+    parser.add_argument(
         "--runs", type=int, default=1, help="complete measurement passes, the per-cell minimum is reported (default: 1)"
     )
     parser.add_argument(
@@ -264,7 +317,8 @@ def main(argv=None):
         help="abort on the first failing implementation instead of printing ERROR",
     )
     args = parser.parse_args(argv)
-    benchmark(
+    measure = sort_benchmark if args.sort else benchmark
+    measure(
         _build_implementations(args),
         repeat=args.repeat,
         size=args.size,

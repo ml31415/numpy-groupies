@@ -3,6 +3,9 @@
 ``median`` is an order statistic: values are placed group by group via a
 counting sort (O(n)) and the middle of each group is then *selected* via
 partition (O(n) on average) instead of sorting within the groups.
+``sort`` uses the same counting-sort placement, but orders every group-block -
+by insertion sort while the block is small, by ``np.sort`` beyond that - and
+scatters the blocks back to the positions their group occupies in the input.
 ``trapezoid`` integrates consecutive sample pairs within each group in a
 single pass - it composes like the streaming reductions, but carries the
 sample spacing ``dx`` in the ``ddof`` slot.
@@ -14,17 +17,21 @@ import numpy as np
 import numpy.typing as npt
 
 from ..aggregate_numpy import _aggregate_base
-from .compose import build_custom_kernel, build_kernel, output_size, rule_float
+from .compose import build_custom_kernel, build_kernel, output_size, rule_float, rule_same
 from .jit import njit_stable
 
 
-def _median_fallback(group_idx, a, func, size, fill_value, order, dtype, axis):
-    """numba cannot partition complex values - the numpy implementation
-    selects the middle of the lexicographically ordered values."""
+def _numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis):
+    """Hand an input dtype the compiled drivers cannot handle to numpy.
+
+    Reached for complex input of ``median``: numba can neither partition
+    complex values nor select a middle one of them.  ``sort`` does not need
+    this - ``np.sort`` of numba orders complex like numpy does.
+    """
     return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
 
 
-def _median_count(group_idx, size):
+def _group_count(group_idx, size):
     """bounds-checked per-group element counts"""
     counts = np.zeros(size, np.int64)
     for i in range(len(group_idx)):
@@ -37,12 +44,12 @@ def _median_count(group_idx, size):
     return counts
 
 
-def _median_starts(counts):
+def _group_starts(counts):
     """first index of each group-block"""
     return np.cumsum(counts) - counts
 
 
-def _median_place(group_idx, a, cursor, a_sorted):
+def _group_place(group_idx, a, cursor, a_sorted):
     """scatter the values into their group-blocks"""
     for i in range(len(group_idx)):
         g = group_idx[i]
@@ -83,9 +90,9 @@ def _median_middle(values):
 
 
 def _median_driver_factory(nans):
-    _count = njit_stable(_median_count)
-    _starts = njit_stable(_median_starts)
-    _place = njit_stable(_median_place)
+    _count = njit_stable(_group_count)
+    _starts = njit_stable(_group_starts)
+    _place = njit_stable(_group_place)
     _valid = njit_stable(_median_valid)
     _middle = njit_stable(_median_middle)
 
@@ -121,8 +128,129 @@ median = build_custom_kernel(
     driver_factory=_median_driver_factory,
     rule=rule_float,
     fill_default=np.nan,
-    fallback=_median_fallback,
+    fallback=_numpy_fallback,
     doc="Median of the values of every group",
+)
+
+
+# Blocks this small are ordered by insertion sort in the flat array, the larger
+# ones by ``np.sort``: the array view that ``arr.sort()`` has to build per group
+# costs more than the ordering does once the groups are tiny.  Measured with
+# numba 0.68 on 500,000 float64 values ordered group by group, insertion sort
+# is eleven times faster at one value per group, five times at five, and still a
+# tenth ahead at fifty; from a hundred values upwards the library sort wins, by
+# half at a hundred and by six times at a thousand.  The limit stays well below
+# that crossover, so groups of very different sizes cannot push many of them
+# across it.
+_INSERTION_SORT_LIMIT = 32
+
+
+@njit_stable
+def _order_block(a_sorted, begin, size_g, reverse):
+    """order one group-block of the flat array, descending if ``reverse``.
+
+    ``size_g`` is at least two, the caller leaves a block of a single value
+    alone.  While a block is small its values walk into place where they are,
+    beyond that ``np.sort`` of a view is the cheaper of the two - see the note at
+    ``_INSERTION_SORT_LIMIT``.
+
+    Both passes order ascending and leave a nan last: the library sort because
+    that is what numpy does, the insertion pass because it shifts a nan right by
+    every other value and stops only in front of another nan, which keeps the
+    nans in the order of the input.  Complex values never take the insertion
+    pass, since numpy compares them partially - a value with a nan in either
+    part is neither smaller nor greater, and a pass that has to decide every
+    pair cannot order that.
+
+    ``reverse`` therefore cannot turn the whole block around, the nan tail has to
+    stay last, so only the ordered prefix is flipped.  Flipping it rather than
+    ordering on a negated key is what keeps the descending order exact: negation
+    is not order reversing for the integral dtypes (whose minimum survives it as
+    itself, and whose zero of an unsigned dtype stays the smallest key), which is
+    why the python twins invert bitwise or flip the group's run instead.
+    """
+    if size_g <= _INSERTION_SORT_LIMIT and not isinstance(a_sorted[begin], (complex, np.complex64)):
+        for i in range(1, size_g):
+            v = a_sorted[begin + i]
+            j = i - 1
+            while j >= 0:
+                w = a_sorted[begin + j]
+                if v != v:
+                    before = False
+                elif w != w:
+                    before = True
+                else:
+                    before = v < w
+                if not before:
+                    break
+                a_sorted[begin + j + 1] = a_sorted[begin + j]
+                j -= 1
+            a_sorted[begin + j + 1] = v
+    else:
+        a_sorted[begin : begin + size_g].sort()
+    if reverse:
+        m = size_g
+        while m > 0 and a_sorted[begin + m - 1] != a_sorted[begin + m - 1]:
+            m -= 1
+        lo, hi = begin, begin + m - 1
+        while lo < hi:
+            v = a_sorted[lo]
+            a_sorted[lo] = a_sorted[hi]
+            a_sorted[hi] = v
+            lo += 1
+            hi -= 1
+    return a_sorted
+
+
+def _sort_blocks(a_sorted, counts, starts, reverse):
+    """order the values inside every group-block, the singletons left alone"""
+    for g in range(len(counts)):
+        if counts[g] > 1:
+            _order_block(a_sorted, starts[g], counts[g], reverse)
+
+
+def _sort_scatter(group_idx, a_sorted, starts, out):
+    """write the ordered blocks back to the positions their group occupies
+    in the input - the j-th value of a group goes to its j-th appearance"""
+    cursor = starts.copy()
+    for i in range(len(group_idx)):
+        g = group_idx[i]
+        out[i] = a_sorted[cursor[g]]
+        cursor[g] += 1
+
+
+def _sort_driver_factory(nans):
+    _count = njit_stable(_group_count)
+    _starts = njit_stable(_group_starts)
+    _place = njit_stable(_group_place)
+    _blocks = njit_stable(_sort_blocks)
+    _scatter = njit_stable(_sort_scatter)
+
+    @njit_stable
+    def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
+        # sort emits one value per input item, so neither the group count nor
+        # the fill value is of any use here; the reverse flag arrives in the
+        # slot trapezoid uses for its sample spacing
+        size = output_size(group_idx, size_arg)
+        counts = _count(group_idx, size)
+        starts = _starts(counts)
+        a_sorted = np.empty(group_idx.size, a.dtype)
+        _place(group_idx, a, starts.copy(), a_sorted)
+        _blocks(a_sorted, counts, starts, ddof != 0.0)
+        out = np.empty(group_idx.size, out_dtype)
+        _scatter(group_idx, a_sorted, starts, out)
+        return out
+
+    return driver
+
+
+sort = build_custom_kernel(
+    "sort",
+    driver_factory=_sort_driver_factory,
+    rule=rule_same,
+    nans=False,
+    nton=True,
+    doc="Values of every group in ascending, or with reverse=True in descending order",
 )
 
 

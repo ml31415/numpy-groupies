@@ -13,7 +13,8 @@ can be called directly from jitted code::
         return (values - m[group_idx]) / s[group_idx]
 
 The signatures are ``(group_idx, a, ddof=0, size=-1, fill_value=<default>)``
-- the third argument is named ``dx`` for trapezoid.  ``size=-1`` detects the
+- the third argument is named ``dx`` for trapezoid and ``reverse`` for sort
+(1.0 sorts each group in descending order).  ``size=-1`` detects the
 group count from the data (an explicit size must not be smaller than the
 largest index); the ``fill_value`` default depends on the output dtype (nan
 for inexact results, 0 otherwise).
@@ -65,6 +66,7 @@ aggregate_median = specials.median.plain.stub
 aggregate_nanmedian = specials.median.nan.stub
 aggregate_trapezoid = specials.trapezoid.plain.stub
 aggregate_nantrapezoid = specials.trapezoid.nan.stub
+aggregate_sort = specials.sort.plain.stub
 
 aggregate_cumsum = cumulative.cumsum.plain.stub
 aggregate_nancumsum = cumulative.cumsum.nan.stub
@@ -115,6 +117,7 @@ __all__ = [
     "aggregate_nantrapezoid",
     "aggregate_nanvar",
     "aggregate_prod",
+    "aggregate_sort",
     "aggregate_std",
     "aggregate_sum",
     "aggregate_sumofsquares",

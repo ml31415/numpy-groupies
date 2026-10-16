@@ -435,6 +435,7 @@ def build_custom_kernel(
     nans: bool = True,
     ddof_default: float = 0,
     aux_widen: bool = False,
+    nton: bool = False,
     fallback: typing.Callable[..., typing.Any] | None = None,
     doc: str | None = None,
 ) -> KernelPair:
@@ -443,7 +444,7 @@ def build_custom_kernel(
     ``driver_factory(nans)`` returns the compiled driver with the same
     signature as the composed ones - used by operations whose pass structure
     does not fit the accumulate/finish pattern (median groups the data with a
-    counting sort before selecting).
+    counting sort before selecting, sort groups it before ordering).
     """
 
     def build(nan_variant):
@@ -464,7 +465,7 @@ def build_custom_kernel(
             driver=driver,
             forced_fill=forced_fill,
             aux_widen=aux_widen,
-            nton=False,
+            nton=nton,
             fallback=fallback,
         )
 

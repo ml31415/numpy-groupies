@@ -23,52 +23,69 @@ Columns: `ufunc` is the `ufunc.at`-based implementation (incomplete, for benchma
 ## Results
 
 | function     | ufunc  | numpy   | numba  | numbagg | pandas  |
-| ------------ | -----: | ------: | -----: | ------: | -------: |
-| sum          |  0.859 |  0.878 |  0.429 |  0.441 | 15.451 |
-| prod         |  0.865 |  0.883 |  0.426 |  0.430 | 14.811 |
-| min          |  1.708 |  1.691 |  0.626 |  0.811 | 14.803 |
-| max          |  1.684 |  1.686 |  0.617 |  0.863 | 15.012 |
-| len          |  0.931 |  0.822 |  0.365 |  0.492 | 14.238 |
-| all          | 35.409 |  1.798 |  0.813 |  1.582 | 15.629 |
-| any          | 32.628 |  2.596 |  0.652 |  1.588 | 15.595 |
-| anynan       |  5.238 |  0.829 |  0.607 |  2.664 | 15.289 |
-| allnan       |  7.553 |  2.133 |  0.826 |  3.264 | 15.568 |
-| mean         |   ---- |  1.533 |  0.497 |  0.538 | 16.113 |
-| median       |   ---- | 47.333 | 11.702 |   ---- | 28.348 |
-| trapezoid    |   ---- |  3.768 |  0.629 |   ---- |   ---- |
-| std          |   ---- |  3.155 |  0.681 |  0.670 | 16.310 |
-| var          |   ---- |  3.164 |  0.653 |  0.676 | 16.329 |
-| first        |   ---- |  1.770 |  0.291 |  0.305 | 14.610 |
-| last         |   ---- |  0.901 |  0.363 |  0.428 | 15.566 |
-| argmax       |   ---- |  2.654 |  0.602 |  0.903 | 14.413 |
-| argmin       |   ---- |  4.920 |  0.583 |  0.839 | 14.856 |
-| nansum       |   ---- |  4.193 |  0.441 |  1.752 | 20.567 |
-| nanprod      |   ---- |  4.221 |  0.456 |  1.759 | 19.578 |
-| nanmin       |   ---- |  4.861 |  0.936 |  2.012 | 20.691 |
-| nanmax       |   ---- |  4.798 |  1.010 |  2.072 | 20.260 |
-| nanlen       |   ---- |  2.448 |  0.444 |  1.712 | 19.698 |
-| nanall       |   ---- |  5.156 |  1.062 |  3.298 | 20.606 |
-| nanany       |   ---- |  5.692 |  0.650 |  2.681 | 20.761 |
-| nanmean      |   ---- |  4.694 |  1.609 |  1.756 | 22.667 |
-| nanmedian    |   ---- | 42.818 | 10.858 |   ---- | 31.300 |
-| nantrapezoid |   ---- |  6.769 |  1.784 |   ---- |   ---- |
-| nanvar       |   ---- |  6.366 |  1.874 |  1.954 | 21.596 |
-| nanstd       |   ---- |  6.526 |  1.868 |  1.916 | 21.983 |
-| nanfirst     |   ---- |  4.822 |  0.331 |  0.334 | 20.891 |
-| nanlast      |   ---- |  4.371 |  0.470 |  1.596 | 20.747 |
-| nanargmin    |   ---- |  6.404 |  0.766 |  1.942 | 16.185 |
-| nanargmax    |   ---- |  3.997 |  0.779 |  2.013 | 16.744 |
-| cumsum       |   ---- | 45.385 |  0.619 |   ---- |  7.364 |
-| cumprod      |   ---- |   ---- |  0.589 |   ---- | 14.302 |
-| cummax       |   ---- |   ---- |  0.775 |   ---- | 13.378 |
-| cummin       |   ---- |   ---- |  0.787 |   ---- | 12.651 |
-| arbitrary    |   ---- | 141.830 | 43.556 |   ---- | 107.547 |
-| sort         |   ---- | 135.021 |   ---- |   ---- |   ---- |
+| ------------ | -----: | ------: | -----: | ------: | ------: |
+| sum          |  0.866 |   0.924 |  0.434 |   0.485 |  15.891 |
+| prod         |  0.920 |   0.928 |  0.468 |   0.444 |  15.191 |
+| min          |  1.730 |   1.687 |  0.611 |   0.815 |  15.018 |
+| max          |  1.712 |   1.713 |  0.638 |   0.876 |  15.154 |
+| len          |  0.942 |   0.830 |  0.373 |   0.471 |  14.100 |
+| all          | 32.574 |   1.805 |  0.823 |   1.567 |  15.725 |
+| any          | 30.603 |   2.506 |  0.644 |   1.568 |  15.675 |
+| anynan       |  5.221 |   0.890 |  0.623 |   2.674 |  15.258 |
+| allnan       |  7.607 |   2.122 |  0.826 |   3.255 |  15.315 |
+| mean         |   ---- |   1.559 |  0.511 |   0.556 |  15.985 |
+| median       |   ---- |  48.409 | 11.493 |    ---- |  27.700 |
+| trapezoid    |   ---- |   3.895 |  0.667 |    ---- |    ---- |
+| std          |   ---- |   3.094 |  0.673 |   0.677 |  16.823 |
+| var          |   ---- |   3.187 |  0.675 |   0.675 |  16.696 |
+| first        |   ---- |   1.765 |  0.362 |   0.313 |  15.390 |
+| last         |   ---- |   0.952 |  0.373 |   0.431 |  15.573 |
+| argmax       |   ---- |   2.671 |  0.606 |   0.888 |  15.260 |
+| argmin       |   ---- |   4.992 |  0.586 |   0.838 |  14.827 |
+| nansum       |   ---- |   4.169 |  0.443 |   1.755 |  22.259 |
+| nanprod      |   ---- |   4.115 |  0.479 |   1.770 |  20.854 |
+| nanmin       |   ---- |   4.875 |  0.977 |   2.011 |  21.029 |
+| nanmax       |   ---- |   4.945 |  1.010 |   2.085 |  21.752 |
+| nanlen       |   ---- |   2.477 |  0.465 |   1.712 |  20.736 |
+| nanall       |   ---- |   4.985 |  1.058 |   3.249 |  21.618 |
+| nanany       |   ---- |   5.664 |  0.634 |   2.659 |  21.525 |
+| nanmean      |   ---- |   4.678 |  1.634 |   1.758 |  22.228 |
+| nanmedian    |   ---- |  42.432 | 10.681 |    ---- |  30.505 |
+| nantrapezoid |   ---- |   6.558 |  1.772 |    ---- |    ---- |
+| nanvar       |   ---- |   6.255 |  1.860 |   1.921 |  22.432 |
+| nanstd       |   ---- |   6.216 |  1.893 |   1.929 |  22.450 |
+| nanfirst     |   ---- |   5.077 |  0.393 |   0.368 |  22.225 |
+| nanlast      |   ---- |   4.370 |  0.434 |   1.627 |  21.577 |
+| nanargmin    |   ---- |   6.385 |  0.774 |   1.958 |  16.259 |
+| nanargmax    |   ---- |   3.998 |  0.807 |   2.028 |  16.571 |
+| cumsum       |   ---- |  44.838 |  0.583 |    ---- |   7.322 |
+| cumprod      |   ---- |    ---- |  0.627 |    ---- |  13.258 |
+| cummax       |   ---- |    ---- |  0.758 |    ---- |  13.085 |
+| cummin       |   ---- |    ---- |  0.786 |    ---- |  12.785 |
+| arbitrary    |   ---- | 144.095 | 42.973 |    ---- | 108.594 |
+| sort         |   ---- | 135.146 | 25.992 |    ---- |    ---- |
 
 ## Reading the table
 
-- **numba vs numpy:** Numba is faster for every function both provide, typically by 1.7–6.3× on reductions (`argmin` 6.3×, `sum` 2.0×). The largest gap is `cumsum` (about 64×).
-- **numba vs numbagg:** par on the light scans (`sum` 0.43 vs 0.44 ms, `nanfirst` 0.33 vs 0.33 ms); numba leads wherever the nan handling branches per value (`nansum` 4.0×, `nanlen` 3.9×, `nanlast` 3.4×, `nanargmax` 2.6×), and is the only one of the two with `median`, the cumulatives and `trapezoid`.
-- **numpy vs pandas:** the NumPy implementation is about 5× (`std`, `var`) to 18× (`len`; `sum` ~17×, `prod` 16×) faster than pandas on common reductions. The exception is `median`, where pandas (29 ms) beats NumPy (48 ms) but not Numba (11 ms).
+- **numba vs numpy:** Numba is faster for every function both provide - by 1.4–13× across the reductions (`sum` 2.1×, `argmin` 8.5×, `nanfirst` 13×), by 5.2× on `sort` (26 ms against 135 ms), and by far the most on `cumsum` (about 77×).
+- **numba vs numbagg:** par on the light scans (`sum` 0.43 vs 0.49 ms, `nanfirst` 0.39 vs 0.37 ms, and `first` even a sixth behind); numba leads wherever the nan handling branches per value (`anynan` 4.3×, `nansum` 4.0×, `nanlast` 3.8×, `nanargmax` 2.5×), and is the only one of the two with `median`, the cumulatives, `trapezoid` and `sort`.
+- **numpy vs pandas:** the NumPy implementation is about 5× (`var`, `std`) to 17× (`sum`, `anynan`, `len`; `prod` 16×) faster than pandas on common reductions. The exceptions are `median`, where pandas (28 ms) beats NumPy (48 ms) but not Numba (11 ms), and the cumulatives, where pandas is six times faster than NumPy (`cumsum` 7.3 against 44.8 ms) and still twelve times slower than Numba (0.58 ms).
 - **ufunc:** `ufunc.at` was historically slow; NumPy 1.25 narrowed the gap considerably, but this implementation remains incomplete and `all`/`any` are still very slow.
 - **Expensive everywhere:** `median`, `sort` and custom callables.
+
+## Sorting across group counts
+
+`sort` emits one value per input item and orders every group on its own, so its cost turns on the group *size* - a few large blocks to order against many small ones. `--sort` measures that function alone over a hundredth, one, ten and a hundred times the group count of the table above, on the same 500,000 values:
+
+```sh
+python -m numpy_groupies.benchmarks.generic --sort --runs=3
+```
+
+| groups | values per group | numpy   | numba  |
+| -----: | ---------------: | ------: | -----: |
+|    100 |             5000 | 124.895 | 34.421 |
+|   1000 |              500 | 141.278 | 26.088 |
+|  10000 |               50 | 159.103 | 21.794 |
+| 100000 |                5 | 167.581 | 11.088 |
+
+NumPy slows down monotonically as the groups multiply. The Numba column dips in the middle: with few large groups the comparison sort of a whole block is what costs, while many tiny groups are ordered by insertion sort in the flat array, without the per-group view that a library sort has to build - which is three times the speed it had before at five values per group. The other implementations have no column here because none of them provides `sort`.
