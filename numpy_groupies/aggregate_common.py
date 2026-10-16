@@ -433,3 +433,15 @@ def check_complex_dtype(a_dtype: Any, dtype: Any, func_str: str) -> None:
             f"function {func_str} cannot aggregate complex values into the non-complex dtype "
             f"{dtype} - pass a complex dtype to keep the imaginary part"
         )
+
+
+def is_scalar_input(a: Any) -> bool:
+    """Whether the aggregated data is a single value instead of a sequence.
+
+    Kept numpy free on purpose, since the pure python implementation uses it
+    too: a python number has no ``ndim`` at all, while a numpy scalar and a 0d
+    array both report 0 - ``isinstance(a, (int, float, complex))`` alone misses
+    every numpy scalar that is not a python number (``np.float32``, ``np.int64``,
+    ``np.bool_``, ``np.complex64``).
+    """
+    return getattr(a, "ndim", None) == 0 or isinstance(a, (int, float, complex))

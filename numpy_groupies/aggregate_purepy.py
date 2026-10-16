@@ -14,6 +14,7 @@ from .aggregate_common import (
     check_complex_dtype,
     funcs_no_separate_nan,
     get_func,
+    is_scalar_input,
     raise_integer_mean_overflow,
     raise_integer_variance_span_overflow,
     resolve_fill_value,
@@ -284,10 +285,14 @@ def aggregate(
         func = _dispatch[func][0]
     except (KeyError, TypeError):
         func = get_func(func, aliasing, _impl_dict)
-    if isinstance(a, (int, float, complex)):
+    if is_scalar_input(a):
         if func not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
-        a = [a] * len(group_idx)
+        # a 0d array stands in for the numpy scalar it holds and the list wants
+        # values, not 0d arrays - [()] is the dtype preserving way to get one
+        # out (item() would drop back to a python number), and python numbers
+        # have no shape to index at all
+        a = [a[()] if hasattr(a, "shape") else a] * len(group_idx)
     elif len(group_idx) != len(a):
         raise ValueError("group_idx and a must be of the same length")
 

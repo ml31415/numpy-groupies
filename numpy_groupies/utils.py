@@ -15,6 +15,7 @@ from .aggregate_common import (
     _forced_real_float_types,
     check_complex_dtype,
     get_aliasing,
+    is_scalar_input,
     resolve_fill_value,
 )
 
@@ -196,13 +197,26 @@ _forced_same_type = {
 }
 
 
+def scalar_dtype(a: Any) -> np.dtype:
+    """The dtype of scalar input data.
+
+    A python number carries no dtype, so its type stands in for one, while a
+    numpy scalar and a 0d array both carry the dtype of their value.  Asking
+    ``type(a)`` is not an option here: for the numpy scalar and for the 0d
+    array that is ``numpy.float32``/``numpy.ndarray``, and
+    ``np.dtype(np.ndarray)`` is the object dtype.
+    """
+    dtype = getattr(a, "dtype", None)
+    return np.dtype(type(a)) if dtype is None else np.dtype(dtype)
+
+
 def check_dtype(
     dtype: npt.DTypeLike, func_str: str, a: npt.NDArray[np.generic], n: int | tuple[int, ...] | None
 ) -> np.dtype:
-    if np.isscalar(a) or not a.shape:
+    if is_scalar_input(a):
         if func_str not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
-        a_dtype = np.dtype(type(a))
+        a_dtype = scalar_dtype(a)
     else:
         a_dtype = a.dtype
 

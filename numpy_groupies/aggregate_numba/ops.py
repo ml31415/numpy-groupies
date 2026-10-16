@@ -21,6 +21,7 @@ from ..aggregate_common import (
     DEFAULT_FILL_VALUE,
     build_dispatch,
     funcs_no_separate_nan,
+    is_scalar_input,
     resolve_fill_value,
 )
 from ..utils import (
@@ -30,6 +31,7 @@ from ..utils import (
     check_nton_shape,
     input_validation,
     resolve_output_dtype,
+    scalar_dtype,
 )
 from . import argreductions, averaging, cumulative, reductions, specials
 from .compose import KernelHandle
@@ -40,27 +42,28 @@ from .steps import step_indices
 _N_DEPENDENT_ADTYPES = frozenset(
     np.dtype(t) for t in ("bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "uint64")
 )
-_SCALAR_BOOL_TYPES = frozenset((bool, np.bool_))
 
 
 @functools.lru_cache(maxsize=256)
 def _dtype_fill_plan(
-    func: str, a_key: np.dtype | type, dtype: npt.DTypeLike, fill_value: typing.Any, n: int
+    func: str,
+    a_dtype: np.dtype,
+    dtype: npt.DTypeLike,
+    fill_value: typing.Any,
+    n: int,
+    scalar: bool,
 ) -> tuple[np.dtype, typing.Any]:
     """Memoized output-dtype and fill-value resolution.
 
-    ``a_key`` is ``type(a)`` for scalar inputs and ``a.dtype`` otherwise.
+    ``a_dtype`` is the dtype of the aggregated data, ``scalar`` whether that
+    data is a single value - the callers resolve both with ``scalar_dtype``.
     ``n`` carries ``len(group_idx)`` only for the length-dependent ``sum``
     dtype guesses and is 0 otherwise.  Unhashable arguments fail the cache
     lookup with a TypeError, which the caller answers with the uncached
     resolution.
     """
-    if isinstance(a_key, type):
-        if func not in ("sum", "prod", "len"):
-            raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
-        a_dtype = np.dtype(a_key)
-    else:
-        a_dtype = a_key
+    if scalar and func not in ("sum", "prod", "len"):
+        raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
     out_dtype = resolve_output_dtype(dtype, func, a_dtype, n)
     if func == "sort":
         # sort writes the input values back unchanged - the numpy twin
@@ -124,7 +127,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
             a_key = a.dtype
             n_key = len(group_idx) if (func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
             try:
-                plan_dtype, plan_fill = _dtype_fill_plan(func, a_key, dtype, fill_value, n_key)
+                plan_dtype, plan_fill = _dtype_fill_plan(func, a_key, dtype, fill_value, n_key, False)
             except TypeError:
                 # unhashable dtype/fill_value - resolve on the slow path
                 plan_dtype = None
@@ -143,21 +146,16 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
-        a_shape = getattr(a, "shape", None)
-        scalar = a_shape is None or not a_shape
-        if scalar:
-            # scalar input: the type stands in for the dtype, and only the
-            # bool 'sum' dtype guess depends on the input length
-            a_key = type(a)
-            n_key = len(group_idx) if (func == "sum" and a_key in _SCALAR_BOOL_TYPES) else 0
-        else:
-            a_key = a.dtype
-            n_key = len(group_idx) if (func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
+        scalar = is_scalar_input(a)
+        # a scalar reaches the compiled driver as a full column of that one
+        # value, so its dtype is all that is left to resolve the plan from -
+        # for a python number the type stands in, see scalar_dtype
+        a_key = scalar_dtype(a) if scalar else a.dtype
+        n_key = len(group_idx) if (func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
         try:
-            dtype, fill_value = _dtype_fill_plan(func, a_key, dtype, fill_value, n_key)
+            dtype, fill_value = _dtype_fill_plan(func, a_key, dtype, fill_value, n_key, scalar)
         except TypeError:
-            # unhashable dtype/fill_value (or a genuine TypeError from the
-            # checks, e.g. 0-d array input) - resolve without the cache
+            # unhashable dtype/fill_value - resolve without the cache
             dtype = check_dtype(dtype, func, a, len(group_idx))
             fill_value = resolve_fill_value(func, fill_value, dtype)
             check_fill_value(fill_value, dtype, func=func)
