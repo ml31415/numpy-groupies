@@ -10,17 +10,13 @@ Complete benchmark results for `aggregate`. A short summary is in the [README](.
 - Times in **milliseconds**, taking the minimum over 5 timed runs after one untimed warm-up call (`repeat=5` of `numpy_groupies.benchmarks`). Lower is better.
 - Software: Python 3.14.7, NumPy 2.5.4, Numba 0.68.0, pandas 3.0.6, numbagg 0.9.6 (Linux, x86_64).
 
-Absolute numbers depend heavily on the machine, Python and library versions, so rely on the ratios between columns rather than on the values. On shared machines single runs wobble - `--runs=3` takes the per-cell minimum of three complete runs, printing a counter while it works and the table once at the end. Re-run on your own hardware, from the repository root (with a single run the rows stream out as they are measured and nothing is repeated):
+Absolute numbers depend heavily on the machine, Python and library versions, so rely on the ratios between columns rather than on the values. On shared machines single runs wobble, so `--runs=3` measures everything three times and reports the fastest measurement of each cell. Re-run on your own hardware, from the repository root:
 
 ```sh
-python -m numpy_groupies.benchmarks --pandas --numbagg
+python -m numpy_groupies.benchmarks --ufunc --numbagg --pandas
 ```
 
-The table is Markdown, so it can be pasted into this file as it is.
-
-Without `--pandas` the pandas column is omitted, and the pure-Python implementation only appears with `--purepy`. The optional numbagg column (from the `numbagg` package, included in the dev extras) appears with `--numbagg`. numbagg ships nan-guarded grouped reductions only, so its plain-func numbers run through the nan twins - on the benchmark's nan-free plain data the results coincide. `--grouploop` adds the same NumPy implementation with its fast path disabled (the function wrapped in a lambda), which is what a `func` the implementation does not recognise costs.
-
-Columns: `ufunc` is the `ufunc.at`-based implementation (incomplete, for benchmarking only), `numpy` the default NumPy implementation, `numba` the Numba implementation, `numbagg` the numbagg grouped-reduction wrapper, and `pandas` the pandas `groupby` wrapper. `----` means the function is not available in that implementation. The row `arbitrary` is a custom Python callable passed as `func`.
+Which columns are measured by default, what the optional ones are and how the output arrives is what `--help` explains. `----` in the table below means the function is not available in that implementation, the row `arbitrary` is a custom Python callable passed as `func`.
 
 ## Results
 

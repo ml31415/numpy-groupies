@@ -224,10 +224,10 @@ Best of five timed runs, in milliseconds, for 500,000 values in 1,000 groups (lo
 
 In short: the NumPy implementation is about 5–24× faster than pandas on common reductions, and Numba adds another 2–10× on top — and about 77× for `cumsum`. numbagg is par with us on the light scans; we lead on the nan-heavy accumulations (up to 4×), and numbagg has no `median`, cumulatives, `trapezoid` or `sort`. `median`, `sort` and custom callables are the expensive cases everywhere. Absolute numbers depend on your machine, so treat the ratios as the takeaway.
 
-The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root (add `--pandas --numbagg` for those columns, `--purepy` for the pure-Python one):
+The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root — `--help` explains which columns to ask for:
 
 ```sh
-python -m numpy_groupies.benchmarks --pandas --numbagg
+python -m numpy_groupies.benchmarks --numbagg --pandas
 ```
 
 The `numpy` and `numba` columns above are not the whole story: NumPy 1.25 brought major [speed improvements to ufuncs](https://numpy.org/doc/stable/release/1.25.0-notes.html), which narrowed the gap between the NumPy and Numba implementations considerably. The authors hope that `ufunc.at` or an equivalent in NumPy or SciPy will eventually become fast enough to make this package redundant.

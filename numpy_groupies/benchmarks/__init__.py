@@ -2,10 +2,10 @@
 
 Run it with ``python -m numpy_groupies.benchmarks`` - the module measures every
 function of ``func_list`` once per implementation and prints the milliseconds
-per call as a Markdown table.  With the default single run the rows arrive as
-they are measured, ``--runs=3`` instead reports a counter and prints the merged
-table once.  ``--help`` lists the optional columns (purepy, pandas, numbagg and
-the numpy group-and-loop path) and the data size.
+per call as a Markdown table.  NumPy and Numba are always measured, ``--help``
+explains the columns to ask for, ``--all`` takes them all.  A single run, the
+default, prints its rows as they are measured; a repeated one reports a counter
+and then the fastest measurement of all runs.
 """
 
 import argparse
@@ -193,16 +193,17 @@ def _table_lines(header, rows, implementations, label_width):
 
 
 def _open_report(header, implementations, labels, runs):
-    """Where the rows go while measuring, and how wide the label column is.
+    """How the measurement reports itself while it works.
 
-    A single run is the report itself: its rows stream to stdout as Markdown
-    and nothing is repeated at the end.  Several runs would print the table
-    once per run, so those rows go to stderr behind a counter and the merged
-    minimum is what stdout gets."""
+    A single run is its own report: the rows stream out as Markdown, header
+    first, and nothing is repeated at the end.  Every further run would print
+    the same table again, so a repeated measurement announces itself with a
+    counter alone and the merged minimum is the only output."""
     label_width = max(len(header), *(len(label) for label in labels))
-    out = sys.stdout if runs == 1 else sys.stderr
-    print(*_table_rule(header, implementations, label_width), sep="\n", file=out, flush=True)
-    return out, label_width
+    if runs > 1:
+        return None, label_width
+    print(*_table_rule(header, implementations, label_width), sep="\n", flush=True)
+    return sys.stdout, label_width
 
 
 def _versions_line(implementations):
@@ -232,6 +233,10 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
     labels = [getattr(func, "__name__", func) for func in func_list]
     out, label_width = _open_report("function", implementations, labels, runs)
 
+    def report(label, cells):
+        if out is not None:
+            print(_table_row(label, cells, label_width), file=out, flush=True)
+
     tables = []
     for run in range(runs):
         if runs > 1:
@@ -244,7 +249,7 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
                 nana,
                 repeat=repeat,
                 raise_errors=raise_errors,
-                on_row=lambda label, cells: print(_table_row(label, cells, label_width), file=out, flush=True),
+                on_row=report,
             )
         )
 
@@ -271,6 +276,10 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
     labels = [str(groups) for groups in SORT_GROUPS]
     out, label_width = _open_report("groups", implementations, labels, runs)
 
+    def report(label, cells):
+        if out is not None:
+            print(_table_row(label, cells, label_width), file=out, flush=True)
+
     rows = []
     for groups, label in zip(SORT_GROUPS, labels):
         a, nana, group_idx = benchmark_data(size=size, seed=seed, groups=min(groups, int(size)))
@@ -287,7 +296,7 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
                     repeat=repeat,
                     raise_errors=raise_errors,
                     funcs=("sort",),
-                    on_row=lambda label_, cells: print(_table_row(label, cells, label_width), file=out, flush=True),
+                    on_row=lambda _func_name, cells: report(label, cells),
                 )
             )
         rows.append((label, _merge_runs(tables)["sort"]))
@@ -298,50 +307,73 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
         print(_versions_line(implementations))
 
 
+# The columns in the order they appear in the table.
+COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "ufunc", "numbagg", "pandas")
+# of those, the ones that have to be asked for
+OPTIONAL_COLUMNS = COLUMN_ORDER[2:]
+
+
 def _build_implementations(args):
     """the participants as (column name, aggregate callable) pairs, in
-    column order - purepy first, numbagg before the right-most pandas"""
+    ``COLUMN_ORDER``, the optional ones only when they were asked for"""
     if aggregate_numba is None:
         raise SystemExit("this benchmark needs the numba package installed")
+    aggregates = {
+        "numpy": aggregate_numpy.aggregate,
+        "numba": aggregate_numba.aggregate,
+        "purepy": aggregate_purepy.aggregate,
+        "grouploop": _grouploop.aggregate,
+        "ufunc": _ufunc.aggregate,
+        # the optional dependencies are None when they are not installed
+        "numbagg": _numbagg.aggregate if _numbagg is not None else None,
+        "pandas": _pandas.aggregate if _pandas is not None else None,
+    }
     impls = []
-    if args.purepy:
-        impls.append(("purepy", aggregate_purepy.aggregate))
-    impls.extend(
-        (
-            ("ufunc", _ufunc.aggregate),
-            ("numpy", aggregate_numpy.aggregate),
-        )
-    )
-    if args.grouploop:
-        impls.append(("grouploop", _grouploop.aggregate))
-    impls.append(("numba", aggregate_numba.aggregate))
-    if args.numbagg:
-        if _numbagg is None:
-            raise SystemExit("--numbagg needs the optional numbagg package installed")
-        impls.append(("numbagg", _numbagg.aggregate))
-    if args.pandas:
-        if _pandas is None:
-            raise SystemExit("--pandas needs the optional pandas package installed")
-        impls.append(("pandas", _pandas.aggregate))
+    for name in COLUMN_ORDER:
+        if name in OPTIONAL_COLUMNS and not getattr(args, name):
+            continue
+        aggregate = aggregates[name]
+        if aggregate is None:
+            raise SystemExit(f"--{name} needs the optional {name} package installed")
+        impls.append((name, aggregate))
     return impls
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="python -m numpy_groupies.benchmarks",
-        description="Benchmark the aggregate implementations against each other "
-        "(default columns: ufunc, numpy, numba).",
+        description="Benchmark the aggregate implementations against each other.\n"
+        "The numpy and numba columns are always measured, the rest is asked for.",
+        epilog="""The table is Markdown: milliseconds per call, '----' where an implementation
+has no such function, and a line naming the versions it was measured with.  A
+single run prints its rows as they are measured; a repeated run replaces them
+with a counter and prints the fastest measurement of all runs once at the end.
+
+numbagg ships nan-guarded reductions only, so its numbers for the plain
+functions are those of the nan twins - on the nan-free data of this benchmark
+the two coincide.""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--purepy", action="store_true", help="include the pure-Python implementation")
-    parser.add_argument("--pandas", action="store_true", help="include the pandas implementation")
+    parser.add_argument("--all", action="store_true", help="include every optional column listed below")
+    parser.add_argument(
+        "--purepy",
+        action="store_true",
+        help="the pure-Python implementation, the reference the others are checked against",
+    )
     parser.add_argument(
         "--grouploop",
         action="store_true",
-        help="include numpy's group-and-loop path (what an unknown callable costs)",
+        help="numpy with its fast path disabled, what a func it does not recognise costs",
     )
     parser.add_argument(
-        "--numbagg", action="store_true", help="include the numbagg implementation (optional dependency, dev extras)"
+        "--ufunc", action="store_true", help="the ufunc.at-based implementation, incomplete and for comparison only"
     )
+    parser.add_argument(
+        "--numbagg",
+        action="store_true",
+        help="the numbagg grouped reductions (optional dependency, part of the dev extras)",
+    )
+    parser.add_argument("--pandas", action="store_true", help="the pandas groupby wrapper (optional dependency)")
     parser.add_argument(
         "--sort",
         action="store_true",
@@ -360,6 +392,9 @@ def main(argv=None):
         help="abort on the first failing implementation instead of printing ERROR",
     )
     args = parser.parse_args(argv)
+    if args.all:
+        for column in OPTIONAL_COLUMNS:
+            setattr(args, column, True)
     measure = sort_benchmark if args.sort else benchmark
     measure(
         _build_implementations(args),
