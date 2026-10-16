@@ -38,24 +38,28 @@ Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
 
 ## Why numpy-groupies?
 
-The idea behind `aggregate` is an old one: Matlab's [`accumarray`](https://www.mathworks.com/help/matlab/ref/accumarray.html), the pandas [`groupby`](https://pandas.pydata.org/docs/user_guide/groupby.html), the [MapReduce](https://en.wikipedia.org/wiki/MapReduce) paradigm, or simply a [histogram](https://en.wikipedia.org/wiki/Histogram). What this package adds is a single, consistent array-in/array-out function that covers many reductions.
+- **Fast.** With Numba installed, `aggregate` is the fastest group-by aggregation there is on plain NumPy arrays. `pandas.groupby` sits well back; [numbagg](https://github.com/numbagg/numbagg) is the only implementation that comes near, and only over the handful of light scans it implements at all. See [Performance](#performance).
+- **One call, many functions.** The usual reductions plus `median`, `sort` (ascending or descending), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
+- **Array in, array out.** Plain NumPy arrays, no DataFrame and no index. The result is an array indexed by group label, with empty groups filled with the value you choose. Multi-dimensional output (N-D binning) and aggregation along an `axis` are built in.
+- **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops without a round trip through Python:
 
-|                                    | `np.bincount` | `pandas.groupby` | `numpy_groupies.aggregate` |
-| ---------------------------------- | :-----------: | :--------------: | :------------------------: |
-| Works on bare NumPy arrays         |      yes      |  via a Series    |            yes             |
-| Reductions beyond sum / count      |      no       |       yes        |            yes             |
-| Multi-dimensional output (N-D bins)|      no       |   via MultiIndex |            yes             |
-| Arbitrary labels (strings, ...)    |      no       |       yes        |   no — non-negative ints   |
-| Speed on plain arrays              |     fast      |      slower      |       fast (see below)     |
+  ```python
+  import numba as nb
+  import numpy as np
+  from numpy_groupies.aggregate_numba import kernels
 
-Use it when your data already lives in NumPy arrays, your groups are (or can cheaply be turned into) integer labels, and you want group statistics without the overhead of building a DataFrame. If your labels are strings or other objects, map them to integers first:
+  @nb.njit
+  def zscore(group_idx, values):
+      mean = kernels.aggregate_mean(group_idx, values)
+      std = kernels.aggregate_std(group_idx, values)
+      scale = np.where(std > 0, std, 1.0)
+      return (values - mean[group_idx]) / scale[group_idx]
+  ```
 
-```python
-labels = np.array(["b", "a", "b", "c", "a"])
-values = np.arange(5.0)
-uniques, inverse = np.unique(labels, return_inverse=True)
-npg.aggregate(inverse, values)  # array([5., 2., 3.])  ->  groups "a", "b", "c"
-```
+- **Numerically careful.** Integer sums, means and variances accumulate in a dtype wide enough not to wrap around, NaN handling follows NumPy, and complex and `float16` input are supported.
+- **Light on dependencies.** NumPy is the only requirement; Numba is optional and only makes things faster. A pure-Python implementation is included as a fallback.
+
+Labels must be non-negative integers. For strings or other objects, map them first with `np.unique(labels, return_inverse=True)` and pass the inverse as `group_idx`.
 
 ## Installation
 
