@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .aggregate_purepy import aggregate as aggregate_py
+from numpy_groupies.aggregate_purepy import aggregate as aggregate_py
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -22,10 +22,10 @@ except ImportError:
     aggregate_np = dummy_no_impl
     multi_arange = label_contiguous_1d = dummy_no_impl
 else:
-    from .aggregate_numpy import aggregate, step_count, step_indices
+    from numpy_groupies.aggregate_numpy import aggregate, step_count, step_indices
 
     aggregate_np = aggregate
-    from .utils import (
+    from numpy_groupies.utils import (
         default_fill_value,
         label_contiguous_1d,
         multi_arange,
@@ -41,8 +41,8 @@ try:
 except ImportError:
     aggregate_nb = None
 else:
-    from .aggregate_numba import aggregate as aggregate_nb
-    from .aggregate_numba import step_count, step_indices, unpack_into
+    from numpy_groupies.aggregate_numba import aggregate as aggregate_nb
+    from numpy_groupies.aggregate_numba import step_count, step_indices, unpack_into
 
     aggregate = aggregate_nb
 
@@ -81,7 +81,7 @@ def uaggregate(
 
 try:
     # Version is added only when packaged
-    from ._version import __version__
+    from numpy_groupies._version import __version__
 except ImportError:
     try:
         from setuptools_scm import get_version

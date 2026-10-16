@@ -14,12 +14,12 @@ from typing import Any
 import numpy as np
 import pytest
 
-from .. import aggregate_numpy, aggregate_purepy
+from numpy_groupies import aggregate_numpy, aggregate_purepy
 
 aggregate_numba: Any
 
 try:
-    from .. import aggregate_numba
+    from numpy_groupies import aggregate_numba
 except ImportError:
     aggregate_numba = None
 

@@ -4,7 +4,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from .aggregate_common import (
+from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
@@ -16,7 +16,7 @@ from .aggregate_common import (
     raise_integer_variance_span_overflow,
     resolve_fill_value,
 )
-from .utils import (
+from numpy_groupies.utils import (
     aliasing,
     check_boolean,
     check_dtype,

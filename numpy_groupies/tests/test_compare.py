@@ -10,7 +10,7 @@ from itertools import product
 import numpy as np
 import pytest
 
-from .helpers import (
+from numpy_groupies.tests.helpers import (
     _BackendProxy,
     aggregate_numpy,
     aggregate_purepy,

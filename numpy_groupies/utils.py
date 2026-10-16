@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from .aggregate_common import (
+from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     _forced_float_types,
     _forced_real_float_types,

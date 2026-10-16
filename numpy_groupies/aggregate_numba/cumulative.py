@@ -10,7 +10,7 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
-from .compose import build_kernel, complex_less, rule_widen_int
+from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_widen_int
 
 
 class CumulativeState(typing.NamedTuple):

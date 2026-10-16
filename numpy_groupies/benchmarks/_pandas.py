@@ -6,15 +6,15 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from ..aggregate_common import (
+from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     build_dispatch,
     funcs_no_separate_nan,
 )
-from ..aggregate_numpy import _aggregate_base
-from ..aggregate_numpy import aggregate as _aggregate_numpy
-from ..utils import (
+from numpy_groupies.aggregate_numpy import _aggregate_base
+from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
+from numpy_groupies.utils import (
     aliasing,
     allnan,
     anynan,

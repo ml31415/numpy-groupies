@@ -8,8 +8,8 @@ know costs, which is the price of the recognition itself."""
 
 from operator import itemgetter
 
-from .. import aggregate_numpy
-from ..utils import allnan, anynan, nanfirst, nanlast
+from numpy_groupies import aggregate_numpy
+from numpy_groupies.utils import allnan, anynan, nanfirst, nanlast
 
 # the string names of func_list that a per-group callable can stand in for -
 # everything else (the cumulatives, the argreductions, sort) needs the

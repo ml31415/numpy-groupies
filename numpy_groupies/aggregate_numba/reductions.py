@@ -5,7 +5,7 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
-from .compose import (
+from numpy_groupies.aggregate_numba.compose import (
     build_custom_kernel,
     build_kernel,
     complex_less,
@@ -17,7 +17,7 @@ from .compose import (
     rule_sumofsquares,
     rule_widen_int,
 )
-from .jit import njit_stable
+from numpy_groupies.aggregate_numba.jit import njit_stable
 
 
 class ReductionState(typing.NamedTuple):

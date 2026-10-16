@@ -6,14 +6,14 @@ import warnings
 import numpy as np
 import pytest
 
-from .. import aggregate_np, aggregate_purepy
-from ..utils import default_fill_value, minimum_dtype
-from .helpers import (
+from numpy_groupies import aggregate_np, aggregate_purepy
+from numpy_groupies.tests.helpers import (
     func_list,
     is_purepy,
     random_group_idx,
     random_values,
 )
+from numpy_groupies.utils import default_fill_value, minimum_dtype
 
 
 def _reference_trapezoid(*args, **kwargs):
