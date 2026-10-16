@@ -145,60 +145,68 @@ median = build_custom_kernel(
 _INSERTION_SORT_LIMIT = 32
 
 
-def _sort_blocks(a_sorted, counts, starts, reverse):
-    """order the values inside every group-block.
+@njit_stable
+def _order_block(a_sorted, begin, size_g, reverse):
+    """order one group-block of the flat array, descending if ``reverse``.
 
-    ``np.sort`` leaves the nan at the end of a block, like the ``lexsort`` of
-    the numpy twin does with its keys - so the reverse pass flips the ordered
-    prefix only and lets the nan tail stay last.  Flipping that prefix rather
-    than ordering on a negated key is what keeps the descending order exact:
-    negation is not order reversing for the integral dtypes (whose minimum
-    survives it as itself, and whose zero of an unsigned dtype stays the
-    smallest key), which is why the python twins invert bitwise or flip the
-    group's run instead.
+    ``size_g`` is at least two, the caller leaves a block of a single value
+    alone.  While a block is small its values walk into place where they are,
+    beyond that ``np.sort`` of a view is the cheaper of the two - see the note at
+    ``_INSERTION_SORT_LIMIT``.
+
+    Both passes order ascending and leave a nan last: the library sort because
+    that is what numpy does, the insertion pass because it shifts a nan right by
+    every other value and stops only in front of another nan, which keeps the
+    nans in the order of the input.  Complex values never take the insertion
+    pass, since numpy compares them partially - a value with a nan in either
+    part is neither smaller nor greater, and a pass that has to decide every
+    pair cannot order that.
+
+    ``reverse`` therefore cannot turn the whole block around, the nan tail has to
+    stay last, so only the ordered prefix is flipped.  Flipping it rather than
+    ordering on a negated key is what keeps the descending order exact: negation
+    is not order reversing for the integral dtypes (whose minimum survives it as
+    itself, and whose zero of an unsigned dtype stays the smallest key), which is
+    why the python twins invert bitwise or flip the group's run instead.
     """
+    if size_g <= _INSERTION_SORT_LIMIT and not isinstance(a_sorted[begin], (complex, np.complex64)):
+        for i in range(1, size_g):
+            v = a_sorted[begin + i]
+            j = i - 1
+            while j >= 0:
+                w = a_sorted[begin + j]
+                if v != v:
+                    before = False
+                elif w != w:
+                    before = True
+                else:
+                    before = v < w
+                if not before:
+                    break
+                a_sorted[begin + j + 1] = a_sorted[begin + j]
+                j -= 1
+            a_sorted[begin + j + 1] = v
+    else:
+        a_sorted[begin : begin + size_g].sort()
+    if reverse:
+        m = size_g
+        while m > 0 and a_sorted[begin + m - 1] != a_sorted[begin + m - 1]:
+            m -= 1
+        lo, hi = begin, begin + m - 1
+        while lo < hi:
+            v = a_sorted[lo]
+            a_sorted[lo] = a_sorted[hi]
+            a_sorted[hi] = v
+            lo += 1
+            hi -= 1
+    return a_sorted
+
+
+def _sort_blocks(a_sorted, counts, starts, reverse):
+    """order the values inside every group-block, the singletons left alone"""
     for g in range(len(counts)):
-        begin, size_g = starts[g], counts[g]
-        if size_g > 1:
-            # the insertion pass needs a comparison that decides every pair, and
-            # complex values have none: numpy compares them partially, leaving
-            # a value with a nan in either part neither smaller nor greater,
-            # which an insertion sort would simply leave where it sits.  The
-            # library sort of the other branch does put those at the end, like
-            # numpy does, so complex blocks go there
-            if size_g <= _INSERTION_SORT_LIMIT and not isinstance(a_sorted[begin], (complex, np.complex64)):
-                for i in range(1, size_g):
-                    v = a_sorted[begin + i]
-                    j = i - 1
-                    while j >= 0:
-                        w = a_sorted[begin + j]
-                        # nan is the largest value of the order, so every other
-                        # value shifts it right - in front of another nan the
-                        # loop stops, which keeps the nans in input order
-                        if v != v:
-                            before = False
-                        elif w != w:
-                            before = True
-                        else:
-                            before = v < w
-                        if not before:
-                            break
-                        a_sorted[begin + j + 1] = a_sorted[begin + j]
-                        j -= 1
-                    a_sorted[begin + j + 1] = v
-            else:
-                a_sorted[begin : begin + size_g].sort()
-            if reverse:
-                m = size_g
-                while m > 0 and a_sorted[begin + m - 1] != a_sorted[begin + m - 1]:
-                    m -= 1
-                lo, hi = begin, begin + m - 1
-                while lo < hi:
-                    v = a_sorted[lo]
-                    a_sorted[lo] = a_sorted[hi]
-                    a_sorted[hi] = v
-                    lo += 1
-                    hi -= 1
+        if counts[g] > 1:
+            _order_block(a_sorted, starts[g], counts[g], reverse)
 
 
 def _sort_scatter(group_idx, a_sorted, starts, out):
