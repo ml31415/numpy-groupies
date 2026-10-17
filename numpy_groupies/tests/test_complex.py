@@ -5,6 +5,7 @@ import pytest
 
 from numpy_groupies import aggregate_np
 from numpy_groupies.tests.helpers import aggregate_numba, is_purepy
+from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
 
 # functions with a well-defined complex result, following numpy semantics - the
 # order statistics included, as numpy orders complex values lexicographically
@@ -86,12 +87,6 @@ def _not_nan(vals):
     return ~(np.isnan(vals.real) | np.isnan(vals.imag))
 
 
-def _trapezoid_ref(vals):
-    # np.trapz was renamed to np.trapezoid in numpy 2.0
-    func_ref = getattr(np, "trapezoid", None) or np.trapz
-    return func_ref(vals)
-
-
 def _complex_reference(func, group_idx, a, size):
     """group-wise application of the numpy function (or its python equivalent)"""
     if func == "cumsum":
@@ -128,9 +123,9 @@ def _complex_reference(func, group_idx, a, size):
         elif func == "anynan":
             ret.append(bool(np.any(np.isnan(vals))))
         elif func == "trapezoid":
-            ret.append(_trapezoid_ref(vals))
+            ret.append(trapezoid_ref(vals))
         elif func == "nantrapezoid":
-            ret.append(_trapezoid_ref(vals[_not_nan(vals)]))
+            ret.append(trapezoid_ref(vals[_not_nan(vals)]))
         else:
             ret.append(getattr(np, func)(vals))
     return ret
@@ -215,7 +210,9 @@ def test_sort_moves_the_incomparable_values_last(impl, a_dtype, reverse):
     res = np.asarray(impl.aggregate(group_idx, a, func="sort", reverse=reverse))
     assert res.dtype == a_dtype
     # not the ascending order turned around: the incomparable values stay last
-    expected = aggregate_np(group_idx, a, func="sort", reverse=reverse)
+    # - the group loop is the reference, not the numpy backend the test also
+    # runs on
+    expected = aggregate_ref(group_idx, a, func="sort", reverse=reverse)
     np.testing.assert_array_equal(res, expected)
 
 
