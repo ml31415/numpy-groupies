@@ -6,6 +6,14 @@ that a test can compare a backend against something it does not share code
 with: comparing ``aggregate_numpy`` against ``aggregate_numpy`` (or against its
 own group loop) proves nothing about the paths that differ between them.
 
+What the reference does not do is guess dtypes: a group reduction hands its
+values to the numpy function of the same name and takes the dtype that comes
+out of it.  The length dependent widening the package applies is its own
+policy, pinned by explicit expectations in :mod:`.test_dtypes`, and a reference
+that copied it would no longer be independent of the implementation.  The
+memory order of a multi-dimensional result is not part of it either - see
+:mod:`.test_axis`.
+
 The module deliberately does not import pytest, so the benchmarks can reach it
 the same way the tests do.  Reference implementations carry the ``_ref``
 suffix, which keeps them next to the function they mirror when sorted.
@@ -16,7 +24,8 @@ from typing import Any
 
 import numpy as np
 
-from numpy_groupies.utils import default_fill_value
+from numpy_groupies.aggregate_common import DEFAULT_FILL_VALUE
+from numpy_groupies.utils import check_fill_value, default_fill_value
 
 
 def trapezoid_ref(*args: Any, **kwargs: Any) -> Any:
@@ -205,38 +214,49 @@ def aggregate_ref(
     a: np.ndarray,
     *,
     func: str,
-    size: int | None = None,
-    fill_value: Any = None,
+    size: int | tuple[int, ...] | None = None,
+    fill_value: Any = DEFAULT_FILL_VALUE,
     dtype: np.dtype | None = None,
     **kwargs: Any,
 ) -> np.ndarray:
     """``aggregate(group_idx, a, func=func, ...)`` computed one group at a time.
 
-    Accepts the string name of a function, the one-dimensional labels and the
-    keyword arguments that the reference can express at all; everything else
-    raises instead of quietly returning something else.  A function that has no
-    answer for a group - a nan in the plain arg reductions, an all-nan group for
-    their nan counterparts, a group without any value - reports ``None`` and the
-    group takes ``fill_value``, or the function default that ``numpy_groupies``
-    itself uses.
+    Accepts the string name of a function, one- or multi-dimensional labels and
+    the keyword arguments the reference can express at all; anything else raises
+    instead of quietly returning something else.  An absent group takes
+    ``fill_value``, or the function default that ``numpy_groupies`` itself uses,
+    and a fill value that does not fit the result dtype is refused the same way
+    the package refuses it.
     """
     group_idx = np.asarray(group_idx)
     a = np.asarray(a)
-    if group_idx.ndim != 1:
-        raise NotImplementedError("aggregate_ref takes one-dimensional labels only")
     if func not in _REF_FUNCS:
         raise NotImplementedError(f"aggregate_ref does not know {func!r}")
+    if group_idx.ndim > 1 and size is None:
+        raise NotImplementedError("aggregate_ref needs a size for multi-dimensional labels")
+
+    out_shape: tuple[int, ...]
     if size is None:
-        size = int(group_idx.max()) + 1 if group_idx.size else 0
+        n_groups = int(group_idx.max()) + 1 if group_idx.size else 0
+        out_shape = (n_groups,)
+    elif isinstance(size, (int, np.integer)):
+        n_groups = int(size)
+        out_shape = (n_groups,)
+    else:
+        out_shape = tuple(int(dim) for dim in size)
+        n_groups = int(np.prod(out_shape))
+    labels = group_idx if group_idx.ndim <= 1 else np.ravel_multi_index(group_idx, out_shape)
+    if labels.size and int(labels.max()) >= n_groups:
+        raise ValueError("a group index is too large for the requested size")
 
     call = _REF_FUNCS[func]
     # one stable argsort gathers the groups, each of them in the order its
     # values had in the input - the arg reductions report an input position
-    order = np.argsort(group_idx, kind="stable")
-    bounds = np.r_[0, np.cumsum(np.bincount(group_idx, minlength=size))]
+    order = np.argsort(labels, kind="stable")
+    bounds = np.r_[0, np.cumsum(np.bincount(labels, minlength=n_groups))]
     positions = {}
     results = {}
-    for group in range(size):
+    for group in range(n_groups):
         pos = order[bounds[group] : bounds[group + 1]]
         if not pos.size:
             continue
@@ -250,22 +270,22 @@ def aggregate_ref(
 
     if func in _REF_ONE_PER_ITEM:
         # the result holds one slot per input item, so a group that is not in
-        # the labels simply has no slot - there is nothing to fill and nothing
-        # that could be left uninitialized
-        # the cumulative functions follow numpy's own promotion, the sort keeps
-        # the dtype of what it was given
+        # the labels simply has no slot - nothing to fill, nothing that could
+        # be left uninitialized.  The cumulative functions follow numpy's own
+        # promotion, the sort keeps the dtype of what it was given.
         out_dtype = dtype or np.asarray(next(iter(results.values()))).dtype
         ret = np.empty(a.shape, dtype=out_dtype)
         for group, values in results.items():
             ret[positions[group]] = values
         return ret
 
-    values = np.asarray(list(results.values()))
-    ret = np.full(
-        size,
-        default_fill_value(func, values.dtype) if fill_value is None else fill_value,
-        dtype=dtype or values.dtype,
-    )
+    out_dtype = dtype or _result_dtype(call, a.dtype)
+    if fill_value is DEFAULT_FILL_VALUE:
+        fill = default_fill_value(func, out_dtype)
+    else:
+        check_fill_value(fill_value, out_dtype, func)
+        fill = fill_value
+    ret = np.full(out_shape, fill, dtype=out_dtype)
     for group, value in results.items():
-        ret[group] = value
+        ret.flat[group] = value
     return ret
