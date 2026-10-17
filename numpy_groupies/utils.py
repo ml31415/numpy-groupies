@@ -456,7 +456,7 @@ def input_validation(
             else:
                 unravel_shape = None
 
-            method = "offset" if axis == ndim_a - 1 else "ravel"
+            method = "offset" if axis == ndim_a - 1 and order == "C" else "ravel"
             group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order, method=method)
             flat_size = np.prod(size)
             ndim_idx = ndim_a
