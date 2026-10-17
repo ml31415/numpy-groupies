@@ -33,13 +33,75 @@ def _not_nan(values: np.ndarray) -> np.ndarray:
     return values[~np.isnan(values)]
 
 
+def _of(numpy_function: Callable[..., Any]) -> Callable[[np.ndarray, np.ndarray], Any]:
+    """a function of the values of one group, ignoring where they sit"""
+
+    def one_group(values: np.ndarray, pos: np.ndarray) -> Any:
+        return numpy_function(values)
+
+    one_group.__name__ = getattr(numpy_function, "__name__", "one_group")
+    return one_group
+
+
+def _at_a_position(numpy_function: Callable[..., Any]) -> Callable[[np.ndarray, np.ndarray], Any]:
+    """a function that reports which value won, as the position it sits at in
+    the input - numpy reports the position inside the group instead"""
+
+    def one_group(values: np.ndarray, pos: np.ndarray) -> Any:
+        return pos[numpy_function(values)]
+
+    one_group.__name__ = f"at_{numpy_function.__name__}"
+    return one_group
+
+
+def _skip_nans(one_group: Callable[..., Any]) -> Callable[..., Any]:
+    """turn a function of a group into its nan counterpart.
+
+    The same computation over the values that are left, at the positions they
+    sit at - and a group of nothing but nans has nothing left, which is handled
+    like an empty group: it takes the fill value rather than whatever numpy
+    reports for a reduction over nothing.
+    """
+
+    def nan_variant(values: np.ndarray, pos: np.ndarray, **kwargs: Any) -> Any:
+        keep = ~np.isnan(values)
+        if not keep.any():
+            return None
+        return one_group(values[keep], pos[keep], **kwargs)
+
+    nan_variant.__name__ = f"nan_{one_group.__name__}"
+    return nan_variant
+
+
+def _poisoned_by_a_nan(one_group: Callable[..., Any]) -> Callable[..., Any]:
+    """the plain counterpart of a nan function, for those that report a position
+    rather than a value.
+
+    A nan reaches the answer of a sum or a mean on its own, a position cannot be
+    poisoned: a group holding one has no extreme to name and no index to report,
+    so it is handled like an empty group and takes the fill value.
+    """
+
+    def one_group_or_nothing(values: np.ndarray, pos: np.ndarray, **kwargs: Any) -> Any:
+        if np.isnan(values).any():
+            return None
+        return one_group(values, pos, **kwargs)
+
+    one_group_or_nothing.__name__ = f"poisoned_{one_group.__name__}"
+    return one_group_or_nothing
+
+
 def _as_numbers(values: np.ndarray) -> np.ndarray:
     """the values as numbers to integrate over: numpy adds booleans as a
     logical or, which would make the trapezoid of a bool group nonsense"""
     return values.astype(np.float64) if values.dtype.kind == "b" else values
 
 
-def _sum_of_squares(values: np.ndarray, skip_nan: bool = False) -> Any:
+def _trapezoid_of(values: np.ndarray, pos: np.ndarray, dx: float = 1.0) -> Any:
+    return trapezoid_ref(_as_numbers(values), dx=dx)
+
+
+def _sum_of_squares(values: np.ndarray, pos: np.ndarray, skip_nan: bool = False) -> Any:
     """the sum of the squared values of one group.
 
     For a complex group that is the sum of the squared magnitudes - the real
@@ -68,51 +130,60 @@ def _sort_ref(values: np.ndarray, reverse: bool = False) -> np.ndarray:
     return ordered[::-1]
 
 
+def _result_dtype(call: Callable[..., Any], in_dtype: np.dtype) -> np.dtype:
+    """the dtype the operation yields for values of ``in_dtype``, asked of numpy.
+
+    One value is enough to ask, which keeps the reference free of a dtype policy
+    of its own - the one thing it must not copy from the implementation it is
+    measured against.  It is also the only way to name the dtype of a result
+    whose groups have all come back without an answer.
+    """
+    probe = np.ones(1, dtype=in_dtype)
+    return np.asarray(call(probe, np.zeros(1, dtype=np.intp))).dtype
+
+
 # the callables behind the string names of the aggregation functions, each
 # taking the values of one group and the positions those values sit at in the
-# input - the arg reductions report an input position, numpy reports one
-# inside the group
+# input; a callable that returns None has no answer for the group, which is then
+# handled like an empty one - the plain arg reductions over a group with a nan,
+# and the nan counterparts over a group of nothing but nans
 _REF_ONE_PER_GROUP: dict[str, Callable[..., Any]] = {
-    "sum": lambda v, pos: np.sum(v),
-    "prod": lambda v, pos: np.prod(v),
-    "min": lambda v, pos: np.min(v),
-    "max": lambda v, pos: np.max(v),
-    "all": lambda v, pos: np.all(v),
-    "any": lambda v, pos: np.any(v),
-    "mean": lambda v, pos: np.mean(v),
-    "median": lambda v, pos: np.median(v),
+    "sum": _of(np.sum),
+    "prod": _of(np.prod),
+    "min": _of(np.min),
+    "max": _of(np.max),
+    "all": _of(np.all),
+    "any": _of(np.any),
+    "mean": _of(np.mean),
+    "median": _of(np.median),
     "std": lambda v, pos, ddof=0: np.std(v, ddof=ddof),
     "var": lambda v, pos, ddof=0: np.var(v, ddof=ddof),
-    "trapezoid": lambda v, pos, dx=1.0: trapezoid_ref(_as_numbers(v), dx=dx),
-    "sumofsquares": lambda v, pos: _sum_of_squares(v),
+    "trapezoid": _trapezoid_of,
+    "sumofsquares": _sum_of_squares,
     "len": lambda v, pos: len(v),
     "first": lambda v, pos: v[0],
     "last": lambda v, pos: v[-1],
     "anynan": lambda v, pos: bool(np.isnan(v).any()),
     "allnan": lambda v, pos: bool(np.isnan(v).all()),
-    # a nan poisons the plain arg reductions: no value can be named the
-    # extreme one, so there is no index to report and the group takes the fill
-    "argmin": lambda v, pos: pos[np.argmin(v)] if not np.isnan(v).any() else None,
-    "argmax": lambda v, pos: pos[np.argmax(v)] if not np.isnan(v).any() else None,
-    "nansum": lambda v, pos: np.nansum(v),
-    "nanprod": lambda v, pos: np.nanprod(v),
-    "nanmin": lambda v, pos: np.nanmin(v),
-    "nanmax": lambda v, pos: np.nanmax(v),
-    "nanall": lambda v, pos: np.all(_not_nan(v)),
-    "nanany": lambda v, pos: np.any(_not_nan(v)),
-    "nanmean": lambda v, pos: np.nanmean(v),
-    "nanmedian": lambda v, pos: np.nanmedian(v),
-    "nanstd": lambda v, pos, ddof=0: np.nanstd(v, ddof=ddof),
-    "nanvar": lambda v, pos, ddof=0: np.nanvar(v, ddof=ddof),
-    "nantrapezoid": lambda v, pos, dx=1.0: trapezoid_ref(_as_numbers(_not_nan(v)), dx=dx),
-    "nansumofsquares": lambda v, pos: _sum_of_squares(v, skip_nan=True),
-    "nanlen": lambda v, pos: int(np.count_nonzero(~np.isnan(v))),
-    "nanfirst": lambda v, pos: _not_nan(v)[0],
-    "nanlast": lambda v, pos: _not_nan(v)[-1],
-    # the nan counterparts skip the nans, and an all-nan group has as little
-    # an extreme as an empty one has
-    "nanargmin": lambda v, pos: pos[np.nanargmin(v)] if np.count_nonzero(~np.isnan(v)) else None,
-    "nanargmax": lambda v, pos: pos[np.nanargmax(v)] if np.count_nonzero(~np.isnan(v)) else None,
+    "argmin": _poisoned_by_a_nan(_at_a_position(np.argmin)),
+    "argmax": _poisoned_by_a_nan(_at_a_position(np.argmax)),
+    "nansum": _skip_nans(_of(np.sum)),
+    "nanprod": _skip_nans(_of(np.prod)),
+    "nanmin": _skip_nans(_of(np.min)),
+    "nanmax": _skip_nans(_of(np.max)),
+    "nanall": _skip_nans(_of(np.all)),
+    "nanany": _skip_nans(_of(np.any)),
+    "nanmean": _skip_nans(_of(np.mean)),
+    "nanmedian": _skip_nans(_of(np.median)),
+    "nanstd": _skip_nans(lambda v, pos, ddof=0: np.std(v, ddof=ddof)),
+    "nanvar": _skip_nans(lambda v, pos, ddof=0: np.var(v, ddof=ddof)),
+    "nantrapezoid": _skip_nans(_trapezoid_of),
+    "nansumofsquares": _skip_nans(_sum_of_squares),
+    "nanlen": _skip_nans(lambda v, pos: len(v)),
+    "nanfirst": _skip_nans(lambda v, pos: v[0]),
+    "nanlast": _skip_nans(lambda v, pos: v[-1]),
+    "nanargmin": _skip_nans(_at_a_position(np.argmin)),
+    "nanargmax": _skip_nans(_at_a_position(np.argmax)),
 }
 
 # the functions that hand back one value per input item instead of one per
