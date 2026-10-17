@@ -460,10 +460,13 @@ def input_validation(
             group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order, method=method)
             flat_size = np.prod(size)
             ndim_idx = ndim_a
-            size = orig_shape if is_form_3 and not callable(func) and "cum" in func else size
+            func_name = aliasing.get(func, func)
+            one_to_one = is_form_3 and isinstance(func_name, str) and ("cum" in func_name or func_name == "sort")
+            size = orig_shape if one_to_one else size
+            ravel_order = order if one_to_one else "C"
             return (
-                group_idx.ravel(),
-                a.ravel(),
+                group_idx.ravel(order=ravel_order),
+                a.ravel(order=ravel_order),
                 flat_size,
                 ndim_idx,
                 size,
