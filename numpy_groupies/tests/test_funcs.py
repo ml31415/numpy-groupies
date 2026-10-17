@@ -2,7 +2,8 @@
 
 The reductions that need more than one pass over a group (a mean, a variance,
 a median, a trapezoid), the cumulative ones and the sort - each against the
-reference result of the numpy function of the same name.
+reference result of the numpy function of the same name, or against the
+group loop of :mod:`.reference` where a numpy function is not the definition.
 """
 
 import itertools
@@ -10,8 +11,8 @@ import itertools
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_np
 from numpy_groupies.tests.helpers import is_purepy, random_values
+from numpy_groupies.tests.reference import aggregate_ref
 
 
 def test_len(impl, group_size=5):
@@ -208,11 +209,13 @@ def test_sort_reverse_descends(impl, a, ref):
     [np.float64, np.float32, np.float16, np.int64, np.uint8, np.bool_],
     ids=["float64", "float32", "float16", "int64", "uint8", "bool"],
 )
-def test_sort_of_a_small_group_matches_the_numpy_twin(impl, size, dtype):
+def test_sort_of_a_small_group_matches_the_reference(impl, size, dtype):
     # a block of a few dozen values is ordered by insertion sort in the flat
     # array instead of a library sort of a view - the values, the nan at their
     # end and the descending order of them all have to come out the same, and
-    # the sizes here straddle the limit that switches the two passes
+    # the sizes here straddle the limit that switches the two passes.  The
+    # reference is the group loop, so even the numpy backend is compared
+    # against something it does not share a sort with
     rnd = np.random.RandomState(size)
     if dtype is np.bool_:
         a = rnd.randint(0, 2, size).astype(dtype)
@@ -227,5 +230,5 @@ def test_sort_of_a_small_group_matches_the_numpy_twin(impl, size, dtype):
 
     for reverse in (False, True):
         res = impl.aggregate(group_idx, a, func="sort", reverse=reverse)
-        ref = aggregate_np(group_idx, a, func="sort", reverse=reverse)
+        ref = aggregate_ref(group_idx, a, func="sort", reverse=reverse)
         np.testing.assert_array_equal(res, ref)

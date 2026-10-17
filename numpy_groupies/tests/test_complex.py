@@ -5,7 +5,7 @@ import pytest
 
 from numpy_groupies import aggregate_np
 from numpy_groupies.tests.helpers import aggregate_numba, is_purepy
-from numpy_groupies.tests.reference import trapezoid_ref
+from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
 
 # functions with a well-defined complex result, following numpy semantics - the
 # order statistics included, as numpy orders complex values lexicographically
@@ -210,7 +210,9 @@ def test_sort_moves_the_incomparable_values_last(impl, a_dtype, reverse):
     res = np.asarray(impl.aggregate(group_idx, a, func="sort", reverse=reverse))
     assert res.dtype == a_dtype
     # not the ascending order turned around: the incomparable values stay last
-    expected = aggregate_np(group_idx, a, func="sort", reverse=reverse)
+    # - the group loop is the reference, not the numpy backend the test also
+    # runs on
+    expected = aggregate_ref(group_idx, a, func="sort", reverse=reverse)
     np.testing.assert_array_equal(res, expected)
 
 
