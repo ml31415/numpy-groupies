@@ -12,7 +12,7 @@ import warnings
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import func_list, is_purepy, random_group_idx, random_values, reference_trapezoid
+from numpy_groupies.tests.helpers import func_list, is_purepy, random_group_idx, random_values, trapezoid_ref
 
 
 @pytest.mark.parametrize(
@@ -47,11 +47,11 @@ def test_along_axis(impl, rng, func, size, axis):
     elif func == "nansumofsquares":
         expected = np.nansum(a * a, axis=axis)
     elif func == "trapezoid":
-        expected = reference_trapezoid(a, axis=axis)
+        expected = trapezoid_ref(a, axis=axis)
     elif func == "nantrapezoid":
         # numpy has no nan-aware trapezoid - nantrapezoid integrates the
         # samples that are left, bridging over the gaps the nans leave
-        expected = np.apply_along_axis(lambda v: reference_trapezoid(v[~np.isnan(v)]), axis, a)
+        expected = np.apply_along_axis(lambda v: trapezoid_ref(v[~np.isnan(v)]), axis, a)
     else:
         with warnings.catch_warnings():
             # the numpy reference warns about the all-nan slices it averages

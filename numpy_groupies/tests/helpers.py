@@ -60,7 +60,7 @@ def random_values(rng, size):
     return rng.standard_normal(size)
 
 
-def reference_trapezoid(*args, **kwargs):
+def trapezoid_ref(*args, **kwargs):
     """``np.trapezoid``, under whichever name this numpy provides it.
 
     ``np.trapz`` was renamed to ``np.trapezoid`` in numpy 2.0.

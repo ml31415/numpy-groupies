@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_np
-from numpy_groupies.tests.helpers import aggregate_numba, is_purepy, reference_trapezoid
+from numpy_groupies.tests.helpers import aggregate_numba, is_purepy, trapezoid_ref
 
 # functions with a well-defined complex result, following numpy semantics - the
 # order statistics included, as numpy orders complex values lexicographically
@@ -122,9 +122,9 @@ def _complex_reference(func, group_idx, a, size):
         elif func == "anynan":
             ret.append(bool(np.any(np.isnan(vals))))
         elif func == "trapezoid":
-            ret.append(reference_trapezoid(vals))
+            ret.append(trapezoid_ref(vals))
         elif func == "nantrapezoid":
-            ret.append(reference_trapezoid(vals[_not_nan(vals)]))
+            ret.append(trapezoid_ref(vals[_not_nan(vals)]))
         else:
             ret.append(getattr(np, func)(vals))
     return ret
