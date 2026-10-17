@@ -12,8 +12,13 @@ import warnings
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import func_list, is_purepy, random_group_idx, random_values
-from numpy_groupies.tests.reference import trapezoid_ref
+from numpy_groupies.tests.helpers import (
+    func_list,
+    is_purepy,
+    random_group_idx,
+    random_values,
+)
+from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
 
 
 @pytest.mark.parametrize(
@@ -232,3 +237,22 @@ def test_argreduction_negative_fill_value(impl):
     actual = impl.aggregate(group_idx, a, axis=-1, fill_value=-1, func="argmax")
     expected = np.array([[0, 5, 2], [-1, -1, -1]])
     np.testing.assert_equal(actual, expected)
+
+
+@pytest.mark.deselect_if(func=is_purepy)
+@pytest.mark.parametrize(["ndim", "order"], list(itertools.product([2, 3], ["C", "F"])))
+def test_matches_the_group_loop(impl, block, ndim, order):
+    """labels of several rows address a group by coordinate, and the group loop
+    reaches the same values by flattening the coordinates.
+
+    Which layout the result comes back in is the business of
+    ``test_ndim_indexing``; only the values are asked for here.
+    """
+    rows = [block.group_idx] + [block.group_idx % n for n in (2, 3)][: ndim - 1]
+    size = (block.size, 2, 3)[:ndim]
+    group_idx = np.vstack(rows)
+
+    got = impl.aggregate(group_idx, block.a, func="sum", size=size, order=order, fill_value=0)
+    want = aggregate_ref(group_idx, block.a, func="sum", size=size, fill_value=0)
+    assert got.shape == size
+    np.testing.assert_allclose(got, want, rtol=10**-10)

@@ -4,7 +4,12 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_np
-from numpy_groupies.tests.helpers import aggregate_numba, is_purepy
+from numpy_groupies.tests.helpers import (
+    aggregate_numba,
+    impl_name,
+    is_purepy,
+    names_another_index_when_a_group_holds_a_nan,
+)
 from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
 
 # functions with a well-defined complex result, following numpy semantics - the
@@ -563,3 +568,36 @@ def test_order_functions_use_the_extreme_value_of_the_order():
         ):
             res = np.asarray(impl(both_in_one_group, np.array(values), func=func, size=1))
             np.testing.assert_array_equal(res, [1])
+
+
+@pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
+@pytest.mark.deselect_if(func=names_another_index_when_a_group_holds_a_nan)
+@pytest.mark.parametrize("func", complex_funcs)
+def test_matches_the_group_loop(impl, func, block):
+    """a nan in either part is a nan for the whole value, and the group loop
+    skips, propagates and orders it the way the backends do.
+
+    Which nan a reduction names for a group it cannot compare is not compared
+    here: numpy's own helpers count one nan as equal to any other (``np.isnan``
+    of a complex value is true when either part is), and the answer of numpy
+    itself moves when such a group is rotated.  The floor that does hold is
+    asserted by :func:`test_an_incomparable_value_poisons_the_extreme`.
+    """
+    got = impl.aggregate(block.group_idx, block.a_complex, func=func, size=block.size)
+    want = aggregate_ref(block.group_idx, block.a_complex, func=func, size=block.size)
+    np.testing.assert_allclose(got, want, rtol=10**-10)
+
+
+@pytest.mark.parametrize("func", ["min", "max"])
+def test_an_incomparable_value_poisons_the_extreme(impl, func):
+    """a group holding values that cannot be compared has no comparable extreme.
+
+    All three backends name a value with a nan in it, but not the same one: this
+    group gives ``nan+nanj`` to numpy and purepy, ``nan+1j`` to numba, and
+    ``nan+1j`` to numpy as well once the group is rotated - the fold names
+    whichever of the incomparable values it is left with.  Which one it names is
+    therefore left open here, that no backend names a comparable value is not.
+    """
+    a = np.array([0.665 + 1j * np.nan, np.nan + 1j, -1.32 - 1.32j, 0.28 + 0.28j])
+    got = impl.aggregate(np.zeros(a.size, dtype=int), a, func=func)[0]
+    assert np.isnan(got.real) or np.isnan(got.imag), f"{impl_name(impl)} names {got}"
