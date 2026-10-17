@@ -16,6 +16,30 @@ from numpy_groupies.tests.helpers import func_list, is_purepy, random_group_idx,
 from numpy_groupies.tests.reference import trapezoid_ref
 
 
+@pytest.mark.deselect_if(func=is_purepy)
+@pytest.mark.parametrize("func", [np.argmin, np.argmax, np.nanargmin, np.nanargmax])
+@pytest.mark.parametrize("axis", [0, 1, 2, -1, -2, -3])
+@pytest.mark.parametrize("order", ["C", "F"])
+def test_arg_alias_axis_coordinates(impl, func, axis, order):
+    """NumPy aliases report positions along the requested axis, including gaps."""
+    a = np.array(np.random.default_rng(0).normal(size=(3, 4, 5)), order=order)
+    if func in (np.nanargmin, np.nanargmax):
+        a[0, 0, 0] = np.nan
+    normalized_axis = axis % a.ndim
+    labels = 1 - np.arange(a.shape[axis]) % 2
+    output_shape = list(a.shape)
+    output_shape[axis] = 3
+    expected = np.full(output_shape, -1)
+    for index in np.ndindex(*output_shape):
+        positions = np.flatnonzero(labels == index[normalized_axis])
+        if positions.size:
+            values = [a[index[:normalized_axis] + (int(p),) + index[normalized_axis + 1 :]] for p in positions]
+            expected[index] = positions[func(values)]
+
+    actual = impl.aggregate(labels, a, func=func, axis=axis, order=order, size=3)
+    np.testing.assert_array_equal(actual, expected)
+
+
 @pytest.mark.parametrize(
     ("size", "axis"),
     [((12,), 0), ((12, 5), 0), ((12, 5), 1)],

@@ -451,7 +451,8 @@ def input_validation(
         else:
             is_form_3 = ndim_a > 1
             orig_shape = a.shape if is_form_3 else group_idx.shape
-            if isinstance(func, str) and "arg" in func:
+            func_name = aliasing.get(func, func)
+            if isinstance(func_name, str) and "arg" in func_name:
                 unravel_shape = orig_shape
             else:
                 unravel_shape = None
@@ -460,7 +461,6 @@ def input_validation(
             group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order, method=method)
             flat_size = np.prod(size)
             ndim_idx = ndim_a
-            func_name = aliasing.get(func, func)
             one_to_one = is_form_3 and isinstance(func_name, str) and ("cum" in func_name or func_name == "sort")
             size = orig_shape if one_to_one else size
             ravel_order = order if one_to_one else "C"
