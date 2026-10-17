@@ -60,6 +60,15 @@ def random_values(rng, size):
     return rng.standard_normal(size)
 
 
+def reference_trapezoid(*args, **kwargs):
+    """``np.trapezoid``, under whichever name this numpy provides it.
+
+    ``np.trapz`` was renamed to ``np.trapezoid`` in numpy 2.0.
+    """
+    func = getattr(np, "trapezoid", None) or getattr(np, "trapz", None)
+    return func(*args, **kwargs)
+
+
 @cache
 def is_supported(impl, func):
     """True if the backend runs ``func``.
