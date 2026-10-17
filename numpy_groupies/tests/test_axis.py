@@ -12,7 +12,8 @@ import warnings
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import func_list, is_purepy, random_group_idx, random_values, trapezoid_ref
+from numpy_groupies.tests.helpers import func_list, is_purepy, random_group_idx, random_values
+from numpy_groupies.tests.reference import trapezoid_ref
 
 
 @pytest.mark.parametrize(

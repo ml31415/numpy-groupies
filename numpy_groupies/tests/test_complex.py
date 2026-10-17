@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_np
-from numpy_groupies.tests.helpers import aggregate_numba, is_purepy, trapezoid_ref
+from numpy_groupies.tests.helpers import aggregate_numba, is_purepy
+from numpy_groupies.tests.reference import trapezoid_ref
 
 # functions with a well-defined complex result, following numpy semantics - the
 # order statistics included, as numpy orders complex values lexicographically

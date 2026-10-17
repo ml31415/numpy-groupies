@@ -11,6 +11,7 @@ functions) and :mod:`.test_compare` (the backends against each other).
 :mod:`.test_purepy`, :mod:`.test_numba` and :mod:`.test_numba_kernels` cover
 what only one implementation has.
 
-Shared helpers live in :mod:`.helpers`, fixtures and hooks in the ``conftest``
-modules.
+Shared helpers live in :mod:`.helpers`, the group loop that serves as the
+reference of them all in :mod:`.reference`, fixtures and hooks in the
+``conftest`` modules.
 """
