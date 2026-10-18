@@ -2,12 +2,42 @@ from __future__ import annotations
 
 import sys
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from numpy_groupies.aggregate_purepy import aggregate as aggregate_py
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+    from typing import Protocol, TypeAlias
+
+    import numpy as np
     import numpy.typing as npt
+
+    class Aggregate(Protocol):
+        """The canonical signature of the public ``aggregate``.
+
+        The public name is bound to the best implementation available at
+        import time (numba, else numpy, else pure python) - they agree on
+        everything but the most restrictive ``size`` of the pure python
+        fallback, which does not take a sequence, and on the ``out`` and
+        ``cache`` keyword arguments, which only the numba implementation
+        honours (the others raise or ignore them).
+        """
+
+        def __call__(
+            self,
+            group_idx: npt.ArrayLike,
+            a: npt.ArrayLike,
+            func: str | Callable[..., Any] = "sum",
+            size: int | Sequence[int] | None = None,
+            fill_value: Any = ...,
+            order: str = "C",
+            dtype: npt.DTypeLike | None = None,
+            axis: int | None = None,
+            out: npt.NDArray[np.generic] | None = None,
+            cache: bool = True,
+            **kwargs: Any,
+        ) -> npt.NDArray[np.generic]: ...
 
 
 def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
@@ -16,7 +46,10 @@ def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
     )
 
 
-aggregate = aggregate_py
+# every rebinding below provides this signature - the cast states the
+# promise that ``aggregate_common_doc`` documents, without pretending the
+# backends are interchangeable at the type level
+aggregate = cast("Aggregate", aggregate_py)
 
 try:
     import numpy as np
@@ -24,8 +57,10 @@ except ImportError:
     aggregate_np = dummy_no_impl
     multi_arange = label_contiguous_1d = dummy_no_impl
 else:
-    from numpy_groupies.aggregate_numpy import aggregate, step_count, step_indices
+    from numpy_groupies.aggregate_numpy import aggregate as aggregate_np_impl
+    from numpy_groupies.aggregate_numpy import step_count, step_indices
 
+    aggregate = cast("Aggregate", aggregate_np_impl)
     aggregate_np = aggregate
     from numpy_groupies.utils import (
         default_fill_value,
@@ -37,15 +72,16 @@ else:
     )
 
 
-aggregate_nb: Any
+aggregate_nb: Aggregate | None
 try:
     import numba
 except ImportError:
     aggregate_nb = None
 else:
-    from numpy_groupies.aggregate_numba import aggregate as aggregate_nb
+    from numpy_groupies.aggregate_numba import aggregate as aggregate_nb_impl
     from numpy_groupies.aggregate_numba import step_count, step_indices, unpack_into
 
+    aggregate_nb = cast("Aggregate", aggregate_nb_impl)
     aggregate = aggregate_nb
 
 

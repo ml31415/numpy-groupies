@@ -269,6 +269,19 @@ class KernelPair(typing.NamedTuple):
     nan: KernelHandle | None
 
 
+def nan_handle(pair: KernelPair, name: str) -> KernelHandle:
+    """The nan variant of a pair that the caller knows has one.
+
+    Callers reach for it behind the ``funcs_no_separate_nan`` gate (or the
+    kernel table), where ``nan`` is never None - this only states that
+    promise for the type checker and keeps the message honest if it breaks.
+    """
+    handle = pair.nan
+    if handle is None:
+        raise ValueError(f"{name} has no nan variant")
+    return handle
+
+
 def build_kernel(
     name: str,
     *,
