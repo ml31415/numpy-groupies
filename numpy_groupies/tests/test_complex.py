@@ -13,7 +13,11 @@ from numpy_groupies.tests.helpers import (
 from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
 
 # functions with a well-defined complex result, following numpy semantics - the
-# order statistics included, as numpy orders complex values lexicographically
+# order statistics included, as numpy orders complex values lexicographically.
+# median is the one order statistic missing: over incomparable values numpy's own
+# partition and its sort disagree, so the group loop cannot tell what a poisoned
+# group mediates to - what its answer has to look like is pinned by
+# test_median_of_a_poisoned_group instead, and a clean group by test_median
 complex_funcs = (
     "sum",
     "prod",
@@ -176,6 +180,29 @@ def test_median(impl, a_dtype):
         assert res.dtype == a_dtype
     expected = [np.median(vals) for vals in (a[:4], a[4:])]
     np.testing.assert_allclose(res, expected, rtol=1e-5)
+
+
+@pytest.mark.parametrize("poisoned_part", ["real", "imag", "both"])
+@pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
+def test_median_of_a_poisoned_group(impl, a_dtype, poisoned_part):
+    """A group poisoned by one of its values answers a nan in every part.
+
+    The nan sits in one part of one of the values, but the answer is about the
+    group: the part the nan never touched is not a zero the group claimed, and a
+    plain nan (which the implementations used to answer with) drops that part
+    altogether - purepy dropped it so completely that the whole answer came back
+    as a float.  ``median`` is not in ``complex_funcs`` for exactly these cases:
+    the reference cannot decide them, since ``np.median`` selects the middle of a
+    partition and over incomparable values partition and sort disagree.
+    """
+    group_idx = np.zeros(3, dtype=int)
+    real = np.array([1.0, 5.0, np.nan if poisoned_part in ("real", "both") else 3.0])
+    imag = np.array([2.0, 1.0, np.nan if poisoned_part in ("imag", "both") else 3.0])
+    a = (real + 1j * imag).astype(a_dtype)
+
+    res = np.asarray(impl.aggregate(group_idx, a, func="median", size=1))
+    assert res.dtype == a_dtype
+    assert np.isnan(res[0].real) and np.isnan(res[0].imag), res[0]
 
 
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
