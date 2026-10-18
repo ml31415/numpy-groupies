@@ -202,7 +202,6 @@ def test_shape_mismatch(impl):
         impl.aggregate(np.array((1, 2, 3)), np.array((1, 2)))
 
 
-@pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
 @pytest.mark.parametrize("fill_value", [0, 1, np.nan])
 @pytest.mark.parametrize("func", func_list)
 def test_the_fill_value_matches_the_group_loop(impl, func, fill_value, block):
@@ -221,3 +220,21 @@ def test_the_fill_value_matches_the_group_loop(impl, func, fill_value, block):
             impl.aggregate(labels, a, **kwargs)
     else:
         np.testing.assert_allclose(impl.aggregate(labels, a, **kwargs), want, rtol=10**-10)
+
+
+def test_the_arg_reductions_name_a_position_in_the_input(impl):
+    """the position an arg reduction reports is one in the input, not in an
+    array the backend had to build on the way to it, and a group holding a nan
+    has no extreme to point at - so it names no position at all and takes the
+    fill value of its function.
+    """
+    group_idx = np.array([1, 2, 0, 1, 0, 2])  # the labels are out of order and
+    a = np.array([np.nan, 5.0, 3.0, 7.0, 1.0, 9.0])  # a nan poisons group 1
+    for func, expected in (
+        ("argmin", [4, -1, 1]),  # group 0: 1.0 at 4, group 2: 5.0 at 1
+        ("argmax", [2, -1, 5]),  # group 0: 3.0 at 2, group 2: 9.0 at 5
+        ("nanargmin", [4, 3, 1]),  # group 1 keeps 7.0 at 3 once the nan is gone
+        ("nanargmax", [2, 3, 5]),
+    ):
+        got = np.asarray(impl.aggregate(group_idx, a, func=func, size=3))
+        np.testing.assert_array_equal(got, expected, err_msg=func)
