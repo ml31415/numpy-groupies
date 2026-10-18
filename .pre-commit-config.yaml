@@ -26,7 +26,10 @@ repos:
     rev: v2.4.0
     hooks:
       - id: mypy
-        # the config in pyproject.toml restricts the check to the package;
+        # the config in pyproject.toml restricts the check to the package,
+        # but mypy ignores that exclude for files named on its command
+        # line - which is exactly how this hook names them, so filter here
+        exclude: (^|/)(tests|benchmarks)/
         # the environment mirrors the dev extra so the checker sees the real
         # numba stubs rather than bare Any
         additional_dependencies: ["numpy", "numba"]
