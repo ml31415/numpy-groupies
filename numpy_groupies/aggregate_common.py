@@ -343,13 +343,31 @@ def get_aliasing(*extra: dict[Any, str]) -> dict[Any, str]:
 aliasing_py = get_aliasing()
 
 
+def alias_of(func: str | Callable[..., Any], aliasing: dict[Any, Any]) -> str | Callable[..., Any]:
+    """Return the name ``func`` is written as, or ``func`` itself.
+
+    The table is keyed by the strings and the numpy objects a function is known
+    under, so an object of one's own is not in it - and neither can it be looked
+    up when it is not hashable, as a dataclass instance is not.  Neither of the
+    two makes it an alias of anything, which is what the caller wants to hear.
+    """
+    try:
+        return aliasing[func]
+    except (KeyError, TypeError):
+        return func
+
+
 def get_func(
     func: str | Callable[..., Any], aliasing: dict[Any, Any], implementations: Any
 ) -> str | Callable[..., Any]:
     """Return the key of a found implementation or the func itself"""
     try:
         func_str = aliasing[func]
-    except KeyError:
+    except (KeyError, TypeError):
+        # a miss in the table, or a lookup that cannot be made at all: the table
+        # is a dict and an object of one's own need not be a key in it (a
+        # dataclass instance is not hashable) - either way, a callable asked for
+        # is the call to make, not a function that is missing
         if callable(func):
             return func
     else:

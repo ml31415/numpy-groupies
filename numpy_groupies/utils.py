@@ -13,6 +13,7 @@ from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     _forced_float_types,
     _forced_real_float_types,
+    alias_of,
     check_boolean,
     check_complex_dtype,
     get_aliasing,
@@ -447,7 +448,7 @@ def input_validation(
         else:
             is_form_3 = ndim_a > 1
             orig_shape = a.shape if is_form_3 else group_idx.shape
-            func_name = aliasing.get(func, func)
+            func_name = alias_of(func, aliasing)
             if isinstance(func_name, str) and "arg" in func_name:
                 unravel_shape = orig_shape
             else:
