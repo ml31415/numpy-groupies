@@ -340,9 +340,15 @@ def aggregate(
         for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
             ret[ix] = func([val for _, val in group], **kwargs)  # type: ignore[operator]
     else:
-        data = sorted(zip(range(len(a)), group_idx, a), key=operator.itemgetter(1))  # type: ignore[arg-type]
+        # a group holding a nan has no extreme to point at, and so no position to
+        # name either: the vectorised kernels leave such a group to the fill
+        # value, and the nan counterparts reach here with none of them left
+        poisoned = {ix for ix, val in zip(group_idx, a) if val != val}
+        data = sorted(zip(pos, group_idx, a), key=operator.itemgetter(1))  # type: ignore[arg-type]
         for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
-            ret[ix] = func([(val_idx, val) for val_idx, _, val in group], **kwargs)  # type: ignore[operator,misc]
+            if ix in poisoned:
+                continue  # stays at the fill value
+            ret[ix] = func([(p, val) for p, _, val in group], **kwargs)  # type: ignore[operator,misc]
 
     return ret
 
