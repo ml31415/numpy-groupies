@@ -20,7 +20,6 @@ from numpy_groupies.tests.helpers import (
 from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("func", [np.argmin, np.argmax, np.nanargmin, np.nanargmax])
 @pytest.mark.parametrize("axis", [0, 1, 2, -1, -2, -3])
 @pytest.mark.parametrize("order", ["C", "F"])

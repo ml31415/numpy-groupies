@@ -11,8 +11,9 @@ helper functions).  :mod:`.test_purepy`, :mod:`.test_numba` and
 :mod:`.test_numba_kernels` cover what only one implementation has.
 
 Their yardstick is :mod:`.reference`, ``aggregate`` spelled out as a group loop:
-a backend is measured against it, never against itself.  Where one deviates
-from it without raising, the predicate that names the deviation lives in
-:mod:`.helpers`.  What the comparison against the group loop cannot tell apart
-is not dropped from it, but gets a test of its own that asserts the floor of it.
+a backend is measured against it, never against itself.  A backend that
+deviates is measured like any other, and the difference is a bug to fix rather
+than a parametrization to filter out.  What the comparison against the group
+loop cannot tell apart is not dropped from it, but gets a test of its own that
+asserts the floor of it.
 """

@@ -1,11 +1,13 @@
-"""Shared helpers for the test suite: backend registry, the ``impl`` fixture
-proxy and the collection-time deselection predicates.
+"""Shared helpers for the test suite: the backend registry and the ``impl``
+fixture proxy.
 
 Backends signal missing functionality with ``NotImplementedError``. The
-``_BackendProxy`` translates that into ``pytest.skip`` at runtime, so no
-collection-time bookkeeping is needed for it. Only backends that silently
-deviate from the reference behaviour (without raising) need an explicit
-``deselect_if`` marker.
+``_BackendProxy`` translates that into ``pytest.skip`` at runtime, so a module
+running over every backend needs no bookkeeping for the functions one of them
+lacks.  What is left of the predicates answers a question inside a test -
+whether this backend computes with python numbers - and nothing more: a result
+that deviates from the group loop is measured like any other result, never
+filtered out of the collection.
 """
 
 from functools import cache, wraps
@@ -169,50 +171,9 @@ func_list = (
 
 
 def is_purepy(impl, *args, **kwargs):
-    # purepy deviates from the reference behaviour for some inputs (e.g. nan
-    # handling) without raising NotImplementedError.
+    """True for the implementation that computes with python numbers.
+
+    Those carry no dtype: purepy neither honours a ``dtype`` argument nor hands
+    back a result of the dtype of its input.
+    """
     return impl_name(impl) == "purepy"
-
-
-def is_numpy(impl, *args, **kwargs):
-    """True for the numpy backend."""
-    return impl_name(impl) == "numpy"
-
-
-# the functions whose result is a count, an index or a flag: none of them can
-# hold a nan, so they are the ones a nan fill value does not fit
-_COUNTS_AND_INDEXES = (
-    "all",
-    "any",
-    "nanall",
-    "nanany",
-    "allnan",
-    "anynan",
-    "len",
-    "nanlen",
-    "argmin",
-    "argmax",
-    "nanargmin",
-    "nanargmax",
-)
-
-
-def names_another_index_when_a_group_holds_a_nan(impl, func, *args, **kwargs):
-    """True for the arg reductions of purepy on poisoned data.
-
-    purepy walks a group and reports the position of the value it settled on:
-    the plain one points at the nan that poisoned the group, and the nan
-    counterpart counts among the values it did not skip.  The other backends
-    follow numpy here, and so does the group loop of :mod:`.reference`.
-    """
-    return is_purepy(impl) and func in ("argmin", "argmax", "nanargmin", "nanargmax")
-
-
-def keeps_the_fill_value_as_given(impl, func, *args, **kwargs):
-    """True for purepy where the result dtype cannot hold the fill value.
-
-    purepy collects the results of the groups in a Python list and settles the
-    dtype at the end, so a nan fill value survives where the other backends
-    refuse it - they check it against the result dtype before filling.
-    """
-    return is_purepy(impl) and func in _COUNTS_AND_INDEXES

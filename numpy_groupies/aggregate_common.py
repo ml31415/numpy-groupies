@@ -388,6 +388,53 @@ _forced_real_float_types = {
     "nansumofsquares",
 }
 
+
+def check_boolean(x: Any) -> None:
+    if x not in (0, 1):
+        raise ValueError("Value not boolean")
+
+
+# functions whose result type the function settles rather than taking it from
+# the values aggregated: a boolean answer, a count, a position, and the object
+# array of ``array``.  The python counterpart of each result type is here, where
+# no numpy is imported; the numpy dtypes of them in utils, which also knows how
+# wide a count is on the platform it runs on
+_fixed_result_types: dict[str, type] = {
+    "array": object,
+    "all": bool,
+    "any": bool,
+    "nanall": bool,
+    "nanany": bool,
+    "allnan": bool,
+    "anynan": bool,
+    "len": int,
+    "nanlen": int,
+    "argmax": int,
+    "argmin": int,
+    "nanargmin": int,
+    "nanargmax": int,
+}
+
+
+def check_fixed_fill_value(func: str | Callable[..., Any], fill_value: Any) -> None:
+    """Refuse a ``fill_value`` that the result type of ``func`` cannot hold, for
+    those functions whose result type the function itself settles.
+
+    This is the rule ``check_fill_value`` tells against a numpy dtype, told
+    without one: a boolean answer is filled with 0 or 1 - a nan would pass for
+    ``bool``, which is why the two values are asked for themselves - and a count
+    or a position with whatever turns into an integer, which a nan does not.
+    """
+    target = _fixed_result_types.get(_fill_value_key(func))
+    if target is bool:
+        check_boolean(fill_value)
+    elif target is int:
+        try:
+            int(fill_value)
+        except ValueError:
+            raise ValueError("fill_value must be convertible into an integer")
+
+
 # functions whose result is not complex even for complex input - only these may
 # be asked for a non-complex dtype, everything else would throw the imaginary
 # part of the values away

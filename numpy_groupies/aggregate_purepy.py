@@ -12,6 +12,7 @@ from numpy_groupies.aggregate_common import (
     aggregate_common_doc,
     build_dispatch,
     check_complex_dtype,
+    check_fixed_fill_value,
     funcs_no_separate_nan,
     get_func,
     is_scalar_input,
@@ -143,19 +144,33 @@ def _sort(group_idx, a: Any, reverse: bool = False) -> list[Any]:
     # values, which is not order reversing for the integral dtypes (the smallest
     # signed value survives negation as itself, and a zero of an unsigned one
     # stays the smallest key) - and plain python lists cannot be negated at all
-    sortidx = _argsort(list(zip(group_idx, a)))
+
+    # a nan has no place in the order python sees: it compares neither smaller nor
+    # greater, so sorted() leaves it wherever it happened to sit, while numpy orders
+    # it as the largest value there is.  Asking for the nan before the value settles
+    # every comparison of a nan with a value before the two of them come up, and
+    # moves the nans of a group behind its values
+    poisoned = [val != val for val in a]
+    sortidx = _argsort(list(zip(group_idx, poisoned, a)))
     revidx = _argsort(_argsort(group_idx))
     a_srt = [a[si] for si in sortidx]
     if reverse:
         # flip each group's run of values instead - the labels are sorted, so
         # every group is one contiguous run of the result
         labels = [group_idx[si] for si in sortidx]
+        trailing = [poisoned[si] for si in sortidx]
         begin = 0
         while begin < len(a_srt):
             end = begin
             while end + 1 < len(a_srt) and labels[end + 1] == labels[begin]:
                 end += 1
-            a_srt[begin : end + 1] = reversed(a_srt[begin : end + 1])
+            # only the ordered part of the run is flipped: a nan is not made the
+            # smallest value by asking for the order the other way round, so it
+            # stays where the ascending order put it
+            last = end + 1
+            while last > begin and trailing[last - 1]:
+                last -= 1
+            a_srt[begin:last] = reversed(a_srt[begin:last])
             begin = end + 1
     return [a_srt[ri] for ri in revidx]
 
@@ -299,10 +314,18 @@ def aggregate(
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it
     fill_value = resolve_fill_value(func, fill_value, _a_dtype(a))
+    # the numpy implementations look the fill value against the datatype of the
+    # result, not of the values: neither a count nor a boolean answer holds a nan
+    check_fixed_fill_value(func, fill_value)
     if dtype is not None and isinstance(func, str):
         # python numbers carry no dtype at all, so this is the one place where
         # the pure python implementation has to reject a non-complex dtype
         check_complex_dtype(_a_dtype(a), dtype, func)
+
+    # the position of every value in the input, which is the position the
+    # reductions reporting one have to name.  Taken before the nan filter below
+    # shortens the input, or those positions would count the removed values too
+    pos = range(len(a))
 
     if isinstance(func, str):
         if func.startswith("nan"):
@@ -313,10 +336,10 @@ def aggregate(
             # group_idx, which is what the numpy implementations make of such a
             # group too.  Without the case below there is nothing left to
             # unpack once every value was a nan
-            kept = [(ix, val) for ix, val in zip(group_idx, a) if val == val]
+            kept = [(p, ix, val) for p, ix, val in zip(pos, group_idx, a) if val == val]
             if not kept:
                 return [fill_value] * size
-            group_idx, a = zip(*kept)
+            pos, group_idx, a = zip(*kept)
 
         func = _impl_dict[func]
     if func is _sort:
@@ -331,9 +354,15 @@ def aggregate(
         for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
             ret[ix] = func([val for _, val in group], **kwargs)  # type: ignore[operator]
     else:
-        data = sorted(zip(range(len(a)), group_idx, a), key=operator.itemgetter(1))  # type: ignore[arg-type]
+        # a group holding a nan has no extreme to point at, and so no position to
+        # name either: the vectorised kernels leave such a group to the fill
+        # value, and the nan counterparts reach here with none of them left
+        poisoned = {ix for ix, val in zip(group_idx, a) if val != val}
+        data = sorted(zip(pos, group_idx, a), key=operator.itemgetter(1))  # type: ignore[arg-type]
         for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
-            ret[ix] = func([(val_idx, val) for val_idx, _, val in group], **kwargs)  # type: ignore[operator,misc]
+            if ix in poisoned:
+                continue  # stays at the fill value
+            ret[ix] = func([(p, val) for p, _, val in group], **kwargs)  # type: ignore[operator,misc]
 
     return ret
 
