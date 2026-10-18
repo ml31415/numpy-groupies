@@ -1,6 +1,5 @@
 """fixtures and collection hooks shared by the test modules"""
 
-import inspect
 import typing
 
 import numpy as np
@@ -123,22 +122,15 @@ def block(request):
     return block
 
 
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers",
-        "deselect_if(func): deselect parametrizations for which func(**item.params) is true",
-    )
-
-
 def pytest_collection_modifyitems(config, items):
-    """Deselect parametrizations that cannot run:
+    """Deselect the combos that cannot run at all.
 
-    - combos where the backend dispatch does not support the parametrized
-      ``func`` - applies automatically to every test parametrized over both
-      ``impl`` and ``func``, no marker needed
-    - combos flagged with a ``deselect_if`` marker whose predicate returns
-      true for the item's params; predicates only declare the params they
-      actually need, the rest is filtered by signature
+    A parametrization of ``impl`` and ``func`` is dropped when the dispatch of
+    that backend has no such function - a missing function is not a test waiting
+    to fail.  Everything else a backend cannot do signals with
+    ``NotImplementedError``, which the ``impl`` proxy turns into a skip at
+    runtime, and a backend that deviates without raising is measured against the
+    group loop like any other and called out where it differs.
     """
     removed, kept = [], []
     for item in items:
@@ -147,17 +139,7 @@ def pytest_collection_modifyitems(config, items):
         if "impl" in params and "func" in params and not is_supported(params["impl"], params["func"]):
             removed.append(item)
             continue
-        if any(_marker_deselects(marker, params) for marker in item.iter_markers("deselect_if")):
-            removed.append(item)
-            continue
         kept.append(item)
     if removed:
         config.hook.pytest_deselected(items=removed)
         items[:] = kept
-
-
-def _marker_deselects(marker, params):
-    func = marker.kwargs["func"]
-    accepted = inspect.signature(func).parameters
-    kwargs = {name: params[name] for name in accepted if name in params}
-    return func(**kwargs)

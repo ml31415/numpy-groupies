@@ -1,11 +1,13 @@
-"""Shared helpers for the test suite: backend registry, the ``impl`` fixture
-proxy and the collection-time deselection predicates.
+"""Shared helpers for the test suite: the backend registry and the ``impl``
+fixture proxy.
 
 Backends signal missing functionality with ``NotImplementedError``. The
-``_BackendProxy`` translates that into ``pytest.skip`` at runtime, so no
-collection-time bookkeeping is needed for it. Only backends that silently
-deviate from the reference behaviour (without raising) need an explicit
-``deselect_if`` marker.
+``_BackendProxy`` translates that into ``pytest.skip`` at runtime, so a module
+running over every backend needs no bookkeeping for the functions one of them
+lacks.  What is left of the predicates answers a question inside a test -
+whether this backend computes with python numbers - and nothing more: a result
+that deviates from the group loop is measured like any other result, never
+filtered out of the collection.
 """
 
 from functools import cache, wraps
@@ -169,11 +171,9 @@ func_list = (
 
 
 def is_purepy(impl, *args, **kwargs):
-    # purepy deviates from the reference behaviour for some inputs (e.g. nan
-    # handling) without raising NotImplementedError.
+    """True for the implementation that computes with python numbers.
+
+    Those carry no dtype: purepy neither honours a ``dtype`` argument nor hands
+    back a result of the dtype of its input.
+    """
     return impl_name(impl) == "purepy"
-
-
-def is_numpy(impl, *args, **kwargs):
-    """True for the numpy backend."""
-    return impl_name(impl) == "numpy"

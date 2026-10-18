@@ -191,7 +191,6 @@ def test_sort(impl, a_dtype, reverse):
     np.testing.assert_array_equal(res, expected)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 @pytest.mark.parametrize("reverse", [False, True], ids=["ascending", "descending"])
 def test_sort_moves_the_incomparable_values_last(impl, a_dtype, reverse):

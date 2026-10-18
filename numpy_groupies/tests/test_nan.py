@@ -14,7 +14,6 @@ import pytest
 from numpy_groupies import aggregate_np, aggregate_purepy
 from numpy_groupies.tests.helpers import (
     func_list,
-    is_purepy,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
@@ -254,7 +253,6 @@ def test_var_with_nan_fill_value(impl, ddof, nan_inds, func):
     np.testing.assert_equal(actual, expected)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_sort_leaves_nan_at_the_end(impl):
     # numpy orders a nan as the largest value, so it ends up last - and since
     # the descending pass only flips the ordered part of a group, it stays last

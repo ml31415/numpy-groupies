@@ -11,7 +11,7 @@ import itertools
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import func_list, is_purepy, random_values
+from numpy_groupies.tests.helpers import func_list, random_values
 from numpy_groupies.tests.reference import aggregate_ref
 
 
@@ -202,7 +202,6 @@ def test_sort_reverse_descends(impl, a, ref):
     np.testing.assert_array_equal(np.asarray(res), ref)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("size", [1, 2, 3, 8, 16, 31, 32, 33, 40])
 @pytest.mark.parametrize(
     "dtype",
