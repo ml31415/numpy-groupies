@@ -178,7 +178,6 @@ def test_cumsum_nan(impl):
     np.testing.assert_array_equal(res, [np.nan, np.nan, np.nan, 5.0])
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_nancumsum(impl):
     # https://github.com/ml31415/numpy-groupies/issues/79
     group_idx = [0, 0, 0, 1, 1, 0, 0]

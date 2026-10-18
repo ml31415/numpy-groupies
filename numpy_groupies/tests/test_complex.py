@@ -66,7 +66,6 @@ complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
 complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
 def test_cumsum_nan_components_stay_in_group(impl, dtype):
     """A NaN in one component of a complex cumulative sum must not contaminate
@@ -442,7 +441,6 @@ def test_explicit_fill_value(impl):
     np.testing.assert_allclose(res[1], 1 + 0j)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("axis", (0, 1))
 def test_axis(impl, rng, axis):
     # the labels run along the requested axis, the remaining axes are kept

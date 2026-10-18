@@ -14,7 +14,6 @@ import pytest
 
 from numpy_groupies.tests.helpers import (
     func_list,
-    is_purepy,
     random_group_idx,
     random_values,
 )
@@ -73,7 +72,6 @@ def test_along_axis(impl, rng, func, size, axis):
     np.testing.assert_allclose(actual.squeeze(), expected)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_not_last_axis_reduction(impl):
     group_idx = np.array([1, 2, 2, 0, 1])
     a = np.array([[1.0, 2.0], [4.0, 4.0], [5.0, 2.0], [np.nan, 3.0], [8.0, 7.0]])
@@ -85,7 +83,6 @@ def test_not_last_axis_reduction(impl):
     np.testing.assert_allclose(expected, actual)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("axis", (0, 1))
 def test_along_axis_multidim(impl, axis):
     # https://github.com/ml31415/numpy-groupies/issues/74
@@ -172,7 +169,6 @@ def test_axis_output_order_preserves_groups(impl, shape, broadcast, func, order)
         assert actual.flags.f_contiguous if order == "F" else actual.flags.c_contiguous
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize(["ndim", "order"], list(itertools.product([1, 2, 3], ["C", "F"])))
 def test_ndim_indexing(impl, rng, ndim, order, outsize=10):
     nindices = int(outsize**ndim)
@@ -188,14 +184,12 @@ def test_ndim_indexing(impl, rng, ndim, order, outsize=10):
     assert res.shape == outshape
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("size", [None, (10, 2)])
 def test_ndim_group_idx(impl, size):
     group_idx = np.vstack((np.repeat(np.arange(10), 10), np.repeat([0, 1], 50)))
     impl.aggregate(group_idx, 1, size=size)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_holes_in_multidim_size(impl):
     # multidimensional labels with the last column cut off, leaving group
     # (2, 3) without any item (issue #32)
@@ -210,7 +204,6 @@ def test_holes_in_multidim_size(impl):
     assert len(res[2, 3]) == 0
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize("func", ["sort", "cumsum", "cumprod"])
 def test_one_out_per_in_cannot_fill(impl, func):
     # sort and the cum-functions emit one value per item, so they have
@@ -220,7 +213,6 @@ def test_one_out_per_in_cannot_fill(impl, func):
         impl.aggregate(group_idx, np.arange(11, dtype=float), func=func, size=(3, 4))
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_argreduction_nD_array_1D_idx(impl):
     # https://github.com/ml31415/numpy-groupies/issues/41
     group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
@@ -230,7 +222,6 @@ def test_argreduction_nD_array_1D_idx(impl):
     np.testing.assert_equal(actual, expected)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_argreduction_negative_fill_value(impl):
     group_idx = np.array([0, 0, 2, 2, 2, 1, 1, 2, 2, 1, 1, 0], dtype=int)
     a = np.array([[1] * 12, [np.nan] * 12])
@@ -239,7 +230,6 @@ def test_argreduction_negative_fill_value(impl):
     np.testing.assert_equal(actual, expected)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 @pytest.mark.parametrize(["ndim", "order"], list(itertools.product([2, 3], ["C", "F"])))
 def test_matches_the_group_loop(impl, block, ndim, order):
     """labels of several rows address a group by coordinate, and the group loop

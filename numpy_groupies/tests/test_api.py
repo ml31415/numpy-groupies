@@ -11,7 +11,6 @@ import pytest
 
 from numpy_groupies.tests.helpers import (
     func_list,
-    is_purepy,
     keeps_the_fill_value_as_given,
     random_values,
 )
@@ -157,7 +156,6 @@ def test_scalar_input(impl, func, value):
         np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_custom_callable(impl, rng):
     def custom_callable(x):
         return x.sum()
