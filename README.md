@@ -85,7 +85,7 @@ npg.aggregate(np.array([0, 1, 0, 1, 0]), np.array([1, 2, 3, 4, 5]), func="cumsum
 # array([1, 2, 4, 6, 9])
 ```
 
-**Custom functions.** Any callable works. Non-numeric output needs `dtype=object`, and since the default fill value of a custom function cannot be guessed, give one explicitly. Use the NumPy implementation for this: Numba can only compile numeric functions, so with Numba installed the plain `aggregate` fails on the string example below.
+**Custom functions.** Any callable works. Non-numeric output needs `dtype=object`, and since the default fill value of a custom function cannot be guessed, give one explicitly. Use the NumPy implementation for this: Numba can only compile numeric functions, so with Numba installed the plain `aggregate` fails on the string example below — and it compiles *functions*, so a callable object (a `functools.partial`, a dataclass with `__call__`) is for the NumPy implementation as well.
 
 ```python
 group_idx = np.array([1, 0, 1, 4, 1])
