@@ -59,6 +59,11 @@ tracker = "https://github.com/ml31415/numpy-groupies/issues"
 [tool.mypy]
 files = ["numpy_groupies"]
 exclude = '(^|/)(tests|benchmarks)/'
+# pre-commit passes the staged files only - silent following keeps the hook
+# checking each touched file against the package without re-reporting the
+# errors of every untouched module on the import path; a bare ``mypy`` run
+# (which uses the files list) still checks the whole package
+follow_imports = "silent"
 extra_checks = true
 warn_unused_ignores = true
 warn_return_any = true
