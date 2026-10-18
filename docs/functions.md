@@ -74,12 +74,12 @@ One value per group.
 | `std`          | Standard deviation; `ddof` as for `var`. |
 | `min`, `max`   | Minimum / maximum. (aliases: `amin`, `minimum`; `amax`, `maximum`) |
 | `first`, `last` | First / last item of the group, in the order of appearance in `a`. |
-| `argmin`, `argmax` | Index *in `a`* of the minimum / maximum of each group. |
+| `argmin`, `argmax` | Index *in `a`* of the minimum / maximum of each group. A group whose values include a NaN has no minimum or maximum to name and answers `fill_value` (`-1`), like a group without any item. |
 | `trapezoid`    | Trapezoidal integral of the items, taken in the order they appear in `a`. `dx` sets the sample spacing. A group of fewer than two items integrates to 0. The callable `np.trapezoid` can be passed as `func` too. |
 
 ### NaN-skipping variants
 
-Prefix with `nan` — `nansum`, `nanprod`, `nanlen`, `nansumofsquares`, `nanmean`, `nanmedian`, `nanvar`, `nanstd`, `nanmin`, `nanmax`, `nanfirst`, `nanlast`, `nanargmin`, `nanargmax`, `nantrapezoid`, `nanall`, `nanany`, and the cumulative `nancumsum`, `nancumprod`, `nancummin`, `nancummax` — to skip NaNs instead of propagating them. `nanlen` counts the non-NaN items. For `nantrapezoid` this means integrating over the remaining items, bridging the gap a NaN leaves.
+Prefix with `nan` — `nansum`, `nanprod`, `nanlen`, `nansumofsquares`, `nanmean`, `nanmedian`, `nanvar`, `nanstd`, `nanmin`, `nanmax`, `nanfirst`, `nanlast`, `nanargmin`, `nanargmax`, `nantrapezoid`, `nanall`, `nanany`, and the cumulative `nancumsum`, `nancumprod`, `nancummin`, `nancummax` — to skip NaNs instead of propagating them. `nanlen` counts the non-NaN items. For `nantrapezoid` this means integrating over the remaining items, bridging the gap a NaN leaves. For `nanargmin` / `nanargmax` the two forms differ not in the value they return but in whether they return one at all: an index cannot *be* a NaN, so the plain forms have no answer for a group holding a NaN and give `fill_value`, while the skipping ones name the index of the extreme among the items that are left.
 
 ### Boolean
 
@@ -146,7 +146,7 @@ Groups without any item are filled with `fill_value`. By default this matches wh
 | `all`, `any`, `allnan`, `anynan`                       | `False`            |
 | `mean`, `median`, `var`, `std` (and `nan`-forms)       | `nan`              |
 | `min`, `max`, `first`, `last` (and `nan`-forms)        | `nan` for floating input, `0` where the output is an integer type, which cannot hold `nan` |
-| `argmax`, `argmin` (and `nan`-forms)                   | `-1`               |
+| `argmax`, `argmin` (and `nan`-forms)                   | `-1` — for a group without items, and for a group whose items include a NaN (an index cannot be a NaN, so there is nothing to name); `nanargmax` / `nanargmin` name an index for such a group |
 | `trapezoid`, `nantrapezoid`                            | `0`, as for a single sample |
 | `array`, `sort`                                        | an empty sequence  |
 | a custom `func`                                        | `nan` for floating input, `0` otherwise |
