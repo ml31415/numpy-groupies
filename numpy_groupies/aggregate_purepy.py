@@ -144,19 +144,33 @@ def _sort(group_idx, a: Any, reverse: bool = False) -> list[Any]:
     # values, which is not order reversing for the integral dtypes (the smallest
     # signed value survives negation as itself, and a zero of an unsigned one
     # stays the smallest key) - and plain python lists cannot be negated at all
-    sortidx = _argsort(list(zip(group_idx, a)))
+
+    # a nan has no place in the order python sees: it compares neither smaller nor
+    # greater, so sorted() leaves it wherever it happened to sit, while numpy orders
+    # it as the largest value there is.  Asking for the nan before the value settles
+    # every comparison of a nan with a value before the two of them come up, and
+    # moves the nans of a group behind its values
+    poisoned = [val != val for val in a]
+    sortidx = _argsort(list(zip(group_idx, poisoned, a)))
     revidx = _argsort(_argsort(group_idx))
     a_srt = [a[si] for si in sortidx]
     if reverse:
         # flip each group's run of values instead - the labels are sorted, so
         # every group is one contiguous run of the result
         labels = [group_idx[si] for si in sortidx]
+        trailing = [poisoned[si] for si in sortidx]
         begin = 0
         while begin < len(a_srt):
             end = begin
             while end + 1 < len(a_srt) and labels[end + 1] == labels[begin]:
                 end += 1
-            a_srt[begin : end + 1] = reversed(a_srt[begin : end + 1])
+            # only the ordered part of the run is flipped: a nan is not made the
+            # smallest value by asking for the order the other way round, so it
+            # stays where the ascending order put it
+            last = end + 1
+            while last > begin and trailing[last - 1]:
+                last -= 1
+            a_srt[begin:last] = reversed(a_srt[begin:last])
             begin = end + 1
     return [a_srt[ri] for ri in revidx]
 
