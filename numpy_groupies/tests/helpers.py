@@ -177,14 +177,3 @@ def is_purepy(impl, *args, **kwargs):
 def is_numpy(impl, *args, **kwargs):
     """True for the numpy backend."""
     return impl_name(impl) == "numpy"
-
-
-def names_another_index_when_a_group_holds_a_nan(impl, func, *args, **kwargs):
-    """True for the arg reductions of purepy on poisoned data.
-
-    purepy walks a group and reports the position of the value it settled on:
-    the plain one points at the nan that poisoned the group, and the nan
-    counterpart counts among the values it did not skip.  The other backends
-    follow numpy here, and so does the group loop of :mod:`.reference`.
-    """
-    return is_purepy(impl) and func in ("argmin", "argmax", "nanargmin", "nanargmax")

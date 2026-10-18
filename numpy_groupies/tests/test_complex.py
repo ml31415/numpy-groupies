@@ -8,7 +8,6 @@ from numpy_groupies.tests.helpers import (
     aggregate_numba,
     impl_name,
     is_purepy,
-    names_another_index_when_a_group_holds_a_nan,
 )
 from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
 
@@ -519,7 +518,6 @@ def test_order_functions_are_not_rejected_by_numba(func):
     np.testing.assert_array_equal(res, expected)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_nan_in_one_part_of_the_order_functions(impl):
     # a nan in either part is a nan of the value, wherever it sits in it.  The
     # value is built with complex(): `np.nan * 1j` puts a nan in both parts
@@ -565,7 +563,6 @@ def test_order_functions_use_the_extreme_value_of_the_order():
 
 
 @pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
-@pytest.mark.deselect_if(func=names_another_index_when_a_group_holds_a_nan)
 @pytest.mark.parametrize("func", complex_funcs)
 def test_matches_the_group_loop(impl, func, block):
     """a nan in either part is a nan for the whole value, and the group loop

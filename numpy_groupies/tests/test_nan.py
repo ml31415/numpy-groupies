@@ -15,7 +15,6 @@ from numpy_groupies import aggregate_np, aggregate_purepy
 from numpy_groupies.tests.helpers import (
     func_list,
     is_purepy,
-    names_another_index_when_a_group_holds_a_nan,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
@@ -130,7 +129,6 @@ def test_min_max_nans(impl):
     np.testing.assert_array_equal(res, [np.nan, 9])
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_argmin_argmax_nans(impl):
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, 3, 1, np.nan, 1, 2, 3])
@@ -142,7 +140,6 @@ def test_argmin_argmax_nans(impl):
     np.testing.assert_array_equal(res, [3, -1, -1, -1])
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_nanargmin_nanargmax_nans(impl):
     group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
     a = np.array([4, 4, np.nan, 1, np.nan, np.nan, np.nan, np.nan])
@@ -273,7 +270,6 @@ def test_sort_leaves_nan_at_the_end(impl):
 
 
 @pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
-@pytest.mark.deselect_if(func=names_another_index_when_a_group_holds_a_nan)
 @pytest.mark.parametrize("func", func_list)
 def test_matches_the_group_loop(impl, func, block):
     """``block.a_nans``, the same values with nans in them, against the group loop.
