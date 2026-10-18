@@ -9,7 +9,12 @@ single value instead of a column) behaves like it does in numpy.
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import func_list, is_purepy, random_values
+from numpy_groupies.tests.helpers import (
+    func_list,
+    keeps_the_fill_value_as_given,
+    random_values,
+)
+from numpy_groupies.tests.reference import aggregate_ref
 from numpy_groupies.utils import default_fill_value
 
 # the one-out-per-item functions (cum*, sort) have nothing to fill an absent
@@ -151,7 +156,6 @@ def test_scalar_input(impl, func, value):
         np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_custom_callable(impl, rng):
     def custom_callable(x):
         return x.sum()
@@ -197,3 +201,25 @@ def test_parameter_missing(impl):
 def test_shape_mismatch(impl):
     with pytest.raises(ValueError):
         impl.aggregate(np.array((1, 2, 3)), np.array((1, 2)))
+
+
+@pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
+@pytest.mark.deselect_if(func=keeps_the_fill_value_as_given)
+@pytest.mark.parametrize("fill_value", [0, 1, np.nan])
+@pytest.mark.parametrize("func", func_list)
+def test_the_fill_value_matches_the_group_loop(impl, func, fill_value, block):
+    """what an absent group is filled with, and which fill value is refused.
+
+    Two of the block's labels name no value, so the fill value shows up in the
+    result - and one that does not fit the dtype of the result is refused, which
+    the group loop refuses before it computes anything.
+    """
+    labels, a = block.group_idx, block.a
+    kwargs = {"func": func, "size": block.size, "fill_value": fill_value}
+    try:
+        want = aggregate_ref(labels, a, **kwargs)
+    except ValueError:
+        with pytest.raises(ValueError):
+            impl.aggregate(labels, a, **kwargs)
+    else:
+        np.testing.assert_allclose(impl.aggregate(labels, a, **kwargs), want, rtol=10**-10)

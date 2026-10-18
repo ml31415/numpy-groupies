@@ -11,7 +11,7 @@ import itertools
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import is_purepy, random_values
+from numpy_groupies.tests.helpers import func_list, is_purepy, random_values
 from numpy_groupies.tests.reference import aggregate_ref
 
 
@@ -232,3 +232,17 @@ def test_sort_of_a_small_group_matches_the_reference(impl, size, dtype):
         res = impl.aggregate(group_idx, a, func="sort", reverse=reverse)
         ref = aggregate_ref(group_idx, a, func="sort", reverse=reverse)
         np.testing.assert_array_equal(res, ref)
+
+
+@pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
+@pytest.mark.parametrize("func", func_list)
+def test_matches_the_group_loop(impl, func, block):
+    """every function over ``block.a``, which holds no nan, against the group loop
+    of :mod:`.reference`.
+
+    The backend and the loop share no code: no bincount, no ufunc trick, no
+    compiled kernel, one computation per group.
+    """
+    got = impl.aggregate(block.group_idx, block.a, func=func, size=block.size)
+    want = aggregate_ref(block.group_idx, block.a, func=func, size=block.size)
+    np.testing.assert_allclose(got, want, rtol=10**-10)

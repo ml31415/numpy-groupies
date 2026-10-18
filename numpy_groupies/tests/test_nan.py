@@ -12,7 +12,13 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_np, aggregate_purepy
-from numpy_groupies.tests.helpers import is_purepy, random_values
+from numpy_groupies.tests.helpers import (
+    func_list,
+    is_purepy,
+    names_another_index_when_a_group_holds_a_nan,
+    random_values,
+)
+from numpy_groupies.tests.reference import aggregate_ref
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64], ids=["float16", "float32", "float64"])
@@ -172,7 +178,6 @@ def test_cumsum_nan(impl):
     np.testing.assert_array_equal(res, [np.nan, np.nan, np.nan, 5.0])
 
 
-@pytest.mark.deselect_if(func=is_purepy)
 def test_nancumsum(impl):
     # https://github.com/ml31415/numpy-groupies/issues/79
     group_idx = [0, 0, 0, 1, 1, 0, 0]
@@ -265,3 +270,18 @@ def test_sort_leaves_nan_at_the_end(impl):
     np.testing.assert_array_equal(
         impl.aggregate(group_idx, a, func="sort", reverse=True), [2.0, 1.0, np.nan, np.nan, 0.5, np.nan]
     )
+
+
+@pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
+@pytest.mark.deselect_if(func=names_another_index_when_a_group_holds_a_nan)
+@pytest.mark.parametrize("func", func_list)
+def test_matches_the_group_loop(impl, func, block):
+    """``block.a_nans``, the same values with nans in them, against the group loop.
+
+    The plain functions let the nan reach the result, their nan counterparts
+    skip the value, and a group of nothing but nans is an empty group for them -
+    the rule the loop spells out one group at a time.
+    """
+    got = impl.aggregate(block.group_idx, block.a_nans, func=func, size=block.size)
+    want = aggregate_ref(block.group_idx, block.a_nans, func=func, size=block.size)
+    np.testing.assert_allclose(got, want, rtol=10**-10)

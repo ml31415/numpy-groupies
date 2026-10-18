@@ -6,12 +6,13 @@ each of them.  So are :mod:`.test_api` (the calling contract),
 :mod:`.test_dtypes` (the dtype and precision policy), :mod:`.test_nan` (what
 nans do to their group), :mod:`.test_funcs` (the value of each function),
 :mod:`.test_axis` (axis aggregation and multi-dimensional labels),
-:mod:`.test_complex` (complex input), :mod:`.test_utils` (the exported helper
-functions) and :mod:`.test_compare` (the backends against each other).
-:mod:`.test_purepy`, :mod:`.test_numba` and :mod:`.test_numba_kernels` cover
-what only one implementation has.
+:mod:`.test_complex` (complex input) and :mod:`.test_utils` (the exported
+helper functions).  :mod:`.test_purepy`, :mod:`.test_numba` and
+:mod:`.test_numba_kernels` cover what only one implementation has.
 
-Shared helpers live in :mod:`.helpers`, the group loop that serves as the
-reference of them all in :mod:`.reference`, fixtures and hooks in the
-``conftest`` modules.
+Their yardstick is :mod:`.reference`, ``aggregate`` spelled out as a group loop:
+a backend is measured against it, never against itself.  Where one deviates
+from it without raising, the predicate that names the deviation lives in
+:mod:`.helpers`.  What the comparison against the group loop cannot tell apart
+is not dropped from it, but gets a test of its own that asserts the floor of it.
 """
