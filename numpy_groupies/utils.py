@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import platform
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -21,6 +21,19 @@ from numpy_groupies.aggregate_common import (
     resolve_name,
 )
 
+# what input_validation hands back: (raveled integer indices, the values -
+# possibly still a python scalar -, the flat output size, the input index
+# dimensionality, the (possibly shaped) output size and the shape an arg
+# reduction has to unravel its positions with, in that order
+ValidatedInput: TypeAlias = tuple[
+    npt.NDArray[np.integer],
+    npt.NDArray[np.generic] | int | float | complex,
+    int,
+    int,
+    int | tuple[int, ...] | npt.NDArray[np.integer],
+    tuple[int, ...] | None,
+]
+
 
 def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike | None = None) -> Any:
     """The value ``aggregate`` uses for groups missing from ``group_idx``.
@@ -32,18 +45,24 @@ def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike | No
     return resolve_fill_value(func, DEFAULT_FILL_VALUE, np.dtype(dtype) if dtype is not None else np.float64)
 
 
-def check_nton_shape(ret: npt.NDArray[np.generic], size: int | tuple[int, ...] | None, func: str) -> None:
+def check_nton_shape(
+    ret: npt.NDArray[np.generic],
+    size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
+    func: str | Callable[..., Any],
+) -> None:
     """Complain early when a one-out-per-in function has to fill a hole.
 
     ``sort`` and the ``cum``-functions emit exactly one value per input item,
     so a group without items leaves the output too short for the requested
     shape - which numpy would otherwise report as a plain reshape error.
     """
-    if ret.size != int(np.prod(size)):
+    # np.prod and tuple take a plain int at runtime, the stubs spell out only arrays
+    prod = int(np.prod(cast("Any", size)))
+    if ret.size != prod:
         name = getattr(func, "__name__", func)
         raise ValueError(
             f"'{name}' gives one value per input item and cannot fill the "
-            f"{int(np.prod(size)) - ret.size} absent group entries of size {tuple(size)}"
+            f"{prod - ret.size} absent group entries of size {tuple(cast('Any', size))}"
         )
 
 
@@ -109,13 +128,13 @@ _next_float_dtype = {
 }
 
 
-def minimum_dtype(x, dtype: np.dtype = np.bool_) -> np.dtype:
+def minimum_dtype(x: Any, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:
     """
     Returns the "most basic" dtype which represents `x` properly, which provides at least the same
     value range as the specified dtype.
     """
 
-    def check_type(x, dtype):
+    def check_type(x: Any, dtype: np.dtype) -> bool:
         try:
             with np.errstate(invalid="ignore"):
                 converted = np.array(x).astype(dtype)
@@ -124,7 +143,7 @@ def minimum_dtype(x, dtype: np.dtype = np.bool_) -> np.dtype:
         # False if some overflow has happened
         return bool(converted == x) or (np.ndim(x) == 0 and np.isnan(x))
 
-    def type_loop(x, dtype, dtype_dict, default=None):
+    def type_loop(x: Any, dtype: np.dtype, dtype_dict: dict[str, Any], default: Any = None) -> np.dtype:
         while True:
             try:
                 dtype = np.dtype(dtype_dict[dtype.name])
@@ -132,7 +151,7 @@ def minimum_dtype(x, dtype: np.dtype = np.bool_) -> np.dtype:
                     return np.dtype(dtype)
             except KeyError:
                 if default is not None:
-                    return np.dtype(default)
+                    return cast(np.dtype, np.dtype(default))
                 raise ValueError(f"Can not determine dtype of {x!r}")
 
     dtype = np.dtype(dtype)
@@ -145,7 +164,7 @@ def minimum_dtype(x, dtype: np.dtype = np.bool_) -> np.dtype:
         return type_loop(x, dtype, _next_int_dtype, default=np.float32)
 
 
-def minimum_dtype_scalar(x, dtype: np.dtype | None, a) -> np.dtype:
+def minimum_dtype_scalar(x: Any, dtype: npt.DTypeLike | None, a: Any) -> np.dtype:
     if dtype is None:
         dtype = np.dtype(type(a)) if isinstance(a, (int, float, complex)) else a.dtype
     return minimum_dtype(x, dtype)
@@ -208,20 +227,23 @@ def scalar_dtype(a: Any) -> np.dtype:
 
 
 def check_dtype(
-    dtype: npt.DTypeLike, func_str: str, a: npt.NDArray[np.generic], n: int | tuple[int, ...] | None
+    dtype: npt.DTypeLike | None,
+    func_str: str,
+    a: npt.NDArray[np.generic] | complex,
+    n: int | tuple[int, ...] | None,
 ) -> np.dtype:
     if is_scalar_input(a):
         if func_str not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
         a_dtype = scalar_dtype(a)
     else:
-        a_dtype = a.dtype
+        a_dtype = cast("npt.NDArray[np.generic]", a).dtype
 
     return resolve_output_dtype(dtype, func_str, a_dtype, n)
 
 
 def resolve_output_dtype(
-    dtype: npt.DTypeLike, func_str: str, a_dtype: np.dtype, n: int | tuple[int, ...] | None
+    dtype: npt.DTypeLike | None, func_str: str, a_dtype: np.dtype, n: int | tuple[int, ...] | None
 ) -> np.dtype:
     """The dtype resolution of ``check_dtype`` given the input dtype directly.
 
@@ -267,7 +289,9 @@ def resolve_output_dtype(
                         # TODO: strictly speaking it might need float
                         return np.dtype(np.int64)
                     elif np.issubdtype(a_dtype, np.integer):
-                        maxval = np.iinfo(a_dtype).max * n
+                        # the summing path arrives with a flat count, the one-out
+                        # per-in path never reaches this branch
+                        maxval = np.iinfo(a_dtype).max * cast("int", n)
                         return minimum_dtype(maxval, a_dtype)
                     elif np.issubdtype(a_dtype, np.bool_):
                         return minimum_dtype(n, a_dtype)
@@ -283,7 +307,7 @@ def resolve_output_dtype(
                         return a_dtype
 
 
-def minval(fill_value, dtype: np.dtype | None) -> Any:
+def minval(fill_value: Any, dtype: np.dtype | None) -> Any:
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return -np.inf
@@ -297,7 +321,7 @@ def minval(fill_value, dtype: np.dtype | None) -> Any:
     return np.finfo(dtype).min
 
 
-def maxval(fill_value, dtype: np.dtype | None) -> Any:
+def maxval(fill_value: Any, dtype: np.dtype | None) -> Any:
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return np.inf
@@ -310,7 +334,7 @@ def maxval(fill_value, dtype: np.dtype | None) -> Any:
     return np.finfo(dtype).max
 
 
-def check_fill_value(fill_value, dtype, func=None):
+def check_fill_value(fill_value: Any, dtype: np.dtype, func: str | None = None) -> Any:
     if func in ("all", "any", "allnan", "anynan"):
         check_boolean(fill_value)
     else:
@@ -331,13 +355,21 @@ def check_group_idx(
         raise ValueError("group_idx contains negative indices")
 
 
-def _ravel_group_idx(group_idx, a, axis, size, order, method="ravel"):
+def _ravel_group_idx(
+    group_idx: Any,
+    a: npt.NDArray[np.generic],
+    axis: int,
+    size: Any,
+    order: str,
+    method: str = "ravel",
+) -> tuple[Any, Any]:
     ndim_a = a.ndim
     # Create the broadcast-ready multidimensional indexing.
     # Note the user could do this themselves, so this is
     # very much just a convenience.
     size_in = int(np.max(group_idx)) + 1 if size is None else size
     group_idx_in = group_idx
+    # the labels are collected per input dimension before ravel_multi_index folds them
     group_idx = []
     size = []
     for ii, s in enumerate(a.shape):
@@ -360,13 +392,13 @@ def _ravel_group_idx(group_idx, a, axis, size, order, method="ravel"):
     # Use the indexing, and return. It's a bit simpler than
     # using trying to keep all the logic below happy
     if method == "ravel":
-        group_idx = np.ravel_multi_index(group_idx, size, order=order, mode="raise")
+        group_idx = np.ravel_multi_index(group_idx, size, order=cast("Any", order), mode="raise")
     elif method == "offset":
         group_idx = offset_labels(group_idx_in, a.shape, axis, order, size_in)
     return group_idx, size
 
 
-def offset_labels(group_idx, inshape, axis, order, size):
+def offset_labels(group_idx: Any, inshape: tuple[int, ...], axis: int, order: str, size: int) -> Any:
     """
     Offset group labels by dimension. This is used when we reduce over a subset of the dimensions of
     group_idx. It assumes that the reductions dimensions have been flattened in the last dimension
@@ -387,15 +419,17 @@ def offset_labels(group_idx, inshape, axis, order, size):
 
 
 def input_validation(
-    group_idx,
-    a,
-    size=None,
-    order="C",
-    axis=None,
-    ravel_group_idx=True,
-    check_bounds=True,
-    func=None,
-):
+    # the unvalidated user input - this function is exactly what narrows it,
+    # including duck arrays that sit outside the ArrayLike union
+    group_idx: Any,
+    a: Any,
+    size: Any = None,
+    order: str = "C",
+    axis: int | None = None,
+    ravel_group_idx: bool = True,
+    check_bounds: bool = True,
+    func: str | Callable[..., Any] | None = None,
+) -> ValidatedInput:
     """
     Do some fairly extensive checking of group_idx and a, trying to give the user as much help as
     possible with what is wrong. Also, convert ndim-indexing to 1d indexing.
@@ -467,13 +501,18 @@ def input_validation(
             one_to_one = is_form_3 and isinstance(func_name, str) and ("cum" in func_name or func_name == "sort")
             size = orig_shape if one_to_one else size
             ravel_order = order if one_to_one else "C"
-            return (
-                group_idx.ravel(order=ravel_order),
-                a.ravel(order=ravel_order),
-                flat_size,
-                ndim_idx,
-                size,
-                unravel_shape,
+            # the validation above has established the tuple's types, mypy has
+            # not followed it - the cast states the contract the checks enforce
+            return cast(
+                "ValidatedInput",
+                (
+                    group_idx.ravel(order=ravel_order),
+                    a.ravel(order=ravel_order),
+                    flat_size,
+                    ndim_idx,
+                    size,
+                    unravel_shape,
+                ),
             )
 
     if ndim_idx == 1:
@@ -482,8 +521,8 @@ def input_validation(
         else:
             if not np.isscalar(size):
                 raise ValueError("output size must be scalar or None")
-            if check_bounds and np.any(group_idx > size - 1):
-                raise ValueError(f"one or more indices are too large for size {size}")
+            if check_bounds and np.any(group_idx > cast("Any", size) - 1):
+                raise ValueError(f"one or more indices are too large for size {cast('Any', size)}")
         flat_size = size
     else:
         if size is None:
@@ -493,13 +532,15 @@ def input_validation(
         elif len(size) != len(group_idx):
             raise ValueError(f"{len(size)} sizes given, but {len(group_idx)} output dimensions specified in index")
         if ravel_group_idx:
-            group_idx = np.ravel_multi_index(group_idx, size, order=order, mode="raise")
+            group_idx = np.ravel_multi_index(group_idx, size, order=cast("Any", order), mode="raise")
         flat_size = np.prod(size)
 
     if not (ndim_a == 0 or len(a) == group_idx.size):
         raise ValueError("group_idx and a must be of the same length, or a can be scalar")
 
-    return group_idx, a, flat_size, ndim_idx, size, None
+    # the validation above has established the tuple's types, mypy has not
+    # followed it - the cast states the contract the checks enforce
+    return cast("ValidatedInput", (group_idx, a, flat_size, ndim_idx, size, None))
 
 
 # General tools
@@ -510,26 +551,28 @@ def unpack(group_idx: npt.ArrayLike, ret: npt.NDArray[np.generic]) -> npt.NDArra
     Take an aggregate packed array and uncompress it to the size of group_idx. This is equivalent to
     ret[group_idx].
     """
-    return ret[group_idx]
+    # every ArrayLike that indexes at runtime does so as an array or a sequence -
+    # the scalar members of the union are not indexable and would raise in numpy too
+    return cast("npt.NDArray[np.generic]", ret[cast("Any", group_idx)])
 
 
-def allnan(x):
+def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:
     return np.all(np.isnan(x))
 
 
-def anynan(x):
+def anynan(x: npt.NDArray[np.inexact]) -> np.bool_:
     return np.any(np.isnan(x))
 
 
-def nanfirst(x):
+def nanfirst(x: npt.NDArray[np.inexact]) -> Any:
     return x[~np.isnan(x)][0]
 
 
-def nanlast(x):
+def nanlast(x: npt.NDArray[np.inexact]) -> Any:
     return x[~np.isnan(x)][-1]
 
 
-def multi_arange(n: npt.ArrayLike) -> npt.NDArray[np.intp]:
+def multi_arange(n: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
     """By example:
 
         #    0  1  2  3  4  5  6  7  8
@@ -551,7 +594,7 @@ def multi_arange(n: npt.ArrayLike) -> npt.NDArray[np.intp]:
     ret = np.ones(n_cumsum[-1] + 1, dtype=int)
     ret[n_cumsum[n_mask]] -= n[n_mask]
     ret[0] -= 1
-    return np.cumsum(ret)[:-1]
+    return cast("npt.NDArray[np.intp]", np.cumsum(ret)[:-1])
 
 
 def label_contiguous_1d(X: npt.NDArray[np.generic]) -> npt.NDArray[np.intp]:
@@ -576,12 +619,13 @@ def label_contiguous_1d(X: npt.NDArray[np.generic]) -> npt.NDArray[np.intp]:
     if X.ndim != 1:
         raise ValueError("this is for 1d masks only.")
 
-    is_start = np.empty(len(X), dtype=bool)
+    is_start = cast("npt.NDArray[np.bool_]", np.empty(len(X), dtype=bool))
     is_start[0] = X[0]  # True if X[0] is True or non-zero
 
     if X.dtype.kind == "b":
-        is_start[1:] = ~X[:-1] & X[1:]
-        M = X
+        # the kind test has established a boolean array, the signature says generic
+        M = cast("npt.NDArray[np.bool_]", X)
+        is_start[1:] = ~M[:-1] & M[1:]
     else:
         M = X.astype(bool)
         is_start[1:] = X[:-1] != X[1:]
@@ -589,7 +633,7 @@ def label_contiguous_1d(X: npt.NDArray[np.generic]) -> npt.NDArray[np.intp]:
 
     L = np.cumsum(is_start)
     L[~M] = 0
-    return L
+    return cast("npt.NDArray[np.intp]", L)
 
 
 def relabel_groups_unique(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
@@ -632,13 +676,16 @@ def relabel_groups_masked(group_idx: npt.NDArray[np.integer], keep_group: npt.Ar
     ``keep_group`` should be bool and ``group_idx`` int. Values in ``group_idx`` can be any order.
     """
 
-    keep_group = keep_group.astype(bool, copy=not keep_group[0])
+    # the docstring asks for a boolean array, the ArrayLike of the signature is
+    # what the astype below normalizes it from
+    keep_mask = cast("npt.NDArray[np.bool_]", keep_group)
+    keep_group = keep_mask.astype(bool, copy=not keep_mask[0])
     if not keep_group[0]:  # ensuring keep_group[0] is True makes life easier
         keep_group[0] = True
 
     relabel = np.zeros(keep_group.size, dtype=group_idx.dtype)
     relabel[keep_group] = np.arange(np.count_nonzero(keep_group))
-    return relabel[group_idx]
+    return cast("npt.NDArray[np.intp]", relabel[group_idx])
 
 
 def is_duck_array(value: Any) -> bool:
