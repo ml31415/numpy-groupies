@@ -63,8 +63,12 @@ def _mean(x: Sequence[Any]) -> Any:
 
 def _median(x: Sequence[Any]) -> Any:
     if any(v != v for v in x):
-        # like np.median, any nan poisons the whole group
-        return math.nan
+        # like np.median, any nan poisons the whole group - and the poison is
+        # shaped like the values it poisons: a plain nan answers a complex group
+        # with a float, whose imaginary part states a zero the group never
+        # claimed, while the other two implementations answer a nan in both parts
+        # (and for real values the product is the plain nan all three agree on)
+        return x[0] * math.nan
     srt = sorted(x)
     mid = len(srt) // 2
     if len(srt) % 2 == 1:

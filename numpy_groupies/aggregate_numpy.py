@@ -12,6 +12,7 @@ from numpy_groupies.aggregate_common import (
     build_dispatch,
     funcs_no_separate_nan,
     get_func,
+    nan_of,
     raise_integer_mean_overflow,
     raise_integer_variance_span_overflow,
     resolve_fill_value,
@@ -358,9 +359,11 @@ def _median(
             vals[grp] = (part[mid - 1] + part[mid]) / 2
     if np.issubdtype(a_srt.dtype, np.inexact):
         # like np.median, any nan poisons its whole group - partition does
-        # not order nans, so they are detected with a per-group reduction
+        # not order nans, so they are detected with a per-group reduction, and
+        # the poison is shaped like the result rather than written in as a plain
+        # nan, which for a complex group would leave its other part at a zero
         nan_groups = np.logical_or.reduceat(np.isnan(a_srt), starts)
-        vals[nan_groups] = np.nan
+        vals[nan_groups] = nan_of(vals.dtype)
 
     ret = np.full(size, fill_value, dtype=dtype or vals.dtype)
     ret[group_idx_srt[starts]] = vals
