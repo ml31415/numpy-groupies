@@ -234,6 +234,18 @@ def _is_complex_dtype(dtype: Any) -> bool:
     )
 
 
+def nan_of(dtype: Any) -> Any:
+    """A nan shaped like ``dtype``: a nan in every part it has.
+
+    A plain ``nan`` written into a complex result lands as ``nan+0j``, which
+    states that the part the nan never touched was a zero - and a group that was
+    poisoned by one of its values never stated anything about its parts at all.
+    The default of a function for a complex result takes this shape, and so does
+    the poisoning of a group, for the same reason.
+    """
+    return nan + nan * 1j if _is_complex_dtype(dtype) else nan
+
+
 def resolve_fill_value(func: str | Callable[..., Any], fill_value: Any, dtype: Any) -> Any:
     """Replace the ``DEFAULT_FILL_VALUE`` sentinel with the default of ``func``.
 
@@ -264,7 +276,7 @@ def resolve_fill_value(func: str | Callable[..., Any], fill_value: Any, dtype: A
         # a nan of a complex output has to be a nan in both parts - the numpy
         # kernels divide an empty sum by zero and so get nan+nanj for free,
         # and filling with nan+0j would make the backends disagree
-        value = nan + nan * 1j
+        value = nan_of(dtype)
     return list(value) if isinstance(value, list) else value
 
 

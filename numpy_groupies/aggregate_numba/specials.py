@@ -119,8 +119,13 @@ def _median_driver_factory(nans):
             m = _valid(g, a_sorted, counts, starts, buf, nans)
             if m == 0:
                 # all-nan group for nanmedian, or a nan-poisoned group
-                # for plain median (where any nan is contagious)
-                out[g] = fill_value if nans else np.nan
+                # for plain median (where any nan is contagious) - the poison is
+                # shaped like the output, since a plain nan written into a complex
+                # column leaves its imaginary part at a zero the group never
+                # claimed to have.  The cell still holds the fill value, which is
+                # of the output dtype, and a nan times a value of that dtype is a
+                # nan in every part it has (for a real dtype: the plain nan)
+                out[g] = fill_value if nans else out[g] * np.nan
             else:
                 out[g] = _middle(buf[:m])
         return out
