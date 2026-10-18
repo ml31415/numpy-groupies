@@ -20,13 +20,33 @@ from numpy_groupies.tests.helpers import (
 from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
 
 
-@pytest.mark.parametrize("func", [np.argmin, np.argmax, np.nanargmin, np.nanargmax])
+@pytest.mark.parametrize(
+    "func",
+    [np.argmin, "argmin", np.argmax, "argmax", np.nanargmin, "nanargmin", np.nanargmax, "nanargmax"],
+    ids=[
+        "argmin-callable",
+        "argmin-name",
+        "argmax-callable",
+        "argmax-name",
+        "nanargmin-callable",
+        "nanargmin-name",
+        "nanargmax-callable",
+        "nanargmax-name",
+    ],
+)
 @pytest.mark.parametrize("axis", [0, 1, 2, -1, -2, -3])
 @pytest.mark.parametrize("order", ["C", "F"])
 def test_arg_alias_axis_coordinates(impl, func, axis, order):
-    """NumPy aliases report positions along the requested axis, including gaps."""
+    """NumPy aliases report positions along the requested axis, including gaps.
+
+    Both spellings of every alias are asked, since the bug behind this test was
+    one code path resolving the name of a ``func`` and the path next to it not
+    doing it: the position has to come out along the axis that was asked for,
+    whether the caller wrote ``"argmin"`` or ``np.argmin``.
+    """
     a = np.array(np.random.default_rng(0).normal(size=(3, 4, 5)), order=order)
-    if func in (np.nanargmin, np.nanargmax):
+    name = func if isinstance(func, str) else func.__name__
+    if name in ("nanargmin", "nanargmax"):
         a[0, 0, 0] = np.nan
     normalized_axis = axis % a.ndim
     labels = 1 - np.arange(a.shape[axis]) % 2
@@ -37,7 +57,7 @@ def test_arg_alias_axis_coordinates(impl, func, axis, order):
         positions = np.flatnonzero(labels == index[normalized_axis])
         if positions.size:
             values = [a[index[:normalized_axis] + (int(p),) + index[normalized_axis + 1 :]] for p in positions]
-            expected[index] = positions[func(values)]
+            expected[index] = positions[getattr(np, name)(values)]
 
     actual = impl.aggregate(labels, a, func=func, axis=axis, order=order, size=3)
     np.testing.assert_array_equal(actual, expected)
