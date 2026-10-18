@@ -185,7 +185,16 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
 
 def _compiled_group_loop(func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
     """Compile a user callable and wrap the per-group loop around it."""
-    nb_func = nb.njit(func)
+    try:
+        nb_func = nb.njit(func)
+    except TypeError as exc:
+        # numba compiles a function and refuses an instance of one's own, however
+        # it is called (a dataclass with a __call__ is not hashable either) - the
+        # answer is not to hide that behind a dict-key error of the cache above,
+        # but to say which of the implementations will run such a callable
+        raise TypeError(
+            "numba can only compile a function as func, a callable object is not one of those (the numpy implementation runs any callable)"
+        ) from exc
 
     @nb.njit
     def loop(sortidx, group_idx, a, ret):

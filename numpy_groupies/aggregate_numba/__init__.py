@@ -73,8 +73,12 @@ def _aggregate_custom(
     """Slow dispatch path for custom callables and unknown function names."""
     func = get_func(func, aliasing, _impl_dict)
     if not isinstance(func, str):
-        if cache in (None, False):
+        if cache in (None, False) or not _can_be_a_cache_key(func):
             # Keep None and False in order to accept empty dictionaries
+            # neither cache reaches an object that cannot be one of its keys (a
+            # dataclass instance is not hashable), so such a callable is compiled
+            # for this call: the kernel is the same, only its compilation is paid
+            # once more
             aggregate_op = build_generic_aggregate(func)
         elif cache is True:
             aggregate_op = _get_cached_generic(func)
@@ -93,6 +97,17 @@ def _aggregate_custom(
 def _get_cached_generic(func):
     """LRU-cache generic aggregate loops per user callable (bounded)."""
     return build_generic_aggregate(func)
+
+
+def _can_be_a_cache_key(obj: typing.Any) -> bool:
+    """Whether ``obj`` can serve as a key: the lru_cache and a caller's dict alike
+    ask their keys for a hash.
+    """
+    try:
+        hash(obj)
+    except TypeError:
+        return False
+    return True
 
 
 aggregate.__doc__ = (
