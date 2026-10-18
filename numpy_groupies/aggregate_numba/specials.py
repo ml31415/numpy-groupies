@@ -27,7 +27,16 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numpy import _aggregate_base
 
 
-def _numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis):
+def _numpy_fallback(
+    group_idx: npt.ArrayLike,
+    a: npt.ArrayLike,
+    func: str,
+    size: int | None,
+    fill_value: typing.Any,
+    order: str,
+    dtype: npt.DTypeLike | None,
+    axis: int | None,
+) -> npt.NDArray[np.generic]:
     """Hand an input dtype the compiled drivers cannot handle to numpy.
 
     Reached for complex input of ``median``: numba can neither partition
@@ -37,7 +46,7 @@ def _numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis):
     return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
 
 
-def _group_count(group_idx, size):
+def _group_count(group_idx: npt.NDArray[np.signedinteger], size: int) -> npt.NDArray[np.int64]:
     """bounds-checked per-group element counts"""
     counts = np.zeros(size, np.int64)
     for i in range(len(group_idx)):
@@ -50,12 +59,17 @@ def _group_count(group_idx, size):
     return counts
 
 
-def _group_starts(counts):
+def _group_starts(counts: npt.NDArray[np.int64]) -> npt.NDArray[np.int64]:
     """first index of each group-block"""
     return np.cumsum(counts) - counts
 
 
-def _group_place(group_idx, a, cursor, a_sorted):
+def _group_place(
+    group_idx: npt.NDArray[np.signedinteger],
+    a: npt.NDArray[np.generic],
+    cursor: npt.NDArray[np.int64],
+    a_sorted: npt.NDArray[np.generic],
+) -> None:
     """scatter the values into their group-blocks"""
     for i in range(len(group_idx)):
         g = group_idx[i]
@@ -63,11 +77,19 @@ def _group_place(group_idx, a, cursor, a_sorted):
         cursor[g] += 1
 
 
-def _median_valid(g, a_sorted, counts, starts, buf, nans):
+def _median_valid(
+    g: int,
+    a_sorted: npt.NDArray[np.generic],
+    counts: npt.NDArray[np.int64],
+    starts: npt.NDArray[np.int64],
+    buf: npt.NDArray[np.generic],
+    nans: bool,
+) -> int:
     """copy group g into buf, returning the number of usable values;
     groups with nans yield 0 for plain median (nan is contagious),
     while nanmedian keeps the group with the nans filtered out"""
-    begin, size_g = starts[g], counts[g]
+    begin: int = starts[g]
+    size_g: int = counts[g]
     if not nans:
         buf[:size_g] = a_sorted[begin : begin + size_g]
         if np.sum(buf[:size_g] != buf[:size_g]) > 0:
@@ -82,7 +104,7 @@ def _median_valid(g, a_sorted, counts, starts, buf, nans):
     return m
 
 
-def _median_middle(values):
+def _median_middle(values: npt.NDArray[np.generic]) -> typing.Any:
     """select the middle value(s) of a group - no sorting needed"""
     m = len(values)
     part = np.partition(values, m // 2)
@@ -95,14 +117,22 @@ def _median_middle(values):
     return (np.max(part[: m // 2]) * 1.0 + part[m // 2]) / 2
 
 
-def _median_driver_factory(nans):
+def _median_driver_factory(nans: bool) -> typing.Any:
     _count = njit_stable(_group_count)
     _starts = njit_stable(_group_starts)
     _place = njit_stable(_group_place)
     _valid = njit_stable(_median_valid)
     _middle = njit_stable(_median_middle)
 
-    def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
+    def driver(
+        group_idx: npt.NDArray[np.signedinteger],
+        a: npt.NDArray[np.generic],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: typing.Any,
+        ddof: typing.Any,
+    ) -> npt.NDArray[np.generic]:
         # median is order-insensitive and takes no ddof - both slots unused
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
@@ -156,7 +186,7 @@ _INSERTION_SORT_LIMIT = 32
 
 
 @njit_stable
-def _order_block(a_sorted, begin, size_g, reverse):
+def _order_block(a_sorted: npt.NDArray[np.generic], begin: int, size_g: int, reverse: bool) -> npt.NDArray[np.generic]:
     """order one group-block of the flat array, descending if ``reverse``.
 
     ``size_g`` is at least two, the caller leaves a block of a single value
@@ -212,14 +242,24 @@ def _order_block(a_sorted, begin, size_g, reverse):
     return a_sorted
 
 
-def _sort_blocks(a_sorted, counts, starts, reverse):
+def _sort_blocks(
+    a_sorted: npt.NDArray[np.generic],
+    counts: npt.NDArray[np.int64],
+    starts: npt.NDArray[np.int64],
+    reverse: bool,
+) -> None:
     """order the values inside every group-block, the singletons left alone"""
     for g in range(len(counts)):
         if counts[g] > 1:
             _order_block(a_sorted, starts[g], counts[g], reverse)
 
 
-def _sort_scatter(group_idx, a_sorted, starts, out):
+def _sort_scatter(
+    group_idx: npt.NDArray[np.signedinteger],
+    a_sorted: npt.NDArray[np.generic],
+    starts: npt.NDArray[np.int64],
+    out: npt.NDArray[np.generic],
+) -> None:
     """write the ordered blocks back to the positions their group occupies
     in the input - the j-th value of a group goes to its j-th appearance"""
     cursor = starts.copy()
@@ -229,14 +269,22 @@ def _sort_scatter(group_idx, a_sorted, starts, out):
         cursor[g] += 1
 
 
-def _sort_driver_factory(nans):
+def _sort_driver_factory(nans: bool) -> typing.Any:
     _count = njit_stable(_group_count)
     _starts = njit_stable(_group_starts)
     _place = njit_stable(_group_place)
     _blocks = njit_stable(_sort_blocks)
     _scatter = njit_stable(_sort_scatter)
 
-    def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
+    def driver(
+        group_idx: npt.NDArray[np.signedinteger],
+        a: npt.NDArray[np.generic],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: typing.Any,
+        ddof: typing.Any,
+    ) -> npt.NDArray[np.generic]:
         # sort emits one value per input item, so neither the group count nor
         # the fill value is of any use here; the reverse flag arrives in the
         # slot trapezoid uses for its sample spacing
@@ -276,7 +324,15 @@ class TrapezoidState(typing.NamedTuple):
     track: bool
 
 
-def _trapezoid_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _trapezoid_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: typing.Any,
+    forced_fill: typing.Any,
+) -> TrapezoidState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return TrapezoidState(
@@ -288,7 +344,9 @@ def _trapezoid_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, f
     )
 
 
-def _trapezoid_update(st, ri, i, val, fill_value, ddof):
+def _trapezoid_update(
+    st: TrapezoidState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
+) -> None:
     if st.track:
         st.untouched[ri] = False
     if st.pending[ri]:
@@ -300,7 +358,7 @@ def _trapezoid_update(st, ri, i, val, fill_value, ddof):
     st.prev[ri] = val
 
 
-def _trapezoid_untouched(st):
+def _trapezoid_untouched(st: TrapezoidState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 

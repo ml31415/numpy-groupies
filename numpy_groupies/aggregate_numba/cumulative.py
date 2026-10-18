@@ -21,16 +21,28 @@ class CumulativeState(typing.NamedTuple):
     out: npt.NDArray[np.generic]
 
 
-def _cumsum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _cumsum_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: typing.Any,
+    forced_fill: typing.Any,
+) -> CumulativeState:
     # every position of out is written in the same pass that fills running
     return CumulativeState(np.zeros(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
 
-def _cumsum_update(st, ri, i, val, fill_value, ddof):
+def _cumsum_update(
+    st: CumulativeState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
+) -> None:
     st.running[ri] += val
 
 
-def _cumsum_update_nan(st, ri, i, val, fill_value, ddof):
+def _cumsum_update_nan(
+    st: CumulativeState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
+) -> None:
     # select-form twin of _cumsum_update - a nan leaves the running value
     # unchanged, the position still records it.  integer input has no nan
     # and keeps the plain path (a python literal 0 would unify uint64 with
@@ -42,7 +54,7 @@ def _cumsum_update_nan(st, ri, i, val, fill_value, ddof):
         st.running[ri] += val
 
 
-def _cumsum_record(st, ri, i):
+def _cumsum_record(st: CumulativeState, ri: int, i: int) -> None:
     st.out[i] = st.running[ri]
 
 
@@ -59,15 +71,27 @@ cumsum = build_kernel(
 )
 
 
-def _cumprod_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _cumprod_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: typing.Any,
+    forced_fill: typing.Any,
+) -> CumulativeState:
     return CumulativeState(np.ones(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
 
-def _cumprod_update(st, ri, i, val, fill_value, ddof):
+def _cumprod_update(
+    st: CumulativeState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
+) -> None:
     st.running[ri] *= val
 
 
-def _cumprod_update_nan(st, ri, i, val, fill_value, ddof):
+def _cumprod_update_nan(
+    st: CumulativeState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
+) -> None:
     if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.running[ri] *= val if val == val else 1.0
     else:
@@ -75,7 +99,7 @@ def _cumprod_update_nan(st, ri, i, val, fill_value, ddof):
         st.running[ri] *= val
 
 
-def _cumprod_record(st, ri, i):
+def _cumprod_record(st: CumulativeState, ri: int, i: int) -> None:
     st.out[i] = st.running[ri]
 
 
@@ -106,7 +130,15 @@ class CumExtremaState(typing.NamedTuple):
     pending: npt.NDArray[np.bool_]
 
 
-def _cummax_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _cummax_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: typing.Any,
+    forced_fill: typing.Any,
+) -> CumExtremaState:
     return CumExtremaState(
         np.full(size, fill_value, out_dtype),
         np.full(n_input, fill_value, out_dtype),
@@ -114,7 +146,9 @@ def _cummax_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forc
     )
 
 
-def _cummax_update(st, ri, i, val, fill_value, ddof):
+def _cummax_update(
+    st: CumExtremaState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
+) -> None:
     # select-form on purpose, see reductions._max_update
     first = st.pending[ri]
     st.pending[ri] = False
@@ -126,7 +160,9 @@ def _cummax_update(st, ri, i, val, fill_value, ddof):
     st.running[ri] = val if (first or val != val or best) else cur
 
 
-def _cummax_update_nan(st, ri, i, val, fill_value, ddof):
+def _cummax_update_nan(
+    st: CumExtremaState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
+) -> None:
     # select-form twin of _cummax_update - nans neither win nor clear the
     # pending flag
     valid = val == val
@@ -140,7 +176,7 @@ def _cummax_update_nan(st, ri, i, val, fill_value, ddof):
     st.running[ri] = val if (valid & (first | best)) else cur
 
 
-def _cummax_record(st, ri, i):
+def _cummax_record(st: CumExtremaState, ri: int, i: int) -> None:
     st.out[i] = st.running[ri]
 
 
@@ -157,7 +193,15 @@ cummax = build_kernel(
 )
 
 
-def _cummin_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _cummin_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: typing.Any,
+    forced_fill: typing.Any,
+) -> CumExtremaState:
     return CumExtremaState(
         np.full(size, fill_value, out_dtype),
         np.full(n_input, fill_value, out_dtype),
@@ -165,7 +209,9 @@ def _cummin_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forc
     )
 
 
-def _cummin_update(st, ri, i, val, fill_value, ddof):
+def _cummin_update(
+    st: CumExtremaState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
+) -> None:
     # select-form on purpose, see reductions._min_update
     first = st.pending[ri]
     st.pending[ri] = False
@@ -177,7 +223,9 @@ def _cummin_update(st, ri, i, val, fill_value, ddof):
     st.running[ri] = val if (first or val != val or best) else cur
 
 
-def _cummin_update_nan(st, ri, i, val, fill_value, ddof):
+def _cummin_update_nan(
+    st: CumExtremaState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
+) -> None:
     valid = val == val
     first = st.pending[ri]
     st.pending[ri] = first & (val != val)
@@ -189,7 +237,7 @@ def _cummin_update_nan(st, ri, i, val, fill_value, ddof):
     st.running[ri] = val if (valid & (first | best)) else cur
 
 
-def _cummin_record(st, ri, i):
+def _cummin_record(st: CumExtremaState, ri: int, i: int) -> None:
     st.out[i] = st.running[ri]
 
 

@@ -1,6 +1,9 @@
 """Index-returning reductions: argmax and argmin."""
 
+import typing
+
 import numpy as np
+import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import (
     build_custom_kernel,
@@ -11,7 +14,10 @@ from numpy_groupies.aggregate_numba.compose import (
 from numpy_groupies.aggregate_numba.jit import njit_stable
 
 
-def _argmax_driver_factory(nan_variant):
+# the kernels and drivers of this file are jitted: numba compiles them
+# from the argument types and ignores these annotations, the type checker
+# needs them
+def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
     # Neither of the two bodies reaches build_kernel: the per-element update
     # call of the composed driver costs more than these bodies save (measured
     # 1.06ms against 0.60ms on numba 0.68), so the loop lives here - but in a
@@ -21,7 +27,14 @@ def _argmax_driver_factory(nan_variant):
     if nan_variant:
 
         @njit_stable
-        def kernel_nan(group_idx, a, out, running, pending, fill_value):
+        def kernel_nan(
+            group_idx: npt.NDArray[np.signedinteger],
+            a: npt.NDArray[np.generic],
+            out: npt.NDArray[np.generic],
+            running: npt.NDArray[np.generic],
+            pending: npt.NDArray[np.bool_],
+            fill_value: typing.Any,
+        ) -> None:
             # select-form: nans neither win nor clear the pending flag, the
             # loop stays vectorizable
             bad = False
@@ -48,7 +61,14 @@ def _argmax_driver_factory(nan_variant):
     else:
 
         @njit_stable
-        def kernel_plain(group_idx, a, out, running, pending, fill_value):
+        def kernel_plain(
+            group_idx: npt.NDArray[np.signedinteger],
+            a: npt.NDArray[np.generic],
+            out: npt.NDArray[np.generic],
+            running: npt.NDArray[np.generic],
+            pending: npt.NDArray[np.bool_],
+            fill_value: typing.Any,
+        ) -> None:
             # branchy on purpose, unlike the composed kernels: this loop writes
             # only when the group actually changed, and with a data dependent
             # index the select-form store could not vectorize anyway - the
@@ -88,7 +108,15 @@ def _argmax_driver_factory(nan_variant):
 
         kernel = kernel_plain
 
-    def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
+    def driver(
+        group_idx: npt.NDArray[np.signedinteger],
+        a: npt.NDArray[np.generic],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: typing.Any,
+        ddof: typing.Any,
+    ) -> npt.NDArray[np.generic]:
         # once this resolved, every index is within [0, size) - the loop does
         # not need an upper bounds check (negative ones are flagged and raised
         # after the loop, a raise inside it would be a call barrier)
@@ -111,12 +139,19 @@ argmax = build_custom_kernel(
 )
 
 
-def _argmin_driver_factory(nan_variant):
+def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
     # split loop/driver and body forms as in _argmax_driver_factory
     if nan_variant:
 
         @njit_stable
-        def kernel_nan(group_idx, a, out, running, pending, fill_value):
+        def kernel_nan(
+            group_idx: npt.NDArray[np.signedinteger],
+            a: npt.NDArray[np.generic],
+            out: npt.NDArray[np.generic],
+            running: npt.NDArray[np.generic],
+            pending: npt.NDArray[np.bool_],
+            fill_value: typing.Any,
+        ) -> None:
             bad = False
             for i in range(group_idx.shape[0]):
                 ri = group_idx[i]
@@ -140,7 +175,14 @@ def _argmin_driver_factory(nan_variant):
     else:
 
         @njit_stable
-        def kernel_plain(group_idx, a, out, running, pending, fill_value):
+        def kernel_plain(
+            group_idx: npt.NDArray[np.signedinteger],
+            a: npt.NDArray[np.generic],
+            out: npt.NDArray[np.generic],
+            running: npt.NDArray[np.generic],
+            pending: npt.NDArray[np.bool_],
+            fill_value: typing.Any,
+        ) -> None:
             bad = False
             for i in range(group_idx.shape[0]):
                 ri = group_idx[i]
@@ -166,7 +208,15 @@ def _argmin_driver_factory(nan_variant):
 
         kernel = kernel_plain
 
-    def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
+    def driver(
+        group_idx: npt.NDArray[np.signedinteger],
+        a: npt.NDArray[np.generic],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: typing.Any,
+        ddof: typing.Any,
+    ) -> npt.NDArray[np.generic]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         running = np.empty(size, a.dtype)

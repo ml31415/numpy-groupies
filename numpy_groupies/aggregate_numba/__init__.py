@@ -34,14 +34,15 @@ def aggregate(
     out: npt.NDArray[np.generic] | None = None,
     cache: bool = True,
     **kwargs: typing.Any,
-) -> typing.Any:
+) -> npt.NDArray[np.generic]:
     # numba has no float16: the values survive the widening cast to float32
     # exactly, so the kernels run on float32 and an inexact result is rounded
     # back - like the numpy twin does, whose bincount accumulates in float64
     # and rounds once at the end
     is16 = getattr(a, "dtype", None) == np.float16
     if is16:
-        a = a.astype(np.float32)
+        # a float16 input is always an array - the getattr gate does not narrow the union
+        a = typing.cast("npt.NDArray[np.generic]", a).astype(np.float32)
     try:
         funcname, aggregate_op = _dispatch[func]
     except (KeyError, TypeError):
@@ -70,17 +71,17 @@ def aggregate(
 
 
 def _aggregate_custom(
-    group_idx,
-    a,
-    func,
-    size,
-    fill_value,
-    order,
-    dtype,
-    axis,
-    cache,
-    **kwargs,
-):
+    group_idx: npt.ArrayLike,
+    a: npt.ArrayLike,
+    func: str | Callable[..., typing.Any],
+    size: int | Sequence[int] | None,
+    fill_value: typing.Any,
+    order: str,
+    dtype: npt.DTypeLike | None,
+    axis: int | None,
+    cache: bool | None | typing.MutableMapping[typing.Any, typing.Any],
+    **kwargs: typing.Any,
+) -> npt.NDArray[np.generic]:
     """Slow dispatch path for a func that is no key of the dispatch table.
 
     An object of one's own is what numba cannot compile - it compiles functions,
@@ -96,21 +97,27 @@ def _aggregate_custom(
         raise TypeError(
             "numba can only compile a function as func, a callable object is not one of those (the numpy implementation runs any callable)"
         ) from None
+    aggregate_op: typing.Callable[..., typing.Any] | None
     if cache in (None, False):
         # Keep None and False in order to accept empty dictionaries
         aggregate_op = build_generic_aggregate(func)
     elif cache is True:
         aggregate_op = _get_cached_generic(func)
     else:
-        aggregate_op = cache.get(func)
+        # the caller's own mapping - the equality tests above do not narrow a bool away
+        cache_map = typing.cast("typing.MutableMapping[typing.Any, typing.Any]", cache)
+        aggregate_op = cache_map.get(func)
         if aggregate_op is None:
             aggregate_op = build_generic_aggregate(func)
-            cache[func] = aggregate_op
-    return aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+            cache_map[func] = aggregate_op
+    # the kernels are built behind untyped factories, the result is the aggregate
+    return typing.cast(
+        "npt.NDArray[np.generic]", aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+    )
 
 
 @functools.lru_cache(maxsize=128)
-def _get_cached_generic(func):
+def _get_cached_generic(func: Callable[..., typing.Any]) -> typing.Any:
     """LRU-cache generic aggregate loops per user callable (bounded)."""
     return build_generic_aggregate(func)
 
