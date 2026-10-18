@@ -11,7 +11,6 @@ import pytest
 
 from numpy_groupies.tests.helpers import (
     func_list,
-    keeps_the_fill_value_as_given,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
@@ -204,7 +203,6 @@ def test_shape_mismatch(impl):
 
 
 @pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
-@pytest.mark.deselect_if(func=keeps_the_fill_value_as_given)
 @pytest.mark.parametrize("fill_value", [0, 1, np.nan])
 @pytest.mark.parametrize("func", func_list)
 def test_the_fill_value_matches_the_group_loop(impl, func, fill_value, block):

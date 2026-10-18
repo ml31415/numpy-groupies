@@ -12,6 +12,7 @@ from numpy_groupies.aggregate_common import (
     aggregate_common_doc,
     build_dispatch,
     check_complex_dtype,
+    check_fixed_fill_value,
     funcs_no_separate_nan,
     get_func,
     is_scalar_input,
@@ -299,6 +300,9 @@ def aggregate(
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it
     fill_value = resolve_fill_value(func, fill_value, _a_dtype(a))
+    # the numpy implementations look the fill value against the datatype of the
+    # result, not of the values: neither a count nor a boolean answer holds a nan
+    check_fixed_fill_value(func, fill_value)
     if dtype is not None and isinstance(func, str):
         # python numbers carry no dtype at all, so this is the one place where
         # the pure python implementation has to reject a non-complex dtype

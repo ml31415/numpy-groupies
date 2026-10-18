@@ -13,6 +13,7 @@ from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     _forced_float_types,
     _forced_real_float_types,
+    check_boolean,
     check_complex_dtype,
     get_aliasing,
     is_scalar_input,
@@ -87,11 +88,6 @@ if hasattr(np, "trapezoid"):
 
 
 aliasing = get_aliasing(_alias_numpy)
-
-
-def check_boolean(x: Any) -> None:
-    if x not in (0, 1):
-        raise ValueError("Value not boolean")
 
 
 _next_int_dtype = {
