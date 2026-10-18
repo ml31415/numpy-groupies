@@ -99,7 +99,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
         size: int | tuple[int, ...] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
         order: str = "C",
-        dtype: npt.DTypeLike = None,
+        dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         ddof: float = 0,
     ) -> npt.NDArray[np.generic]:
@@ -223,7 +223,7 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
         size: int | tuple[int, ...] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
         order: str = "C",
-        dtype: npt.DTypeLike = None,
+        dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         ddof: float = 0,
     ) -> npt.NDArray[np.generic]:
@@ -296,7 +296,7 @@ def _dx_argument(op: typing.Callable[..., typing.Any]) -> typing.Callable[..., t
         size: int | tuple[int, ...] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
         order: str = "C",
-        dtype: npt.DTypeLike = None,
+        dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         dx: float = 1.0,
     ) -> npt.NDArray[np.generic]:
@@ -321,7 +321,7 @@ def _sort_arguments(op: typing.Callable[..., typing.Any]) -> typing.Callable[...
         size: int | tuple[int, ...] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
         order: str = "C",
-        dtype: npt.DTypeLike = None,
+        dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         reverse: bool = False,
     ) -> npt.NDArray[np.generic]:

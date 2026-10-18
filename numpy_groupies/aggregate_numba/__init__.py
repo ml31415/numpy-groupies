@@ -29,7 +29,7 @@ def aggregate(
     size: int | Sequence[int] | None = None,
     fill_value: typing.Any = DEFAULT_FILL_VALUE,
     order: str = "C",
-    dtype: npt.DTypeLike = None,
+    dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     out: npt.NDArray[np.generic] | None = None,
     cache: bool = True,

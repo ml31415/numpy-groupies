@@ -22,7 +22,7 @@ from numpy_groupies.aggregate_common import (
 )
 
 
-def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike = None) -> Any:
+def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike | None = None) -> Any:
     """The value ``aggregate`` uses for groups missing from ``group_idx``.
 
     ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your

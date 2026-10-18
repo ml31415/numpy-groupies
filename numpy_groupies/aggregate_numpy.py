@@ -705,7 +705,7 @@ def _aggregate_base(
     size: int | Sequence[int] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
     order: str = "C",
-    dtype: npt.DTypeLike = None,
+    dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     _impl_dict=_impl_dict,
     _dispatch=_dispatch,
@@ -786,7 +786,7 @@ def aggregate(
     size: int | Sequence[int] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
     order: str = "C",
-    dtype: npt.DTypeLike = None,
+    dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     **kwargs: Any,
 ) -> npt.NDArray[np.generic]:
