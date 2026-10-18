@@ -138,8 +138,6 @@ def _complex_reference(func, group_idx, a, size):
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 @pytest.mark.parametrize("func", complex_funcs, ids=str)
 def test_matches_reference(impl, func, a_dtype):
-    if is_purepy(impl) and func in complex_arg_funcs:
-        pytest.skip("the pure python implementation reports the index inside the group")
     group_idx = np.array([0, 1, 1, 2, 2, 2])
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, -2 + 0j, 4 - 3j, 6 - 6j]).astype(a_dtype)
 
@@ -501,8 +499,6 @@ def test_order_functions_follow_numpy_lexicographic(impl, func):
             complex(float("inf"), float("inf")),  # the reduction may not start below it
         ]
     )
-    if is_purepy(impl) and func in complex_arg_funcs:
-        pytest.skip("the pure python implementation reports the index inside the group")
 
     res = np.asarray(impl.aggregate(group_idx, a, func=func, size=6))
     expected = _complex_reference(func, group_idx, a, 6)
