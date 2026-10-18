@@ -6,11 +6,14 @@ function, and whatever is not a plain group reduction (a list, a callable, a
 single value instead of a column) behaves like it does in numpy.
 """
 
+from dataclasses import dataclass
+
 import numpy as np
 import pytest
 
 from numpy_groupies.tests.helpers import (
     func_list,
+    is_numba,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
@@ -170,6 +173,46 @@ def test_custom_callable(impl, rng):
     assert actual.ndim == a.ndim
 
     np.testing.assert_allclose(actual, expected)
+
+
+@dataclass
+class _spread:
+    """The spread of a group, written as an object of one's own.
+
+    A dataclass is not hashable (``eq=True`` without ``frozen`` takes its
+    ``__hash__`` away), which is what makes it interesting here: it cannot be a
+    key of the alias table, let alone of a kernel cache.
+    """
+
+    def __call__(self, x):
+        return float(np.max(x) - np.min(x))
+
+
+def test_a_callable_that_cannot_be_hashed(impl):
+    # an object of one's own is asked for itself, not looked up in a table - and
+    # the numba implementation, which compiles its func, says which of the two it
+    # is asked for rather than letting numba answer the question
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array([1.0, 3.0, 7.0, 2.0])
+    if is_numba(impl):
+        with pytest.raises(TypeError, match="can only compile a function"):
+            impl.aggregate(group_idx, a, func=_spread(), size=2)
+    else:
+        res = np.asarray(impl.aggregate(group_idx, a, func=_spread(), size=2))
+        np.testing.assert_allclose(res, [2.0, 5.0])
+
+
+def test_a_callable_that_cannot_be_hashed_along_an_axis(impl):
+    # the axis path resolves the name of its function on its own, and a miss
+    # there is the same miss as anywhere else
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array([1.0, 3.0, 7.0, 2.0])
+    if is_numba(impl):
+        with pytest.raises(TypeError, match="can only compile a function"):
+            impl.aggregate(group_idx, a, func=_spread(), axis=0)
+    else:
+        res = np.asarray(impl.aggregate(group_idx, a, func=_spread(), axis=0))
+        np.testing.assert_allclose(res, [2.0, 5.0])
 
 
 @pytest.mark.parametrize("order", ["C", "F"])

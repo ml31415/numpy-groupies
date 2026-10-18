@@ -177,3 +177,8 @@ def is_purepy(impl, *args, **kwargs):
     back a result of the dtype of its input.
     """
     return impl_name(impl) == "purepy"
+
+
+def is_numba(impl, *args, **kwargs):
+    """True for the numba backend, which compiles what it is given."""
+    return impl_name(impl) == "numba"
