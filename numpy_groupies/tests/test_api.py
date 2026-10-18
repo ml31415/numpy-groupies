@@ -238,3 +238,21 @@ def test_the_arg_reductions_name_a_position_in_the_input(impl):
     ):
         got = np.asarray(impl.aggregate(group_idx, a, func=func, size=3))
         np.testing.assert_array_equal(got, expected, err_msg=func)
+
+
+@pytest.mark.parametrize("func", ["sum", "mean", "all", "len", "argmax", "min", "sort"])
+def test_none_is_refused_where_no_result_holds_it(impl, func):
+    """``fill_value=None`` is a value, and only an object result holds one.
+
+    The sentinel that asks for the default of a function is ``DEFAULT_FILL_VALUE``
+    and the suite pins ``None`` as the value of an empty sequence result
+    (`test_fill_value`).  Asked of a number, a flag, a count, a position or the
+    values of a sort, the request used to be answered three different ways: the
+    numpy implementation complained about an ``isnan`` of an object, the numba one
+    failed to type a kernel, and the pure python one wrote the ``None`` into a
+    column of floats, which made the result an object array.
+    """
+    labels = np.array([0, 2])
+    a = np.array([1.0, 2.0])  # group 1 is never named
+    with pytest.raises(TypeError, match="fills an object result"):
+        impl.aggregate(labels, a, func=func, size=3, fill_value=None)
