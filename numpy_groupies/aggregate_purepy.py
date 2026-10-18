@@ -308,6 +308,11 @@ def aggregate(
         # the pure python implementation has to reject a non-complex dtype
         check_complex_dtype(_a_dtype(a), dtype, func)
 
+    # the position of every value in the input, which is the position the
+    # reductions reporting one have to name.  Taken before the nan filter below
+    # shortens the input, or those positions would count the removed values too
+    pos = range(len(a))
+
     if isinstance(func, str):
         if func.startswith("nan"):
             func = func[3:]
@@ -317,10 +322,10 @@ def aggregate(
             # group_idx, which is what the numpy implementations make of such a
             # group too.  Without the case below there is nothing left to
             # unpack once every value was a nan
-            kept = [(ix, val) for ix, val in zip(group_idx, a) if val == val]
+            kept = [(p, ix, val) for p, ix, val in zip(pos, group_idx, a) if val == val]
             if not kept:
                 return [fill_value] * size
-            group_idx, a = zip(*kept)
+            pos, group_idx, a = zip(*kept)
 
         func = _impl_dict[func]
     if func is _sort:
