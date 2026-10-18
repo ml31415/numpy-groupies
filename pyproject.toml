@@ -47,6 +47,7 @@ dev = [
     "numbagg",
     # pre-commit 4 requires Python >= 3.11, but the project still supports
     # 3.10, so stay on the 3.x line.
+    "mypy>=2.4",
     "pre-commit>=3.8,<4",
     "ruff>=0.17",
 ]
@@ -54,6 +55,20 @@ dev = [
 [project.urls]
 source = "https://github.com/ml31415/numpy-groupies"
 tracker = "https://github.com/ml31415/numpy-groupies/issues"
+
+[tool.mypy]
+files = ["numpy_groupies"]
+exclude = '(^|/)(tests|benchmarks)/'
+extra_checks = true
+warn_unused_ignores = true
+warn_return_any = true
+# the package is annotated in full and the annotation debt is paid off -
+# every def needs annotations
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["setuptools_scm", "setuptools_scm.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 120

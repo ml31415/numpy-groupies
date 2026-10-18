@@ -22,6 +22,15 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.4.0
+    hooks:
+      - id: mypy
+        # the config in pyproject.toml restricts the check to the package;
+        # the environment mirrors the dev extra so the checker sees the real
+        # numba stubs rather than bare Any
+        additional_dependencies: ["numpy", "numba"]
+
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.13.1
     hooks:
