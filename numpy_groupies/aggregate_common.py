@@ -90,7 +90,10 @@ aggregate_common_doc = """
         output the default ``nan`` fills with a nan in *both* parts, so that an
         empty group looks the same in every implementation.  Use
         ``utils.default_fill_value(func, dtype)`` to query the value, or pass
-        your own.  Note that there are some subtle interactions between what is
+        your own.  ``None`` is a value and not a request: it fills the object
+        result of ``array`` and is refused for every other function, since the
+        request for a default is made with ``DEFAULT_FILL_VALUE``.  Note that
+        there are some subtle interactions between what is
         permitted for ``fill_value`` and the input/output ``dtype`` - exceptions
         should be raised in most cases to alert the programmer if issues arise.
     order: default='C'
@@ -246,14 +249,42 @@ def nan_of(dtype: Any) -> Any:
     return nan + nan * 1j if _is_complex_dtype(dtype) else nan
 
 
+# the functions whose result is settled by the function and holds no ``None``:
+# everything the table of defaults names, except the one function that returns
+# an object array - a sort returns the values of a group, so it takes their
+# dtype, and a count or a flag holds no ``None`` either
+_no_none_result_functions = frozenset(_default_fill_values) - {"array"}
+
+
+def check_filling_with_none(func: str | Callable[..., Any]) -> None:
+    """Refuse to fill with ``None`` where no result can hold it.
+
+    ``None`` is a value and not a request: the request for the default of a
+    function is made with ``DEFAULT_FILL_VALUE``, and ``None`` is what an object
+    result - the sequence of ``func='array'`` - is filled with, nothing else.  A
+    number, a flag, a count, a position and the values a sort returns cannot hold
+    a ``None``, and the three implementations answered the request three
+    different ways: the numpy one complained about an ``isnan`` of an object, the
+    numba one failed to type a kernel, and the pure python one wrote the ``None``
+    into a column of floats, which turned the result into an object array.
+    """
+    if _fill_value_key(func) in _no_none_result_functions:
+        raise TypeError(
+            "fill_value=None fills an object result, which is what func='array' returns and no other function does (the default of a function is asked for with DEFAULT_FILL_VALUE)"
+        )
+
+
 def resolve_fill_value(func: str | Callable[..., Any], fill_value: Any, dtype: Any) -> Any:
     """Replace the ``DEFAULT_FILL_VALUE`` sentinel with the default of ``func``.
 
-    Anything else than the sentinel is returned untouched.  ``nan`` is only
+    Anything else than the sentinel is returned untouched, except a ``None``: a
+    ``None`` is refused where no result can hold it.  ``nan`` is only
     handed out if ``dtype`` can represent it, otherwise the value falls back to
     ``0`` - changing the output datatype of e.g. an integer ``min`` would be a
     worse surprise than an unspectacular filling value.
     """
+    if fill_value is None:
+        check_filling_with_none(func)
     if fill_value is not DEFAULT_FILL_VALUE:
         return fill_value
     key = _fill_value_key(func)

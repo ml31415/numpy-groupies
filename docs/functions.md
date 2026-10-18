@@ -25,7 +25,7 @@ aggregate(group_idx, a, func="sum", size=None, fill_value=DEFAULT_FILL_VALUE,
 | `a`          | Array of values to aggregate. Normally 1-D; can be a scalar in some cases (see [forms](#input-forms-in-detail)). |
 | `func`       | Aggregation function. Default `'sum'`. A name from [Available functions](#available-functions), an alias, a NumPy function or builtin (`np.max`, `max`, `len`, …), or any callable. The aliases are defined in `utils.py`. |
 | `size`       | Shape of the output. `None` means: the maximum of `group_idx` (plus one) determines the size. For multi-dimensional output, give the size of every dimension (or `None`). |
-| `fill_value` | Value for output groups that never occur in `group_idx`. By default chosen per function, see [Fill values](#fill-values). The sentinel `DEFAULT_FILL_VALUE` stands for "use that default". |
+| `fill_value` | Value for output groups that never occur in `group_idx`. By default chosen per function, see [Fill values](#fill-values). The sentinel `DEFAULT_FILL_VALUE` stands for "use that default". `None` is a fill value of its own, taken for the object result of `array` and refused for every other function. |
 | `order`      | `'C'` (default) or `'F'`. Memory layout of multi-dimensional output. Hardly affects the speed of `aggregate`, but may matter for your downstream use of the result. |
 | `dtype`      | Output dtype. `None` chooses something sensible from `a`, `func` and `fill_value`. Non-numeric output of custom functions needs `dtype=object`. |
 | `axis`       | Aggregate along one axis of a multi-dimensional `a`. See form 3 below. Not supported by the pure-Python implementation. |
