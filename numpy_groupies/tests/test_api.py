@@ -6,11 +6,14 @@ function, and whatever is not a plain group reduction (a list, a callable, a
 single value instead of a column) behaves like it does in numpy.
 """
 
+from dataclasses import dataclass
+
 import numpy as np
 import pytest
 
 from numpy_groupies.tests.helpers import (
     func_list,
+    is_numba,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
@@ -170,6 +173,86 @@ def test_custom_callable(impl, rng):
     assert actual.ndim == a.ndim
 
     np.testing.assert_allclose(actual, expected)
+
+
+@dataclass
+class _spread:
+    """The spread of a group, written as an object of one's own.
+
+    A dataclass has its ``__hash__`` taken away by the ``__eq__`` that
+    ``eq=True`` gives it, so it can be no key of a dict - which is what makes it
+    interesting here: the dispatch table cannot be asked about it at all.
+    """
+
+    def __call__(self, x):
+        return float(np.max(x) - np.min(x))
+
+
+class _spread_object:
+    """The same aggregation as an object of one's own that is hashable.
+
+    Hashable enough to be a key of the table, and still no function that numba
+    could compile: hashability is not the question numba asks.
+    """
+
+    def __call__(self, x):
+        return float(np.max(x) - np.min(x))
+
+
+def test_a_callable_that_cannot_be_a_key(impl):
+    # not being a key of the dispatch table is no mistake of the func, it is what
+    # makes it one of the caller's own: numpy and pure python run it, and numba,
+    # which compiles its func, says which kind of func it compiles instead
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array([1.0, 3.0, 7.0, 2.0])
+    if is_numba(impl):
+        with pytest.raises(TypeError, match="can only compile a function"):
+            impl.aggregate(group_idx, a, func=_spread(), size=2)
+    else:
+        res = np.asarray(impl.aggregate(group_idx, a, func=_spread(), size=2))
+        np.testing.assert_allclose(res, [2.0, 5.0])
+
+
+def test_a_callable_that_cannot_be_a_key_along_an_axis(impl):
+    # the axis path names the function it validates against, and a func that
+    # names no function is the caller's own there as anywhere else
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array([1.0, 3.0, 7.0, 2.0])
+    if is_numba(impl):
+        with pytest.raises(TypeError, match="can only compile a function"):
+            impl.aggregate(group_idx, a, func=_spread(), axis=0)
+    else:
+        res = np.asarray(impl.aggregate(group_idx, a, func=_spread(), axis=0))
+        np.testing.assert_allclose(res, [2.0, 5.0])
+
+
+def test_a_callable_object_is_still_no_function_for_numba(impl):
+    # what ran before keeps running in numpy and pure python, and numba refuses
+    # the hashable object as it refused the other one - in its own words, which
+    # name the object it was handed rather than the table that could not hold it
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array([1.0, 3.0, 7.0, 2.0])
+    if is_numba(impl):
+        with pytest.raises(TypeError):
+            impl.aggregate(group_idx, a, func=_spread_object(), size=2)
+    else:
+        res = np.asarray(impl.aggregate(group_idx, a, func=_spread_object(), size=2))
+        np.testing.assert_allclose(res, [2.0, 5.0])
+
+
+@pytest.mark.parametrize(
+    "func",
+    [42, "no_such_function", [1, 2], {"a": 1}, np.array([1.0])],
+    ids=["int", "unknown name", "list", "dict", "array"],
+)
+def test_a_func_that_names_nothing_says_the_same_everywhere(impl, func):
+    # whether a func cannot be a key of the dispatch table or only is no key of
+    # it makes no difference to the answer: the table is no mistake the caller
+    # made, and no implementation is entitled to report it as one
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array([1.0, 3.0, 7.0, 2.0])
+    with pytest.raises(ValueError, match="neither a valid function string nor a callable object"):
+        impl.aggregate(group_idx, a, func=func, size=2)
 
 
 @pytest.mark.parametrize("order", ["C", "F"])

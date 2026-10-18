@@ -5,14 +5,54 @@ inverts a group reduction - every backend provides them.
 """
 
 import numpy as np
+import pytest
 
+from numpy_groupies.aggregate_common import build_dispatch, custom_callable, resolve_name
 from numpy_groupies.tests.helpers import random_values
-from numpy_groupies.utils import check_dtype, unpack
+from numpy_groupies.utils import aliasing, check_dtype, unpack
 
 
 def test_check_dtype():
     dtype = check_dtype(None, "mean", np.arange(10, dtype=int), 10)
     assert np.issubdtype(dtype, np.floating)
+
+
+def test_build_dispatch_resolves_every_alias():
+    """Every alias of every known function is a key of the fused table.
+
+    Naming a function is then one lookup, and a function the backend does not
+    implement is answered by that table too: the key is present, holding the name
+    and no implementation, rather than missing and sending the caller off to a
+    second table to find out which of the two it was.
+    """
+    implementation = {"sum": sum, "min": min}
+    aliasing = {"sum": "sum", "add": "sum", "min": "min", "amin": "min", "nansum": "nansum"}
+
+    dispatch = build_dispatch(implementation, aliasing)
+
+    assert set(dispatch) == set(aliasing)
+    assert dispatch["add"] == ("sum", sum)
+    assert dispatch["amin"] == ("min", min)
+    assert dispatch["nansum"] == ("nansum", None)
+
+
+def test_a_name_is_resolved_without_asking_its_func_for_a_hash():
+    """A func that cannot be a key names no function - and is not looked up to find
+
+    that out.  ``resolve_name`` asks the type first, so the lookup that could not
+    be made is never the thing that appears to have failed.
+    """
+    assert resolve_name([np.sum]) is None
+    assert resolve_name({"func": "sum"}) is None
+    assert resolve_name("amin") == "min"
+    assert resolve_name(np.amin) is None  # the names-only table holds no objects
+    assert resolve_name(np.amin, aliasing) == "min"
+
+
+def test_a_func_that_is_neither_a_name_nor_a_callable_is_said_so():
+    for func in (42, [1, 2], {"a": 1}, np.array([1.0])):
+        with pytest.raises(ValueError, match="neither a valid function string nor a callable object"):
+            custom_callable(func)
 
 
 def test_unpack(rng):

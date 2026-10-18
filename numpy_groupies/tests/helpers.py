@@ -62,7 +62,6 @@ def random_values(rng, size):
     return rng.standard_normal(size)
 
 
-@cache
 def is_supported(impl, func):
     """True if the backend runs ``func``.
 
@@ -78,9 +77,17 @@ def is_supported(impl, func):
     if isinstance(impl, _BackendProxy):
         impl = impl._module
     if not isinstance(func, str):
+        # a func that cannot be a key of a dict cannot key the probe cache
+        # either, and no func of one's own is ever deselected
         func = getattr(func, "__name__", None)
         if not isinstance(func, str):
             return True
+    return _is_supported(impl, func)
+
+
+@cache
+def _is_supported(impl, func):
+    """The probe itself, keyed by a backend module and a function name."""
     group_idx = np.array([0, 0, 1, 1])
     inputs = (np.arange(4.0), np.array([1 + 1j, 2 + 2j, 3 + 3j, 4 + 4j]))
     for a in inputs:
@@ -177,3 +184,12 @@ def is_purepy(impl, *args, **kwargs):
     back a result of the dtype of its input.
     """
     return impl_name(impl) == "purepy"
+
+
+def is_numba(impl, *args, **kwargs):
+    """True for the implementation that compiles what it is given as func.
+
+    A compiled function and a callable object are two different things to that
+    implementation, where the other two only call what they are handed.
+    """
+    return impl_name(impl) == "numba"

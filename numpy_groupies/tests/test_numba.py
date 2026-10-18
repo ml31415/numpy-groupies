@@ -230,6 +230,20 @@ def test_aggregate_out(rng):
         aggregate(group_idx, a, func=lambda x: np.sum(x), out=out)
 
 
+def test_a_known_function_without_a_kernel():
+    """A function the aliasing knows and the kernels of this backend do not have.
+
+    The dispatch table holds such a name too, with no implementation behind it,
+    so the answer is about a function that is not available here rather than
+    about a func that named nothing at all.
+    """
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array([1.0, 3.0, 7.0, 2.0])
+    for func in ("array", list, np.array):
+        with pytest.raises(NotImplementedError, match="No such function available"):
+            aggregate(group_idx, a, func=func, size=2)
+
+
 def test_uaggregate_out(rng):
     group_idx = rng.integers(0, 6, 300)
     a = rng.random(300)
