@@ -203,9 +203,10 @@ _default_fill_values = {
 
 def _fill_value_key(func: str | Callable[..., Any]) -> str:
     """Map a function (name, alias or callable) onto a ``_default_fill_values`` key."""
-    try:
-        name = aliasing_py[func]
-    except (KeyError, TypeError):
+    name = resolve_name(func)
+    if name is None:
+        # a custom callable is keyed by the name it carries, which it usually
+        # does not carry at all (a lambda, a bound method of one's own)
         name = getattr(func, "__name__", "")
     if name not in _default_fill_values and str(name).startswith("nan"):
         # nan-variants fill like their plain counterparts
@@ -374,41 +375,64 @@ def get_aliasing(*extra: dict[Any, str]) -> dict[Any, str]:
 aliasing_py = get_aliasing()
 
 
-def get_func(
-    func: str | Callable[..., Any], aliasing: dict[Any, Any], implementations: Any
-) -> str | Callable[..., Any]:
-    """Return the key of a found implementation or the func itself"""
-    try:
-        func_str = aliasing[func]
-    except KeyError:
-        if callable(func):
-            return func
-    else:
-        if func_str in implementations:
-            return func_str
-        if func_str.startswith("nan") and func_str[3:] in funcs_no_separate_nan:
-            raise ValueError(f"{func_str[3:]} does not have a nan-version")
-        else:
-            raise NotImplementedError("No such function available")
+def can_name_a_function(obj: Any) -> bool:
+    """Whether ``obj`` can be a key of the alias table, and so can name a function.
+
+    The table is a dict, which asks its keys for a hash, and an object that
+    defines ``__eq__`` without a ``__hash__`` does not have one (a dataclass with
+    ``eq=True`` is the everyday case), as little as a list or a dict has one.
+    Asked of the type in front of the lookup, this is all that is needed to make
+    the lookup itself unable to fail: what cannot be a key names no function,
+    and does not have to be looked up to know that.
+    """
+    return type(obj).__hash__ is not None
+
+
+def resolve_name(func: Any, aliasing: Mapping[Any, str] = aliasing_py) -> str | None:
+    """The canonical name of ``func``, or ``None`` where it names no function.
+
+    Every name and every alias is a key of ``aliasing`` and every key of it is
+    hashable (see ``get_aliasing``, which is the only writer), so this is one
+    lookup that can neither miss nor fail - a func that cannot be a key is not a
+    function anybody knows, and is not asked for one.
+    """
+    return aliasing.get(func) if can_name_a_function(func) else None
+
+
+def missing_impl_error(name: str) -> Exception:
+    """The error for a function that is known but not implemented by this backend."""
+    if name.startswith("nan") and name[3:] in funcs_no_separate_nan:
+        return ValueError(f"{name[3:]} does not have a nan-version")
+    return NotImplementedError("No such function available")
+
+
+def custom_callable(func: Any) -> Callable[..., Any]:
+    """The callable behind a ``func`` that is no key of the resolved dispatch table.
+
+    A miss of that table says all there is to know: ``func`` is not one of the
+    functions anybody knows, so it is either a callable of the caller's own -
+    which needs no hashability to be run, a dataclass instance is the everyday
+    case - or it named nothing at all and says so.  Only the cold path comes
+    here; the hot path is the lookup itself.
+    """
+    if callable(func):
+        return func
     raise ValueError(f"func {func} is neither a valid function string nor a callable object")
 
 
 def build_dispatch(
     impl_dict: Mapping[str, Callable[..., Any]], aliasing: Mapping[Any, str]
-) -> dict[Any, tuple[str, Callable[..., Any]]]:
+) -> dict[Any, tuple[str, Callable[..., Any] | None]]:
     """Fuse an aliasing and an implementation table for single-lookup dispatch.
 
-    Returns a dict mapping every alias (string or callable) onto a
-    ``(canonical name, implementation)`` tuple.  Aliases without an
-    implementation are omitted, so lookups missing there fall through to
-    ``get_func``, which keeps handling custom callables and error reporting.
+    Every alias of every known function is a key, holding a
+    ``(canonical name, implementation)`` tuple, so naming a function is one
+    subscript and a func missing from the table is not a function anybody knows
+    (``custom_callable``).  An alias whose name this backend does not implement
+    holds ``(name, None)``, which the caller reports with ``missing_impl_error``
+    - so the table answers that question too, without a second lookup.
     """
-    dispatch = {}
-    for alias, name in aliasing.items():
-        impl = impl_dict.get(name)
-        if impl is not None:
-            dispatch[alias] = (name, impl)
-    return dispatch
+    return {alias: (name, impl_dict.get(name)) for alias, name in aliasing.items()}
 
 
 _forced_float_types = {

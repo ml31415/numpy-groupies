@@ -10,8 +10,9 @@ from numpy_groupies.aggregate_common import (
     INT64_DEVIATION_LIMIT,
     aggregate_common_doc,
     build_dispatch,
+    custom_callable,
     funcs_no_separate_nan,
-    get_func,
+    missing_impl_error,
     nan_of,
     raise_integer_mean_overflow,
     raise_integer_variance_span_overflow,
@@ -721,10 +722,12 @@ def _aggregate_base(
     try:
         funcname, func = _dispatch[func]
     except (KeyError, TypeError):
-        # a custom callable - unknown names make get_func raise, and get_func
-        # can only return callables here, since every implemented name has a
-        # dispatch entry
-        func = get_func(func, aliasing, _impl_dict)
+        # no key of the table, either because no function goes by that name or
+        # because func could not be one of its keys (a dict asks its keys for a
+        # hash, which an object defining __eq__ without __hash__ does not have):
+        # both leave a callable of the caller's own to run, and anything else
+        # says that it named nothing
+        func = custom_callable(func)
         funcname = func
         fill_value = resolve_fill_value(func, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
         # do simple grouping and execute function in loop
@@ -736,6 +739,9 @@ def _aggregate_base(
             ret = ret.reshape(size, order=order)
         return ret
     else:
+        if func is None:
+            # a function that is known but not implemented here
+            raise missing_impl_error(funcname)
         # deal with nans and find the function
         if funcname.startswith("nan"):
             if np.ndim(a) == 0:

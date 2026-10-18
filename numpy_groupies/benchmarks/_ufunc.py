@@ -8,7 +8,9 @@ from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
     build_dispatch,
-    get_func,
+    custom_callable,
+    missing_impl_error,
+    resolve_name,
 )
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.utils import (
@@ -176,15 +178,19 @@ def aggregate(
     axis: int | None = None,
     **kwargs: Any,
 ) -> npt.NDArray[np.generic]:
-    funcname: str | Callable[..., Any]
+    funcname: str
     try:
         funcname, _ = _dispatch[func]
     except (KeyError, TypeError):
-        # a custom callable is not supported here - get_func raises for
-        # unknown names, and any callable it returns is not a ufunc impl
-        funcname = get_func(func, aliasing, _impl_dict)
-        if not isinstance(funcname, str):
-            raise NotImplementedError("No such ufunc available")
+        # no key of the table, so not a function this backend can hand to a
+        # ufunc: a name that is known elsewhere says which one is missing, a
+        # callable of the caller's own is nothing a ufunc dispatch has, and
+        # anything else named nothing at all
+        name = resolve_name(func, aliasing)
+        if name is not None:
+            raise missing_impl_error(name) from None
+        custom_callable(func)
+        raise NotImplementedError("No such ufunc available") from None
     return _aggregate_base(
         group_idx,
         a,

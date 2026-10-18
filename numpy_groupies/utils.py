@@ -18,6 +18,7 @@ from numpy_groupies.aggregate_common import (
     get_aliasing,
     is_scalar_input,
     resolve_fill_value,
+    resolve_name,
 )
 
 
@@ -398,6 +399,12 @@ def input_validation(
     """
     Do some fairly extensive checking of group_idx and a, trying to give the user as much help as
     possible with what is wrong. Also, convert ndim-indexing to 1d indexing.
+
+    ``func`` is what the caller was given: a name, an alias or a callable, of
+    which only the name it resolves to is of interest here - whether it is an
+    ``arg``-reduction, which names a position in the input, or one of the
+    one-out-per-input-item answers (``cum`` and ``sort``).  A func that resolves
+    to no name is neither, which is what a custom callable is.
     """
     if not isinstance(a, (int, float, complex)) and not is_duck_array(a):
         a = np.asanyarray(a)
@@ -447,7 +454,7 @@ def input_validation(
         else:
             is_form_3 = ndim_a > 1
             orig_shape = a.shape if is_form_3 else group_idx.shape
-            func_name = aliasing.get(func, func)
+            func_name = resolve_name(func, aliasing)
             if isinstance(func_name, str) and "arg" in func_name:
                 unravel_shape = orig_shape
             else:

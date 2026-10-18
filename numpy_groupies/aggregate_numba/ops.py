@@ -227,7 +227,9 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
         axis: int | None = None,
         ddof: float = 0,
     ) -> npt.NDArray[np.generic]:
-        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False)
+        # a func reaching this loop is no key of the dispatch table, so it names
+        # no function and cannot be an arg reduction or a one-to-one answer
+        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=None)
         group_idx, a, flat_size, ndim_idx, size, _ = iv
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
@@ -349,7 +351,8 @@ def get_funcs() -> dict[str, typing.Callable[..., typing.Any]]:
 
 _impl_dict = get_funcs()
 
-# alias (string or callable) -> wrapper function, so that the common call
-# path resolves with a single dict lookup instead of the two-step aliasing +
-# implementation resolution in get_func
+# alias (string or callable) -> (canonical name, wrapper function), every alias
+# of every known function and so one dict lookup on the call path - names this
+# backend has no wrapper for come along holding None, so the lookup answers that
+# question too instead of a second table having to be asked
 _dispatch = build_dispatch(_impl_dict, aliasing)

@@ -13,9 +13,10 @@ from numpy_groupies.aggregate_common import (
     build_dispatch,
     check_complex_dtype,
     check_fixed_fill_value,
+    custom_callable,
     funcs_no_separate_nan,
-    get_func,
     is_scalar_input,
+    missing_impl_error,
     raise_integer_mean_overflow,
     raise_integer_variance_span_overflow,
     resolve_fill_value,
@@ -301,9 +302,18 @@ def aggregate(
                 raise ValueError("group_idx contains negative value")
 
     try:
-        func = _dispatch[func][0]
+        func, impl = _dispatch[func]
     except (KeyError, TypeError):
-        func = get_func(func, aliasing, _impl_dict)
+        # no key of the table, either because no function goes by that name or
+        # because func could not be one of its keys (a dict asks its keys for a
+        # hash): a callable of the caller's own is its own implementation, and
+        # anything else says that it named nothing
+        func = impl = custom_callable(func)
+    else:
+        # a function that is known but not implemented here - the table answers
+        # that too, and says it before a single group is aggregated
+        if impl is None:
+            raise missing_impl_error(func)
     if is_scalar_input(a):
         if func not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
