@@ -552,7 +552,7 @@ def _anynan(
 
 def _sort(
     group_idx: npt.NDArray[np.integer],
-    a: npt.NDArray[np.generic],
+    a: Any,
     size: int | tuple[int, ...] | None = None,
     fill_value: Any = None,
     dtype: npt.DTypeLike | None = None,
@@ -565,8 +565,7 @@ def _sort(
         # zero of an unsigned one stays the smallest key of all.  The inexact
         # dtypes have no inversion and negate cleanly - a nan stays last
         # either way, and -0.0 compares equal to 0.0.
-        # inversion and negation cover exactly the ordered dtypes here.
-        key = ~cast("Any", a) if a.dtype.kind in "iub" else -cast("Any", a)
+        key = ~a if a.dtype.kind in "iub" else -a
     else:
         key = a
     sortidx = np.lexsort((key, group_idx))
@@ -574,7 +573,7 @@ def _sort(
     # sorting: scattering through the group-stable argsort is exactly the
     # inverse permutation, avoiding the classic argsort-of-argsort.
     gsort = np.argsort(group_idx, kind="stable")
-    ret = np.empty_like(a)
+    ret = cast("npt.NDArray[np.generic]", np.empty_like(a))
     ret[gsort] = a[sortidx]
     return ret
 
