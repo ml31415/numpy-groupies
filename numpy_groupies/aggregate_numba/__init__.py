@@ -36,14 +36,11 @@ def aggregate(
     cache: bool = True,
     **kwargs: typing.Any,
 ) -> npt.NDArray[np.number]:
-    # numba has no float16: the values survive the widening cast to float32
-    # exactly, so the kernels run on float32 and an inexact result is rounded
-    # back - like the numpy twin does, whose bincount accumulates in float64
-    # and rounds once at the end
-    is16 = getattr(a, "dtype", None) == np.float16
-    if is16:
-        # a float16 input is always an array - the getattr gate does not narrow the union
-        a = typing.cast("npt.NDArray[np.number]", a).astype(np.float32)
+    # the name of the function and the implementation of it - a name the
+    # dispatch table does not know leaves the name empty and hands the func
+    # to the custom-callable path below
+    funcname = ""
+    aggregate_op: typing.Callable[..., typing.Any] | None = None
     try:
         funcname, aggregate_op = _dispatch[func]
     except (KeyError, TypeError):
@@ -51,13 +48,27 @@ def aggregate(
         # because func could not be one of its keys (a dict asks its keys for a
         # hash): both leave the caller's own func to ``_aggregate_custom``, which
         # tells a func that named nothing from a func that can be run
+        aggregate_op = None
+    if aggregate_op is None and funcname:
+        # a function that is known but not implemented here
+        raise missing_impl_error(funcname)
+
+    # numba has no float16: the values survive the widening cast to float32
+    # exactly, so the kernels run on float32 and an inexact result is rounded
+    # back - like the numpy twin does, whose bincount accumulates in float64
+    # and rounds once at the end
+    # the collecting function is the exception: it hands out the values
+    # themselves, so they keep the dtype they came in with
+    is16 = getattr(a, "dtype", None) == np.float16
+    if is16 and funcname != "array":
+        # a float16 input is always an array - the getattr gate does not narrow the union
+        a = typing.cast("npt.NDArray[np.number]", a).astype(np.float32)
+
+    if aggregate_op is None:
         if out is not None:
             raise NotImplementedError("out= is only supported for named functions") from None
         ret = _aggregate_custom(group_idx, a, func, size, fill_value, order, dtype, axis, cache, **kwargs)
     else:
-        if aggregate_op is None:
-            # a function that is known but not implemented here
-            raise missing_impl_error(funcname)
         ret = aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
     if is16 and dtype is None and ret.dtype.kind == "f":
         ret = ret.astype(np.float16)

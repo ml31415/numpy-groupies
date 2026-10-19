@@ -1,8 +1,9 @@
 """Tests for the numba backend: the jitted fast path, the slow-path
-fallback, the callable cache, the ``out=`` parameter and the lock around the
-shared on-disk compilation cache.
+fallback, the collecting function, the callable cache, the ``out=`` parameter
+and the lock around the shared on-disk compilation cache.
 """
 
+import itertools
 import os
 from threading import Thread
 
@@ -12,6 +13,8 @@ import pytest
 from numpy_groupies import uaggregate
 from numpy_groupies.aggregate_numba import aggregate
 from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile
+from numpy_groupies.aggregate_numba.ops import _dispatch
+from numpy_groupies.aggregate_numpy import aggregate as aggregate_np
 from numpy_groupies.utils import resolve_output_dtype
 
 
@@ -230,18 +233,29 @@ def test_aggregate_out(rng):
         aggregate(group_idx, a, func=lambda x: np.sum(x), out=out)
 
 
-def test_a_known_function_without_a_kernel():
-    """A function the aliasing knows and the kernels of this backend do not have.
+def test_every_known_function_is_implemented():
+    """A function the aliasing knows and this backend does not have.
 
     The dispatch table holds such a name too, with no implementation behind it,
     so the answer is about a function that is not available here rather than
-    about a func that named nothing at all.
+    about a func that named nothing at all.  This backend knows them all - the
+    collecting function included, which has no compiled kernel but a python
+    implementation of its own.
+    """
+    missing = sorted({name for name, impl in _dispatch.values() if impl is None})
+    assert missing == []
+
+
+def test_a_func_that_named_nothing():
+    """A func that is no key of the dispatch table at all.
+
+    It is neither a function anybody knows nor a callable of the caller's own,
+    so it says so - the error of a callable is a different one.
     """
     group_idx = np.array([0, 0, 1, 1])
     a = np.array([1.0, 3.0, 7.0, 2.0])
-    for func in ("array", list, np.array):
-        with pytest.raises(NotImplementedError, match="No such function available"):
-            aggregate(group_idx, a, func=func, size=2)
+    with pytest.raises(ValueError, match="neither a valid function string"):
+        aggregate(group_idx, a, func="no_such_function", size=2)
 
 
 def test_uaggregate_out(rng):
@@ -308,6 +322,107 @@ def test_float16_follows_the_float32_plan():
 
     ref = aggregate(group_idx, a.astype(np.float32), func="cumsum").astype(np.float16)
     np.testing.assert_array_equal(aggregate(group_idx, a, func="cumsum"), ref)
+
+
+# the collecting function - the one function of this backend without a
+# compiled kernel, its result being a sequence per group
+
+
+def _same_groups(got, expected):
+    """Compare two collections of per-group sequences."""
+    assert len(got) == len(expected)
+    for g, (one, other) in enumerate(zip(got, expected)):
+        if one is None or other is None:
+            assert one is other, f"group {g}: {one!r} != {other!r}"
+        else:
+            np.testing.assert_array_equal(one, other, err_msg=f"group {g}")
+
+
+def test_collecting_matches_numpy():
+    group_idx = np.array([3, 1, 3, 0, 1, 3])
+    a = np.arange(6.0)
+    res = aggregate(group_idx, a, func="array")
+    ref = aggregate_np(group_idx, a, func="array")
+    _same_groups(res, ref)
+    # the values of a group keep the order they appear in
+    np.testing.assert_array_equal(res[3], [0.0, 2.0, 5.0])
+    # a group without values holds an empty sequence
+    assert len(res[2]) == 0
+
+
+@pytest.mark.parametrize("func", ["array", list, "split", "splice", np.array, np.asarray])
+def test_collecting_aliases(func):
+    group_idx = np.array([0, 1, 1])
+    a = np.arange(3.0)
+    res = aggregate(group_idx, a, func=func)
+    np.testing.assert_array_equal(res[1], [1.0, 2.0])
+
+
+@pytest.mark.parametrize(
+    ["fill_value", "expected"],
+    [(None, None), (-1, -1), (np.nan, np.nan)],
+    ids=["none", "int", "nan"],
+)
+def test_collecting_fill_value(fill_value, expected):
+    # a group without values takes the fill value
+    group_idx = np.array([0, 2, 2])
+    a = np.arange(3.0)
+    res = aggregate(group_idx, a, func="array", fill_value=fill_value)
+    assert res[1] is expected or res[1] == expected
+
+
+def test_collecting_empty_fill_value():
+    # an empty sequence leaves the empty block of the group alone
+    group_idx = np.array([0, 2, 2])
+    a = np.arange(3.0)
+    res = aggregate(group_idx, a, func="array", fill_value=[])
+    assert len(res[1]) == 0
+    ref = aggregate_np(group_idx, a, func="array", fill_value=[])
+    _same_groups(res, ref)
+
+
+def test_collecting_multidimensional_labels():
+    group_idx = np.array(list(itertools.product(range(3), range(4)))).T[:, :-1]
+    a = np.arange(11, dtype=float)
+    res = aggregate(group_idx, a, func="array", size=(3, 4))
+    assert res.shape == (3, 4)
+    assert len(res[2, 3]) == 0
+    ref = aggregate_np(group_idx, a, func="array", size=(3, 4))
+    _same_groups(res.ravel(), ref.ravel())
+
+
+def test_collecting_keeps_the_dtype():
+    # the values are handed out as they are - the float16 of the input is
+    # not widened to float32 the way the kernels widen it
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1.5, 2.5, 3.5], dtype=np.float16)
+    res = aggregate(group_idx, a, func="array")
+    assert res[0].dtype == np.float16
+    ref = aggregate_np(group_idx, a, func="array")
+    _same_groups(res, ref)
+
+
+def test_collecting_out():
+    group_idx = np.array([0, 1, 1])
+    a = np.arange(3.0)
+    out = np.empty(2, dtype=object)
+    ret = aggregate(group_idx, a, func="array", out=out)
+    assert ret is out
+    np.testing.assert_array_equal(out[1], [1.0, 2.0])
+    with pytest.raises(TypeError, match="out must have shape"):
+        aggregate(group_idx, a, func="array", out=np.empty(3, dtype=object))
+
+
+def test_collecting_errors():
+    group_idx = np.array([0, 1, 1])
+    a = np.arange(3.0)
+    with pytest.raises(ValueError, match="too large"):
+        aggregate(group_idx, a, func="array", size=1)
+    with pytest.raises(ValueError, match="negative"):
+        aggregate(group_idx - 1, a, func="array")
+    # a scalar stands for one value, which the collecting function cannot take
+    with pytest.raises(ValueError, match="scalar inputs"):
+        aggregate(group_idx, 1.0, func="array")
 
 
 # The on-disk cache is shared by the workers of a parallel test run: numba

@@ -24,7 +24,7 @@ from numpy_groupies.aggregate_common import (
     is_scalar_input,
     resolve_fill_value,
 )
-from numpy_groupies.aggregate_numba import argreductions, averaging, cumulative, reductions, specials
+from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.aggregate_numba.compose import KernelHandle
 from numpy_groupies.aggregate_numba.steps import step_indices
 from numpy_groupies.utils import (
@@ -375,6 +375,9 @@ def get_funcs() -> dict[str, typing.Callable[..., typing.Any]]:
         if funcname not in funcs_no_separate_nan:
             op = build_aggregate_op("nan" + funcname, pair.nan)  # type: ignore[arg-type]
             funcs["nan" + funcname] = op if wrap is None else wrap(op)
+    # the collecting function has no compiled kernel: its result is a
+    # sequence per group, which a compiled driver cannot produce
+    funcs["array"] = collect.array
     return funcs
 
 

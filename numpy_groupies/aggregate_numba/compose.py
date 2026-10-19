@@ -168,6 +168,16 @@ def rule_bool(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     return out, out
 
 
+def rule_object(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
+    """array: the result is a sequence per group.
+
+    The sequences carry the dtype of the values, the collection of them is of
+    the object dtype - it holds the sequences themselves, not numbers.
+    """
+    out = np.dtype(object)
+    return out, out
+
+
 def rule_int64(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     out = np.dtype(np.int64)
     return out, out
