@@ -565,7 +565,7 @@ def _sort(
         # zero of an unsigned one stays the smallest key of all.  The inexact
         # dtypes have no inversion and negate cleanly - a nan stays last
         # either way, and -0.0 compares equal to 0.0.
-        key: Any = ~a if a.dtype.kind in "iub" else -a
+        key = cast("npt.NDArray[np.integer]", ~a) if a.dtype.kind in "iub" else cast("npt.NDArray[np.floating]", -a)
     else:
         key = a
     sortidx = np.lexsort((key, group_idx))
