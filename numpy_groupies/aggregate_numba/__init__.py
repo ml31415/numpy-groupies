@@ -24,7 +24,7 @@ __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 
 def aggregate(
     group_idx: npt.ArrayLike,
-    a: npt.ArrayLike,
+    a: npt.NDArray[np.generic],
     func: str | Callable[..., typing.Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: typing.Any = DEFAULT_FILL_VALUE,
@@ -42,7 +42,7 @@ def aggregate(
     is16 = getattr(a, "dtype", None) == np.float16
     if is16:
         # a float16 input is always an array - the getattr gate does not narrow the union
-        a = typing.cast("npt.NDArray[np.generic]", a).astype(np.float32)
+        a = a.astype(np.float32)
     try:
         funcname, aggregate_op = _dispatch[func]
     except (KeyError, TypeError):
