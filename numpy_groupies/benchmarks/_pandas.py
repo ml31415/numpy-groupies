@@ -15,6 +15,7 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
 from numpy_groupies.utils import (
+    RavelOrder,
     aliasing,
     allnan,
     anynan,
@@ -133,7 +134,7 @@ def aggregate(
     func: str | Callable[..., Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
-    order: str = "C",
+    order: RavelOrder = "C",
     dtype: npt.DTypeLike = None,
     axis: int | None = None,
     **kwargs: Any,

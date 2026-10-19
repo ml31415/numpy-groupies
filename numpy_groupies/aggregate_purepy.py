@@ -3,7 +3,7 @@ import math
 import numbers
 import operator
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.utils import AValue
+    from numpy_groupies.utils import AValue, RavelOrder
 
 
 # min, max, all, any - builtin
@@ -270,7 +270,7 @@ def aggregate(
     func: str | Callable[..., Any] = "sum",
     size: int | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
-    order: Literal["C", "F"] = "C",
+    order: "RavelOrder" = "C",
     dtype: "npt.DTypeLike | None" = None,
     axis: int | None = None,
     **kwargs: Any,

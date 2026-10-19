@@ -26,6 +26,11 @@ from numpy_groupies.aggregate_common import (
 # that stands for that value repeated over every label (a np.bool_ is no int)
 AValue: TypeAlias = npt.NDArray[np.number] | npt.NDArray[np.bool_] | int | float | complex | np.bool_
 
+# the memory layout the output is written in, as every signature of this
+# package spells it: the docstring offers 'F' for fortran-style and the code
+# only ever ravels and reshapes with these two
+RavelOrder: TypeAlias = Literal["C", "F"]
+
 # what input_validation hands back: (raveled integer indices, the values -
 # possibly still a python scalar -, the flat output size, the input index
 # dimensionality, the (possibly shaped) output size and the shape an arg
@@ -365,7 +370,7 @@ def _ravel_group_idx(
     a: npt.NDArray[np.number],
     axis: int,
     size: Any,
-    order: Literal["C", "F"],
+    order: RavelOrder,
     method: str = "ravel",
 ) -> tuple[Any, Any]:
     ndim_a = a.ndim
@@ -404,7 +409,7 @@ def _ravel_group_idx(
 
 
 def offset_labels(
-    group_idx: npt.NDArray[np.integer], inshape: tuple[int, ...], axis: int, order: Literal["C", "F"], size: int
+    group_idx: npt.NDArray[np.integer], inshape: tuple[int, ...], axis: int, order: RavelOrder, size: int
 ) -> Any:
     """
     Offset group labels by dimension. This is used when we reduce over a subset of the dimensions of
@@ -433,7 +438,7 @@ def input_validation(
     group_idx: Any,
     a: Any,
     size: Any = None,
-    order: Literal["C", "F"] = "C",
+    order: RavelOrder = "C",
     axis: int | None = None,
     ravel_group_idx: bool = True,
     check_bounds: bool = True,

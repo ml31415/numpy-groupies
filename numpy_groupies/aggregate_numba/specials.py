@@ -25,7 +25,7 @@ from numpy_groupies.aggregate_numba.compose import (
 )
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numpy import _aggregate_base
-from numpy_groupies.utils import AValue
+from numpy_groupies.utils import AValue, RavelOrder
 
 
 def _numpy_fallback(
@@ -34,7 +34,7 @@ def _numpy_fallback(
     func: str,
     size: int | None,
     fill_value: float,
-    order: typing.Literal["C", "F"],
+    order: RavelOrder,
     dtype: npt.DTypeLike | None,
     axis: int | None,
 ) -> npt.NDArray[np.number]:

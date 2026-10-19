@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.utils import AValue
+    from numpy_groupies.utils import AValue, RavelOrder
 
     class Aggregate(Protocol):
         """The canonical signature of the public ``aggregate``.
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
             func: str | Callable[..., Any] = "sum",
             size: int | Sequence[int] | None = None,
             fill_value: Any = ...,
-            order: str = "C",
+            order: RavelOrder = "C",
             dtype: npt.DTypeLike | None = None,
             axis: int | None = None,
             out: npt.NDArray[np.number] | None = None,

@@ -18,7 +18,7 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.aggregate_numba.gather import unpack_into
 from numpy_groupies.aggregate_numba.ops import _dispatch, build_generic_aggregate
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
-from numpy_groupies.utils import AValue
+from numpy_groupies.utils import AValue, RavelOrder
 
 __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 
@@ -29,7 +29,7 @@ def aggregate(
     func: str | Callable[..., typing.Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: typing.Any = DEFAULT_FILL_VALUE,
-    order: str = "C",
+    order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     out: npt.NDArray[np.number] | None = None,
@@ -77,7 +77,7 @@ def _aggregate_custom(
     func: str | Callable[..., typing.Any],
     size: int | Sequence[int] | None,
     fill_value: typing.Any,
-    order: str,
+    order: RavelOrder,
     dtype: npt.DTypeLike | None,
     axis: int | None,
     cache: bool | None | typing.MutableMapping[typing.Any, typing.Any],

@@ -1,5 +1,5 @@
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -20,6 +20,7 @@ from numpy_groupies.aggregate_common import (
 )
 from numpy_groupies.utils import (
     AValue,
+    RavelOrder,
     aliasing,
     check_boolean,
     check_dtype,
@@ -730,7 +731,7 @@ def _aggregate_base(
     func: str | Callable[..., Any] | None = "sum",
     size: int | Sequence[int] | npt.NDArray[np.integer] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
-    order: Literal["C", "F"] = "C",
+    order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     _impl_dict: dict[str, Callable[..., Any]] = _impl_dict,
@@ -815,7 +816,7 @@ def aggregate(
     func: str | Callable[..., Any] | None = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
-    order: Literal["C", "F"] = "C",
+    order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     **kwargs: Any,
