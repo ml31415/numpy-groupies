@@ -27,7 +27,7 @@ from numpy_groupies.aggregate_common import (
 # reduction has to unravel its positions with, in that order
 ValidatedInput: TypeAlias = tuple[
     npt.NDArray[np.integer],
-    npt.NDArray[np.generic] | int | float | complex,
+    npt.NDArray[np.number] | int | float | complex,
     int,
     int,
     int | tuple[int, ...] | npt.NDArray[np.integer],
@@ -46,7 +46,7 @@ def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike | No
 
 
 def check_nton_shape(
-    ret: npt.NDArray[np.generic],
+    ret: npt.NDArray[np.number],
     size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
     func: str | Callable[..., Any],
 ) -> None:
@@ -227,7 +227,7 @@ def scalar_dtype(a: Any) -> np.dtype:
 def check_dtype(
     dtype: npt.DTypeLike | None,
     func_str: str,
-    a: npt.NDArray[np.generic] | complex,
+    a: npt.NDArray[np.number] | complex,
     n: int | tuple[int, ...] | None,
 ) -> np.dtype:
     if is_scalar_input(a):
@@ -235,7 +235,7 @@ def check_dtype(
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
         a_dtype = scalar_dtype(a)
     else:
-        a_dtype = cast("npt.NDArray[np.generic]", a).dtype
+        a_dtype = cast("npt.NDArray[np.number]", a).dtype
 
     return resolve_output_dtype(dtype, func_str, a_dtype, n)
 
@@ -343,7 +343,7 @@ def check_fill_value(fill_value: Any, dtype: np.dtype, func: str | None = None) 
 
 
 def check_group_idx(
-    group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.generic] | None = None, check_min: bool = True
+    group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number] | None = None, check_min: bool = True
 ) -> None:
     if a is not None and group_idx.size != a.size:
         raise ValueError("The size of group_idx must be the same as a.size")
@@ -355,7 +355,7 @@ def check_group_idx(
 
 def _ravel_group_idx(
     group_idx: Any,
-    a: npt.NDArray[np.generic],
+    a: npt.NDArray[np.number],
     axis: int,
     size: Any,
     order: str,
@@ -540,14 +540,14 @@ def input_validation(
 # General tools
 
 
-def unpack(group_idx: npt.ArrayLike, ret: npt.NDArray[np.generic]) -> npt.NDArray[np.generic]:
+def unpack(group_idx: npt.ArrayLike, ret: npt.NDArray[np.number]) -> npt.NDArray[np.number]:
     """
     Take an aggregate packed array and uncompress it to the size of group_idx. This is equivalent to
     ret[group_idx].
     """
     # every ArrayLike that indexes at runtime does so as an array or a sequence -
     # the scalar members of the union are not indexable and would raise in numpy too
-    return cast("npt.NDArray[np.generic]", ret[cast("Any", group_idx)])
+    return cast("npt.NDArray[np.number]", ret[cast("Any", group_idx)])
 
 
 def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:
@@ -591,7 +591,7 @@ def multi_arange(n: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
     return cast("npt.NDArray[np.intp]", np.cumsum(ret)[:-1])
 
 
-def label_contiguous_1d(X: npt.NDArray[np.generic]) -> npt.NDArray[np.intp]:
+def label_contiguous_1d(X: npt.NDArray[np.number]) -> npt.NDArray[np.intp]:
     """
     WARNING: API for this function is liable to change!!!
 

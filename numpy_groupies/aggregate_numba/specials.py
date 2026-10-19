@@ -36,7 +36,7 @@ def _numpy_fallback(
     order: str,
     dtype: npt.DTypeLike | None,
     axis: int | None,
-) -> npt.NDArray[np.generic]:
+) -> npt.NDArray[np.number]:
     """Hand an input dtype the compiled drivers cannot handle to numpy.
 
     Reached for complex input of ``median``: numba can neither partition
@@ -66,9 +66,9 @@ def _group_starts(counts: npt.NDArray[np.int64]) -> npt.NDArray[np.int64]:
 
 def _group_place(
     group_idx: npt.NDArray[np.signedinteger],
-    a: npt.NDArray[np.generic],
+    a: npt.NDArray[np.number],
     cursor: npt.NDArray[np.int64],
-    a_sorted: npt.NDArray[np.generic],
+    a_sorted: npt.NDArray[np.number],
 ) -> None:
     """scatter the values into their group-blocks"""
     for i in range(len(group_idx)):
@@ -79,10 +79,10 @@ def _group_place(
 
 def _median_valid(
     g: int,
-    a_sorted: npt.NDArray[np.generic],
+    a_sorted: npt.NDArray[np.number],
     counts: npt.NDArray[np.int64],
     starts: npt.NDArray[np.int64],
-    buf: npt.NDArray[np.generic],
+    buf: npt.NDArray[np.number],
     nans: bool,
 ) -> int:
     """copy group g into buf, returning the number of usable values;
@@ -104,7 +104,7 @@ def _median_valid(
     return m
 
 
-def _median_middle(values: npt.NDArray[np.generic]) -> typing.Any:
+def _median_middle(values: npt.NDArray[np.number]) -> typing.Any:
     """select the middle value(s) of a group - no sorting needed"""
     m = len(values)
     part = np.partition(values, m // 2)
@@ -126,13 +126,13 @@ def _median_driver_factory(nans: bool) -> typing.Any:
 
     def driver(
         group_idx: npt.NDArray[np.signedinteger],
-        a: npt.NDArray[np.generic],
+        a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
-    ) -> npt.NDArray[np.generic]:
+    ) -> npt.NDArray[np.number]:
         # median is order-insensitive and takes no ddof - both slots unused
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
@@ -186,7 +186,7 @@ _INSERTION_SORT_LIMIT = 32
 
 
 @njit_stable
-def _order_block(a_sorted: npt.NDArray[np.generic], begin: int, size_g: int, reverse: bool) -> npt.NDArray[np.generic]:
+def _order_block(a_sorted: npt.NDArray[np.number], begin: int, size_g: int, reverse: bool) -> npt.NDArray[np.number]:
     """order one group-block of the flat array, descending if ``reverse``.
 
     ``size_g`` is at least two, the caller leaves a block of a single value
@@ -243,7 +243,7 @@ def _order_block(a_sorted: npt.NDArray[np.generic], begin: int, size_g: int, rev
 
 
 def _sort_blocks(
-    a_sorted: npt.NDArray[np.generic],
+    a_sorted: npt.NDArray[np.number],
     counts: npt.NDArray[np.int64],
     starts: npt.NDArray[np.int64],
     reverse: bool,
@@ -256,9 +256,9 @@ def _sort_blocks(
 
 def _sort_scatter(
     group_idx: npt.NDArray[np.signedinteger],
-    a_sorted: npt.NDArray[np.generic],
+    a_sorted: npt.NDArray[np.number],
     starts: npt.NDArray[np.int64],
-    out: npt.NDArray[np.generic],
+    out: npt.NDArray[np.number],
 ) -> None:
     """write the ordered blocks back to the positions their group occupies
     in the input - the j-th value of a group goes to its j-th appearance"""
@@ -278,13 +278,13 @@ def _sort_driver_factory(nans: bool) -> typing.Any:
 
     def driver(
         group_idx: npt.NDArray[np.signedinteger],
-        a: npt.NDArray[np.generic],
+        a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
-    ) -> npt.NDArray[np.generic]:
+    ) -> npt.NDArray[np.number]:
         # sort emits one value per input item, so neither the group count nor
         # the fill value is of any use here; the reverse flag arrives in the
         # slot trapezoid uses for its sample spacing
@@ -318,7 +318,7 @@ class TrapezoidState(typing.NamedTuple):
     values."""
 
     out: npt.NDArray[np.inexact]
-    prev: npt.NDArray[np.generic]
+    prev: npt.NDArray[np.number]
     pending: npt.NDArray[np.bool_]
     untouched: npt.NDArray[np.bool_]
     track: bool

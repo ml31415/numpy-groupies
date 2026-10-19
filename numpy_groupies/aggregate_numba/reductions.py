@@ -29,7 +29,7 @@ class ReductionState(typing.NamedTuple):
     from the forced default needs it, the default keeps the per-element loop
     free of the extra store (measured ~0.1ms per 500k values)."""
 
-    out: npt.NDArray[np.generic]
+    out: npt.NDArray[np.number]
     untouched: npt.NDArray[np.bool_]
     track: bool
 
@@ -40,7 +40,7 @@ class SelectionState(typing.NamedTuple):
     ``pending`` marks the groups that have not seen a value yet - their first
     value always wins, a nan poisons the group."""
 
-    out: npt.NDArray[np.generic]
+    out: npt.NDArray[np.number]
     pending: npt.NDArray[np.bool_]
 
 
@@ -286,7 +286,7 @@ any = build_kernel(
 class LastState(typing.NamedTuple):
     """The output array carries the last value of each group itself."""
 
-    out: npt.NDArray[np.generic]
+    out: npt.NDArray[np.number]
 
 
 def _last_init(
@@ -331,13 +331,13 @@ def _first_driver_factory(nan_variant: bool) -> typing.Any:
     # see the note in argreductions._argmax_driver_factory.
     def driver(
         group_idx: npt.NDArray[np.signedinteger],
-        a: npt.NDArray[np.generic],
+        a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
-    ) -> npt.NDArray[np.generic]:
+    ) -> npt.NDArray[np.number]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         pending = np.ones(size, np.bool_)

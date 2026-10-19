@@ -102,11 +102,11 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         ddof: float = 0,
-    ) -> npt.NDArray[np.generic]:
+    ) -> npt.NDArray[np.number]:
         # dtypes the compiled driver cannot handle, handed to the numpy twin
         if handle.fallback is not None and getattr(getattr(a, "dtype", None), "kind", "") == "c":
             return typing.cast(
-                "npt.NDArray[np.generic]",
+                "npt.NDArray[np.number]",
                 handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis),
             )
         # fast path: plain 1d-in/1d-out - the jitted driver does the bounds
@@ -139,7 +139,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
                 plan_dtype = None
             if plan_dtype is not None:
                 return typing.cast(
-                    "npt.NDArray[np.generic]",
+                    "npt.NDArray[np.number]",
                     handle.driver(
                         group_idx,
                         a,
@@ -159,7 +159,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
         # a scalar reaches the compiled driver as a full column of that one
         # value, so its dtype is all that is left to resolve the plan from -
         # for a python number the type stands in, see scalar_dtype
-        a_key = scalar_dtype(a) if scalar else typing.cast("npt.NDArray[np.generic]", a).dtype
+        a_key = scalar_dtype(a) if scalar else typing.cast("npt.NDArray[np.number]", a).dtype
         n_key = len(group_idx) if (func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
         try:
             # a dtype that is no key of the cache raises there, which is caught
@@ -179,7 +179,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
         a = np.ascontiguousarray(a)
 
         ret = typing.cast(
-            "npt.NDArray[np.generic]",
+            "npt.NDArray[np.number]",
             handle.driver(group_idx, a, flat_size, dtype, _aux_dtype(handle, a_key, dtype), fill_value, ddof),
         )
 
@@ -190,7 +190,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
                 mask = ret == fill_value
                 ret[mask] = 0
                 ret = typing.cast(
-                    "npt.NDArray[np.generic]",
+                    "npt.NDArray[np.number]",
                     np.unravel_index(typing.cast("npt.NDArray[np.integer]", ret), unravel_shape)[
                         typing.cast("int", axis)
                     ],
@@ -198,7 +198,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
                 ret[mask] = fill_value
             check_nton_shape(ret, size, func)
             ret = typing.cast(
-                "npt.NDArray[np.generic]",
+                "npt.NDArray[np.number]",
                 ret.reshape(typing.cast("typing.Any", size), order=typing.cast("typing.Any", order)),
             )
         return ret
@@ -211,7 +211,7 @@ def _compiled_group_loop(func: typing.Callable[..., typing.Any]) -> typing.Calla
     nb_func = nb.njit(func)
 
     @nb.njit
-    def loop(sortidx: typing.Any, group_idx: typing.Any, a: npt.NDArray[np.generic], ret: typing.Any) -> None:
+    def loop(sortidx: typing.Any, group_idx: typing.Any, a: npt.NDArray[np.number], ret: typing.Any) -> None:
         size = len(ret)
         group_idx_srt = group_idx[sortidx]
         a_srt = a[sortidx]
@@ -249,7 +249,7 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         ddof: float = 0,
-    ) -> npt.NDArray[np.generic]:
+    ) -> npt.NDArray[np.number]:
         # a func reaching this loop is no key of the dispatch table, so it names
         # no function and cannot be an arg reduction or a one-to-one answer
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=None)
@@ -269,7 +269,7 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
         if ndim_idx > 1:
             check_nton_shape(ret, size, func)
             ret = typing.cast(
-                "npt.NDArray[np.generic]",
+                "npt.NDArray[np.number]",
                 ret.reshape(typing.cast("typing.Any", size), order=typing.cast("typing.Any", order)),
             )
         return ret
@@ -325,8 +325,8 @@ def _dx_argument(op: typing.Callable[..., typing.Any]) -> typing.Callable[..., t
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         dx: float = 1.0,
-    ) -> npt.NDArray[np.generic]:
-        return typing.cast("npt.NDArray[np.generic]", op(group_idx, a, size, fill_value, order, dtype, axis, dx))
+    ) -> npt.NDArray[np.number]:
+        return typing.cast("npt.NDArray[np.number]", op(group_idx, a, size, fill_value, order, dtype, axis, dx))
 
     return trapezoid_op
 
@@ -350,11 +350,11 @@ def _sort_arguments(op: typing.Callable[..., typing.Any]) -> typing.Callable[...
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         reverse: bool = False,
-    ) -> npt.NDArray[np.generic]:
+    ) -> npt.NDArray[np.number]:
         if fill_value is DEFAULT_FILL_VALUE:
             fill_value = 0
         return typing.cast(
-            "npt.NDArray[np.generic]", op(group_idx, a, size, fill_value, order, dtype, axis, 1.0 if reverse else 0.0)
+            "npt.NDArray[np.number]", op(group_idx, a, size, fill_value, order, dtype, axis, 1.0 if reverse else 0.0)
         )
 
     return sort_op

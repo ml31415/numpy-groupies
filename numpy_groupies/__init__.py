@@ -34,10 +34,10 @@ if TYPE_CHECKING:
             order: str = "C",
             dtype: npt.DTypeLike | None = None,
             axis: int | None = None,
-            out: npt.NDArray[np.generic] | None = None,
+            out: npt.NDArray[np.number] | None = None,
             cache: bool = True,
             **kwargs: Any,
-        ) -> npt.NDArray[np.generic]: ...
+        ) -> npt.NDArray[np.number]: ...
 
 
 def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
@@ -92,8 +92,8 @@ else:
 
 
 def uaggregate(
-    group_idx: npt.ArrayLike, a: npt.ArrayLike, out: npt.NDArray[np.generic] | None = None, **kwargs: Any
-) -> npt.NDArray[np.generic]:
+    group_idx: npt.ArrayLike, a: npt.ArrayLike, out: npt.NDArray[np.number] | None = None, **kwargs: Any
+) -> npt.NDArray[np.number]:
     """
     Aggregate the values of ``a`` by the groups in ``group_idx`` and broadcast the result
     back to the size of ``a``, so that every element carries the result of its own group.

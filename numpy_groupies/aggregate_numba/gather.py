@@ -5,16 +5,16 @@ import numpy.typing as npt
 
 
 def _gather_1d(
-    ret: npt.NDArray[np.generic], group_idx: npt.NDArray[np.integer], out: npt.NDArray[np.generic]
-) -> npt.NDArray[np.generic]:
+    ret: npt.NDArray[np.number], group_idx: npt.NDArray[np.integer], out: npt.NDArray[np.number]
+) -> npt.NDArray[np.number]:
     for i in range(group_idx.size):
         out[i] = ret[group_idx[i]]
     return out
 
 
 def unpack_into(
-    group_idx: npt.ArrayLike, ret: npt.NDArray[np.generic], out: npt.NDArray[np.generic]
-) -> npt.NDArray[np.generic]:
+    group_idx: npt.ArrayLike, ret: npt.NDArray[np.number], out: npt.NDArray[np.number]
+) -> npt.NDArray[np.number]:
     """Like ``unpack``, but gathers into a caller-provided array.
 
     ``out`` must match the shape of ``ret[group_idx]`` and the dtype of

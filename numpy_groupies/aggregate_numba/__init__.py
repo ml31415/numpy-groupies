@@ -24,17 +24,17 @@ __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 
 def aggregate(
     group_idx: npt.ArrayLike,
-    a: npt.NDArray[np.generic],
+    a: npt.NDArray[np.number],
     func: str | Callable[..., typing.Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: typing.Any = DEFAULT_FILL_VALUE,
     order: str = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
-    out: npt.NDArray[np.generic] | None = None,
+    out: npt.NDArray[np.number] | None = None,
     cache: bool = True,
     **kwargs: typing.Any,
-) -> npt.NDArray[np.generic]:
+) -> npt.NDArray[np.number]:
     # numba has no float16: the values survive the widening cast to float32
     # exactly, so the kernels run on float32 and an inexact result is rounded
     # back - like the numpy twin does, whose bincount accumulates in float64
@@ -72,7 +72,7 @@ def aggregate(
 
 def _aggregate_custom(
     group_idx: npt.ArrayLike,
-    a: npt.ArrayLike,
+    a: npt.NDArray[np.number],
     func: str | Callable[..., typing.Any],
     size: int | Sequence[int] | None,
     fill_value: typing.Any,
@@ -81,7 +81,7 @@ def _aggregate_custom(
     axis: int | None,
     cache: bool | None | typing.MutableMapping[typing.Any, typing.Any],
     **kwargs: typing.Any,
-) -> npt.NDArray[np.generic]:
+) -> npt.NDArray[np.number]:
     """Slow dispatch path for a func that is no key of the dispatch table.
 
     An object of one's own is what numba cannot compile - it compiles functions,
@@ -110,7 +110,7 @@ def _aggregate_custom(
             aggregate_op = build_generic_aggregate(func)
             cache_map[func] = aggregate_op
     return typing.cast(
-        "npt.NDArray[np.generic]", aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+        "npt.NDArray[np.number]", aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
     )
 
 

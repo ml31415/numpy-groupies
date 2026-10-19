@@ -26,9 +26,9 @@ def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
         @njit_stable
         def kernel_nan(
             group_idx: npt.NDArray[np.signedinteger],
-            a: npt.NDArray[np.generic],
-            out: npt.NDArray[np.generic],
-            running: npt.NDArray[np.generic],
+            a: npt.NDArray[np.number],
+            out: npt.NDArray[np.number],
+            running: npt.NDArray[np.number],
             pending: npt.NDArray[np.bool_],
             fill_value: float,
         ) -> None:
@@ -60,9 +60,9 @@ def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
         @njit_stable
         def kernel_plain(
             group_idx: npt.NDArray[np.signedinteger],
-            a: npt.NDArray[np.generic],
-            out: npt.NDArray[np.generic],
-            running: npt.NDArray[np.generic],
+            a: npt.NDArray[np.number],
+            out: npt.NDArray[np.number],
+            running: npt.NDArray[np.number],
             pending: npt.NDArray[np.bool_],
             fill_value: float,
         ) -> None:
@@ -107,13 +107,13 @@ def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
 
     def driver(
         group_idx: npt.NDArray[np.signedinteger],
-        a: npt.NDArray[np.generic],
+        a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
-    ) -> npt.NDArray[np.generic]:
+    ) -> npt.NDArray[np.number]:
         # once this resolved, every index is within [0, size) - the loop does
         # not need an upper bounds check (negative ones are flagged and raised
         # after the loop, a raise inside it would be a call barrier)
@@ -143,9 +143,9 @@ def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
         @njit_stable
         def kernel_nan(
             group_idx: npt.NDArray[np.signedinteger],
-            a: npt.NDArray[np.generic],
-            out: npt.NDArray[np.generic],
-            running: npt.NDArray[np.generic],
+            a: npt.NDArray[np.number],
+            out: npt.NDArray[np.number],
+            running: npt.NDArray[np.number],
             pending: npt.NDArray[np.bool_],
             fill_value: float,
         ) -> None:
@@ -174,9 +174,9 @@ def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
         @njit_stable
         def kernel_plain(
             group_idx: npt.NDArray[np.signedinteger],
-            a: npt.NDArray[np.generic],
-            out: npt.NDArray[np.generic],
-            running: npt.NDArray[np.generic],
+            a: npt.NDArray[np.number],
+            out: npt.NDArray[np.number],
+            running: npt.NDArray[np.number],
             pending: npt.NDArray[np.bool_],
             fill_value: float,
         ) -> None:
@@ -207,13 +207,13 @@ def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
 
     def driver(
         group_idx: npt.NDArray[np.signedinteger],
-        a: npt.NDArray[np.generic],
+        a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
-    ) -> npt.NDArray[np.generic]:
+    ) -> npt.NDArray[np.number]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         running = np.empty(size, a.dtype)
