@@ -592,8 +592,14 @@ def _array(
         raise ValueError("fill_value must be None, a scalar or an empty sequence")
     order_group_idx = np.argsort(group_idx, kind="stable")
     counts = np.bincount(group_idx, minlength=size)
-    ret: list[Any] | npt.NDArray[np.object_] = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
-    ret = cast("npt.NDArray[np.object_]", np.asanyarray(ret, dtype="object"))
+    blocks = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
+    # the object array is built element by element: np.asanyarray of the list
+    # of blocks collapses it into a regular array whenever the groups happen
+    # to be of the same length - and the result would lose the sequences it
+    # is meant to hold (and the size the caller asked for)
+    ret = np.empty(len(blocks), dtype=object)
+    for g, block in enumerate(blocks):
+        ret[g] = block
     if fill_value is None or np.isscalar(fill_value):
         _fill_untouched(group_idx, ret, fill_value)
     return ret
