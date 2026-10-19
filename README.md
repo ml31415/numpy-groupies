@@ -175,7 +175,7 @@ Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix 
 | Sorting (size of input)         | `sort` (`reverse=True` for descending) |
 | Collect group members           | `array` |
 
-Not every implementation supports every function — for example `array` is **not** available in the Numba implementation. The [function reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md) has the exact semantics, default fill values, complex-number behaviour and a function × implementation matrix.
+Not every implementation supports every function — the [function reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md) has the exact semantics, default fill values, complex-number behaviour and a function × implementation matrix.
 
 ## Helper tools
 
@@ -208,13 +208,13 @@ All implementations share the calling syntax and produce the same results up to 
 
 | Implementation | Needs        | Notes |
 | -------------- | ------------ | ----- |
-| **numba**      | numpy, numba | Fastest. Default if numba is installed. Lacks `array`. |
-| **numpy**      | numpy        | Based on `np.bincount` and indexing tricks. Default without numba. Most complete. |
+| **numba**      | numpy, numba | Fastest. Default if numba is installed. |
+| **numpy**      | numpy        | Based on `np.bincount` and indexing tricks. Default without numba. |
 | **pure python** | numpy        | Plain Python loops, no Numba. Very slow; useful as a fallback or for porting. |
 | numpy ufunc    | numpy        | For benchmarking only: built on `ufunc.at` (`np.add.at`, …), in `numpy_groupies.benchmarks`. Incomplete. |
 | pandas         | numpy, pandas | For benchmarking only: wraps `groupby` (in `numpy_groupies.benchmarks`). Skips NaN even in the plain functions (except `median`, `cumsum`). |
 
-> **Gotchas:** with Numba installed, `aggregate(..., func="array")` raises `NotImplementedError`, and custom callables must be Numba-compilable (numeric code). For those cases call the NumPy implementation: `npg.aggregate_np(group_idx, a, func="array")`.
+> **Gotchas:** with Numba installed, custom callables must be Numba-compilable (numeric code). For the cases that are not, call the NumPy implementation: `npg.aggregate_np(group_idx, a, func=my_callable)`.
 
 ## Performance
 

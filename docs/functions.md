@@ -107,6 +107,8 @@ These do not reduce the data; the output has the size of the input. There are no
 | -------- | ------ |
 | `array`  | The grouped items themselves, in the order they appear in `a` — one sequence per group. (aliases: `split`, `splice`) |
 
+The NumPy and the Numba implementation hand out an object array whose entries are the arrays of the groups; the pure Python one a list of lists.
+
 ## Function × implementation matrix
 
 `x` = supported, `-` = raises `NotImplementedError` (checked by calling each implementation).
@@ -126,14 +128,14 @@ The nan-variants are supported wherever the plain function is.
 | `cumsum`                       |  x    |  x    |      -      |
 | `cumprod`, `cummin`, `cummax`  |  -    |  x    |      -      |
 | `sort`                         |  x    |  x    |      x      |
-| `array`                        |  x    |  -    |      x      |
+| `array`                        |  x    |  x    |      x      |
 | `nan…` variants of the above   |  x¹   |  x¹   |     x¹      |
 | custom callables               |  x    |  x²   |      x      |
 
 ¹ For the same functions as in the plain row.
 ² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use `aggregate_np` instead.
 
-Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call `aggregate_np` or `aggregate_py` for the functions numba lacks.
+Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call `aggregate_np` or `aggregate_py` for the functions the default implementation lacks.
 
 ## Fill values
 
