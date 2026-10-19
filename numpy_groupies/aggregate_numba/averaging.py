@@ -20,7 +20,7 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 # the building blocks and overload shims of this file are jitted: numba
 # compiles them from the argument types and ignores these annotations,
 # the type checker needs them
-def _track_extrema(val: float, low: int, high: int) -> None:
+def _track_extrema(val: int, low: int, high: int) -> None:
     """Fold the global min/max tracking for the integer limit checks into the
     accumulation pass - replaced per dtype by the overload below, inexact
     input never tracks anything."""
@@ -28,16 +28,16 @@ def _track_extrema(val: float, low: int, high: int) -> None:
 
 
 @nb.extending.overload(_track_extrema)
-def _track_extrema_overload(val: float, low: int, high: int) -> typing.Callable[..., None]:
+def _track_extrema_overload(val: int, low: int, high: int) -> typing.Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
-        def _impl(val: float, low: int, high: int) -> None:
+        def _impl(val: int, low: int, high: int) -> None:
             low[0] = min(low[0], val)
             high[0] = max(high[0], val)
 
         return _impl
 
-    def _impl(val: float, low: int, high: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(val: int, low: int, high: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
         pass
 
     return _impl
