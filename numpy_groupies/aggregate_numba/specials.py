@@ -32,7 +32,7 @@ def _numpy_fallback(
     a: npt.ArrayLike,
     func: str,
     size: int | None,
-    fill_value: typing.Any,
+    fill_value: float,
     order: str,
     dtype: npt.DTypeLike | None,
     axis: int | None,
@@ -130,8 +130,8 @@ def _median_driver_factory(nans: bool) -> typing.Any:
         size_arg: int,
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
-        fill_value: typing.Any,
-        ddof: typing.Any,
+        fill_value: float,
+        ddof: int,
     ) -> npt.NDArray[np.generic]:
         # median is order-insensitive and takes no ddof - both slots unused
         size = output_size(group_idx, size_arg)
@@ -282,8 +282,8 @@ def _sort_driver_factory(nans: bool) -> typing.Any:
         size_arg: int,
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
-        fill_value: typing.Any,
-        ddof: typing.Any,
+        fill_value: float,
+        ddof: int,
     ) -> npt.NDArray[np.generic]:
         # sort emits one value per input item, so neither the group count nor
         # the fill value is of any use here; the reverse flag arrives in the
@@ -330,7 +330,7 @@ def _trapezoid_init(
     out_dtype: np.dtype,
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
-    fill_value: typing.Any,
+    fill_value: float,
     forced_fill: typing.Any,
 ) -> TrapezoidState:
     track = fill_value != forced_fill
@@ -344,9 +344,7 @@ def _trapezoid_init(
     )
 
 
-def _trapezoid_update(
-    st: TrapezoidState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
-) -> None:
+def _trapezoid_update(st: TrapezoidState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = False
     if st.pending[ri]:

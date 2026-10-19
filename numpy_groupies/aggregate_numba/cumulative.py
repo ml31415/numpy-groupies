@@ -27,22 +27,18 @@ def _cumsum_init(
     out_dtype: np.dtype,
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
-    fill_value: typing.Any,
+    fill_value: float,
     forced_fill: typing.Any,
 ) -> CumulativeState:
     # every position of out is written in the same pass that fills running
     return CumulativeState(np.zeros(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
 
-def _cumsum_update(
-    st: CumulativeState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
-) -> None:
+def _cumsum_update(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     st.running[ri] += val
 
 
-def _cumsum_update_nan(
-    st: CumulativeState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
-) -> None:
+def _cumsum_update_nan(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # select-form twin of _cumsum_update - a nan leaves the running value
     # unchanged, the position still records it.  integer input has no nan
     # and keeps the plain path (a python literal 0 would unify uint64 with
@@ -77,21 +73,17 @@ def _cumprod_init(
     out_dtype: np.dtype,
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
-    fill_value: typing.Any,
+    fill_value: float,
     forced_fill: typing.Any,
 ) -> CumulativeState:
     return CumulativeState(np.ones(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
 
-def _cumprod_update(
-    st: CumulativeState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
-) -> None:
+def _cumprod_update(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     st.running[ri] *= val
 
 
-def _cumprod_update_nan(
-    st: CumulativeState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
-) -> None:
+def _cumprod_update_nan(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.running[ri] *= val if val == val else 1.0
     else:
@@ -136,7 +128,7 @@ def _cummax_init(
     out_dtype: np.dtype,
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
-    fill_value: typing.Any,
+    fill_value: float,
     forced_fill: typing.Any,
 ) -> CumExtremaState:
     return CumExtremaState(
@@ -146,9 +138,7 @@ def _cummax_init(
     )
 
 
-def _cummax_update(
-    st: CumExtremaState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
-) -> None:
+def _cummax_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # select-form on purpose, see reductions._max_update
     first = st.pending[ri]
     st.pending[ri] = False
@@ -160,9 +150,7 @@ def _cummax_update(
     st.running[ri] = val if (first or val != val or best) else cur
 
 
-def _cummax_update_nan(
-    st: CumExtremaState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
-) -> None:
+def _cummax_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # select-form twin of _cummax_update - nans neither win nor clear the
     # pending flag
     valid = val == val
@@ -199,7 +187,7 @@ def _cummin_init(
     out_dtype: np.dtype,
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
-    fill_value: typing.Any,
+    fill_value: float,
     forced_fill: typing.Any,
 ) -> CumExtremaState:
     return CumExtremaState(
@@ -209,9 +197,7 @@ def _cummin_init(
     )
 
 
-def _cummin_update(
-    st: CumExtremaState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
-) -> None:
+def _cummin_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # select-form on purpose, see reductions._min_update
     first = st.pending[ri]
     st.pending[ri] = False
@@ -223,9 +209,7 @@ def _cummin_update(
     st.running[ri] = val if (first or val != val or best) else cur
 
 
-def _cummin_update_nan(
-    st: CumExtremaState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any
-) -> None:
+def _cummin_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     valid = val == val
     first = st.pending[ri]
     st.pending[ri] = first & (val != val)

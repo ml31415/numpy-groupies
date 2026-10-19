@@ -223,9 +223,9 @@ def _make_stub(
     def stub(
         group_idx: typing.Any,
         a: typing.Any,
-        ddof: typing.Any = ddof_default,
+        ddof: int = ddof_default,
         size: int = -1,
-        fill_value: typing.Any = None,
+        fill_value: float | None = None,
     ) -> typing.Any:
         raise NotImplementedError("only callable from jitted code - use aggregate() otherwise")
 
@@ -244,9 +244,9 @@ def _make_stub(
     def _overload(
         group_idx: typing.Any,
         a: typing.Any,
-        ddof: typing.Any = ddof_default,
+        ddof: int = ddof_default,
         size: int = -1,
-        fill_value: typing.Any = None,
+        fill_value: float | None = None,
     ) -> typing.Callable[..., typing.Any]:
         driver = driver_getter()
         out_dtype, aux_dtype = rule(a)
@@ -255,9 +255,9 @@ def _make_stub(
         def impl(
             group_idx: typing.Any,
             a: typing.Any,
-            ddof: typing.Any = ddof_default,
+            ddof: int = ddof_default,
             size: int = -1,
-            fill_value: typing.Any = None,
+            fill_value: float | None = None,
         ) -> typing.Any:
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
@@ -370,7 +370,7 @@ def build_kernel(
     def _gate_none(st: typing.Any, n_values: int) -> None:
         pass
 
-    def _finish_none(st: typing.Any, g: int, fill_value: typing.Any, ddof: typing.Any) -> typing.Any:
+    def _finish_none(st: typing.Any, g: int, fill_value: float, ddof: int) -> typing.Any:
         return st.out[g]
 
     # the same story in the other direction: the qualname is part of numba's
@@ -383,7 +383,7 @@ def build_kernel(
     if untouched is not None:
         untouched_c = njit_stable(untouched)
 
-        def fill_untouched(st: typing.Any, size: int, fill_value: typing.Any) -> None:
+        def fill_untouched(st: typing.Any, size: int, fill_value: float) -> None:
             # a custom fill value also belongs to the groups that never
             # received a value - their output was seeded with the forced
             # default of the operation
@@ -395,7 +395,7 @@ def build_kernel(
 
     else:
 
-        def fill_untouched(st: typing.Any, size: int, fill_value: typing.Any) -> None:
+        def fill_untouched(st: typing.Any, size: int, fill_value: float) -> None:
             pass
 
     fill_untouched = njit_stable(fill_untouched, name=f"{name}_fill_untouched")
@@ -414,9 +414,9 @@ def build_kernel(
                     st: typing.Any,
                     ri: int,
                     i: int,
-                    val: typing.Any,
-                    fill_value: typing.Any,
-                    ddof: typing.Any,
+                    val: float,
+                    fill_value: float,
+                    ddof: int,
                 ) -> None:
                     if val == val:
                         update_c(st, ri, i, val, fill_value, ddof)
@@ -429,8 +429,8 @@ def build_kernel(
             group_idx: npt.NDArray[np.signedinteger],
             a: npt.NDArray[np.generic],
             st: typing.Any,
-            fill_value: typing.Any,
-            ddof: typing.Any,
+            fill_value: float,
+            ddof: int,
             size: int,
         ) -> None:
             # a function of its own on purpose: with the arrays living in the
@@ -455,8 +455,8 @@ def build_kernel(
             size_arg: int,
             out_dtype: np.dtype,
             aux_dtype: np.dtype,
-            fill_value: typing.Any,
-            ddof: typing.Any,
+            fill_value: float,
+            ddof: int,
         ) -> typing.Any:
             # numba's np.max reduction is several times faster than a scalar
             # loop here; negative indices slip through and are caught by the

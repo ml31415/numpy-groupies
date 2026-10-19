@@ -20,7 +20,7 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 # the building blocks and overload shims of this file are jitted: numba
 # compiles them from the argument types and ignores these annotations,
 # the type checker needs them
-def _track_extrema(val: typing.Any, low: typing.Any, high: typing.Any) -> None:
+def _track_extrema(val: float, low: typing.Any, high: typing.Any) -> None:
     """Fold the global min/max tracking for the integer limit checks into the
     accumulation pass - replaced per dtype by the overload below, inexact
     input never tracks anything."""
@@ -28,16 +28,16 @@ def _track_extrema(val: typing.Any, low: typing.Any, high: typing.Any) -> None:
 
 
 @nb.extending.overload(_track_extrema)
-def _track_extrema_overload(val: typing.Any, low: typing.Any, high: typing.Any) -> typing.Callable[..., None]:
+def _track_extrema_overload(val: float, low: typing.Any, high: typing.Any) -> typing.Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
-        def _impl(val: typing.Any, low: typing.Any, high: typing.Any) -> None:
+        def _impl(val: float, low: typing.Any, high: typing.Any) -> None:
             low[0] = min(low[0], val)
             high[0] = max(high[0], val)
 
         return _impl
 
-    def _impl(val: typing.Any, low: typing.Any, high: typing.Any) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(val: float, low: typing.Any, high: typing.Any) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
         pass
 
     return _impl
@@ -168,7 +168,7 @@ def _mean_init(
     out_dtype: np.dtype,
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
-    fill_value: typing.Any,
+    fill_value: float,
     forced_fill: typing.Any,
 ) -> MeanState:
     return MeanState(
@@ -186,17 +186,17 @@ def _mean_seed(st: MeanState, a: npt.NDArray[np.generic]) -> None:
         st.high[0] = a[0]
 
 
-def _mean_update(st: MeanState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any) -> None:
+def _mean_update(st: MeanState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     st.count[ri] += 1
     st.out[ri] += val
     _track_extrema(val, st.low, st.high)
 
 
-def _mean_gate(st: MeanState, n_values: typing.Any) -> None:
+def _mean_gate(st: MeanState, n_values: int) -> None:
     _mean_limit_check(st.low[0], st.high[0], n_values)
 
 
-def _mean_finish(st: MeanState, g: int, fill_value: typing.Any, ddof: typing.Any) -> typing.Any:
+def _mean_finish(st: MeanState, g: int, fill_value: float, ddof: int) -> typing.Any:
     if st.count[g] > ddof:
         return st.out[g] / st.count[g]
     return fill_value
@@ -216,7 +216,7 @@ mean = build_kernel(
 )
 
 
-def _accumulate_std(val: typing.Any, st: typing.Any, ri: int) -> None:
+def _accumulate_std(val: float, st: typing.Any, ri: int) -> None:
     """Accumulate one value into the running var/std sums.
 
     Replaced per dtype by the overload below: integer input is centered on
@@ -226,10 +226,10 @@ def _accumulate_std(val: typing.Any, st: typing.Any, ri: int) -> None:
 
 
 @nb.extending.overload(_accumulate_std)
-def _accumulate_std_overload(val: typing.Any, st: typing.Any, ri: int) -> typing.Callable[..., None]:
+def _accumulate_std_overload(val: float, st: typing.Any, ri: int) -> typing.Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
-        def _impl(val: typing.Any, st: typing.Any, ri: int) -> None:
+        def _impl(val: float, st: typing.Any, ri: int) -> None:
             if st.count[ri] == 1:
                 st.first[ri] = val
             # two's-complement deviation, exact in int64 because the gate
@@ -244,7 +244,7 @@ def _accumulate_std_overload(val: typing.Any, st: typing.Any, ri: int) -> typing
 
         return _impl
 
-    def _impl(val: typing.Any, st: typing.Any, ri: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(val: float, st: typing.Any, ri: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
         st.dev[ri] += val
         # the squared magnitude of the complex deviation is real, so out stays
         # real for complex input - matching np.var
@@ -275,7 +275,7 @@ def _std_init(
     out_dtype: np.dtype,
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
-    fill_value: typing.Any,
+    fill_value: float,
     forced_fill: typing.Any,
 ) -> StdState:
     return StdState(
@@ -295,7 +295,7 @@ def _std_seed(st: StdState, a: npt.NDArray[np.generic]) -> None:
         st.high[0] = a[0]
 
 
-def _std_update(st: StdState, ri: int, i: int, val: typing.Any, fill_value: typing.Any, ddof: typing.Any) -> None:
+def _std_update(st: StdState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     st.count[ri] += 1
     if isinstance(val, bool):
         st.dev[ri] += val
@@ -305,11 +305,11 @@ def _std_update(st: StdState, ri: int, i: int, val: typing.Any, fill_value: typi
         _accumulate_std(val, st, ri)
 
 
-def _std_gate(st: StdState, n_values: typing.Any) -> None:
+def _std_gate(st: StdState, n_values: int) -> None:
     _span_limit_check(st.low[0], st.high[0], n_values)
 
 
-def _std_finish(st: StdState, g: int, fill_value: typing.Any, ddof: typing.Any) -> typing.Any:
+def _std_finish(st: StdState, g: int, fill_value: float, ddof: int) -> typing.Any:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
@@ -332,7 +332,7 @@ std = build_kernel(
 )
 
 
-def _var_finish(st: StdState, g: int, fill_value: typing.Any, ddof: typing.Any) -> typing.Any:
+def _var_finish(st: StdState, g: int, fill_value: float, ddof: int) -> typing.Any:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag

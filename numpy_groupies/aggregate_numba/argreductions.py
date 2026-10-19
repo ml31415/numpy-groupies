@@ -30,7 +30,7 @@ def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
             out: npt.NDArray[np.generic],
             running: npt.NDArray[np.generic],
             pending: npt.NDArray[np.bool_],
-            fill_value: typing.Any,
+            fill_value: float,
         ) -> None:
             # select-form: nans neither win nor clear the pending flag, the
             # loop stays vectorizable
@@ -64,7 +64,7 @@ def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
             out: npt.NDArray[np.generic],
             running: npt.NDArray[np.generic],
             pending: npt.NDArray[np.bool_],
-            fill_value: typing.Any,
+            fill_value: float,
         ) -> None:
             # branchy on purpose, unlike the composed kernels: this loop writes
             # only when the group actually changed, and with a data dependent
@@ -111,8 +111,8 @@ def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
         size_arg: int,
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
-        fill_value: typing.Any,
-        ddof: typing.Any,
+        fill_value: float,
+        ddof: int,
     ) -> npt.NDArray[np.generic]:
         # once this resolved, every index is within [0, size) - the loop does
         # not need an upper bounds check (negative ones are flagged and raised
@@ -147,7 +147,7 @@ def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
             out: npt.NDArray[np.generic],
             running: npt.NDArray[np.generic],
             pending: npt.NDArray[np.bool_],
-            fill_value: typing.Any,
+            fill_value: float,
         ) -> None:
             bad = False
             for i in range(group_idx.shape[0]):
@@ -178,7 +178,7 @@ def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
             out: npt.NDArray[np.generic],
             running: npt.NDArray[np.generic],
             pending: npt.NDArray[np.bool_],
-            fill_value: typing.Any,
+            fill_value: float,
         ) -> None:
             bad = False
             for i in range(group_idx.shape[0]):
@@ -211,8 +211,8 @@ def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
         size_arg: int,
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
-        fill_value: typing.Any,
-        ddof: typing.Any,
+        fill_value: float,
+        ddof: int,
     ) -> npt.NDArray[np.generic]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
