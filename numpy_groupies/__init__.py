@@ -87,9 +87,9 @@ else:
     from numpy_groupies.aggregate_numba import step_indices as step_indices_nb_impl
     from numpy_groupies.aggregate_numba import unpack_into
 
-    aggregate_nb = cast("Aggregate", aggregate_nb_impl)
-    step_count = cast("Callable[[npt.NDArray[np.integer]], int]", step_count_nb_impl)
-    step_indices = cast("Callable[[npt.NDArray[np.integer]], npt.NDArray[np.int64]]", step_indices_nb_impl)
+    aggregate_nb = aggregate_nb_impl
+    step_count = step_count_nb_impl
+    step_indices = step_indices_nb_impl
     aggregate = aggregate_nb
 
 

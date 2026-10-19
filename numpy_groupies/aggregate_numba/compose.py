@@ -70,13 +70,16 @@ def complex_less(x: typing.Any, y: typing.Any) -> bool:
     the kernels account for by resolving the comparison into a local variable
     before the select expression instead of calling inside it.
     """
-    if isinstance(x, (complex, np.complex64)):
+    if isinstance(x, (complex, np.complex64)) and isinstance(y, (complex, np.complex64)):
         if x.real < y.real:
             return not (np.isnan(x.imag) or np.isnan(y.imag))
         if x.real == y.real:
-            better_imag: bool = x.imag < y.imag
-            return better_imag
+            # numba's compare is already a bool, only numpy's stub answers
+            # np.bool_ - the call is a no-op in compiled code
+            return bool(x.imag < y.imag)
         return False
+    if isinstance(x, (complex, np.complex64)) or isinstance(y, (complex, np.complex64)):
+        raise TypeError("can not compare float with complex")
     less: bool = x < y
     return less
 

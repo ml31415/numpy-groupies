@@ -259,7 +259,7 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
         group_idx, a, flat_size, ndim_idx, size, _ = iv
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
-        dtype = check_dtype(dtype, typing.cast("typing.Any", func), typing.cast("typing.Any", a), len(group_idx))
+        dtype = check_dtype(dtype, typing.cast("typing.Any", func), a, len(group_idx))
         fill_value = resolve_fill_value(func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=typing.cast("typing.Any", func))
         ret = np.full(flat_size, fill_value, dtype=dtype)

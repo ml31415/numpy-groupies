@@ -366,9 +366,7 @@ def aggregate(
 
         func = _impl_dict[func]
     if func is _sort:
-        # the marker of the sort kernel (see x_and_idx below) makes _sort an object
-        # with a call of its own to mypy, which answers an Any for it
-        return cast(list[Any], _sort(idx, vals, reverse=kwargs.get("reverse", False)))
+        return _sort(idx, vals, reverse=kwargs.get("reverse", False))
     if func in (_mean, _var, _std):
         _check_integer_precision(vals, func)
 

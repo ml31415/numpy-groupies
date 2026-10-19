@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover - windows
 # AttributeError on the dangling global.  Bumping the revision renames every
 # cache file of this package, orphaning the stale indexes (they keep lying
 # around, numba never reads them again).
-_cache_revision = "6"
+_cache_revision = "7"
 
 
 @contextlib.contextmanager

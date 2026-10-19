@@ -510,16 +510,13 @@ def input_validation(
             one_to_one = is_form_3 and isinstance(func_name, str) and ("cum" in func_name or func_name == "sort")
             size = orig_shape if one_to_one else size
             ravel_order = order if one_to_one else "C"
-            return cast(
-                "ValidatedInput",
-                (
-                    group_idx.ravel(order=ravel_order),
-                    a.ravel(order=ravel_order),
-                    flat_size,
-                    ndim_idx,
-                    size,
-                    unravel_shape,
-                ),
+            return (
+                group_idx.ravel(order=ravel_order),
+                a.ravel(order=ravel_order),
+                flat_size,
+                ndim_idx,
+                size,
+                unravel_shape,
             )
 
     if ndim_idx == 1:
@@ -539,13 +536,13 @@ def input_validation(
         elif len(size) != len(group_idx):
             raise ValueError(f"{len(size)} sizes given, but {len(group_idx)} output dimensions specified in index")
         if ravel_group_idx:
-            group_idx = np.ravel_multi_index(group_idx, size, order=cast("Any", order), mode="raise")
+            group_idx = np.ravel_multi_index(group_idx, size, order=order, mode="raise")
         flat_size = np.prod(size)
 
     if not (ndim_a == 0 or len(a) == group_idx.size):
         raise ValueError("group_idx and a must be of the same length, or a can be scalar")
 
-    return cast("ValidatedInput", (group_idx, a, flat_size, ndim_idx, size, None))
+    return (group_idx, a, flat_size, ndim_idx, size, None)
 
 
 # General tools
@@ -583,7 +580,7 @@ def multi_arange(n: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
         n = [0, 0, 3, 0, 0, 2, 0, 2, 1]
         res = [0, 1, 2, 0, 1, 0, 1, 0]
 
-    That is it is equivalent to something like this :
+    This is equivalent to something like this :
 
         hstack((arange(n_i) for n_i in n))
 
@@ -623,7 +620,7 @@ def label_contiguous_1d(X: npt.NDArray[np.number]) -> npt.NDArray[np.intp]:
     if X.ndim != 1:
         raise ValueError("this is for 1d masks only.")
 
-    is_start = cast("npt.NDArray[np.bool_]", np.empty(len(X), dtype=bool))
+    is_start = np.empty(len(X), dtype=bool)
     is_start[0] = X[0]  # True if X[0] is True or non-zero
 
     if X.dtype.kind == "b":
@@ -682,11 +679,12 @@ def relabel_groups_masked(
     ``keep_group`` should be bool and ``group_idx`` int. Values in ``group_idx`` can be any order.
     """
 
-    # the docstring asks for a boolean array, the ArrayLike of the signature is
-    # what the astype below normalizes it from
-    keep_mask = cast("npt.NDArray[np.bool_]", keep_group)
-    keep_group = keep_mask.astype(bool, copy=not keep_mask[0])
+    # astype(bool) is what normalizes an int mask that arrives anyway
+    keep_group = keep_group.astype(bool, copy=False)
     if not keep_group[0]:  # ensuring keep_group[0] is True makes life easier
+        # the copy belongs here, to the one write of its own, and not to a flag
+        # that has to read the element it is about to change
+        keep_group = keep_group.copy()
         keep_group[0] = True
 
     relabel = np.zeros(keep_group.size, dtype=group_idx.dtype)

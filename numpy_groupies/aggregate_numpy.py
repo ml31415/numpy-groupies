@@ -448,11 +448,10 @@ def _sum_of_squres(
         sq = a.real**2
         sq += a.imag**2
     else:
-        # squaring is numeric at runtime, the signature only says generic
-        a_num = cast("npt.NDArray[np.number]", a)
-        sq = a_num * a_num
+        # the square of the values, in the dtype of the input itself
+        sq = a * a
     # the square of a real or complex value is real, bincount takes it
-    ret = np.bincount(group_idx, weights=cast("npt.NDArray[np.floating]", sq), minlength=size)
+    ret = np.bincount(group_idx, weights=sq, minlength=size)
     if fill_value != 0:
         counts = np.bincount(group_idx, minlength=size)
         ret[counts == 0] = fill_value
@@ -789,7 +788,7 @@ def _aggregate_base(
         # the sum overflow guess needs the maximum number of values that can
         # be summed into a single group, i.e. the (nan-filtered) input length
         # - flat_size counts output groups and can be arbitrarily smaller
-        dtype = check_dtype(dtype, funcname, cast("Any", a), len(group_idx))
+        dtype = check_dtype(dtype, funcname, a, len(group_idx))
         fill_value = resolve_fill_value(funcname, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=funcname)
         ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
