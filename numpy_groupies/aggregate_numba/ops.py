@@ -211,7 +211,7 @@ def _compiled_group_loop(func: typing.Callable[..., typing.Any]) -> typing.Calla
     nb_func = nb.njit(func)
 
     @nb.njit
-    def loop(sortidx: typing.Any, group_idx: typing.Any, a: typing.Any, ret: typing.Any) -> None:
+    def loop(sortidx: typing.Any, group_idx: typing.Any, a: npt.NDArray[np.generic], ret: typing.Any) -> None:
         size = len(ret)
         group_idx_srt = group_idx[sortidx]
         a_srt = a[sortidx]
