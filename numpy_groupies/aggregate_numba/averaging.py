@@ -20,7 +20,7 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 # the building blocks and overload shims of this file are jitted: numba
 # compiles them from the argument types and ignores these annotations,
 # the type checker needs them
-def _track_extrema(val: float, low: typing.Any, high: typing.Any) -> None:
+def _track_extrema(val: float, low: int, high: int) -> None:
     """Fold the global min/max tracking for the integer limit checks into the
     accumulation pass - replaced per dtype by the overload below, inexact
     input never tracks anything."""
@@ -28,23 +28,23 @@ def _track_extrema(val: float, low: typing.Any, high: typing.Any) -> None:
 
 
 @nb.extending.overload(_track_extrema)
-def _track_extrema_overload(val: float, low: typing.Any, high: typing.Any) -> typing.Callable[..., None]:
+def _track_extrema_overload(val: float, low: int, high: int) -> typing.Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
-        def _impl(val: float, low: typing.Any, high: typing.Any) -> None:
+        def _impl(val: float, low: int, high: int) -> None:
             low[0] = min(low[0], val)
             high[0] = max(high[0], val)
 
         return _impl
 
-    def _impl(val: float, low: typing.Any, high: typing.Any) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(val: float, low: int, high: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
         pass
 
     return _impl
 
 
 @njit_stable
-def _mean_overflow_message(count: typing.Any, bound: typing.Any) -> str:
+def _mean_overflow_message(count: int, bound: int) -> str:
     """The numba twin of ``raise_integer_mean_overflow`` - numba cannot call
     the python helper (aggregate_common must stay numpy-free), so the text is
     mirrored here and must be kept in sync with it."""
@@ -61,7 +61,7 @@ def _mean_overflow_message(count: typing.Any, bound: typing.Any) -> str:
 
 
 @njit_stable
-def _span_overflow_message(low: typing.Any, high: typing.Any) -> str:
+def _span_overflow_message(low: int, high: int) -> str:
     """The numba twin of ``raise_integer_variance_span_overflow``."""
     # numba's str() negates int64-min internally, wraps, and then fails to
     # size the string buffer - spell that one value out
@@ -78,24 +78,24 @@ def _span_overflow_message(low: typing.Any, high: typing.Any) -> str:
     )
 
 
-def _mean_limit_check(low: typing.Any, high: typing.Any, count: typing.Any) -> None:
+def _mean_limit_check(low: int, high: int, count: int) -> None:
     """Refuse integer means float64 cannot compute exactly - replaced per
     dtype by the overload below, a no-op for inexact input."""
     raise NotImplementedError  # replaced by the overload below
 
 
 @nb.extending.overload(_mean_limit_check)
-def _mean_limit_check_overload(low: typing.Any, high: typing.Any, count: typing.Any) -> typing.Callable[..., None]:
+def _mean_limit_check_overload(low: int, high: int, count: int) -> typing.Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
-        def _impl(low: typing.Any, high: typing.Any, count: typing.Any) -> None:
+        def _impl(low: int, high: int, count: int) -> None:
             pass
 
         return _impl
 
-    if not low.signed:  # type: ignore[attr-defined]  # numba's Integer stub omits the flag it sets in __init__
+    if not low.signed:
 
-        def _impl(low: typing.Any, high: typing.Any, count: typing.Any) -> None:
+        def _impl(low: int, high: int, count: int) -> None:
             # uint64 values are non-negative, so the largest magnitude is the
             # maximum itself; compare by division, count * high would wrap
             if count > 0 and high > EXACT_FLOAT64_INTEGER_LIMIT // count:
@@ -103,7 +103,7 @@ def _mean_limit_check_overload(low: typing.Any, high: typing.Any, count: typing.
 
         return _impl
 
-    def _impl(low: typing.Any, high: typing.Any, count: typing.Any) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(low: int, high: int, count: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
         # -low wraps at int64-min and count * bound wraps for large values -
         # treat the former as the out-of-range case it is and compare the
         # latter by division
@@ -118,31 +118,31 @@ def _mean_limit_check_overload(low: typing.Any, high: typing.Any, count: typing.
     return _impl
 
 
-def _span_limit_check(low: typing.Any, high: typing.Any, count: typing.Any) -> None:
+def _span_limit_check(low: int, high: int, count: int) -> None:
     """Refuse integer variances whose exact centering would overflow int64 -
     replaced per dtype by the overload below, a no-op for inexact input."""
     raise NotImplementedError  # replaced by the overload below
 
 
 @nb.extending.overload(_span_limit_check)
-def _span_limit_check_overload(low: typing.Any, high: typing.Any, count: typing.Any) -> typing.Callable[..., None]:
+def _span_limit_check_overload(low: int, high: int, count: int) -> typing.Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
-        def _impl(low: typing.Any, high: typing.Any, count: typing.Any) -> None:
+        def _impl(low: int, high: int, count: int) -> None:
             pass
 
         return _impl
 
-    if not low.signed:  # type: ignore[attr-defined]  # numba's Integer stub omits the flag it sets in __init__
+    if not low.signed:
 
-        def _impl(low: typing.Any, high: typing.Any, count: typing.Any) -> None:
+        def _impl(low: int, high: int, count: int) -> None:
             # uint64 values are non-negative, so high - low cannot wrap
             if count > 0 and high - low > INT64_DEVIATION_LIMIT:
                 raise OverflowError(_span_overflow_message(low, high))
 
         return _impl
 
-    def _impl(low: typing.Any, high: typing.Any, count: typing.Any) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(low: int, high: int, count: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
         # signed: only the mixed-sign case can exceed the deviation limit,
         # and high - low itself would wrap there - compare without it
         if count > 0 and low < 0 and high >= 0 and high > INT64_DEVIATION_LIMIT + low:
@@ -189,7 +189,7 @@ def _mean_seed(st: MeanState, a: npt.NDArray[np.generic]) -> None:
 def _mean_update(st: MeanState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     st.count[ri] += 1
     st.out[ri] += val
-    _track_extrema(val, st.low, st.high)
+    _track_extrema(val, st.low, st.high)  # type: ignore[arg-type]  # low/high are 1-element arrays; body uses low[0]
 
 
 def _mean_gate(st: MeanState, n_values: int) -> None:
