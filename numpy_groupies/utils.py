@@ -21,9 +21,10 @@ from numpy_groupies.aggregate_common import (
     resolve_name,
 )
 
-# the values as the dispatchers carry them on: an array of numbers, or the one
-# python scalar that stands for that value repeated over every label
-AValue: TypeAlias = npt.NDArray[np.number] | int | float | complex
+# the values as the dispatchers carry them on: an array of numbers or of bools
+# (bool is no number in numpy, yet kind in "iub" counts it), or the one scalar
+# that stands for that value repeated over every label (a np.bool_ is no int)
+AValue: TypeAlias = npt.NDArray[np.number] | npt.NDArray[np.bool_] | int | float | complex | np.bool_
 
 # what input_validation hands back: (raveled integer indices, the values -
 # possibly still a python scalar -, the flat output size, the input index
