@@ -104,13 +104,11 @@ def _aggregate_custom(
     elif cache is True:
         aggregate_op = _get_cached_generic(func)
     else:
-        # the caller's own mapping - the equality tests above do not narrow a bool away
         cache_map = typing.cast("typing.MutableMapping[typing.Any, typing.Any]", cache)
         aggregate_op = cache_map.get(func)
         if aggregate_op is None:
             aggregate_op = build_generic_aggregate(func)
             cache_map[func] = aggregate_op
-    # the kernels are built behind untyped factories, the result is the aggregate
     return typing.cast(
         "npt.NDArray[np.generic]", aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
     )

@@ -46,9 +46,6 @@ def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
     )
 
 
-# every rebinding below provides this signature - the cast states the
-# promise that ``aggregate_common_doc`` documents, without pretending the
-# backends are interchangeable at the type level
 aggregate = cast("Aggregate", aggregate_py)
 
 try:
@@ -77,7 +74,6 @@ else:
         unpack,
     )
 
-
 aggregate_nb: Aggregate | None
 try:
     import numba
@@ -90,9 +86,6 @@ else:
     from numpy_groupies.aggregate_numba import unpack_into
 
     aggregate_nb = cast("Aggregate", aggregate_nb_impl)
-    # numba's Dispatcher answers the checker with its compilation machinery
-    # rather than the one signature it compiles to - unlike the numpy twins,
-    # these take a real array, not any array-like
     step_count = cast("Callable[[npt.NDArray[np.signedinteger]], int]", step_count_nb_impl)
     step_indices = cast("Callable[[npt.NDArray[np.signedinteger]], npt.NDArray[np.int64]]", step_indices_nb_impl)
     aggregate = aggregate_nb

@@ -74,8 +74,6 @@ def complex_less(x: typing.Any, y: typing.Any) -> bool:
         if x.real < y.real:
             return not (np.isnan(x.imag) or np.isnan(y.imag))
         if x.real == y.real:
-            # numba cannot compile typing.cast - the annotated local spells the
-            # bool that the checker wants from an Any-typed scalar comparison
             better_imag: bool = x.imag < y.imag
             return better_imag
         return False

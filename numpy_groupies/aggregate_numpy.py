@@ -565,8 +565,7 @@ def _sort(
         # zero of an unsigned one stays the smallest key of all.  The inexact
         # dtypes have no inversion and negate cleanly - a nan stays last
         # either way, and -0.0 compares equal to 0.0.
-        # inversion and negation cover exactly the ordered dtypes here,
-        # the stubs leave both unsupported on a generic one
+        # inversion and negation cover exactly the ordered dtypes here.
         key = ~cast("Any", a) if a.dtype.kind in "iub" else -cast("Any", a)
     else:
         key = a
@@ -728,9 +727,7 @@ _dispatch = build_dispatch(_impl_dict, aliasing)
 def _aggregate_base(
     group_idx: npt.ArrayLike,
     a: npt.ArrayLike,
-    # a known name can map to a table entry without implementation
     func: str | Callable[..., Any] | None = "sum",
-    # size is rebound to the per-dimension maxima when indexing is n-dimensional
     size: int | Sequence[int] | npt.NDArray[np.integer] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
     order: str = "C",
@@ -757,7 +754,6 @@ def _aggregate_base(
         # both leave a callable of the caller's own to run, and anything else
         # says that it named nothing
         func = custom_callable(func)
-        # funcname names the function for the error texts, callable included
         funcname = cast("Any", func)
         fill_value = resolve_fill_value(func, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
         # do simple grouping and execute function in loop
@@ -803,8 +799,6 @@ def _aggregate_base(
             # A negative fill_value cannot, and should not, be unraveled.
             mask = ret == fill_value
             ret[mask] = 0
-            # the stubs spell unravel_index for scalar input, the array
-            # input here gives a tuple of per-dimension columns
             ret = cast(
                 "npt.NDArray[np.generic]",
                 np.unravel_index(ret, unravel_shape)[cast("int", axis)],
@@ -818,7 +812,6 @@ def _aggregate_base(
 def aggregate(
     group_idx: npt.ArrayLike,
     a: npt.ArrayLike,
-    # a known name can map to a table entry without implementation
     func: str | Callable[..., Any] | None = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,

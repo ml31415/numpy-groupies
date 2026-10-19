@@ -96,7 +96,6 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
     def aggregate(
         group_idx: npt.ArrayLike,
         a: npt.ArrayLike,
-        # size is rebound to the per-dimension maxima when indexing is n-dimensional
         size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
         order: str = "C",
@@ -190,8 +189,6 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
                 # argreductions only
                 mask = ret == fill_value
                 ret[mask] = 0
-                # the stubs spell unravel_index for scalar input, the array
-                # input here gives a tuple of per-dimension columns
                 ret = typing.cast(
                     "npt.NDArray[np.generic]",
                     np.unravel_index(typing.cast("npt.NDArray[np.integer]", ret), unravel_shape)[
@@ -200,8 +197,6 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
                 )
                 ret[mask] = fill_value
             check_nton_shape(ret, size, func)
-            # size arrives as the per-dimension maxima the reshape takes
-            # the stubs want the shape and the order letter spelled as literals
             ret = typing.cast(
                 "npt.NDArray[np.generic]",
                 ret.reshape(typing.cast("typing.Any", size), order=typing.cast("typing.Any", order)),
@@ -248,7 +243,6 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
     def aggregate(
         group_idx: npt.ArrayLike,
         a: npt.ArrayLike,
-        # size is rebound to the per-dimension maxima when indexing is n-dimensional
         size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
         order: str = "C",
@@ -262,7 +256,6 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
         group_idx, a, flat_size, ndim_idx, size, _ = iv
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
-        # the callable takes the place of the name in the tables and the texts
         dtype = check_dtype(dtype, typing.cast("typing.Any", func), typing.cast("typing.Any", a), len(group_idx))
         fill_value = resolve_fill_value(func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=typing.cast("typing.Any", func))
@@ -275,8 +268,6 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
         # Deal with ndimensional indexing
         if ndim_idx > 1:
             check_nton_shape(ret, size, func)
-            # size arrives as the per-dimension maxima the reshape takes
-            # the stubs want the shape and the order letter spelled as literals
             ret = typing.cast(
                 "npt.NDArray[np.generic]",
                 ret.reshape(typing.cast("typing.Any", size), order=typing.cast("typing.Any", order)),

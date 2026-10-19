@@ -106,9 +106,7 @@ if hasattr(np, "trapezoid"):
     # np.trapezoid replaced np.trapz in numpy 2.0
     _alias_numpy[np.trapezoid] = "trapezoid"
 
-
 aliasing = get_aliasing(_alias_numpy)
-
 
 _next_int_dtype = {
     "bool": np.int8,
@@ -501,8 +499,6 @@ def input_validation(
             one_to_one = is_form_3 and isinstance(func_name, str) and ("cum" in func_name or func_name == "sort")
             size = orig_shape if one_to_one else size
             ravel_order = order if one_to_one else "C"
-            # the validation above has established the tuple's types, mypy has
-            # not followed it - the cast states the contract the checks enforce
             return cast(
                 "ValidatedInput",
                 (
@@ -538,8 +534,6 @@ def input_validation(
     if not (ndim_a == 0 or len(a) == group_idx.size):
         raise ValueError("group_idx and a must be of the same length, or a can be scalar")
 
-    # the validation above has established the tuple's types, mypy has not
-    # followed it - the cast states the contract the checks enforce
     return cast("ValidatedInput", (group_idx, a, flat_size, ndim_idx, size, None))
 
 

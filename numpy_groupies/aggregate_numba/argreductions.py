@@ -14,9 +14,6 @@ from numpy_groupies.aggregate_numba.compose import (
 from numpy_groupies.aggregate_numba.jit import njit_stable
 
 
-# the kernels and drivers of this file are jitted: numba compiles them
-# from the argument types and ignores these annotations, the type checker
-# needs them
 def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
     # Neither of the two bodies reaches build_kernel: the per-element update
     # call of the composed driver costs more than these bodies save (measured
