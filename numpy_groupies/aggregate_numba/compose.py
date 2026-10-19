@@ -58,11 +58,13 @@ def complex_less(x: typing.Any, y: typing.Any) -> bool:
     which makes ``1+nanj < 2+1j`` False instead of True.
 
     Written as a jitted function with an ``isinstance`` branch rather than as
-    an intrinsic plus ``@overload``: numba resolves the test at compile time,
-    so the real dtypes are left with a bare ``<`` and the lexicographic code
-    is only compiled for complex input.  The tuple names ``np.complex64`` as
-    well because numba maps the python class ``complex`` to complex128 only -
-    the 64 bit variant would otherwise fall through to ``<`` and fail to type.
+    an overload - measured, the call is not what the group loop costs (1.1ms
+    of the reduction with it, 1.3ms with an overload numba inlines).  The test
+    names what numba can name: the python class ``complex`` is complex128
+    there, so ``np.complex64`` has to be spelled out as well, and the abstract
+    ``np.complexfloating`` cannot be named at all - numba types the classes of
+    an ``isinstance`` tuple as constants and numpy refuses that one as a dtype,
+    which would take the whole reduction down with it.
 
     Disk cached like its callers - numba cannot resolve an uncached callee
     from cached caller code at all (the loaded module dies on a NULL ``descr``
