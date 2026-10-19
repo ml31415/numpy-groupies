@@ -78,7 +78,7 @@ aggregate_sort = specials.sort.plain.stub
 # the collecting function: its result is a sequence per group, so the kernel
 # hands out a list of the arrays of the groups - numba cannot hold an object
 # array, but a list of arrays it can
-aggregate_array = collect.array_kernel.plain.stub
+aggregate_array = collect.array.plain.stub
 
 aggregate_cumsum = cumulative.cumsum.plain.stub
 aggregate_nancumsum = cumulative.cumsum.nan.stub  # type: ignore[union-attr]

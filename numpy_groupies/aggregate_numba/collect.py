@@ -17,7 +17,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_common import DEFAULT_FILL_VALUE
-from numpy_groupies.aggregate_numba.compose import build_custom_kernel, output_size, rule_object
+from numpy_groupies.aggregate_numba.compose import KernelHandle, build_custom_kernel, output_size, rule_object
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.utils import (
@@ -94,85 +94,108 @@ def _array_driver_factory(nan_variant: bool) -> typing.Any:
     return njit_stable(driver, name="array_driver")
 
 
-array_kernel = build_custom_kernel(
-    "array",
-    driver_factory=_array_driver_factory,
-    rule=rule_object,
-    fill_default=0,
-    nans=False,
-    doc="The values of every group, one sequence per group",
-)
-
-
-def _numpy_collect(
+def _numpy_fallback(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
+    func: str,
     size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
     fill_value: typing.Any,
     order: RavelOrder,
     dtype: npt.DTypeLike | None,
     axis: int | None,
 ) -> npt.NDArray[np.object_]:
-    """The numpy implementation, for the dtypes the compiled driver cannot place."""
+    """The numpy implementation, for the dtypes the compiled driver cannot place.
+
+    It copies the values around without knowing their type, which the
+    compiled driver cannot do - numba has no float16 and no object arrays.
+    """
     return typing.cast(
         "npt.NDArray[np.object_]",
-        _aggregate_base(group_idx, a, "array", size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis),
+        _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis),
     )
 
 
-def array(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
-    fill_value: typing.Any = DEFAULT_FILL_VALUE,
-    order: RavelOrder = "C",
-    dtype: npt.DTypeLike | None = None,
-    axis: int | None = None,
-) -> npt.NDArray[np.object_]:
-    """The values of every group, one sequence per group.
+array = build_custom_kernel(
+    "array",
+    driver_factory=_array_driver_factory,
+    rule=rule_object,
+    fill_default=0,
+    nans=False,
+    fallback=_numpy_fallback,
+    doc="The values of every group, one sequence per group",
+)
 
-    The sequence of a group is a numpy array of its values, in the order they
-    appear in the input; a group without values holds the fill value.
+
+def build_collecting_op(func: str, handle: KernelHandle) -> typing.Callable[..., typing.Any]:
+    """The python-level wrapper of the collecting function.
+
+    The result of the function is a sequence per group, which the shared
+    wrapper of the other operations cannot hold: the driver hands out a list
+    of the arrays of the groups, and the wrapper collects them in an object
+    array - the same object the numpy implementation hands out.  A group
+    without values takes the fill value, which the driver knows nothing about.
     """
-    # the values as an array, so that the dtype below can be asked for - the
-    # validation would do the same, but it comes after the decision whether
-    # the compiled driver can place the values at all
-    if not isinstance(a, (int, float, complex)) and not is_duck_array(a):
-        a = typing.cast("AValue", np.asanyarray(a))
-    if not _can_place(a):
-        # a dtype the compiled driver cannot place - the numpy implementation
-        # copies the values without knowing their type
-        return _numpy_collect(group_idx, a, size, fill_value, order, dtype, axis)
+    fallback = handle.fallback
+    if fallback is None:
+        # the dtypes the driver cannot place are the numpy implementation's
+        # business - without it there is nothing to hand them to
+        raise ValueError("the collecting function needs a fallback for the dtypes its driver cannot place")
 
-    iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func="array")
-    group_idx, a, flat_size, ndim_idx, size, _ = iv
+    def aggregate(
+        group_idx: npt.NDArray[np.integer],
+        a: AValue,
+        size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
+        fill_value: typing.Any = DEFAULT_FILL_VALUE,
+        order: RavelOrder = "C",
+        dtype: npt.DTypeLike | None = None,
+        axis: int | None = None,
+        ddof: int = 0,
+    ) -> npt.NDArray[np.object_]:
+        # the values as an array, so that the dtype below can be asked for -
+        # the validation would do the same, but it comes after the decision
+        # whether the compiled driver can place the values at all
+        if not isinstance(a, (int, float, complex)) and not is_duck_array(a):
+            a = typing.cast("AValue", np.asanyarray(a))
+        if not _can_place(a):
+            # a dtype the compiled driver cannot place - the numpy
+            # implementation copies the values without knowing their type
+            return typing.cast(
+                "npt.NDArray[np.object_]",
+                fallback(group_idx, a, func, size, fill_value, order, dtype, axis),
+            )
 
-    # the dtype of the result is the object one - the sequences of the groups
-    # are of the dtype of the values, and the array holding them is of none
-    out_dtype = check_dtype(dtype, "array", a, len(group_idx))
-    fill_value = resolve_fill_value("array", fill_value, out_dtype)
-    check_fill_value(fill_value, out_dtype, func="array")
-    if fill_value is not None and not (np.isscalar(fill_value) or len(fill_value) == 0):
-        raise ValueError("fill_value must be None, a scalar or an empty sequence")
+        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=func)
+        group_idx, a, flat_size, ndim_idx, size, _ = iv
 
-    # the sequences of the groups, in the order the groups are numbered - the
-    # same construction the numpy implementation uses, so that the two hand
-    # out the very same object
-    blocks = array_kernel.plain.driver(group_idx, a, flat_size, out_dtype, out_dtype, 0.0, 0)
-    ret = np.empty(len(blocks), dtype=object)
-    for g, block in enumerate(blocks):
-        ret[g] = block
+        # the dtype of the result is the object one - the sequences of the
+        # groups are of the dtype of the values, and the array holding them is
+        # of none
+        out_dtype = check_dtype(dtype, func, a, len(group_idx))
+        fill_value = resolve_fill_value(func, fill_value, out_dtype)
+        check_fill_value(fill_value, out_dtype, func=func)
+        if fill_value is not None and not (np.isscalar(fill_value) or len(fill_value) == 0):
+            raise ValueError("fill_value must be None, a scalar or an empty sequence")
 
-    if fill_value is None or np.isscalar(fill_value):
-        # a group without values takes the fill value - an empty sequence
-        # leaves the empty block of the group alone
-        untouched = np.ones_like(ret, dtype=bool)
-        untouched[group_idx] = False
-        ret[untouched] = fill_value
+        # the sequences of the groups, in the order the groups are numbered -
+        # the same construction the numpy implementation uses, so that the two
+        # hand out the very same object
+        blocks = handle.driver(group_idx, a, flat_size, out_dtype, out_dtype, 0.0, ddof)
+        ret = np.empty(len(blocks), dtype=object)
+        for g, block in enumerate(blocks):
+            ret[g] = block
 
-    if ndim_idx > 1:
-        # the labels named more than one dimension - the flat result is
-        # spread over them again
-        check_nton_shape(ret, size, "array")
-        ret = ret.reshape(size, order=order)
-    return ret
+        if fill_value is None or np.isscalar(fill_value):
+            # a group without values takes the fill value - an empty sequence
+            # leaves the empty block of the group alone
+            untouched = np.ones_like(ret, dtype=bool)
+            untouched[group_idx] = False
+            ret[untouched] = fill_value
+
+        if ndim_idx > 1:
+            # the labels named more than one dimension - the flat result is
+            # spread over them again
+            check_nton_shape(ret, size, func)
+            ret = ret.reshape(size, order=order)
+        return ret
+
+    return aggregate

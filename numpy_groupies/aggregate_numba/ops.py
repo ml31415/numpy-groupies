@@ -375,9 +375,9 @@ def get_funcs() -> dict[str, typing.Callable[..., typing.Any]]:
         if funcname not in funcs_no_separate_nan:
             op = build_aggregate_op("nan" + funcname, pair.nan)  # type: ignore[arg-type]
             funcs["nan" + funcname] = op if wrap is None else wrap(op)
-    # the collecting function has no compiled kernel: its result is a
-    # sequence per group, which a compiled driver cannot produce
-    funcs["array"] = collect.array
+    # the collecting function has no kernel of the usual shape: its result is
+    # a sequence per group, which the driver hands out as a list
+    funcs["array"] = collect.build_collecting_op("array", collect.array.plain)
     return funcs
 
 
