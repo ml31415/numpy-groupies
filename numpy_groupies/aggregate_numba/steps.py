@@ -8,7 +8,7 @@ import numpy.typing as npt
 # the annotations of the jitted functions below are documentation only - numba
 # compiles from the argument types and ignores them, the type checker needs them
 @nb.njit(cache=True)
-def step_count(group_idx: npt.NDArray[np.signedinteger]) -> int:
+def step_count(group_idx: npt.NDArray[np.integer]) -> int:
     """Return the amount of index changes within group_idx."""
     cmp_pos = 0
     steps = 1
@@ -22,7 +22,7 @@ def step_count(group_idx: npt.NDArray[np.signedinteger]) -> int:
 
 
 @nb.njit(cache=True)
-def step_indices(group_idx: npt.NDArray[np.signedinteger]) -> npt.NDArray[np.int64]:
+def step_indices(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.int64]:
     """Return the edges of areas within group_idx, which are filled with the same value."""
     ilen = step_count(group_idx) + 1
     indices = np.empty(ilen, np.int64)

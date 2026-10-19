@@ -1,5 +1,5 @@
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -19,6 +19,7 @@ from numpy_groupies.aggregate_common import (
     resolve_fill_value,
 )
 from numpy_groupies.utils import (
+    AValue,
     aliasing,
     check_boolean,
     check_dtype,
@@ -33,7 +34,7 @@ from numpy_groupies.utils import (
 )
 
 
-def step_count(group_idx: npt.ArrayLike) -> int:
+def step_count(group_idx: npt.NDArray[np.integer]) -> int:
     """Return the number of contiguous runs in ``group_idx``.
 
     A strictly increasing array of length ``n`` has ``n`` runs, an empty
@@ -47,7 +48,7 @@ def step_count(group_idx: npt.ArrayLike) -> int:
     return 1 + int(np.count_nonzero(np.diff(group_idx) != 0))
 
 
-def step_indices(group_idx: npt.ArrayLike) -> npt.NDArray[np.intp]:
+def step_indices(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
     """Return the run-edge indices in ``group_idx``.
 
     The first element is always 0, the last is always ``group_idx.size``,
@@ -393,7 +394,7 @@ def _trapezoid(
     fill_value: Any,
     dtype: npt.DTypeLike | None = None,
     dx: float = 1.0,
-) -> npt.NDArray[np.inexact]:
+) -> npt.NDArray[np.number]:
     """
     Trapezoidal integration of each group, keeping the order of the input.
 
@@ -414,12 +415,13 @@ def _trapezoid(
     """
     # complex samples integrate to complex values, real ones stay float64
     dtype = dtype or (a.dtype if iscomplexobj(a) else np.float64)
-    # the helpers carry the numeric dtype passed into them, the signature
-    # can only spell generic - the stubs omit operators for those
-    total = cast("npt.NDArray[np.inexact]", _sum(group_idx, a, size, 0, dtype=dtype))
-    first = cast("npt.NDArray[np.inexact]", _first(group_idx, a, size, 0, dtype=dtype))
-    last = cast("npt.NDArray[np.inexact]", _last(group_idx, a, size, 0, dtype=dtype))
-    ret = cast("npt.NDArray[np.inexact]", (total - 0.5 * (first + last)) * dx)
+    # the helpers answer with the numeric dtype of their own signature, which
+    # is all the arithmetic here needs - the policy above decides between the
+    # complex dtype of the samples and float64, this function promises number
+    total = _sum(group_idx, a, size, 0, dtype=dtype)
+    first = _first(group_idx, a, size, 0, dtype=dtype)
+    last = _last(group_idx, a, size, 0, dtype=dtype)
+    ret = (total - 0.5 * (first + last)) * dx
 
     counts = np.bincount(group_idx, minlength=size)
     if np.any(counts < 2):
@@ -724,12 +726,12 @@ _dispatch = build_dispatch(_impl_dict, aliasing)
 
 
 def _aggregate_base(
-    group_idx: npt.ArrayLike,
-    a: npt.ArrayLike,
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
     func: str | Callable[..., Any] | None = "sum",
     size: int | Sequence[int] | npt.NDArray[np.integer] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
-    order: str = "C",
+    order: Literal["C", "F"] = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     _impl_dict: dict[str, Callable[..., Any]] = _impl_dict,
@@ -809,12 +811,12 @@ def _aggregate_base(
 
 
 def aggregate(
-    group_idx: npt.ArrayLike,
-    a: npt.ArrayLike,
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
     func: str | Callable[..., Any] | None = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
-    order: str = "C",
+    order: Literal["C", "F"] = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     **kwargs: Any,

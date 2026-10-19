@@ -24,15 +24,15 @@ from numpy_groupies.utils import (
 
 
 def _wrapper(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: float,
     func: str | Callable[..., Any] = "sum",
     dtype: np.dtype | None = None,
     ddof: int = 0,
     **kwargs: Any,
-) -> np.ndarray:
+) -> npt.NDArray[np.number]:
     if len(group_idx) == 0:
         raise ValueError("group_idx must not be empty")
     # scalar input needs broadcasting before anything group-based can run
@@ -128,8 +128,8 @@ _dispatch = build_dispatch(_impl_dict, aliasing)
 
 
 def aggregate(
-    group_idx: npt.ArrayLike,
-    a: npt.ArrayLike,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
     func: str | Callable[..., Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,

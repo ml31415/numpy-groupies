@@ -13,7 +13,7 @@ def _gather_1d(
 
 
 def unpack_into(
-    group_idx: npt.ArrayLike, ret: npt.NDArray[np.number], out: npt.NDArray[np.number]
+    group_idx: npt.NDArray[np.integer], ret: npt.NDArray[np.number], out: npt.NDArray[np.number]
 ) -> npt.NDArray[np.number]:
     """Like ``unpack``, but gathers into a caller-provided array.
 

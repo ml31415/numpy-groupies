@@ -23,6 +23,7 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from numpy_groupies.aggregate_common import DEFAULT_FILL_VALUE
 from numpy_groupies.utils import check_fill_value, default_fill_value
@@ -37,7 +38,7 @@ def trapezoid_ref(*args: Any, **kwargs: Any) -> Any:
     return func(*args, **kwargs)
 
 
-def _not_nan(values: np.ndarray) -> np.ndarray:
+def _not_nan(values: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
     """the values a nan function may see: for a complex one, a nan in either part is a nan"""
     return values[~np.isnan(values)]
 
@@ -45,7 +46,7 @@ def _not_nan(values: np.ndarray) -> np.ndarray:
 def _of(numpy_function: Callable[..., Any]) -> Callable[[np.ndarray, np.ndarray], Any]:
     """a function of the values of one group, ignoring where they sit"""
 
-    def one_group(values: np.ndarray, pos: np.ndarray) -> Any:
+    def one_group(values: npt.NDArray[np.floating], pos: npt.NDArray[np.integer]) -> Any:
         return numpy_function(values)
 
     one_group.__name__ = getattr(numpy_function, "__name__", "one_group")
@@ -56,7 +57,7 @@ def _at_a_position(numpy_function: Callable[..., Any]) -> Callable[[np.ndarray, 
     """a function that reports which value won, as the position it sits at in
     the input - numpy reports the position inside the group instead"""
 
-    def one_group(values: np.ndarray, pos: np.ndarray) -> Any:
+    def one_group(values: npt.NDArray[np.floating], pos: npt.NDArray[np.integer]) -> Any:
         return pos[numpy_function(values)]
 
     one_group.__name__ = f"at_{numpy_function.__name__}"
@@ -72,7 +73,7 @@ def _skip_nans(one_group: Callable[..., Any]) -> Callable[..., Any]:
     reports for a reduction over nothing.
     """
 
-    def nan_variant(values: np.ndarray, pos: np.ndarray, **kwargs: Any) -> Any:
+    def nan_variant(values: npt.NDArray[np.floating], pos: npt.NDArray[np.integer], **kwargs: Any) -> Any:
         keep = ~np.isnan(values)
         if not keep.any():
             return None
@@ -91,7 +92,7 @@ def _poisoned_by_a_nan(one_group: Callable[..., Any]) -> Callable[..., Any]:
     so it is handled like an empty group and takes the fill value.
     """
 
-    def one_group_or_nothing(values: np.ndarray, pos: np.ndarray, **kwargs: Any) -> Any:
+    def one_group_or_nothing(values: npt.NDArray[np.floating], pos: npt.NDArray[np.integer], **kwargs: Any) -> Any:
         if np.isnan(values).any():
             return None
         return one_group(values, pos, **kwargs)
@@ -100,17 +101,17 @@ def _poisoned_by_a_nan(one_group: Callable[..., Any]) -> Callable[..., Any]:
     return one_group_or_nothing
 
 
-def _as_numbers(values: np.ndarray) -> np.ndarray:
+def _as_numbers(values: npt.NDArray[np.floating]) -> np.ndarray:
     """the values as numbers to integrate over: numpy adds booleans as a
     logical or, which would make the trapezoid of a bool group nonsense"""
     return values.astype(np.float64) if values.dtype.kind == "b" else values
 
 
-def _trapezoid_of(values: np.ndarray, pos: np.ndarray, dx: float = 1.0) -> Any:
+def _trapezoid_of(values: npt.NDArray[np.floating], pos: npt.NDArray[np.integer], dx: float = 1.0) -> Any:
     return trapezoid_ref(_as_numbers(values), dx=dx)
 
 
-def _sum_of_squares(values: np.ndarray, pos: np.ndarray, skip_nan: bool = False) -> Any:
+def _sum_of_squares(values: npt.NDArray[np.floating], pos: npt.NDArray[np.integer], skip_nan: bool = False) -> Any:
     """the sum of the squared values of one group.
 
     For a complex group that is the sum of the squared magnitudes - the real
@@ -124,7 +125,7 @@ def _sum_of_squares(values: np.ndarray, pos: np.ndarray, skip_nan: bool = False)
     return np.sum(np.abs(values) ** 2)
 
 
-def _sort_ref(values: np.ndarray, reverse: bool = False) -> np.ndarray:
+def _sort_ref(values: npt.NDArray[np.number], reverse: bool = False) -> npt.NDArray[np.integer]:
     """one group, ordered the way numpy orders it."""
     ordered = np.sort(values)
     if not reverse:
@@ -210,15 +211,15 @@ _REF_FUNCS = {**_REF_ONE_PER_GROUP, **_REF_ONE_PER_ITEM}
 
 
 def aggregate_ref(
-    group_idx: np.ndarray,
-    a: np.ndarray,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
     *,
     func: str,
     size: int | tuple[int, ...] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
     dtype: np.dtype | None = None,
     **kwargs: Any,
-) -> np.ndarray:
+) -> npt.NDArray[np.number]:
     """``aggregate(group_idx, a, func=func, ...)`` computed one group at a time.
 
     Accepts the string name of a function, one- or multi-dimensional labels and

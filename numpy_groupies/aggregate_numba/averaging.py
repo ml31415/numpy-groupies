@@ -19,8 +19,14 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 
 # the building blocks and overload shims of this file are jitted: numba
 # compiles them from the argument types and ignores these annotations,
-# the type checker needs them
-def _track_extrema(val: int, low: int, high: int) -> None:
+# the type checker needs them.  One exception the checker does not see:
+# numba compares the *signature* of an ``@overload`` function with that of the
+# implementation it returns, annotations included, so the shim, its overload
+# and every one of its alternative implementations must be spelled alike -
+# a lone ``int`` where the overload says ``float`` is refused as
+# "Typing and implementation arguments differ in argument names" and the
+# integer path of var/std/mean then fails to compile
+def _track_extrema(val: float, low: float, high: float) -> None:
     """Fold the global min/max tracking for the integer limit checks into the
     accumulation pass - replaced per dtype by the overload below, inexact
     input never tracks anything."""
@@ -28,16 +34,16 @@ def _track_extrema(val: int, low: int, high: int) -> None:
 
 
 @nb.extending.overload(_track_extrema)
-def _track_extrema_overload(val: int, low: int, high: int) -> typing.Callable[..., None]:
+def _track_extrema_overload(val: float, low: float, high: float) -> typing.Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
-        def _impl(val: int, low: int, high: int) -> None:
+        def _impl(val: float, low: float, high: float) -> None:
             low[0] = min(low[0], val)
             high[0] = max(high[0], val)
 
         return _impl
 
-    def _impl(val: int, low: int, high: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(val: float, low: float, high: float) -> None:  # type: ignore[no-redef]
         pass
 
     return _impl
@@ -78,24 +84,24 @@ def _span_overflow_message(low: int, high: int) -> str:
     )
 
 
-def _mean_limit_check(low: int, high: int, count: int) -> None:
+def _mean_limit_check(low: float, high: float, count: int) -> None:
     """Refuse integer means float64 cannot compute exactly - replaced per
     dtype by the overload below, a no-op for inexact input."""
     raise NotImplementedError  # replaced by the overload below
 
 
 @nb.extending.overload(_mean_limit_check)
-def _mean_limit_check_overload(low: int, high: int, count: int) -> typing.Callable[..., None]:
+def _mean_limit_check_overload(low: float, high: float, count: int) -> typing.Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
-        def _impl(low: int, high: int, count: int) -> None:
+        def _impl(low: float, high: float, count: int) -> None:
             pass
 
         return _impl
 
     if not low.signed:
 
-        def _impl(low: int, high: int, count: int) -> None:
+        def _impl(low: float, high: float, count: int) -> None:
             # uint64 values are non-negative, so the largest magnitude is the
             # maximum itself; compare by division, count * high would wrap
             if count > 0 and high > EXACT_FLOAT64_INTEGER_LIMIT // count:
@@ -103,7 +109,7 @@ def _mean_limit_check_overload(low: int, high: int, count: int) -> typing.Callab
 
         return _impl
 
-    def _impl(low: int, high: int, count: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(low: float, high: float, count: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
         # -low wraps at int64-min and count * bound wraps for large values -
         # treat the former as the out-of-range case it is and compare the
         # latter by division
@@ -118,31 +124,31 @@ def _mean_limit_check_overload(low: int, high: int, count: int) -> typing.Callab
     return _impl
 
 
-def _span_limit_check(low: int, high: int, count: int) -> None:
+def _span_limit_check(low: float, high: float, count: int) -> None:
     """Refuse integer variances whose exact centering would overflow int64 -
     replaced per dtype by the overload below, a no-op for inexact input."""
     raise NotImplementedError  # replaced by the overload below
 
 
 @nb.extending.overload(_span_limit_check)
-def _span_limit_check_overload(low: int, high: int, count: int) -> typing.Callable[..., None]:
+def _span_limit_check_overload(low: float, high: float, count: int) -> typing.Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
-        def _impl(low: int, high: int, count: int) -> None:
+        def _impl(low: float, high: float, count: int) -> None:
             pass
 
         return _impl
 
     if not low.signed:
 
-        def _impl(low: int, high: int, count: int) -> None:
+        def _impl(low: float, high: float, count: int) -> None:
             # uint64 values are non-negative, so high - low cannot wrap
             if count > 0 and high - low > INT64_DEVIATION_LIMIT:
                 raise OverflowError(_span_overflow_message(low, high))
 
         return _impl
 
-    def _impl(low: int, high: int, count: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(low: float, high: float, count: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
         # signed: only the mixed-sign case can exceed the deviation limit,
         # and high - low itself would wrap there - compare without it
         if count > 0 and low < 0 and high >= 0 and high > INT64_DEVIATION_LIMIT + low:
@@ -158,8 +164,8 @@ class MeanState(typing.NamedTuple):
 
     out: npt.NDArray[np.inexact]
     count: npt.NDArray[np.int64]  # type: ignore[assignment]  # the field name shadows tuple.count, which numba does not see
-    low: npt.NDArray[np.generic]
-    high: npt.NDArray[np.generic]
+    low: npt.NDArray[np.number]
+    high: npt.NDArray[np.number]
 
 
 def _mean_init(
@@ -169,7 +175,7 @@ def _mean_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> MeanState:
     return MeanState(
         np.zeros(size, out_dtype),
@@ -179,7 +185,7 @@ def _mean_init(
     )
 
 
-def _mean_seed(st: MeanState, a: npt.NDArray[np.generic]) -> None:
+def _mean_seed(st: MeanState, a: npt.NDArray[np.number]) -> None:
     # seed the global extrema scratch with the first value
     if len(a) > 0:
         st.low[0] = a[0]
@@ -216,7 +222,23 @@ mean = build_kernel(
 )
 
 
-def _accumulate_std(val: float, st: typing.Any, ri: int) -> None:
+class StdState(typing.NamedTuple):
+    """The running sums of the dispersion kernels: ``out`` accumulates the
+    squared deviations in the real output dtype, ``dev`` the deviations
+    themselves in the widened auxiliary dtype (complex stays complex),
+    ``first`` anchors the integer centering and ``low``/``high`` feed the
+    exactness gate.  Kept flat instead of extending ``MeanState`` - numba
+    cannot type inherited NamedTuples."""
+
+    out: npt.NDArray[np.floating]
+    count: npt.NDArray[np.int64]  # type: ignore[assignment]  # the field name shadows tuple.count, which numba does not see
+    dev: npt.NDArray[np.inexact]
+    first: npt.NDArray[np.number]
+    low: npt.NDArray[np.number]
+    high: npt.NDArray[np.number]
+
+
+def _accumulate_std(val: float, st: StdState, ri: int) -> None:
     """Accumulate one value into the running var/std sums.
 
     Replaced per dtype by the overload below: integer input is centered on
@@ -226,10 +248,10 @@ def _accumulate_std(val: float, st: typing.Any, ri: int) -> None:
 
 
 @nb.extending.overload(_accumulate_std)
-def _accumulate_std_overload(val: float, st: typing.Any, ri: int) -> typing.Callable[..., None]:
+def _accumulate_std_overload(val: float, st: StdState, ri: int) -> typing.Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
-        def _impl(val: float, st: typing.Any, ri: int) -> None:
+        def _impl(val: float, st: StdState, ri: int) -> None:
             if st.count[ri] == 1:
                 st.first[ri] = val
             # two's-complement deviation, exact in int64 because the gate
@@ -244,29 +266,13 @@ def _accumulate_std_overload(val: float, st: typing.Any, ri: int) -> typing.Call
 
         return _impl
 
-    def _impl(val: float, st: typing.Any, ri: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
+    def _impl(val: float, st: StdState, ri: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
         st.dev[ri] += val
         # the squared magnitude of the complex deviation is real, so out stays
         # real for complex input - matching np.var
         st.out[ri] += val.real * val.real + val.imag * val.imag
 
     return _impl
-
-
-class StdState(typing.NamedTuple):
-    """The running sums of the dispersion kernels: ``out`` accumulates the
-    squared deviations in the real output dtype, ``dev`` the deviations
-    themselves in the widened auxiliary dtype (complex stays complex),
-    ``first`` anchors the integer centering and ``low``/``high`` feed the
-    exactness gate.  Kept flat instead of extending ``MeanState`` - numba
-    cannot type inherited NamedTuples."""
-
-    out: npt.NDArray[np.floating]
-    count: npt.NDArray[np.int64]  # type: ignore[assignment]  # the field name shadows tuple.count, which numba does not see
-    dev: npt.NDArray[np.inexact]
-    first: npt.NDArray[np.generic]
-    low: npt.NDArray[np.generic]
-    high: npt.NDArray[np.generic]
 
 
 def _std_init(
@@ -276,7 +282,7 @@ def _std_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> StdState:
     return StdState(
         np.zeros(size, out_dtype),
@@ -288,7 +294,7 @@ def _std_init(
     )
 
 
-def _std_seed(st: StdState, a: npt.NDArray[np.generic]) -> None:
+def _std_seed(st: StdState, a: npt.NDArray[np.number]) -> None:
     # seed the global extrema scratch with the first value
     if len(a) > 0:
         st.low[0] = a[0]

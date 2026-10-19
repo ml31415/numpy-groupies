@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import platform
 from collections.abc import Callable
-from typing import Any, TypeAlias, cast
+from typing import Any, Literal, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -21,13 +21,17 @@ from numpy_groupies.aggregate_common import (
     resolve_name,
 )
 
+# the values as the dispatchers carry them on: an array of numbers, or the one
+# python scalar that stands for that value repeated over every label
+AValue: TypeAlias = npt.NDArray[np.number] | int | float | complex
+
 # what input_validation hands back: (raveled integer indices, the values -
 # possibly still a python scalar -, the flat output size, the input index
 # dimensionality, the (possibly shaped) output size and the shape an arg
 # reduction has to unravel its positions with, in that order
 ValidatedInput: TypeAlias = tuple[
     npt.NDArray[np.integer],
-    npt.NDArray[np.number] | int | float | complex,
+    AValue,
     int,
     int,
     int | tuple[int, ...] | npt.NDArray[np.integer],
@@ -227,7 +231,9 @@ def scalar_dtype(a: Any) -> np.dtype:
 def check_dtype(
     dtype: npt.DTypeLike | None,
     func_str: str,
-    a: npt.NDArray[np.number] | complex,
+    # an array of any dtype the operation may meet, or the one python scalar
+    # that stands for it - is_scalar_input below is what tells the two apart
+    a: Any,
     n: int | tuple[int, ...] | None,
 ) -> np.dtype:
     if is_scalar_input(a):
@@ -235,7 +241,7 @@ def check_dtype(
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
         a_dtype = scalar_dtype(a)
     else:
-        a_dtype = cast("npt.NDArray[np.number]", a).dtype
+        a_dtype = a.dtype
 
     return resolve_output_dtype(dtype, func_str, a_dtype, n)
 
@@ -354,11 +360,11 @@ def check_group_idx(
 
 
 def _ravel_group_idx(
-    group_idx: Any,
+    group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     axis: int,
     size: Any,
-    order: str,
+    order: Literal["C", "F"],
     method: str = "ravel",
 ) -> tuple[Any, Any]:
     ndim_a = a.ndim
@@ -368,7 +374,7 @@ def _ravel_group_idx(
     size_in = int(np.max(group_idx)) + 1 if size is None else size
     group_idx_in = group_idx
     # the labels are collected per input dimension before ravel_multi_index folds them
-    group_idx = []
+    labels: list[npt.NDArray[np.integer]] = []
     size = []
     for ii, s in enumerate(a.shape):
         if method == "ravel":
@@ -385,18 +391,20 @@ def _ravel_group_idx(
                 ii_shape = [1] * ndim_a
                 ii_shape[ii] = s
                 ii_idx = np.arange(s).reshape(ii_shape)
-            group_idx.append(ii_idx)
+            labels.append(ii_idx)
         size.append(size_in if ii == axis else s)
     # Use the indexing, and return. It's a bit simpler than
     # using trying to keep all the logic below happy
     if method == "ravel":
-        group_idx = np.ravel_multi_index(group_idx, size, order=cast("Any", order), mode="raise")
+        group_idx = np.ravel_multi_index(labels, size, order=order, mode="raise")
     elif method == "offset":
         group_idx = offset_labels(group_idx_in, a.shape, axis, order, size_in)
     return group_idx, size
 
 
-def offset_labels(group_idx: Any, inshape: tuple[int, ...], axis: int, order: str, size: int) -> Any:
+def offset_labels(
+    group_idx: npt.NDArray[np.integer], inshape: tuple[int, ...], axis: int, order: Literal["C", "F"], size: int
+) -> Any:
     """
     Offset group labels by dimension. This is used when we reduce over a subset of the dimensions of
     group_idx. It assumes that the reductions dimensions have been flattened in the last dimension
@@ -418,11 +426,13 @@ def offset_labels(group_idx: Any, inshape: tuple[int, ...], axis: int, order: st
 
 def input_validation(
     # the unvalidated user input - this function is exactly what narrows it,
-    # including duck arrays that sit outside the ArrayLike union
+    # down to the integer array the signatures of the package ask for, and it
+    # still admits what those do not name: lists, duck arrays and the python
+    # scalar that stands for one value repeated over every label
     group_idx: Any,
     a: Any,
     size: Any = None,
-    order: str = "C",
+    order: Literal["C", "F"] = "C",
     axis: int | None = None,
     ravel_group_idx: bool = True,
     check_bounds: bool = True,
@@ -540,14 +550,13 @@ def input_validation(
 # General tools
 
 
-def unpack(group_idx: npt.ArrayLike, ret: npt.NDArray[np.number]) -> npt.NDArray[np.number]:
+def unpack(group_idx: npt.NDArray[np.integer], ret: npt.NDArray[np.number]) -> npt.NDArray[np.number]:
     """
     Take an aggregate packed array and uncompress it to the size of group_idx. This is equivalent to
     ret[group_idx].
     """
-    # every ArrayLike that indexes at runtime does so as an array or a sequence -
-    # the scalar members of the union are not indexable and would raise in numpy too
-    return cast("npt.NDArray[np.number]", ret[cast("Any", group_idx)])
+    # fancy indexing is unannotated in numpy, the result is the same dtype as ret
+    return cast("npt.NDArray[np.number]", ret[group_idx])
 
 
 def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:
@@ -649,7 +658,9 @@ def relabel_groups_unique(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.
     return relabel_groups_masked(group_idx, keep_group)
 
 
-def relabel_groups_masked(group_idx: npt.NDArray[np.integer], keep_group: npt.ArrayLike) -> npt.NDArray[np.intp]:
+def relabel_groups_masked(
+    group_idx: npt.NDArray[np.integer], keep_group: npt.NDArray[np.bool_]
+) -> npt.NDArray[np.intp]:
     """
     group_idx: [0 3 3 3 0 2 5 2 0 1 1 0 3 5 5]
 

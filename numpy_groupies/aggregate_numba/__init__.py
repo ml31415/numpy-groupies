@@ -18,13 +18,14 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.aggregate_numba.gather import unpack_into
 from numpy_groupies.aggregate_numba.ops import _dispatch, build_generic_aggregate
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
+from numpy_groupies.utils import AValue
 
 __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 
 
 def aggregate(
-    group_idx: npt.ArrayLike,
-    a: npt.NDArray[np.number],
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
     func: str | Callable[..., typing.Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: typing.Any = DEFAULT_FILL_VALUE,
@@ -42,7 +43,7 @@ def aggregate(
     is16 = getattr(a, "dtype", None) == np.float16
     if is16:
         # a float16 input is always an array - the getattr gate does not narrow the union
-        a = a.astype(np.float32)
+        a = typing.cast("npt.NDArray[np.number]", a).astype(np.float32)
     try:
         funcname, aggregate_op = _dispatch[func]
     except (KeyError, TypeError):
@@ -71,8 +72,8 @@ def aggregate(
 
 
 def _aggregate_custom(
-    group_idx: npt.ArrayLike,
-    a: npt.NDArray[np.number],
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
     func: str | Callable[..., typing.Any],
     size: int | Sequence[int] | None,
     fill_value: typing.Any,

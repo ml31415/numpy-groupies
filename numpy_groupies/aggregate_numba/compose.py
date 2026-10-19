@@ -181,7 +181,7 @@ def _resolve_default_fill(fill_default: typing.Any, out_dtype: np.dtype) -> typi
 
 
 @njit_stable
-def output_size(group_idx: npt.NDArray[np.signedinteger], size_arg: int) -> int:
+def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
     """The resolved output size of one aggregation: one past the largest
     group index, capped by an explicitly requested size.  Once this returns,
     every index in ``group_idx`` is within ``[0, size)`` - the drivers use it
@@ -219,7 +219,10 @@ def _make_stub(
 
     # the two shims below speak the numba overload protocol: numba hands them
     # its own types at compile time (or the python defaults of the omitted
-    # arguments), so their parameters are honestly Any
+    # arguments), so their parameters are honestly Any.  The three signatures
+    # below are one protocol: numba compares the typing function with the
+    # implementation it returns, argument names *and* annotations included, so
+    # they have to be spelled alike - see the note in ``averaging``
     def stub(
         group_idx: typing.Any,
         a: typing.Any,
@@ -249,7 +252,11 @@ def _make_stub(
         fill_value: float | None = None,
     ) -> typing.Callable[..., typing.Any]:
         driver = driver_getter()
-        out_dtype, aux_dtype = rule(a)
+        # here ``a`` is the numba *type* of the values (an ``Array`` of the
+        # input dtype), not the values - those only arrive in the impl below,
+        # which is why the shared signature can only call the parameter ``a``
+        a_type: nb.types.Type = a
+        out_dtype, aux_dtype = rule(a_type)
         default_fill = _resolve_default_fill(fill_default, out_dtype)
 
         def impl(
@@ -426,8 +433,8 @@ def build_kernel(
             update_ = update_c
 
         def kernel(
-            group_idx: npt.NDArray[np.signedinteger],
-            a: npt.NDArray[np.generic],
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
             st: typing.Any,
             fill_value: float,
             ddof: int,
@@ -450,8 +457,8 @@ def build_kernel(
         kernel = njit_stable(kernel, name=f"{op_name}_kernel")
 
         def driver(
-            group_idx: npt.NDArray[np.signedinteger],
-            a: npt.NDArray[np.generic],
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
             size_arg: int,
             out_dtype: np.dtype,
             aux_dtype: np.dtype,

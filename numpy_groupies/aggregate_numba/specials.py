@@ -25,15 +25,16 @@ from numpy_groupies.aggregate_numba.compose import (
 )
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numpy import _aggregate_base
+from numpy_groupies.utils import AValue
 
 
 def _numpy_fallback(
-    group_idx: npt.ArrayLike,
-    a: npt.ArrayLike,
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
     func: str,
     size: int | None,
     fill_value: float,
-    order: str,
+    order: typing.Literal["C", "F"],
     dtype: npt.DTypeLike | None,
     axis: int | None,
 ) -> npt.NDArray[np.number]:
@@ -46,7 +47,7 @@ def _numpy_fallback(
     return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
 
 
-def _group_count(group_idx: npt.NDArray[np.signedinteger], size: int) -> npt.NDArray[np.int64]:
+def _group_count(group_idx: npt.NDArray[np.integer], size: int) -> npt.NDArray[np.int64]:
     """bounds-checked per-group element counts"""
     counts = np.zeros(size, np.int64)
     for i in range(len(group_idx)):
@@ -65,7 +66,7 @@ def _group_starts(counts: npt.NDArray[np.int64]) -> npt.NDArray[np.int64]:
 
 
 def _group_place(
-    group_idx: npt.NDArray[np.signedinteger],
+    group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     cursor: npt.NDArray[np.int64],
     a_sorted: npt.NDArray[np.number],
@@ -125,7 +126,7 @@ def _median_driver_factory(nans: bool) -> typing.Any:
     _middle = njit_stable(_median_middle)
 
     def driver(
-        group_idx: npt.NDArray[np.signedinteger],
+        group_idx: npt.NDArray[np.integer],
         a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,
@@ -255,7 +256,7 @@ def _sort_blocks(
 
 
 def _sort_scatter(
-    group_idx: npt.NDArray[np.signedinteger],
+    group_idx: npt.NDArray[np.integer],
     a_sorted: npt.NDArray[np.number],
     starts: npt.NDArray[np.int64],
     out: npt.NDArray[np.number],
@@ -277,7 +278,7 @@ def _sort_driver_factory(nans: bool) -> typing.Any:
     _scatter = njit_stable(_sort_scatter)
 
     def driver(
-        group_idx: npt.NDArray[np.signedinteger],
+        group_idx: npt.NDArray[np.integer],
         a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,
@@ -331,7 +332,7 @@ def _trapezoid_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> TrapezoidState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)

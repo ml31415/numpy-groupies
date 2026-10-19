@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
+    from numpy_groupies.utils import AValue
+
     class Aggregate(Protocol):
         """The canonical signature of the public ``aggregate``.
 
@@ -26,8 +28,8 @@ if TYPE_CHECKING:
 
         def __call__(
             self,
-            group_idx: npt.ArrayLike,
-            a: npt.ArrayLike,
+            group_idx: npt.NDArray[np.integer],
+            a: AValue,
             func: str | Callable[..., Any] = "sum",
             size: int | Sequence[int] | None = None,
             fill_value: Any = ...,
@@ -86,13 +88,16 @@ else:
     from numpy_groupies.aggregate_numba import unpack_into
 
     aggregate_nb = cast("Aggregate", aggregate_nb_impl)
-    step_count = cast("Callable[[npt.NDArray[np.signedinteger]], int]", step_count_nb_impl)
-    step_indices = cast("Callable[[npt.NDArray[np.signedinteger]], npt.NDArray[np.int64]]", step_indices_nb_impl)
+    step_count = cast("Callable[[npt.NDArray[np.integer]], int]", step_count_nb_impl)
+    step_indices = cast("Callable[[npt.NDArray[np.integer]], npt.NDArray[np.int64]]", step_indices_nb_impl)
     aggregate = aggregate_nb
 
 
 def uaggregate(
-    group_idx: npt.ArrayLike, a: npt.ArrayLike, out: npt.NDArray[np.number] | None = None, **kwargs: Any
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
+    out: npt.NDArray[np.number] | None = None,
+    **kwargs: Any,
 ) -> npt.NDArray[np.number]:
     """
     Aggregate the values of ``a`` by the groups in ``group_idx`` and broadcast the result

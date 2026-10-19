@@ -53,7 +53,7 @@ def _sum_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> ReductionState:
     # the accumulation starts at 0 (the forced default) - a custom fill value
     # is applied to the untouched groups after the loop
@@ -111,7 +111,7 @@ def _prod_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
@@ -159,7 +159,7 @@ def _len_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
@@ -203,7 +203,7 @@ def _all_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
@@ -246,7 +246,7 @@ def _any_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
@@ -296,7 +296,7 @@ def _last_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> LastState:
     # untouched groups keep the fill value
     return LastState(np.full(size, fill_value, out_dtype))
@@ -330,7 +330,7 @@ def _first_driver_factory(nan_variant: bool) -> typing.Any:
     # driver plus a separate njit update call compiles ~12x slower here -
     # see the note in argreductions._argmax_driver_factory.
     def driver(
-        group_idx: npt.NDArray[np.signedinteger],
+        group_idx: npt.NDArray[np.integer],
         a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,
@@ -389,7 +389,7 @@ def _allnan_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
@@ -426,7 +426,7 @@ def _anynan_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
@@ -463,7 +463,7 @@ def _max_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> SelectionState:
     return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
 
@@ -526,7 +526,7 @@ def _min_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> SelectionState:
     return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
 
@@ -575,7 +575,7 @@ def _sumofsquares_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)

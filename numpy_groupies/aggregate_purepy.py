@@ -3,7 +3,7 @@ import math
 import numbers
 import operator
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
@@ -26,7 +26,10 @@ from numpy_groupies.aggregate_common import (
 )
 
 if TYPE_CHECKING:
+    import numpy as np
     import numpy.typing as npt
+
+    from numpy_groupies.utils import AValue
 
 
 # min, max, all, any - builtin
@@ -262,20 +265,20 @@ def _check_integer_precision(a: Sequence[Any], func: Callable[..., Any]) -> None
 
 
 def aggregate(
-    group_idx: "npt.ArrayLike",
-    a: "npt.ArrayLike",
+    group_idx: "npt.NDArray[np.integer]",
+    a: "AValue",
     func: str | Callable[..., Any] = "sum",
     size: int | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
-    order: str = "C",
+    order: Literal["C", "F"] = "C",
     dtype: "npt.DTypeLike | None" = None,
     axis: int | None = None,
     **kwargs: Any,
 ) -> list[Any]:
     # the pure python path reads both arguments purely as sized iterables of the
-    # values - the scalars and buffers that the ArrayLike union of the signature
-    # also admits are refused below, and these casts say that without rejecting
-    # anything of their own
+    # values - a sequence of labels and a sequence of values, which is what these
+    # casts say without rejecting anything; the scalar that the signature of
+    # ``a`` also admits is refused below, as is anything not sized
     idx: Sequence[Any] = cast(Sequence[Any], group_idx)
     vals: Sequence[Any] = cast(Sequence[Any], a)
     if axis is not None:

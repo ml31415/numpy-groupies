@@ -28,6 +28,7 @@ from numpy_groupies.aggregate_numba import argreductions, averaging, cumulative,
 from numpy_groupies.aggregate_numba.compose import KernelHandle
 from numpy_groupies.aggregate_numba.steps import step_indices
 from numpy_groupies.utils import (
+    AValue,
     aliasing,
     check_dtype,
     check_fill_value,
@@ -94,11 +95,11 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
     """
 
     def aggregate(
-        group_idx: npt.ArrayLike,
-        a: npt.ArrayLike,
+        group_idx: npt.NDArray[np.integer],
+        a: AValue,
         size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
-        order: str = "C",
+        order: typing.Literal["C", "F"] = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         ddof: float = 0,
@@ -211,7 +212,9 @@ def _compiled_group_loop(func: typing.Callable[..., typing.Any]) -> typing.Calla
     nb_func = nb.njit(func)
 
     @nb.njit
-    def loop(sortidx: typing.Any, group_idx: typing.Any, a: npt.NDArray[np.number], ret: typing.Any) -> None:
+    def loop(
+        sortidx: npt.NDArray[np.integer], group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number], ret: typing.Any
+    ) -> None:
         size = len(ret)
         group_idx_srt = group_idx[sortidx]
         a_srt = a[sortidx]
@@ -241,11 +244,11 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
     jitfunc = _compiled_group_loop(func)
 
     def aggregate(
-        group_idx: npt.ArrayLike,
-        a: npt.ArrayLike,
+        group_idx: npt.NDArray[np.integer],
+        a: AValue,
         size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
-        order: str = "C",
+        order: typing.Literal["C", "F"] = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         ddof: float = 0,
@@ -268,10 +271,7 @@ def build_generic_aggregate(func: typing.Callable[..., typing.Any]) -> typing.Ca
         # Deal with ndimensional indexing
         if ndim_idx > 1:
             check_nton_shape(ret, size, func)
-            ret = typing.cast(
-                "npt.NDArray[np.number]",
-                ret.reshape(typing.cast("typing.Any", size), order=typing.cast("typing.Any", order)),
-            )
+            ret = ret.reshape(size, order=order)
         return ret
 
     return aggregate
@@ -317,8 +317,8 @@ def _dx_argument(op: typing.Callable[..., typing.Any]) -> typing.Callable[..., t
     """
 
     def trapezoid_op(
-        group_idx: npt.ArrayLike,
-        a: npt.ArrayLike,
+        group_idx: npt.NDArray[np.integer],
+        a: AValue,
         size: int | tuple[int, ...] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
         order: str = "C",
@@ -342,8 +342,8 @@ def _sort_arguments(op: typing.Callable[..., typing.Any]) -> typing.Callable[...
     """
 
     def sort_op(
-        group_idx: npt.ArrayLike,
-        a: npt.ArrayLike,
+        group_idx: npt.NDArray[np.integer],
+        a: AValue,
         size: int | tuple[int, ...] | None = None,
         fill_value: typing.Any = DEFAULT_FILL_VALUE,
         order: str = "C",

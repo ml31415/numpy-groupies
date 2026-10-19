@@ -25,7 +25,7 @@ def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
 
         @njit_stable
         def kernel_nan(
-            group_idx: npt.NDArray[np.signedinteger],
+            group_idx: npt.NDArray[np.integer],
             a: npt.NDArray[np.number],
             out: npt.NDArray[np.number],
             running: npt.NDArray[np.number],
@@ -59,7 +59,7 @@ def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
 
         @njit_stable
         def kernel_plain(
-            group_idx: npt.NDArray[np.signedinteger],
+            group_idx: npt.NDArray[np.integer],
             a: npt.NDArray[np.number],
             out: npt.NDArray[np.number],
             running: npt.NDArray[np.number],
@@ -106,7 +106,7 @@ def _argmax_driver_factory(nan_variant: bool) -> typing.Any:
         kernel = kernel_plain
 
     def driver(
-        group_idx: npt.NDArray[np.signedinteger],
+        group_idx: npt.NDArray[np.integer],
         a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,
@@ -142,7 +142,7 @@ def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
 
         @njit_stable
         def kernel_nan(
-            group_idx: npt.NDArray[np.signedinteger],
+            group_idx: npt.NDArray[np.integer],
             a: npt.NDArray[np.number],
             out: npt.NDArray[np.number],
             running: npt.NDArray[np.number],
@@ -173,7 +173,7 @@ def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
 
         @njit_stable
         def kernel_plain(
-            group_idx: npt.NDArray[np.signedinteger],
+            group_idx: npt.NDArray[np.integer],
             a: npt.NDArray[np.number],
             out: npt.NDArray[np.number],
             running: npt.NDArray[np.number],
@@ -206,7 +206,7 @@ def _argmin_driver_factory(nan_variant: bool) -> typing.Any:
         kernel = kernel_plain
 
     def driver(
-        group_idx: npt.NDArray[np.signedinteger],
+        group_idx: npt.NDArray[np.integer],
         a: npt.NDArray[np.number],
         size_arg: int,
         out_dtype: np.dtype,

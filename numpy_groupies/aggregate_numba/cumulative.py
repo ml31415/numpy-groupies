@@ -17,8 +17,8 @@ class CumulativeState(typing.NamedTuple):
     """``running`` accumulates per group, ``out`` records the running value
     at every input position."""
 
-    running: npt.NDArray[np.generic]
-    out: npt.NDArray[np.generic]
+    running: npt.NDArray[np.number]
+    out: npt.NDArray[np.number]
 
 
 def _cumsum_init(
@@ -28,7 +28,7 @@ def _cumsum_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> CumulativeState:
     # every position of out is written in the same pass that fills running
     return CumulativeState(np.zeros(size, out_dtype), np.full(n_input, fill_value, out_dtype))
@@ -74,7 +74,7 @@ def _cumprod_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> CumulativeState:
     return CumulativeState(np.ones(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
@@ -117,8 +117,8 @@ class CumExtremaState(typing.NamedTuple):
     Kept flat instead of extending ``CumulativeState`` - numba cannot type
     inherited NamedTuples."""
 
-    running: npt.NDArray[np.generic]
-    out: npt.NDArray[np.generic]
+    running: npt.NDArray[np.number]
+    out: npt.NDArray[np.number]
     pending: npt.NDArray[np.bool_]
 
 
@@ -129,7 +129,7 @@ def _cummax_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> CumExtremaState:
     return CumExtremaState(
         np.full(size, fill_value, out_dtype),
@@ -188,7 +188,7 @@ def _cummin_init(
     aux_dtype: np.dtype,
     in_dtype: np.dtype,
     fill_value: float,
-    forced_fill: typing.Any,
+    forced_fill: float,
 ) -> CumExtremaState:
     return CumExtremaState(
         np.full(size, fill_value, out_dtype),
