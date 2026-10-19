@@ -209,6 +209,14 @@ _REF_ONE_PER_ITEM: dict[str, Callable[..., Any]] = {
 
 _REF_FUNCS = {**_REF_ONE_PER_GROUP, **_REF_ONE_PER_ITEM}
 
+# the functions that collect the values of a group instead of reducing them:
+# their result is a sequence per group, and the object array of them is built
+# element by element
+_REF_COLLECTING: dict[str, Callable[..., Any]] = {
+    "array": lambda v, pos: v,
+}
+_REF_FUNCS.update(_REF_COLLECTING)
+
 
 def aggregate_ref(
     group_idx: npt.NDArray[np.integer],
@@ -268,6 +276,24 @@ def aggregate_ref(
             continue
         positions[group] = pos
         results[group] = value
+
+    if func in _REF_COLLECTING:
+        # the result is a sequence per group, so the object array of them is
+        # built element by element - a group that received no value takes the
+        # fill value, which is an empty sequence by default
+        out_dtype = dtype or np.dtype(object)
+        if fill_value is DEFAULT_FILL_VALUE:
+            fill = default_fill_value(func, out_dtype)
+        else:
+            check_fill_value(fill_value, out_dtype, func)
+            fill = fill_value
+        ret = np.empty(out_shape, dtype=object)
+        flat = ret.reshape(-1)
+        for group in range(n_groups):
+            flat[group] = fill
+        for group, value in results.items():
+            flat[group] = value
+        return ret
 
     if func in _REF_ONE_PER_ITEM:
         # the result holds one slot per input item, so a group that is not in
