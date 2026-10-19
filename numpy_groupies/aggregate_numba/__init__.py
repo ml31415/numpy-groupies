@@ -18,30 +18,32 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.aggregate_numba.gather import unpack_into
 from numpy_groupies.aggregate_numba.ops import _dispatch, build_generic_aggregate
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
+from numpy_groupies.utils import AValue, RavelOrder
 
 __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 
 
 def aggregate(
-    group_idx: npt.ArrayLike,
-    a: npt.ArrayLike,
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
     func: str | Callable[..., typing.Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: typing.Any = DEFAULT_FILL_VALUE,
-    order: str = "C",
-    dtype: npt.DTypeLike = None,
+    order: RavelOrder = "C",
+    dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
-    out: npt.NDArray[np.generic] | None = None,
+    out: npt.NDArray[np.number] | None = None,
     cache: bool = True,
     **kwargs: typing.Any,
-) -> typing.Any:
+) -> npt.NDArray[np.number]:
     # numba has no float16: the values survive the widening cast to float32
     # exactly, so the kernels run on float32 and an inexact result is rounded
     # back - like the numpy twin does, whose bincount accumulates in float64
     # and rounds once at the end
     is16 = getattr(a, "dtype", None) == np.float16
     if is16:
-        a = a.astype(np.float32)
+        # a float16 input is always an array - the getattr gate does not narrow the union
+        a = typing.cast("npt.NDArray[np.number]", a).astype(np.float32)
     try:
         funcname, aggregate_op = _dispatch[func]
     except (KeyError, TypeError):
@@ -70,17 +72,17 @@ def aggregate(
 
 
 def _aggregate_custom(
-    group_idx,
-    a,
-    func,
-    size,
-    fill_value,
-    order,
-    dtype,
-    axis,
-    cache,
-    **kwargs,
-):
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
+    func: str | Callable[..., typing.Any],
+    size: int | Sequence[int] | None,
+    fill_value: typing.Any,
+    order: RavelOrder,
+    dtype: npt.DTypeLike | None,
+    axis: int | None,
+    cache: bool | None | typing.MutableMapping[typing.Any, typing.Any],
+    **kwargs: typing.Any,
+) -> npt.NDArray[np.number]:
     """Slow dispatch path for a func that is no key of the dispatch table.
 
     An object of one's own is what numba cannot compile - it compiles functions,
@@ -96,21 +98,25 @@ def _aggregate_custom(
         raise TypeError(
             "numba can only compile a function as func, a callable object is not one of those (the numpy implementation runs any callable)"
         ) from None
+    aggregate_op: typing.Callable[..., typing.Any] | None
     if cache in (None, False):
         # Keep None and False in order to accept empty dictionaries
         aggregate_op = build_generic_aggregate(func)
     elif cache is True:
         aggregate_op = _get_cached_generic(func)
     else:
-        aggregate_op = cache.get(func)
+        cache_map = typing.cast("typing.MutableMapping[typing.Any, typing.Any]", cache)
+        aggregate_op = cache_map.get(func)
         if aggregate_op is None:
             aggregate_op = build_generic_aggregate(func)
-            cache[func] = aggregate_op
-    return aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+            cache_map[func] = aggregate_op
+    return typing.cast(
+        "npt.NDArray[np.number]", aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+    )
 
 
 @functools.lru_cache(maxsize=128)
-def _get_cached_generic(func):
+def _get_cached_generic(func: Callable[..., typing.Any]) -> typing.Any:
     """LRU-cache generic aggregate loops per user callable (bounded)."""
     return build_generic_aggregate(func)
 

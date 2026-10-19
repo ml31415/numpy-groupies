@@ -28,54 +28,54 @@ overflow guesses for narrow integers are approximated by widening to int64 -
 from numpy_groupies.aggregate_numba import argreductions, averaging, cumulative, reductions, specials
 
 aggregate_sum = reductions.sum.plain.stub
-aggregate_nansum = reductions.sum.nan.stub
+aggregate_nansum = reductions.sum.nan.stub  # type: ignore[union-attr]
 aggregate_prod = reductions.prod.plain.stub
-aggregate_nanprod = reductions.prod.nan.stub
+aggregate_nanprod = reductions.prod.nan.stub  # type: ignore[union-attr]
 aggregate_len = reductions.len.plain.stub
-aggregate_nanlen = reductions.len.nan.stub
+aggregate_nanlen = reductions.len.nan.stub  # type: ignore[union-attr]
 aggregate_all = reductions.all.plain.stub
-aggregate_nanall = reductions.all.nan.stub
+aggregate_nanall = reductions.all.nan.stub  # type: ignore[union-attr]
 aggregate_any = reductions.any.plain.stub
-aggregate_nanany = reductions.any.nan.stub
+aggregate_nanany = reductions.any.nan.stub  # type: ignore[union-attr]
 aggregate_last = reductions.last.plain.stub
-aggregate_nanlast = reductions.last.nan.stub
+aggregate_nanlast = reductions.last.nan.stub  # type: ignore[union-attr]
 aggregate_first = reductions.first.plain.stub
-aggregate_nanfirst = reductions.first.nan.stub
+aggregate_nanfirst = reductions.first.nan.stub  # type: ignore[union-attr]
 aggregate_allnan = reductions.allnan.plain.stub
 aggregate_anynan = reductions.anynan.plain.stub
 aggregate_min = reductions.min.plain.stub
-aggregate_nanmin = reductions.min.nan.stub
+aggregate_nanmin = reductions.min.nan.stub  # type: ignore[union-attr]
 aggregate_max = reductions.max.plain.stub
-aggregate_nanmax = reductions.max.nan.stub
+aggregate_nanmax = reductions.max.nan.stub  # type: ignore[union-attr]
 aggregate_sumofsquares = reductions.sumofsquares.plain.stub
-aggregate_nansumofsquares = reductions.sumofsquares.nan.stub
+aggregate_nansumofsquares = reductions.sumofsquares.nan.stub  # type: ignore[union-attr]
 
 aggregate_argmax = argreductions.argmax.plain.stub
-aggregate_nanargmax = argreductions.argmax.nan.stub
+aggregate_nanargmax = argreductions.argmax.nan.stub  # type: ignore[union-attr]
 aggregate_argmin = argreductions.argmin.plain.stub
-aggregate_nanargmin = argreductions.argmin.nan.stub
+aggregate_nanargmin = argreductions.argmin.nan.stub  # type: ignore[union-attr]
 
 aggregate_mean = averaging.mean.plain.stub
-aggregate_nanmean = averaging.mean.nan.stub
+aggregate_nanmean = averaging.mean.nan.stub  # type: ignore[union-attr]
 aggregate_std = averaging.std.plain.stub
-aggregate_nanstd = averaging.std.nan.stub
+aggregate_nanstd = averaging.std.nan.stub  # type: ignore[union-attr]
 aggregate_var = averaging.var.plain.stub
-aggregate_nanvar = averaging.var.nan.stub
+aggregate_nanvar = averaging.var.nan.stub  # type: ignore[union-attr]
 
 aggregate_median = specials.median.plain.stub
-aggregate_nanmedian = specials.median.nan.stub
+aggregate_nanmedian = specials.median.nan.stub  # type: ignore[union-attr]
 aggregate_trapezoid = specials.trapezoid.plain.stub
-aggregate_nantrapezoid = specials.trapezoid.nan.stub
+aggregate_nantrapezoid = specials.trapezoid.nan.stub  # type: ignore[union-attr]
 aggregate_sort = specials.sort.plain.stub
 
 aggregate_cumsum = cumulative.cumsum.plain.stub
-aggregate_nancumsum = cumulative.cumsum.nan.stub
+aggregate_nancumsum = cumulative.cumsum.nan.stub  # type: ignore[union-attr]
 aggregate_cumprod = cumulative.cumprod.plain.stub
-aggregate_nancumprod = cumulative.cumprod.nan.stub
+aggregate_nancumprod = cumulative.cumprod.nan.stub  # type: ignore[union-attr]
 aggregate_cummax = cumulative.cummax.plain.stub
-aggregate_nancummax = cumulative.cummax.nan.stub
+aggregate_nancummax = cumulative.cummax.nan.stub  # type: ignore[union-attr]
 aggregate_cummin = cumulative.cummin.plain.stub
-aggregate_nancummin = cumulative.cummin.nan.stub
+aggregate_nancummin = cumulative.cummin.nan.stub  # type: ignore[union-attr]
 
 __all__ = [
     "aggregate_all",

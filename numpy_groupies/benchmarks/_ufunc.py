@@ -14,6 +14,7 @@ from numpy_groupies.aggregate_common import (
 )
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.utils import (
+    RavelOrder,
     aliasing,
     check_boolean,
     maxval,
@@ -168,12 +169,12 @@ _dispatch = build_dispatch(_impl_dict, aliasing)
 
 
 def aggregate(
-    group_idx: npt.ArrayLike,
-    a: npt.ArrayLike,
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
     func: str | Callable[..., Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
-    order: str = "C",
+    order: RavelOrder = "C",
     dtype: npt.DTypeLike = None,
     axis: int | None = None,
     **kwargs: Any,

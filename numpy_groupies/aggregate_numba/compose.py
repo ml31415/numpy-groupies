@@ -39,6 +39,7 @@ import typing
 
 import numba as nb
 import numpy as np
+import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
 
@@ -57,11 +58,13 @@ def complex_less(x: typing.Any, y: typing.Any) -> bool:
     which makes ``1+nanj < 2+1j`` False instead of True.
 
     Written as a jitted function with an ``isinstance`` branch rather than as
-    an intrinsic plus ``@overload``: numba resolves the test at compile time,
-    so the real dtypes are left with a bare ``<`` and the lexicographic code
-    is only compiled for complex input.  The tuple names ``np.complex64`` as
-    well because numba maps the python class ``complex`` to complex128 only -
-    the 64 bit variant would otherwise fall through to ``<`` and fail to type.
+    an overload - measured, the call is not what the group loop costs (1.1ms
+    of the reduction with it, 1.3ms with an overload numba inlines).  The test
+    names what numba can name: the python class ``complex`` is complex128
+    there, so ``np.complex64`` has to be spelled out as well, and the abstract
+    ``np.complexfloating`` cannot be named at all - numba types the classes of
+    an ``isinstance`` tuple as constants and numpy refuses that one as a dtype,
+    which would take the whole reduction down with it.
 
     Disk cached like its callers - numba cannot resolve an uncached callee
     from cached caller code at all (the loaded module dies on a NULL ``descr``
@@ -69,13 +72,18 @@ def complex_less(x: typing.Any, y: typing.Any) -> bool:
     the kernels account for by resolving the comparison into a local variable
     before the select expression instead of calling inside it.
     """
-    if isinstance(x, (complex, np.complex64)):
+    if isinstance(x, (complex, np.complex64)) and isinstance(y, (complex, np.complex64)):
         if x.real < y.real:
             return not (np.isnan(x.imag) or np.isnan(y.imag))
         if x.real == y.real:
-            return x.imag < y.imag
+            # numba's compare is already a bool, only numpy's stub answers
+            # np.bool_ - the call is a no-op in compiled code
+            return bool(x.imag < y.imag)
         return False
-    return x < y
+    if isinstance(x, (complex, np.complex64)) or isinstance(y, (complex, np.complex64)):
+        raise TypeError("can not compare float with complex")
+    less: bool = x < y
+    return less
 
 
 # ---------------------------------------------------------------------------
@@ -83,9 +91,12 @@ def complex_less(x: typing.Any, y: typing.Any) -> bool:
 # returning the (out_dtype, aux_dtype) pair of np.dtypes
 
 
-def _as_np_dtype(a_type: nb.types.ArrayCTypes) -> np.dtype:
+def _as_np_dtype(a_type: nb.types.Type) -> np.dtype:
     """The np.dtype of the numba array type an overload builder sees."""
-    return nb.np.numpy_support.as_dtype(a_type.dtype)
+    # every rule is handed the numba type of the value array and nothing else -
+    # the type lattice has no named ancestor of ArrayCTypes that carries dtype
+    array_type = typing.cast("nb.types.ArrayCTypes", a_type)
+    return nb.np.numpy_support.as_dtype(array_type.dtype)
 
 
 def rule_same(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
@@ -175,12 +186,12 @@ def _resolve_default_fill(fill_default: typing.Any, out_dtype: np.dtype) -> typi
 
 
 @njit_stable
-def output_size(group_idx, size_arg):
+def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
     """The resolved output size of one aggregation: one past the largest
     group index, capped by an explicitly requested size.  Once this returns,
     every index in ``group_idx`` is within ``[0, size)`` - the drivers use it
     once per call instead of repeating the logic inline."""
-    size = np.max(group_idx) + 1
+    size: int = np.max(group_idx) + 1
     if size_arg >= 0:
         # an explicit output size may be larger than the largest index, but
         # never smaller
@@ -190,7 +201,14 @@ def output_size(group_idx, size_arg):
     return size
 
 
-def _make_stub(stub_name, driver_getter, rule, fill_default, doc, ddof_default=0):
+def _make_stub(
+    stub_name: str,
+    driver_getter: typing.Callable[[], typing.Any],
+    rule: typing.Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
+    fill_default: typing.Any,
+    doc: str | None,
+    ddof_default: typing.Any = 0,
+) -> typing.Callable[..., typing.Any]:
     """Create the njit-callable ``aggregate_*`` function of one variant.
 
     The stub is a plain python function: calling it from python raises, from
@@ -204,7 +222,19 @@ def _make_stub(stub_name, driver_getter, rule, fill_default, doc, ddof_default=0
     through it.
     """
 
-    def stub(group_idx, a, ddof=ddof_default, size=-1, fill_value=None):
+    # the two shims below speak the numba overload protocol: numba hands them
+    # its own types at compile time (or the python defaults of the omitted
+    # arguments), so their parameters are honestly Any.  The three signatures
+    # below are one protocol: numba compares the typing function with the
+    # implementation it returns, argument names *and* annotations included, so
+    # they have to be spelled alike - see the note in ``averaging``
+    def stub(
+        group_idx: typing.Any,
+        a: typing.Any,
+        ddof: int = ddof_default,
+        size: int = -1,
+        fill_value: float | None = None,
+    ) -> typing.Any:
         raise NotImplementedError("only callable from jitted code - use aggregate() otherwise")
 
     stub.__name__ = stub_name
@@ -219,12 +249,28 @@ def _make_stub(stub_name, driver_getter, rule, fill_default, doc, ddof_default=0
     # The shim itself compiles in microseconds, the expensive compilation
     # (the driver) stays cached through ``njit_stable``.
     @nb.extending.overload(stub)
-    def _overload(group_idx, a, ddof=ddof_default, size=-1, fill_value=None):
+    def _overload(
+        group_idx: typing.Any,
+        a: typing.Any,
+        ddof: int = ddof_default,
+        size: int = -1,
+        fill_value: float | None = None,
+    ) -> typing.Callable[..., typing.Any]:
         driver = driver_getter()
-        out_dtype, aux_dtype = rule(a)
+        # here ``a`` is the numba *type* of the values (an ``Array`` of the
+        # input dtype), not the values - those only arrive in the impl below,
+        # which is why the shared signature can only call the parameter ``a``
+        a_type: nb.types.Type = a
+        out_dtype, aux_dtype = rule(a_type)
         default_fill = _resolve_default_fill(fill_default, out_dtype)
 
-        def impl(group_idx, a, ddof=ddof_default, size=-1, fill_value=None):
+        def impl(
+            group_idx: typing.Any,
+            a: typing.Any,
+            ddof: int = ddof_default,
+            size: int = -1,
+            fill_value: float | None = None,
+        ) -> typing.Any:
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
             return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, ddof)
@@ -267,6 +313,19 @@ class KernelPair(typing.NamedTuple):
 
     plain: KernelHandle
     nan: KernelHandle | None
+
+
+def nan_handle(pair: KernelPair, name: str) -> KernelHandle:
+    """The nan variant of a pair that the caller knows has one.
+
+    Callers reach for it behind the ``funcs_no_separate_nan`` gate (or the
+    kernel table), where ``nan`` is never None - this only states that
+    promise for the type checker and keeps the message honest if it breaks.
+    """
+    handle = pair.nan
+    if handle is None:
+        raise ValueError(f"{name} has no nan variant")
+    return handle
 
 
 def build_kernel(
@@ -312,16 +371,18 @@ def build_kernel(
     # 'NRT_adapt_ndarray_to_python', 'descr' is NULL", reproduced by calling
     # the nan variants of sum and sumofsquares in that order) - per-operation
     # copies keep the callers apart
-    def _seed_none(st, a):
+    # the building blocks below are jitted: numba compiles them from the
+    # argument types and ignores these annotations, the type checker needs them
+    def _seed_none(st: typing.Any, a: typing.Any) -> None:
         pass
 
-    def _record_none(st, ri, i):
+    def _record_none(st: typing.Any, ri: int, i: int) -> None:
         pass
 
-    def _gate_none(st, n_values):
+    def _gate_none(st: typing.Any, n_values: int) -> None:
         pass
 
-    def _finish_none(st, g, fill_value, ddof):
+    def _finish_none(st: typing.Any, g: int, fill_value: float, ddof: int) -> typing.Any:
         return st.out[g]
 
     # the same story in the other direction: the qualname is part of numba's
@@ -334,7 +395,7 @@ def build_kernel(
     if untouched is not None:
         untouched_c = njit_stable(untouched)
 
-        def fill_untouched(st, size, fill_value):
+        def fill_untouched(st: typing.Any, size: int, fill_value: float) -> None:
             # a custom fill value also belongs to the groups that never
             # received a value - their output was seeded with the forced
             # default of the operation
@@ -346,12 +407,12 @@ def build_kernel(
 
     else:
 
-        def fill_untouched(st, size, fill_value):
+        def fill_untouched(st: typing.Any, size: int, fill_value: float) -> None:
             pass
 
     fill_untouched = njit_stable(fill_untouched, name=f"{name}_fill_untouched")
 
-    def build(nan_variant):
+    def build(nan_variant: bool) -> KernelHandle:
         # plain and nan variant are two compiled artifacts of the same source
         # block - without the prefix in the name their drivers share a symbol
         # too, which is what ``last`` and ``nanlast`` were caught doing
@@ -361,7 +422,14 @@ def build_kernel(
                 update_ = update_nan_c
             else:
 
-                def guarded_update(st, ri, i, val, fill_value, ddof):
+                def guarded_update(
+                    st: typing.Any,
+                    ri: int,
+                    i: int,
+                    val: float,
+                    fill_value: float,
+                    ddof: int,
+                ) -> None:
                     if val == val:
                         update_c(st, ri, i, val, fill_value, ddof)
 
@@ -369,7 +437,14 @@ def build_kernel(
         else:
             update_ = update_c
 
-        def kernel(group_idx, a, st, fill_value, ddof, size):
+        def kernel(
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
+            st: typing.Any,
+            fill_value: float,
+            ddof: int,
+            size: int,
+        ) -> None:
             # a function of its own on purpose: with the arrays living in the
             # caller's frame (allocated there, reached through the state) the
             # same loop measures ~12% slower - numba has to reload the data
@@ -386,7 +461,15 @@ def build_kernel(
 
         kernel = njit_stable(kernel, name=f"{op_name}_kernel")
 
-        def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
+        def driver(
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
+            size_arg: int,
+            out_dtype: np.dtype,
+            aux_dtype: np.dtype,
+            fill_value: float,
+            ddof: int,
+        ) -> typing.Any:
             # numba's np.max reduction is several times faster than a scalar
             # loop here; negative indices slip through and are caught by the
             # bounds check inside the kernel below
@@ -454,7 +537,7 @@ def build_custom_kernel(
     counting sort before selecting, sort groups it before ordering).
     """
 
-    def build(nan_variant):
+    def build(nan_variant: bool) -> KernelHandle:
         driver = driver_factory(nan_variant)
         stub_name_variant = name if not nan_variant else "nan" + name
         stub = _make_stub(

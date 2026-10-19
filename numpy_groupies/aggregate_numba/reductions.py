@@ -29,7 +29,7 @@ class ReductionState(typing.NamedTuple):
     from the forced default needs it, the default keeps the per-element loop
     free of the extra store (measured ~0.1ms per 500k values)."""
 
-    out: npt.NDArray[np.generic]
+    out: npt.NDArray[np.number]
     untouched: npt.NDArray[np.bool_]
     track: bool
 
@@ -40,11 +40,21 @@ class SelectionState(typing.NamedTuple):
     ``pending`` marks the groups that have not seen a value yet - their first
     value always wins, a nan poisons the group."""
 
-    out: npt.NDArray[np.generic]
+    out: npt.NDArray[np.number]
     pending: npt.NDArray[np.bool_]
 
 
-def _sum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+# the building blocks of this file are jitted: numba compiles them from the
+# argument types and ignores these annotations, the type checker needs them
+def _sum_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> ReductionState:
     # the accumulation starts at 0 (the forced default) - a custom fill value
     # is applied to the untouched groups after the loop
     track = fill_value != forced_fill
@@ -52,13 +62,13 @@ def _sum_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
 
 
-def _sum_update(st, ri, i, val, fill_value, ddof):
+def _sum_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] += val
 
 
-def _sum_update_nan(st, ri, i, val, fill_value, ddof):
+def _sum_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # branchless select-form twin of _sum_update - nans contribute nothing
     # and do not ready their group for a custom fill value; the guarded
     # equivalent turns the loop scalar and compiles ~3x slower
@@ -77,7 +87,7 @@ def _sum_update_nan(st, ri, i, val, fill_value, ddof):
         st.out[ri] += val
 
 
-def _sum_untouched(st):
+def _sum_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
@@ -94,19 +104,27 @@ sum = build_kernel(
 )
 
 
-def _prod_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _prod_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.ones(size, out_dtype), untouched, track)
 
 
-def _prod_update(st, ri, i, val, fill_value, ddof):
+def _prod_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] *= val
 
 
-def _prod_update_nan(st, ri, i, val, fill_value, ddof):
+def _prod_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
@@ -117,7 +135,7 @@ def _prod_update_nan(st, ri, i, val, fill_value, ddof):
         st.out[ri] *= val
 
 
-def _prod_untouched(st):
+def _prod_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
@@ -134,26 +152,34 @@ prod = build_kernel(
 )
 
 
-def _len_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _len_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
 
 
-def _len_update(st, ri, i, val, fill_value, ddof):
+def _len_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] += 1
 
 
-def _len_update_nan(st, ri, i, val, fill_value, ddof):
+def _len_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
     st.out[ri] += 1 if valid else 0
 
 
-def _len_untouched(st):
+def _len_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
@@ -170,25 +196,33 @@ len = build_kernel(
 )
 
 
-def _all_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _all_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.ones(size, np.bool_), untouched, track)
 
 
-def _all_update(st, ri, i, val, fill_value, ddof):
+def _all_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] &= bool(val)
 
 
-def _all_update_nan(st, ri, i, val, fill_value, ddof):
+def _all_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
     st.out[ri] &= (val != val) | bool(val)
 
 
-def _all_untouched(st):
+def _all_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
@@ -205,26 +239,34 @@ all = build_kernel(
 )
 
 
-def _any_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _any_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, np.bool_), untouched, track)
 
 
-def _any_update(st, ri, i, val, fill_value, ddof):
+def _any_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] |= bool(val)
 
 
-def _any_update_nan(st, ri, i, val, fill_value, ddof):
+def _any_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
     st.out[ri] |= bool(val) & valid
 
 
-def _any_untouched(st):
+def _any_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
@@ -244,19 +286,27 @@ any = build_kernel(
 class LastState(typing.NamedTuple):
     """The output array carries the last value of each group itself."""
 
-    out: npt.NDArray[np.generic]
+    out: npt.NDArray[np.number]
 
 
-def _last_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _last_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> LastState:
     # untouched groups keep the fill value
     return LastState(np.full(size, fill_value, out_dtype))
 
 
-def _last_update(st, ri, i, val, fill_value, ddof):
+def _last_update(st: LastState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     st.out[ri] = val
 
 
-def _last_update_nan(st, ri, i, val, fill_value, ddof):
+def _last_update_nan(st: LastState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # select-form twin of _last_update - the current value must be read into
     # a local first, repeating the subscript expression in the else branch
     # keeps the slow codegen (aliasing, see the note in _max_update)
@@ -275,11 +325,19 @@ last = build_kernel(
 )
 
 
-def _first_driver_factory(nan_variant):
+def _first_driver_factory(nan_variant: bool) -> typing.Any:
     # The loop body is inlined on purpose: with numba >= 0.67 the composed
     # driver plus a separate njit update call compiles ~12x slower here -
     # see the note in argreductions._argmax_driver_factory.
-    def driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof):
+    def driver(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        ddof: int,
+    ) -> npt.NDArray[np.number]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         pending = np.ones(size, np.bool_)
@@ -324,19 +382,27 @@ first = build_custom_kernel(
 )
 
 
-def _allnan_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _allnan_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.ones(size, np.bool_), untouched, track)
 
 
-def _allnan_update(st, ri, i, val, fill_value, ddof):
+def _allnan_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] &= val != val
 
 
-def _allnan_untouched(st):
+def _allnan_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
@@ -353,19 +419,27 @@ allnan = build_kernel(
 )
 
 
-def _anynan_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _anynan_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, np.bool_), untouched, track)
 
 
-def _anynan_update(st, ri, i, val, fill_value, ddof):
+def _anynan_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] |= val != val
 
 
-def _anynan_untouched(st):
+def _anynan_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
@@ -382,11 +456,19 @@ anynan = build_kernel(
 )
 
 
-def _max_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _max_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> SelectionState:
     return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
 
 
-def _max_update(st, ri, i, val, fill_value, ddof):
+def _max_update(st: SelectionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # select-form on purpose: the branchy equivalent compiles ~15x slower
     # under numba >= 0.66 when reached as a separate njit call.  Note: out[ri]
     # must be read into a local first - repeating the subscript expression
@@ -412,7 +494,7 @@ def _max_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] = val if (first or val != val or best) else cur
 
 
-def _max_update_nan(st, ri, i, val, fill_value, ddof):
+def _max_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # select-form twin of _max_update - nans neither win nor clear the
     # pending flag
     valid = val == val
@@ -437,11 +519,19 @@ max = build_kernel(
 )
 
 
-def _min_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _min_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> SelectionState:
     return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
 
 
-def _min_update(st, ri, i, val, fill_value, ddof):
+def _min_update(st: SelectionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # select-form on purpose, see _max_update (including why val != val is
     # part of the condition and what it costs)
     first = st.pending[ri]
@@ -454,7 +544,7 @@ def _min_update(st, ri, i, val, fill_value, ddof):
     st.out[ri] = val if (first or val != val or best) else cur
 
 
-def _min_update_nan(st, ri, i, val, fill_value, ddof):
+def _min_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     # select-form twin of _min_update, see _max_update_nan
     valid = val == val
     first = st.pending[ri]
@@ -478,13 +568,21 @@ min = build_kernel(
 )
 
 
-def _sumofsquares_init(size, n_input, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+def _sumofsquares_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> ReductionState:
     track = fill_value != forced_fill
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
 
 
-def _sumofsquares_update(st, ri, i, val, fill_value, ddof):
+def _sumofsquares_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     if st.track:
         st.untouched[ri] = False
     # the squared magnitude of val - complex values give a real, sqrt-free
@@ -496,7 +594,7 @@ def _sumofsquares_update(st, ri, i, val, fill_value, ddof):
         st.out[ri] += val.real * val.real + val.imag * val.imag
 
 
-def _sumofsquares_update_nan(st, ri, i, val, fill_value, ddof):
+def _sumofsquares_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
@@ -509,7 +607,7 @@ def _sumofsquares_update_nan(st, ri, i, val, fill_value, ddof):
         st.out[ri] += val.real * val.real + val.imag * val.imag
 
 
-def _sumofsquares_untouched(st):
+def _sumofsquares_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 

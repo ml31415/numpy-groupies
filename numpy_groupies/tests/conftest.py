@@ -3,6 +3,7 @@
 import typing
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from numpy_groupies.tests.helpers import _BackendProxy, _implementations, impl_name, is_supported
@@ -17,11 +18,11 @@ class Block(typing.NamedTuple):
     that an absent group is part of every comparison.
     """
 
-    group_idx: np.ndarray
+    group_idx: npt.NDArray[np.integer]
     size: int
-    a: np.ndarray
-    a_nans: np.ndarray
-    a_complex: np.ndarray
+    a: npt.NDArray[np.number]
+    a_nans: npt.NDArray[np.floating]
+    a_complex: npt.NDArray[np.complexfloating]
 
 
 @pytest.fixture(params=_implementations, ids=impl_name)

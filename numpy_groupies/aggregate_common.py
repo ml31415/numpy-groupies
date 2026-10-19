@@ -7,7 +7,7 @@ before numpy is known to be available, and has to work without it.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, cast
 
 nan = float("nan")  # nan is just this float
 
@@ -159,7 +159,7 @@ funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan"])
 class _DefaultFillValue:
     """Sentinel for ``fill_value``, asking for the function specific default."""
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "DEFAULT_FILL_VALUE"
 
 
@@ -226,7 +226,7 @@ def _is_inexact_dtype(dtype: Any) -> bool:
 
 def _is_complex_dtype(dtype: Any) -> bool:
     """True for complex numpy dtypes, the complex builtin and complex dtype strings."""
-    kind = getattr(dtype, "kind", None)
+    kind: str | None = getattr(dtype, "kind", None)  # the kind of a numpy dtype is a one letter string
     if kind is not None:  # a numpy dtype
         return kind == "c"
     if isinstance(dtype, str):
@@ -416,7 +416,7 @@ def custom_callable(func: Any) -> Callable[..., Any]:
     here; the hot path is the lookup itself.
     """
     if callable(func):
-        return func
+        return cast(Callable[..., Any], func)
     raise ValueError(f"func {func} is neither a valid function string nor a callable object")
 
 
