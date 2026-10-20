@@ -1,9 +1,8 @@
 """Tests for the numba backend: the jitted fast path, the slow-path
-fallback, the collecting function, the callable cache, the ``out=`` parameter
-and the lock around the shared on-disk compilation cache.
+fallback, the callable cache, the ``out=`` parameter and the lock around the
+shared on-disk compilation cache.
 """
 
-import itertools
 import os
 from threading import Thread
 
@@ -14,7 +13,6 @@ from numpy_groupies import uaggregate
 from numpy_groupies.aggregate_numba import aggregate
 from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile
 from numpy_groupies.aggregate_numba.ops import _dispatch
-from numpy_groupies.aggregate_numpy import aggregate as aggregate_np
 from numpy_groupies.utils import resolve_output_dtype
 
 
@@ -324,85 +322,13 @@ def test_float16_follows_the_float32_plan():
     np.testing.assert_array_equal(aggregate(group_idx, a, func="cumsum"), ref)
 
 
-# the collecting function - the one function of this backend without a
-# compiled kernel, its result being a sequence per group
-
-
-def _same_groups(got, expected):
-    """Compare two collections of per-group sequences."""
-    assert len(got) == len(expected)
-    for g, (one, other) in enumerate(zip(got, expected)):
-        if one is None or other is None:
-            assert one is other, f"group {g}: {one!r} != {other!r}"
-        else:
-            np.testing.assert_array_equal(one, other, err_msg=f"group {g}")
-
-
-def test_collecting_matches_numpy():
-    group_idx = np.array([3, 1, 3, 0, 1, 3])
-    a = np.arange(6.0)
-    res = aggregate(group_idx, a, func="array")
-    ref = aggregate_np(group_idx, a, func="array")
-    _same_groups(res, ref)
-    # the values of a group keep the order they appear in
-    np.testing.assert_array_equal(res[3], [0.0, 2.0, 5.0])
-    # a group without values holds an empty sequence
-    assert len(res[2]) == 0
-
-
-@pytest.mark.parametrize("func", ["array", list, "split", "splice", np.array, np.asarray])
-def test_collecting_aliases(func):
-    group_idx = np.array([0, 1, 1])
-    a = np.arange(3.0)
-    res = aggregate(group_idx, a, func=func)
-    np.testing.assert_array_equal(res[1], [1.0, 2.0])
-
-
-@pytest.mark.parametrize(
-    ["fill_value", "expected"],
-    [(None, None), (-1, -1), (np.nan, np.nan)],
-    ids=["none", "int", "nan"],
-)
-def test_collecting_fill_value(fill_value, expected):
-    # a group without values takes the fill value
-    group_idx = np.array([0, 2, 2])
-    a = np.arange(3.0)
-    res = aggregate(group_idx, a, func="array", fill_value=fill_value)
-    assert res[1] is expected or res[1] == expected
-
-
-def test_collecting_empty_fill_value():
-    # an empty sequence leaves the empty block of the group alone
-    group_idx = np.array([0, 2, 2])
-    a = np.arange(3.0)
-    res = aggregate(group_idx, a, func="array", fill_value=[])
-    assert len(res[1]) == 0
-    ref = aggregate_np(group_idx, a, func="array", fill_value=[])
-    _same_groups(res, ref)
-
-
-def test_collecting_multidimensional_labels():
-    group_idx = np.array(list(itertools.product(range(3), range(4)))).T[:, :-1]
-    a = np.arange(11, dtype=float)
-    res = aggregate(group_idx, a, func="array", size=(3, 4))
-    assert res.shape == (3, 4)
-    assert len(res[2, 3]) == 0
-    ref = aggregate_np(group_idx, a, func="array", size=(3, 4))
-    _same_groups(res.ravel(), ref.ravel())
-
-
-def test_collecting_keeps_the_dtype():
-    # the values are handed out as they are - the float16 of the input is
-    # not widened to float32 the way the kernels widen it
-    group_idx = np.array([0, 0, 1])
-    a = np.array([1.5, 2.5, 3.5], dtype=np.float16)
-    res = aggregate(group_idx, a, func="array")
-    assert res[0].dtype == np.float16
-    ref = aggregate_np(group_idx, a, func="array")
-    _same_groups(res, ref)
+# the collecting function - the one function whose result is a sequence per
+# group; its semantics are tested against every backend in test_funcs.py, what
+# is left here is what only this backend offers
 
 
 def test_collecting_out():
+    # the result is an object array, so it can be gathered into
     group_idx = np.array([0, 1, 1])
     a = np.arange(3.0)
     out = np.empty(2, dtype=object)
@@ -413,16 +339,11 @@ def test_collecting_out():
         aggregate(group_idx, a, func="array", out=np.empty(3, dtype=object))
 
 
-def test_collecting_errors():
+def test_collecting_refuses_an_index_beyond_the_size():
     group_idx = np.array([0, 1, 1])
     a = np.arange(3.0)
     with pytest.raises(ValueError, match="too large"):
         aggregate(group_idx, a, func="array", size=1)
-    with pytest.raises(ValueError, match="negative"):
-        aggregate(group_idx - 1, a, func="array")
-    # a scalar stands for one value, which the collecting function cannot take
-    with pytest.raises(ValueError, match="scalar inputs"):
-        aggregate(group_idx, 1.0, func="array")
 
 
 # The on-disk cache is shared by the workers of a parallel test run: numba
