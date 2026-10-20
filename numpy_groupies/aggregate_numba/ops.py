@@ -63,14 +63,14 @@ def _dtype_fill_plan_cached(
     # the cache needs hashable arguments - the dtype and the fill value are
     # cast to that, and an unhashable one raises a TypeError in the cache
     # lookup, which the caller answers with the uncached resolution
-    dtype: typing.Hashable | None,
+    dtype: _KeyedDType,
     fill_value: typing.Hashable,
     n: int,
     scalar: bool,
 ) -> tuple[np.dtype, typing.Any]:
     if scalar and func not in ("sum", "prod", "len"):
         raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
-    out_dtype = resolve_output_dtype(typing.cast("npt.DTypeLike | None", dtype), func, a_dtype, n)
+    out_dtype = resolve_output_dtype(dtype, func, a_dtype, n)
     if func == "sort":
         # sort writes the input values back unchanged - the numpy twin
         # allocates ``np.empty_like(a)`` and the pure python one rebuilds the
