@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import platform
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, TypeAlias, cast
 
 import numpy as np
@@ -100,7 +100,7 @@ def _size_tuple(size: int | tuple[int, ...] | npt.NDArray[np.integer] | None) ->
     return tuple(int(s) for s in size)
 
 
-_alias_numpy = {
+_alias_numpy: dict[str | Callable[..., Any], str] = {
     np.add: "sum",
     np.sum: "sum",
     np.any: "any",
@@ -166,16 +166,18 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
     value range as the specified dtype.
     """
 
-    def check_type(x: Any, dtype: np.dtype) -> bool:
+    def check_type(x: AFillValue, dtype: np.dtype) -> bool:
         try:
             with np.errstate(invalid="ignore"):
-                converted = np.array(x).astype(dtype)
+                converted = np.array(cast("Any", x)).astype(dtype)
         except (ValueError, OverflowError):
             return False
         # False if some overflow has happened
-        return bool(converted == x) or (np.ndim(x) == 0 and np.isnan(x))
+        return bool(converted == x) or (np.ndim(cast("Any", x)) == 0 and np.isnan(cast("Any", x)))
 
-    def type_loop(x: Any, dtype: np.dtype, dtype_dict: dict[str, Any], default: Any = None) -> np.dtype:
+    def type_loop(
+        x: AFillValue, dtype: np.dtype, dtype_dict: Mapping[str, type], default: type | None = None
+    ) -> np.dtype:
         while True:
             try:
                 dtype = np.dtype(dtype_dict[dtype.name])
@@ -196,7 +198,7 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
         return type_loop(x, dtype, _next_int_dtype, default=np.float32)
 
 
-def minimum_dtype_scalar(x: Any, dtype: npt.DTypeLike | None, a: Any) -> np.dtype:
+def minimum_dtype_scalar(x: AFillValue, dtype: npt.DTypeLike | None, a: AValue) -> np.dtype:
     if dtype is None:
         dtype = np.dtype(type(a)) if isinstance(a, (int, float, complex)) else a.dtype
     return minimum_dtype(x, dtype)
@@ -734,7 +736,7 @@ def relabel_groups_masked(
     return cast("npt.NDArray[np.intp]", relabel[group_idx])
 
 
-def is_duck_array(value: Any) -> bool:
+def is_duck_array(value: object) -> bool:
     """This function was copied from xarray/core/utils.py under the terms of Xarray's Apache-2 license."""
 
     if isinstance(value, np.ndarray):

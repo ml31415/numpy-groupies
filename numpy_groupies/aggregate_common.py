@@ -365,7 +365,7 @@ _alias_str = {
     "dsort": "sort",
 }
 
-_alias_builtin = {
+_alias_builtin: dict[str | Callable[..., Any], str] = {
     all: "all",
     any: "any",
     len: "len",
@@ -378,7 +378,7 @@ _alias_builtin = {
 }
 
 
-def get_aliasing(*extra: dict[Any, str]) -> dict[Any, str]:
+def get_aliasing(*extra: dict[str | Callable[..., Any], str]) -> dict[str | Callable[..., Any], str]:
     """
     Assembles a dictionary that maps both strings and functions to a list of supported function names.
 
@@ -388,12 +388,12 @@ def get_aliasing(*extra: dict[Any, str]) -> dict[Any, str]:
 
     This function should only be called during import.
     """
-    alias: dict[Any, str] = {k: k for k in funcs_common}
+    alias: dict[str | Callable[..., Any], str] = {k: k for k in funcs_common}
     alias.update(_alias_str)
     alias.update((fn, fn) for fn in _alias_builtin.values())
     alias.update(_alias_builtin)
     for d in extra:
-        alias.update(d)
+        alias.update(cast("dict[str | Callable[..., Any], str]", d))
     alias.update((k, k) for k in set(alias.values()))
     # Treat nan-functions as firstclass member and add them directly
     for key in set(alias.values()):
@@ -406,7 +406,7 @@ def get_aliasing(*extra: dict[Any, str]) -> dict[Any, str]:
 aliasing_py = get_aliasing()
 
 
-def can_name_a_function(obj: Any) -> bool:
+def can_name_a_function(obj: object) -> bool:
     """Whether ``obj`` can be a key of the alias table, and so can name a function.
 
     The table is a dict, which asks its keys for a hash, and an object that
@@ -478,7 +478,7 @@ class Resolved(NamedTuple):
     op: Callable[..., Any] | None
 
 
-class Registry(dict[Any, Resolved]):
+class Registry(dict[str | Callable[..., Any], Resolved]):
     """The registry of one backend: the functions it knows and the callables of the caller.
 
     Every alias of every known function is a key of the table, holding the
@@ -500,7 +500,7 @@ class Registry(dict[Any, Resolved]):
     def __init__(
         self,
         op_dict: Mapping[str, Callable[..., Any]],
-        aliasing: Mapping[Any, str],
+        aliasing: Mapping[str | Callable[..., Any], str],
         custom: Callable[..., Resolved],
     ) -> None:
         super().__init__({alias: Resolved(name, op) for alias, (name, op) in build_dispatch(op_dict, aliasing).items()})
@@ -545,7 +545,7 @@ _forced_real_float_types = {
 }
 
 
-def check_boolean(x: Any) -> None:
+def check_boolean(x: AFillValue) -> None:
     if x not in (0, 1):
         raise ValueError("Value not boolean")
 

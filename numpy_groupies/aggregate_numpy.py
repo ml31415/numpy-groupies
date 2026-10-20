@@ -628,7 +628,7 @@ def blocks_to_object_array(
     for g, block in enumerate(blocks):
         ret[g] = block
     if fill_value is None or np.isscalar(fill_value):
-        _fill_untouched(group_idx, ret, fill_value)
+        _fill_untouched(group_idx, ret, cast("AScalar", fill_value))
     return ret
 
 
@@ -769,7 +769,7 @@ _op_dict.update(("nan" + k, v) for k, v in list(_op_dict.items()) if k not in fu
 _op_dict["nancumsum"] = _nancumsum
 
 
-def _custom_operation(func: Any) -> Resolved:
+def _custom_operation(func: Callable[..., Any]) -> Resolved:
     """The operation of a callable of the caller's own.
 
     The callable is applied to the values of every group, which are collected
@@ -799,7 +799,7 @@ def _aggregate_base(
     a: AValue,
     func: FuncName | Callable[..., Any] | None = "sum",
     size: int | Sequence[int] | npt.NDArray[np.integer] | None = None,
-    fill_value: Any = DEFAULT_FILL_VALUE,
+    fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
@@ -815,7 +815,7 @@ def _aggregate_base(
         group_idx = group_idx.astype(int)
 
     try:
-        funcname, op = _dispatch[func]
+        funcname, op = _dispatch[cast("str | Callable[..., Any]", func)]
     except TypeError:
         # a func that cannot be a key of the table at all (a dict asks its keys
         # for a hash, which an object defining __eq__ without __hash__ does not
@@ -869,7 +869,7 @@ def _aggregate_base(
                 "AResult",
                 np.unravel_index(ret, unravel_shape)[axis],
             )
-            ret[mask] = fill_value
+            ret[mask] = cast("AScalar", fill_value)
         check_nton_shape(ret, size, funcname)
         ret = ret.reshape(size, order=order)
     return cast(AResult, ret)
@@ -907,7 +907,7 @@ aggregate.__doc__ = (
 )
 
 
-def _fill_untouched(idx: npt.NDArray[np.integer], ret: npt.NDArray[np.generic], fill_value: Any) -> None:
+def _fill_untouched(idx: npt.NDArray[np.integer], ret: npt.NDArray[np.generic], fill_value: AScalar) -> None:
     """any elements of ret not indexed by idx are set to fill_value."""
     untouched = np.ones_like(ret, dtype=bool)
     untouched[idx] = False
