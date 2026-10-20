@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, cast
 
 import numpy as np
@@ -580,6 +580,21 @@ def _sort(
     return ret
 
 
+def blocks_to_object_array(blocks: Iterable[npt.NDArray[np.number]]) -> npt.NDArray[np.object_]:
+    """The blocks of the groups as an object array, one sequence per group.
+
+    The array is built element by element: ``np.asanyarray`` of a list of
+    blocks collapses it into a regular array whenever the groups happen to be
+    of the same length - and the result would lose the sequences it is meant
+    to hold (and the size the caller asked for).
+    """
+    blocks = list(blocks)
+    ret = np.empty(len(blocks), dtype=object)
+    for g, block in enumerate(blocks):
+        ret[g] = block
+    return ret
+
+
 def _array(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
@@ -593,13 +608,7 @@ def _array(
     order_group_idx = np.argsort(group_idx, kind="stable")
     counts = np.bincount(group_idx, minlength=size)
     blocks = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
-    # the object array is built element by element: np.asanyarray of the list
-    # of blocks collapses it into a regular array whenever the groups happen
-    # to be of the same length - and the result would lose the sequences it
-    # is meant to hold (and the size the caller asked for)
-    ret = np.empty(len(blocks), dtype=object)
-    for g, block in enumerate(blocks):
-        ret[g] = block
+    ret = blocks_to_object_array(blocks)
     if fill_value is None or np.isscalar(fill_value):
         _fill_untouched(group_idx, ret, fill_value)
     return ret

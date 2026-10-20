@@ -20,7 +20,7 @@ from numpy_groupies.aggregate_common import DEFAULT_FILL_VALUE
 from numpy_groupies.aggregate_numba.compose import KernelHandle, build_custom_kernel, output_size, rule_object
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
-from numpy_groupies.aggregate_numpy import _aggregate_base
+from numpy_groupies.aggregate_numpy import _aggregate_base, _fill_untouched, blocks_to_object_array
 from numpy_groupies.utils import (
     AValue,
     RavelOrder,
@@ -194,16 +194,12 @@ def build_collecting_op(func: str, handle: KernelHandle) -> typing.Callable[...,
         # the same construction the numpy implementation uses, so that the two
         # hand out the very same object
         blocks = handle.driver(group_idx, a, flat_size, out_dtype, out_dtype, 0.0, ddof)
-        ret = np.empty(len(blocks), dtype=object)
-        for g, block in enumerate(blocks):
-            ret[g] = block
+        ret = blocks_to_object_array(blocks)
 
         if fill_value is None or np.isscalar(fill_value):
             # a group without values takes the fill value - an empty sequence
             # leaves the empty block of the group alone
-            untouched = np.ones_like(ret, dtype=bool)
-            untouched[group_idx] = False
-            ret[untouched] = fill_value
+            _fill_untouched(group_idx, ret, fill_value)
 
         if ndim_idx > 1:
             # the labels named more than one dimension - the flat result is
