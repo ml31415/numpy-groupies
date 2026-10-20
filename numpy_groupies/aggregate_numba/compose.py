@@ -364,13 +364,17 @@ def build_kernel(
 
     # synthesized no-ops for the unused building blocks - all of them get
     # inlined and folded away, the driver never branches on their presence.
-    # Every operation builds its own copies on purpose: numba 0.68 reuses the
-    # compiled specialization of a shared helper across the dispatchers of two
-    # operations with matching signatures in a way that corrupts the boxing of
-    # the second driver's return array (RuntimeError "In
+    # They carry no name of their own: the four of them are the same code in
+    # every operation, so one compiled artifact serves them all.
+    # Every operation builds its own copies on purpose: numba 0.68 reuses
+    # the compiled specialization of a shared helper across the dispatchers of
+    # two operations with matching signatures in a way that corrupts the
+    # boxing of the second driver's return array (RuntimeError "In
     # 'NRT_adapt_ndarray_to_python', 'descr' is NULL", reproduced by calling
     # the nan variants of sum and sumofsquares in that order) - per-operation
-    # copies keep the callers apart
+    # copies keep the callers apart.  The building blocks that *are* used
+    # differ from operation to operation, so they keep the name of their
+    # operation (see below) - and so do the drivers and the kernels.
     # the building blocks below are jitted: numba compiles them from the
     # argument types and ignores these annotations, the type checker needs them
     def _seed_none(st: typing.Any, a: typing.Any) -> None:
@@ -388,10 +392,10 @@ def build_kernel(
     # the same story in the other direction: the qualname is part of numba's
     # mangled symbol, so nested blocks of this factory need the operation in
     # their name to keep their environments apart (see njit_stable)
-    seed_c = njit_stable(seed) if seed is not None else njit_stable(_seed_none, name=f"{name}_seed_none")
-    record_c = njit_stable(record) if record is not None else njit_stable(_record_none, name=f"{name}_record_none")
-    gate_c = njit_stable(gate) if gate is not None else njit_stable(_gate_none, name=f"{name}_gate_none")
-    finish_c = njit_stable(finish) if finish is not None else njit_stable(_finish_none, name=f"{name}_finish_none")
+    seed_c = njit_stable(seed) if seed is not None else njit_stable(_seed_none)
+    record_c = njit_stable(record) if record is not None else njit_stable(_record_none)
+    gate_c = njit_stable(gate) if gate is not None else njit_stable(_gate_none)
+    finish_c = njit_stable(finish) if finish is not None else njit_stable(_finish_none)
     if untouched is not None:
         untouched_c = njit_stable(untouched)
 
