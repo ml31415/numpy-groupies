@@ -18,7 +18,8 @@ import numpy as np
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
 from numpy_groupies.aggregate_common import funcs_collecting
-from numpy_groupies.benchmarks import _grouploop, _ufunc
+from numpy_groupies.benchmarks import _ufunc
+from numpy_groupies.tests.reference import aggregate_ref
 
 try:
     from numpy_groupies import aggregate_numba
@@ -495,7 +496,7 @@ def _build_implementations(args):
         "numpy": aggregate_numpy.aggregate,
         "numba": aggregate_numba.aggregate,
         "purepy": aggregate_purepy.aggregate,
-        "grouploop": _grouploop.aggregate,
+        "grouploop": aggregate_ref,
         "ufunc": _ufunc.aggregate,
         # the optional dependencies are None when they are not installed
         "numbagg": _numbagg.aggregate if _numbagg is not None else None,
@@ -537,7 +538,7 @@ the two coincide.""",
     parser.add_argument(
         "--grouploop",
         action="store_true",
-        help="numpy with its fast path disabled, what a func it does not recognise costs",
+        help="the reference implementation, the group loop the backends are measured against",
     )
     parser.add_argument(
         "--ufunc", action="store_true", help="the ufunc.at-based implementation, incomplete and for comparison only"

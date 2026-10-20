@@ -222,7 +222,7 @@ def aggregate_ref(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     *,
-    func: str,
+    func: str | Callable[..., Any],
     size: int | tuple[int, ...] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
     dtype: np.dtype | None = None,
@@ -230,16 +230,19 @@ def aggregate_ref(
 ) -> npt.NDArray[np.number]:
     """``aggregate(group_idx, a, func=func, ...)`` computed one group at a time.
 
-    Accepts the string name of a function, one- or multi-dimensional labels and
-    the keyword arguments the reference can express at all; anything else raises
-    instead of quietly returning something else.  An absent group takes
-    ``fill_value``, or the function default that ``numpy_groupies`` itself uses,
-    and a fill value that does not fit the result dtype is refused the same way
-    the package refuses it.
+    Accepts the name of a function or the function itself - a numpy function
+    stands for the name it carries, which is how the callers of the package
+    spell it - one- or multi-dimensional labels and the keyword arguments the
+    reference can express at all; anything else raises instead of quietly
+    returning something else.  An absent group takes ``fill_value``, or the
+    function default that ``numpy_groupies`` itself uses, and a fill value that
+    does not fit the result dtype is refused the same way the package refuses
+    it.
     """
     group_idx = np.asarray(group_idx)
     a = np.asarray(a)
-    if func not in _REF_FUNCS:
+    name = func if isinstance(func, str) else getattr(func, "__name__", None)
+    if name not in _REF_FUNCS:
         raise NotImplementedError(f"aggregate_ref does not know {func!r}")
     if group_idx.ndim > 1 and size is None:
         raise NotImplementedError("aggregate_ref needs a size for multi-dimensional labels")
@@ -258,7 +261,7 @@ def aggregate_ref(
     if labels.size and int(labels.max()) >= n_groups:
         raise ValueError("a group index is too large for the requested size")
 
-    call = _REF_FUNCS[func]
+    call = _REF_FUNCS[name]
     # one stable argsort gathers the groups, each of them in the order its
     # values had in the input - the arg reductions report an input position
     order = np.argsort(labels, kind="stable")
@@ -277,15 +280,15 @@ def aggregate_ref(
         positions[group] = pos
         results[group] = value
 
-    if func in _REF_COLLECTING:
+    if name in _REF_COLLECTING:
         # the result is a sequence per group, so the object array of them is
         # built element by element - a group that received no value takes the
         # fill value, which is an empty sequence by default
         out_dtype = dtype or np.dtype(object)
         if fill_value is DEFAULT_FILL_VALUE:
-            fill = default_fill_value(func, out_dtype)
+            fill = default_fill_value(name, out_dtype)
         else:
-            check_fill_value(fill_value, out_dtype, func)
+            check_fill_value(fill_value, out_dtype, name)
             fill = fill_value
         ret = np.empty(out_shape, dtype=object)
         flat = ret.reshape(-1)
@@ -295,7 +298,7 @@ def aggregate_ref(
             flat[group] = value
         return ret
 
-    if func in _REF_ONE_PER_ITEM:
+    if name in _REF_ONE_PER_ITEM:
         # the result holds one slot per input item, so a group that is not in
         # the labels simply has no slot - nothing to fill, nothing that could
         # be left uninitialized.  The cumulative functions follow numpy's own
@@ -308,9 +311,9 @@ def aggregate_ref(
 
     out_dtype = dtype or _result_dtype(call, a.dtype)
     if fill_value is DEFAULT_FILL_VALUE:
-        fill = default_fill_value(func, out_dtype)
+        fill = default_fill_value(name, out_dtype)
     else:
-        check_fill_value(fill_value, out_dtype, func)
+        check_fill_value(fill_value, out_dtype, name)
         fill = fill_value
     ret = np.full(out_shape, fill, dtype=out_dtype)
     for group, value in results.items():
