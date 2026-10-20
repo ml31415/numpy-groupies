@@ -12,6 +12,7 @@ registered operation, so that ``aggregate()`` resolves with a single lookup.
 
 import functools
 from collections.abc import Callable, MutableMapping
+from functools import partial
 from typing import Any, TypeAlias, cast
 
 import numba as nb
@@ -20,6 +21,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
+    FuncName,
     Registry,
     Resolved,
     _DefaultFillValue,
@@ -32,6 +34,7 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.aggregate_numba.compose import KernelHandle
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
+from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.utils import (
     AFillValue,
     AResult,
@@ -412,6 +415,8 @@ _TABLE = (
     ("argmax", argreductions.argmax),
     ("mean", averaging.mean),
     ("median", specials.median),
+    ("quantile", specials.quantile),
+    ("percentile", specials.quantile),
     ("trapezoid", specials.trapezoid),
     ("std", averaging.std),
     ("var", averaging.var),
@@ -475,8 +480,58 @@ def _sort_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
     return sort_op
 
 
+def _quantile_arguments(
+    op: Callable[..., AResult], *, name: FuncName, scale: float, default: float
+) -> Callable[..., AResult]:
+    """Expose the quantile of the quantile and of the percentile.
+
+    The kernels receive the quantile in the position otherwise used for
+    ``ddof``; the percentile is the quantile in percent, so its argument is
+    scaled down before it goes there.  The compiled driver interpolates
+    linearly - the way numpy does it by default - while the other methods of
+    numpy are answered by the numpy implementation.
+    """
+
+    def quantile_op(
+        group_idx: npt.NDArray[np.integer],
+        a: AValue,
+        size: int | tuple[int, ...] | None = None,
+        fill_value: AFillValue = DEFAULT_FILL_VALUE,
+        order: RavelOrder = "C",
+        dtype: npt.DTypeLike | None = None,
+        axis: int | None = None,
+        q: float = default,
+        method: str = "linear",
+    ) -> AResult:
+        if not 0.0 <= q <= 1.0 / scale:
+            raise ValueError(f"Quantiles must be in the range [0, {round(1.0 / scale)}]")
+        if method != "linear":
+            return _aggregate_base(
+                group_idx,
+                a,
+                func=name,
+                size=size,
+                fill_value=fill_value,
+                order=order,
+                dtype=dtype,
+                axis=axis,
+                q=q,
+                method=method,
+            )
+        return op(group_idx, a, size, fill_value, order, dtype, axis, q * scale)
+
+    return quantile_op
+
+
 # operations whose public keyword argument is not the plain ddof of the kernel
-_ARGUMENT_WRAPPERS = {"trapezoid": _dx_argument, "sort": _sort_arguments}
+_ARGUMENT_WRAPPERS: dict[str, Callable[[Callable[..., AResult]], Callable[..., AResult]]] = {
+    "trapezoid": _dx_argument,
+    "sort": _sort_arguments,
+    "quantile": partial(_quantile_arguments, name="quantile", scale=1.0, default=0.5),
+    "nanquantile": partial(_quantile_arguments, name="nanquantile", scale=1.0, default=0.5),
+    "percentile": partial(_quantile_arguments, name="percentile", scale=0.01, default=50.0),
+    "nanpercentile": partial(_quantile_arguments, name="nanpercentile", scale=0.01, default=50.0),
+}
 
 
 def get_ops() -> dict[str, Callable[..., AResult]]:

@@ -58,6 +58,8 @@ func_list = (
     "allnan",
     np.mean,
     np.median,
+    "quantile",
+    "nanquantile",
     np.trapezoid,
     np.std,
     np.var,

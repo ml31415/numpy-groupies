@@ -28,7 +28,7 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 
 
-def _median_valid_plain(
+def _group_valid_plain(
     g: int,
     a_sorted: npt.NDArray[np.number],
     counts: npt.NDArray[np.int64],
@@ -51,7 +51,7 @@ def _median_valid_plain(
     return size_g
 
 
-def _median_valid_nan(
+def _group_valid_nan(
     g: int,
     a_sorted: npt.NDArray[np.number],
     counts: npt.NDArray[np.int64],
@@ -167,8 +167,8 @@ def _median_driver_factory(nans: bool) -> Any:
     _count = njit_stable(group_count)
     _starts = njit_stable(group_starts)
     _place = njit_stable(group_place)
-    _valid_plain = njit_stable(_median_valid_plain)
-    _valid_nan = njit_stable(_median_valid_nan)
+    _valid_plain = njit_stable(_group_valid_plain, name="median_valid_plain")
+    _valid_nan = njit_stable(_group_valid_nan, name="median_valid_nan")
     # the selection and the middle that uses it: the middle closes over the
     # selection, so that the compiled block belongs to the operation that uses
     # it (see njit_stable)
@@ -253,6 +253,113 @@ median = build_custom_kernel(
     rule=rule_float,
     fill_default=np.nan,
     doc="Median of the values of every group",
+)
+
+
+def _quantile_driver_factory(nans: bool) -> Any:
+    """The driver of the quantile - the median is the quantile 0.5.
+
+    The quantile is an order statistic, so it groups the data the same way the
+    median does: a counting sort places the values of every group in a
+    contiguous block, and the wanted quantile is then selected out of the block
+    (O(n) on average) instead of sorting it.
+    """
+    op_name = "nanquantile" if nans else "quantile"
+    _count = njit_stable(group_count)
+    _starts = njit_stable(group_starts)
+    _place = njit_stable(group_place)
+    _valid_plain = njit_stable(_group_valid_plain, name=f"{op_name}_valid_plain")
+    _valid_nan = njit_stable(_group_valid_nan, name=f"{op_name}_valid_nan")
+    # the selection closes over the operation, so that the compiled block
+    # belongs to the operation that uses it (see njit_stable)
+    _select = njit_stable(_select_kth, name=f"{op_name}_select")
+
+    def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float) -> Any:
+        """the quantile q of the block at ``a_sorted[begin:begin+m]``.
+
+        The quantile names a position between two of the values of the group:
+        the virtual index q * (m - 1) says how far between the smallest and
+        the largest value it lies, and the two values it falls between are
+        interpolated the way numpy interpolates them.
+        """
+        pos = q * (m - 1)
+        lower_index = int(np.floor(pos))
+        upper_index = int(np.ceil(pos))
+        upper = _select(a_sorted, begin, begin + m, begin + upper_index)
+        if lower_index == upper_index:
+            # the quantile is one of the values of the group
+            return upper
+        # the value below: the largest of the elements the selection left in
+        # front of the one it picked - they are the ones below it
+        lower = a_sorted[begin]
+        for i in range(begin + 1, begin + lower_index + 1):
+            if complex_less(lower, a_sorted[i]):
+                lower = a_sorted[i]
+        # the 1.0 promotes integral input to float64, just like np.quantile
+        # promotes before interpolating - the subtraction in its own dtype
+        # overflows (int8 100 - (-100)) and bool addition is a logical or
+        return lower * 1.0 + (upper * 1.0 - lower * 1.0) * (pos - lower_index)
+
+    _quantile_at = njit_stable(_quantile_at, name=f"{op_name}_quantile_at")
+
+    def driver(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        q: float,
+    ) -> npt.NDArray[np.number]:
+        # the quantile is order-insensitive and takes no ddof - the slot the
+        # other kernels use for the ddof carries the quantile here
+        size = output_size(group_idx, size_arg)
+        out = np.full(size, fill_value, out_dtype)
+        counts = _count(group_idx, size)
+        starts = _starts(counts)
+        # counting-sort placement into contiguous group-blocks (the order
+        # within a block is arbitrary, which the quantile ignores)
+        a_sorted = np.empty(group_idx.size, a.dtype)
+        _place(group_idx, a, starts.copy(), a_sorted)
+        # the nan variant filters the nans out into a buffer of its own, the
+        # plain one leaves the values where they are
+        buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
+        for g in range(size):
+            if counts[g] == 0:
+                continue  # untouched group, keeps the fill value
+            if nans:
+                m = _valid_nan(g, a_sorted, counts, starts, buf)
+                if m == 0:
+                    # all-nan group: it keeps the fill value
+                    out[g] = fill_value
+                else:
+                    out[g] = _quantile_at(buf, 0, m, q)
+            else:
+                m = _valid_plain(g, a_sorted, counts, starts)
+                if m == 0:
+                    # a nan-poisoned group for the plain quantile (where any
+                    # nan is contagious) - the poison is shaped like the
+                    # output, since a plain nan written into a complex column
+                    # leaves its imaginary part at a zero the group never
+                    # claimed to have. The cell still holds the fill value,
+                    # which is of the output dtype, and a nan times a value of
+                    # that dtype is a nan in every part it has (for a real
+                    # dtype: the plain nan)
+                    out[g] = out[g] * np.nan
+                else:
+                    out[g] = _quantile_at(a_sorted, starts[g], m, q)
+        return out
+
+    return njit_stable(driver, name=f"{op_name}_driver")
+
+
+quantile = build_custom_kernel(
+    "quantile",
+    driver_factory=_quantile_driver_factory,
+    rule=rule_float,
+    fill_default=np.nan,
+    ddof_default=0.5,
+    doc="Quantile of the values of every group",
 )
 
 

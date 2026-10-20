@@ -135,6 +135,15 @@ aggregate_common_doc = """
     dx: default=1.0
         passed through into the calculation of the trapezoidal integral
         ``trapezoid`` (see above), where it is the sample spacing.
+    q: default=0.5
+        the quantile to compute - a number between 0 and 1 for
+        ``func='quantile'``, between 0 and 100 for ``func='percentile'``.  The
+        median is the quantile 0.5, which is what the two functions answer
+        when no quantile is asked for.
+    method: default='linear'
+        how to interpolate between the two values a quantile falls between:
+        'linear', 'lower', 'higher', 'midpoint' or 'nearest', as in
+        ``np.quantile``.
 """
 
 funcs_common = [
@@ -143,6 +152,8 @@ funcs_common = [
     "len",
     "mean",
     "median",
+    "quantile",
+    "percentile",
     "trapezoid",
     "var",
     "std",
@@ -177,8 +188,9 @@ FuncName: TypeAlias = Literal[
     "mean", "median", "min", "minimum", "multiply", "nanall",
     "nanany", "nanargmax", "nanargmin", "nancummax", "nancummin", "nancumprod",
     "nancumsum", "nanfirst", "nanlast", "nanlen", "nanmax", "nanmean",
-    "nanmedian", "nanmin", "nanprod", "nanstd", "nansum", "nansumofsquares",
-    "nantrapezoid", "nanvar", "or", "plus", "prod", "product",
+    "nanmedian", "nanmin", "nanpercentile", "nanprod", "nanquantile",
+    "nanstd", "nansum", "nansumofsquares", "nantrapezoid", "nanvar", "or",
+    "percentile", "plus", "prod", "product", "quantile",
     "rsorted", "sort", "sorted", "splice", "split", "std",
     "sum", "sumofsquares", "times", "trapezoid", "var",
 ]
@@ -207,6 +219,8 @@ _default_fill_values: dict[str, AFillValue] = {
     "len": 0,
     "mean": nan,
     "median": nan,
+    "quantile": nan,
+    "percentile": nan,
     # an empty domain has a zero integral, just like a single sample does
     "trapezoid": 0,
     "var": nan,
@@ -527,9 +541,13 @@ class Registry(dict[str | Callable[..., object], Resolved]):
 _forced_float_types = {
     "mean",
     "median",
+    "quantile",
+    "percentile",
     "trapezoid",
     "nanmean",
     "nanmedian",
+    "nanquantile",
+    "nanpercentile",
     "nantrapezoid",
 }
 

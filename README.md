@@ -39,7 +39,7 @@ Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
 ## Why numpy-groupies?
 
 - **Fast.** With Numba installed, `aggregate` is the fastest group-by aggregation for plain NumPy arrays. See [Performance](#performance).
-- **One call, many functions.** The usual reductions plus `median`, `sort` (ascending or descending), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
+- **One call, many functions.** The usual reductions plus `median`, `quantile`/`percentile`, `sort` (ascending or descending), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
 - **Array in, array out.** Plain NumPy arrays, no DataFrame and no index. The result is an array indexed by group label, with empty groups filled with the value you choose. Multi-dimensional output (N-D binning) and aggregation along an `axis` are built in.
 - **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops.
 - **Numerically careful.** Integer sums, means and variances accumulate in a dtype wide enough not to wrap around, NaN handling follows NumPy, and complex and `float16` input are supported.
@@ -167,7 +167,7 @@ Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix 
 
 | Category                        | Functions |
 | ------------------------------- | --------- |
-| Reductions                      | `sum` `prod` `mean` `median` `var` `std` `min` `max` `first` `last` `len` `sumofsquares` `trapezoid` |
+| Reductions                      | `sum` `prod` `mean` `median` `quantile` `percentile` `var` `std` `min` `max` `first` `last` `len` `sumofsquares` `trapezoid` |
 | Index of extremes               | `argmin` `argmax` |
 | Boolean                         | `all` `any` `allnan` `anynan` |
 | NaN-skipping variants           | `nansum` `nanmean` `nanvar` `nanmax` … — a `nan` prefix on every reduction above except `allnan`/`anynan` |
@@ -212,7 +212,7 @@ All implementations share the calling syntax and produce the same results up to 
 | **numpy**      | numpy        | Based on `np.bincount` and indexing tricks. Default without numba. |
 | **pure python** | numpy        | Plain Python loops, no Numba. Very slow; useful as a fallback or for porting. |
 | numpy ufunc    | numpy        | For benchmarking only: built on `ufunc.at` (`np.add.at`, …), in `numpy_groupies.benchmarks`. Incomplete. |
-| pandas         | numpy, pandas | For benchmarking only: wraps `groupby` (in `numpy_groupies.benchmarks`). Skips NaN even in the plain functions (except `median`, `cumsum`). |
+| pandas         | numpy, pandas | For benchmarking only: wraps `groupby` (in `numpy_groupies.benchmarks`). Skips NaN even in the plain functions (except `median`, `quantile`, `cumsum`). |
 | polars         | numpy, polars | For benchmarking only: wraps `group_by` (in `numpy_groupies.benchmarks`). |
 
 > **Gotchas:** with Numba installed, custom callables must be Numba-compilable (numeric code). For the cases that are not, call the NumPy implementation: `npg.aggregate_np(group_idx, a, func=my_callable)`.
@@ -223,16 +223,17 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 
 | function        | numpy  | numba  | numbagg | polars | pandas |
 | --------------- | -----: | -----: | ------: | -----: | -----: |
-| `sum`            |   0.92 |   0.45 |   0.48 |   2.68 |   6.89 |
-| `mean`           |   1.49 |   0.48 |   0.55 |   2.69 |   7.32 |
-| `max`            |   1.64 |   0.60 |   0.86 |   2.81 |   6.61 |
-| `std`            |   3.03 |   0.66 |   0.69 |   2.17 |   7.64 |
-| `nansum`         |   4.05 |   0.44 |   1.75 |   5.88 |   8.25 |
-| `median`         |  11.01 |   9.28 |    --- |   3.72 |  15.60 |
-| `sort`           |  70.29 |  25.72 |    --- |    --- |    --- |
-| `cumsum`         |  14.48 |   0.60 |    --- |   7.94 |   7.23 |
-| `array`          |   7.54 |   1.90 |    --- |    --- |    --- |
-| custom callable  | 111.39 |   5.90 |    --- |  80.97 |  96.79 |
+| `sum`            |   0.91 |   0.43 |   0.45 |   2.67 |   7.22 |
+| `mean`           |   1.48 |   0.50 |   0.53 |   2.56 |   7.38 |
+| `max`            |   1.73 |   0.61 |   0.87 |   3.42 |   7.09 |
+| `std`            |   3.09 |   0.67 |   0.69 |   2.97 |   8.28 |
+| `nansum`         |   4.16 |   0.44 |   1.76 |   6.20 |   8.55 |
+| `median`         |  11.88 |   9.47 |    --- |   4.15 |  16.08 |
+| `quantile`       |  14.55 |   9.31 |    --- |   4.19 |  23.09 |
+| `sort`           |  70.60 |  25.78 |    --- |    --- |    --- |
+| `cumsum`         |  14.51 |   0.55 |    --- |   8.86 |   7.72 |
+| `array`          |   7.14 |   1.89 |    --- |    --- |    --- |
+| custom callable  | 110.93 |   5.97 |    --- |  78.98 |  94.13 |
 
 Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 

@@ -219,7 +219,7 @@ def _make_stub(
     rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
     fill_default: AScalar,
     doc: str | None,
-    ddof_default: int = 0,
+    ddof_default: float = 0,
     reject_fill: bool = False,
 ) -> Callable[..., Any]:
     """Create the njit-callable ``aggregate_*`` function of one variant.
@@ -244,7 +244,7 @@ def _make_stub(
     def stub(
         group_idx: Any,
         a: Any,
-        ddof: int = ddof_default,
+        ddof: float = ddof_default,
         size: int = -1,
         fill_value: float | None = None,
     ) -> Any:
@@ -265,7 +265,7 @@ def _make_stub(
     def _overload(
         group_idx: Any,
         a: Any,
-        ddof: int = ddof_default,
+        ddof: float = ddof_default,
         size: int = -1,
         fill_value: float | None = None,
     ) -> Callable[..., Any]:
@@ -280,7 +280,7 @@ def _make_stub(
         def impl(
             group_idx: Any,
             a: Any,
-            ddof: int = ddof_default,
+            ddof: float = ddof_default,
             size: int = -1,
             fill_value: float | None = None,
         ) -> Any:
@@ -376,7 +376,7 @@ def build_kernel(
     untouched: Callable[..., npt.NDArray[np.bool_]] | None = None,
     update_nan: Callable[..., None] | None = None,
     nans: bool = True,
-    ddof_default: int = 0,
+    ddof_default: float = 0,
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
@@ -575,7 +575,7 @@ def build_custom_kernel(
     fill_default: AScalar = 0,
     forced_fill: float | None = None,
     nans: bool = True,
-    ddof_default: int = 0,
+    ddof_default: float = 0,
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
