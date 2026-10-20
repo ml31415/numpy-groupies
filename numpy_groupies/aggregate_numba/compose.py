@@ -331,13 +331,13 @@ class KernelHandle(typing.NamedTuple):
     # the driver returns the result array of the operation - or, for the
     # collecting function, the list of the arrays of the groups, which the
     # post hook assembles into the object array the caller gets
-    driver: typing.Callable[..., "AResult | list[AResult]"]
+    driver: typing.Callable[..., AResult | list[AResult]]
     forced_fill: float | int | None
     aux_widen: bool
     nton: bool
-    fallback: typing.Callable[..., "AResult"] | None = None
+    fallback: typing.Callable[..., AResult] | None = None
     placeable: typing.Callable[[np.dtype | None], bool] | None = None
-    post: typing.Callable[..., "AResult"] | None = None
+    post: typing.Callable[..., AResult] | None = None
     assembles: bool = False
 
 
