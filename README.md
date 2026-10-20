@@ -213,6 +213,7 @@ All implementations share the calling syntax and produce the same results up to 
 | **pure python** | numpy        | Plain Python loops, no Numba. Very slow; useful as a fallback or for porting. |
 | numpy ufunc    | numpy        | For benchmarking only: built on `ufunc.at` (`np.add.at`, …), in `numpy_groupies.benchmarks`. Incomplete. |
 | pandas         | numpy, pandas | For benchmarking only: wraps `groupby` (in `numpy_groupies.benchmarks`). Skips NaN even in the plain functions (except `median`, `cumsum`). |
+| polars         | numpy, polars | For benchmarking only: wraps `group_by` (in `numpy_groupies.benchmarks`). |
 
 > **Gotchas:** with Numba installed, custom callables must be Numba-compilable (numeric code). For the cases that are not, call the NumPy implementation: `npg.aggregate_np(group_idx, a, func=my_callable)`.
 
@@ -220,25 +221,25 @@ All implementations share the calling syntax and produce the same results up to 
 
 Best of three passes of five timed runs each, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
 
-| function        | numpy  | numba  | numbagg | pandas |
-| --------------- | -----: | -----: | ------: | -----: |
-| `sum`            |   0.93 |   0.45 |   0.46 |  15.27 |
-| `mean`           |   1.51 |   0.50 |   0.57 |  16.32 |
-| `max`            |   1.68 |   0.62 |   0.86 |  15.25 |
-| `std`            |   3.18 |   0.67 |   0.68 |  16.41 |
-| `nansum`         |   4.20 |   0.46 |   1.78 |  20.53 |
-| `median`         |  17.47 |  10.84 |    --- |  27.70 |
-| `sort`           |  70.91 |  24.72 |    --- |    --- |
-| `cumsum`         |  15.18 |   0.61 |    --- |   7.66 |
-| `array`          |   7.17 |   1.91 |    --- |    --- |
-| custom callable  | 111.41 |   5.96 |    --- | 108.11 |
+| function        | numpy  | numba  | numbagg | polars | pandas |
+| --------------- | -----: | -----: | ------: | -----: | -----: |
+| `sum`            |   0.90 |   0.45 |   0.45 |   2.74 |   6.70 |
+| `mean`           |   1.50 |   0.51 |   0.61 |   2.73 |   7.08 |
+| `max`            |   1.64 |   0.60 |   0.84 |   3.49 |   6.42 |
+| `std`            |   3.12 |   0.66 |   0.67 |   2.96 |   7.33 |
+| `nansum`         |   4.16 |   0.43 |   1.78 |   6.29 |   8.61 |
+| `median`         |  18.43 |  10.50 |    --- |   3.79 |  15.73 |
+| `sort`           |  70.66 |  25.81 |    --- |    --- |    --- |
+| `cumsum`         |  15.32 |   0.55 |    --- |   9.06 |   6.76 |
+| `array`          |   7.31 |   1.91 |    --- |    --- |    --- |
+| custom callable  | 111.83 |   6.07 |    --- |  78.02 |  94.24 |
 
 Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root — `--help` explains which columns to ask for:
 
 ```sh
-python -m numpy_groupies.benchmarks --numbagg --pandas
+python -m numpy_groupies.benchmarks --numbagg --pandas --polars
 ```
 
 The `numpy` and `numba` columns above are not the whole story: NumPy 1.25 brought major [speed improvements to ufuncs](https://numpy.org/doc/stable/release/1.25.0-notes.html), which narrowed the gap between the NumPy and Numba implementations considerably. The authors hope that `ufunc.at` or an equivalent in NumPy or SciPy will eventually become fast enough to make this package redundant.

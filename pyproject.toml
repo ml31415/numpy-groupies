@@ -44,6 +44,7 @@ dev = [
     "pytest-xdist",
     "numba",
     "pandas",
+    "polars",
     "numbagg",
     # pre-commit 4 requires Python >= 3.11, but the project still supports
     # 3.10, so stay on the 3.x line.

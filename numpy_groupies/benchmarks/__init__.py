@@ -12,6 +12,7 @@ import argparse
 import platform
 import sys
 import timeit
+from typing import Any
 
 import numpy as np
 
@@ -31,6 +32,10 @@ try:
     from numpy_groupies.benchmarks import _pandas
 except ImportError:
     _pandas = None
+try:
+    from numpy_groupies.benchmarks import _polars
+except ImportError:
+    _polars = None
 
 
 def arbitrary(iterator):
@@ -97,6 +102,71 @@ def benchmark_data(size=5e5, seed=100, groups=1000):
     return a, nana, group_idx
 
 
+# the sizes of the temporaries the participants ask for are of this order (an
+# arange over the input, the cast of the weights of bincount), so the ladder
+# reaches every one of them
+_ALLOCATOR_WARMUP_MIN = 1 << 16
+_ALLOCATOR_WARMUP_MAX = 1 << 26
+
+
+def _warm_up_allocator() -> None:
+    """Let the memory of the process arrive before anything is measured.
+
+    The library allocator answers the first requests for a block size with
+    freshly mapped pages and keeps them only after a round or two: every one of
+    those pages has to be faulted in and zeroed, measured 2.2ms for the 4MB an
+    implementation fills per call, of a function that takes 0.5ms otherwise.
+    A measurement that starts before that has happened reports the kernel and
+    not the implementation, and it reports it differently for every row - the
+    first run of a table came out a third slower than the runs after it.
+
+    Walking the sizes once pays the faulting up front, for 18ms.
+    """
+    itemsize = np.dtype(np.float64).itemsize
+    size = _ALLOCATOR_WARMUP_MIN
+    while size <= _ALLOCATOR_WARMUP_MAX:
+        block = np.empty(size // itemsize)
+        # every page of the block, not only its two ends
+        block[:: 4096 // itemsize] = 1.0
+        del block
+        size <<= 1
+
+
+def _byte_snapshot(*arrays: np.ndarray) -> tuple[bytes, ...]:
+    """The bytes of the arrays, to see whether a call changed them.
+
+    The bytes themselves and not a digest of them, though the name suggests a
+    fingerprint: hashing measured 24x slower than the comparison it feeds (6ms
+    for the 4MB of one array against 0.3ms of the copy and the byte-by-byte
+    compare), and it is the memory the comparison has to cross either way that
+    costs the time.  Nor is it ``np.array_equal``, which compares NaN by value
+    and so reports a change for the untouched nan-data of this benchmark.
+
+    The participants must not write into the data: one that does would change
+    the results of the runs that follow, silently.  The snapshot is taken once
+    per run - the data is the same for every function and every participant -
+    and compared after every function, so the copy is paid once and not once
+    per cell of the table.
+    """
+    return tuple(array.tobytes() for array in arrays)
+
+
+def _restore(arrays: tuple[np.ndarray, ...], snapshot: tuple[bytes, ...]) -> bool:
+    """Put the data back as it was, and say whether it had changed.
+
+    The snapshot holds the bytes of the data as they were at the start of the
+    run, so the original values are still in it: a participant that wrote into
+    the data is undone, and the rest of the table is measured on the data the
+    benchmark meant to measure.
+    """
+    changed = False
+    for array, data in zip(arrays, snapshot):
+        if array.tobytes() != data:
+            array[...] = np.frombuffer(data, dtype=array.dtype).reshape(array.shape)
+            changed = True
+    return changed
+
+
 def _assert_same_result(got, want, func_name):
     """Whether two results of the same function agree.
 
@@ -116,7 +186,27 @@ def _assert_same_result(got, want, func_name):
     np.testing.assert_array_almost_equal(got, want)
 
 
-def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, funcs=func_list, on_row=None):
+# the participants whose pool has been started already: the first call of a
+# participant in a process starts the threads of its pool and lets each of them
+# map the arena it allocates from, measured 2700 page faults for polars - none
+# of which belongs into a measurement, and the first timed call would show
+# nothing else.  The pool starts once per process, so once per participant is
+# enough - not once per cell of the table.
+_warmed_up: set[str] = set()
+
+
+def single_run(
+    implementations,
+    group_idx,
+    a,
+    nana,
+    *,
+    repeat,
+    raise_errors,
+    funcs=func_list,
+    on_row=None,
+    snapshot: tuple[bytes, ...] | None = None,
+):
     """One complete measurement pass - returns the table as
     ``{func_name: [cell, ...]}``, where a cell is a float in
     milliseconds, None for unavailable combinations or a marker string
@@ -125,12 +215,18 @@ def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, fun
     ``on_row(label, cells)`` is called after every function, so the caller can
     report the row as it is measured instead of waiting for the pass.  ``repeat``
     is the number of timed executions of a cell, capped per column by
-    ``MAX_REPEAT``."""
+    ``MAX_REPEAT``.
+
+    ``snapshot`` is the bytes of the data as they were at the start of the run.
+    It is compared with the data after every function: a participant that wrote
+    into the data is undone, and the row it did it in is not reported, since
+    its numbers were measured on data that changed under it.
+    """
     table = {}
     for func in funcs:
         func_name = getattr(func, "__name__", func)
         used_a = nana if "nan" in func_name else a
-        cells = []
+        cells: list[Any] = []
         results = []
         for name, aggregate_fn in implementations:
             try:
@@ -143,15 +239,29 @@ def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, fun
                     raise
                 cells.append("ERROR")
             else:
+                # the first result is the one the others are compared to
                 results.append(res)
                 try:
                     _assert_same_result(res, results[0], func_name)
                 except AssertionError:
                     cells.append("FAIL")
                 else:
+                    if name not in _warmed_up:
+                        # an untimed call that starts the pool of the participant
+                        aggregate_fn(group_idx, used_a, func=func)
+                        _warmed_up.add(name)
                     timer = timeit.Timer(lambda: aggregate_fn(group_idx, used_a, func=func))
                     t0 = min(timer.repeat(repeat=min(repeat, MAX_REPEAT.get(name, repeat)), number=1))
                     cells.append(t0 * 1000)
+        if snapshot is not None and _restore((group_idx, a, nana), snapshot):
+            # a participant wrote into the data: the numbers of this row were
+            # measured on data that changed under it, so they are not reported
+            print(
+                f"{func_name}: a participant changed the data - the row is not reported",
+                file=sys.stderr,
+                flush=True,
+            )
+            cells = ["ERROR"] * len(cells)
         table[func_name] = cells
         if on_row is not None:
             on_row(func_name, cells)
@@ -167,6 +277,12 @@ def _merge_runs(tables):
     for func_name in tables[0]:
         merged = []
         for col in zip(*(t[func_name] for t in tables)):
+            failures = [c for c in col if c in ("ERROR", "FAIL")]
+            if failures:
+                # a run that failed speaks for all of them: the numbers of the
+                # other runs were measured against data that was not the same
+                merged.append(failures[0])
+                continue
             numbers = [c for c in col if isinstance(c, float)]
             if numbers:
                 merged.append(min(numbers))
@@ -248,15 +364,41 @@ def _versions_line(implementations):
         import pandas
 
         postfix += f", Pandas {pandas.__version__}"
+    if "polars" in implementation_names:
+        import polars
+
+        postfix += f", Polars {polars.__version__}"
     return (
         f"*{platform.system()}({platform.machine()}), Python {sys.version.split()[0]}, "
         f"Numpy {np.version.version}{postfix}*"
     )
 
 
-def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1):
+def select_funcs(names: str | None) -> tuple[Any, ...]:
+    """The functions to measure, picked by name.
+
+    Without a selection every function of the table is measured.  The names
+    are the ones the table shows, so ``--funcs min,max`` measures the two
+    extremes and nothing else.
+    """
+    if not names:
+        return func_list
+    known = {getattr(func, "__name__", func): func for func in func_list}
+    wanted = [name.strip() for name in names.split(",") if name.strip()]
+    unknown = [name for name in wanted if name not in known]
+    if unknown:
+        raise SystemExit(f"unknown function(s): {', '.join(unknown)} - known are: {', '.join(known)}")
+    return tuple(known[name] for name in wanted)
+
+
+def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1, funcs=None):
+    _warm_up_allocator()
     a, nana, group_idx = benchmark_data(size=size, seed=seed)
-    labels = [getattr(func, "__name__", func) for func in func_list]
+    # the data as it is now: the participants must not write into it, and the
+    # snapshot is the one they are compared against after every function
+    snapshot = _byte_snapshot(group_idx, a, nana)
+    funcs = func_list if funcs is None else funcs
+    labels = [getattr(func, "__name__", func) for func in funcs]
     out, label_width = _open_report("function", implementations, labels, runs)
 
     def report(label, cells):
@@ -275,7 +417,9 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
                 nana,
                 repeat=repeat,
                 raise_errors=raise_errors,
+                funcs=funcs,
                 on_row=report,
+                snapshot=snapshot,
             )
         )
 
@@ -299,6 +443,7 @@ SORT_GROUPS = (100, 1_000, 10_000, 100_000)
 
 def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1):
     """Measure ``func='sort'`` alone, over the group counts of ``SORT_GROUPS``."""
+    _warm_up_allocator()
     labels = [str(groups) for groups in SORT_GROUPS]
     out, label_width = _open_report("groups", implementations, labels, runs)
 
@@ -309,6 +454,7 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
     rows = []
     for groups, label in zip(SORT_GROUPS, labels):
         a, nana, group_idx = benchmark_data(size=size, seed=seed, groups=min(groups, int(size)))
+        snapshot = _byte_snapshot(group_idx, a, nana)
         tables = []
         for run in range(runs):
             if runs > 1:
@@ -323,6 +469,7 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
                     raise_errors=raise_errors,
                     funcs=("sort",),
                     on_row=lambda _func_name, cells: report(label, cells),
+                    snapshot=snapshot,
                 )
             )
         rows.append((label, _merge_runs(tables)["sort"]))
@@ -334,7 +481,7 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
 
 
 # The columns in the order they appear in the table.
-COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "ufunc", "numbagg", "pandas")
+COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "numbagg", "polars", "pandas", "ufunc")
 # of those, the ones that have to be asked for
 OPTIONAL_COLUMNS = COLUMN_ORDER[2:]
 
@@ -353,6 +500,7 @@ def _build_implementations(args):
         # the optional dependencies are None when they are not installed
         "numbagg": _numbagg.aggregate if _numbagg is not None else None,
         "pandas": _pandas.aggregate if _pandas is not None else None,
+        "polars": _polars.aggregate if _polars is not None else None,
     }
     impls = []
     for name in COLUMN_ORDER:
@@ -400,10 +548,15 @@ the two coincide.""",
         help="the numbagg grouped reductions (optional dependency, part of the dev extras)",
     )
     parser.add_argument("--pandas", action="store_true", help="the pandas groupby wrapper (optional dependency)")
+    parser.add_argument("--polars", action="store_true", help="the polars group_by wrapper (optional dependency)")
     parser.add_argument(
         "--sort",
         action="store_true",
         help=f"measure 'sort' only, over the group counts {'-'.join(str(g) for g in SORT_GROUPS)} instead of the full table",
+    )
+    parser.add_argument(
+        "--funcs",
+        help="comma-separated names of the functions to measure, e.g. 'min,max' (default: all of them)",
     )
     parser.add_argument(
         "--runs", type=int, default=1, help="complete measurement passes, the per-cell minimum is reported (default: 1)"
@@ -427,13 +580,23 @@ the two coincide.""",
     if args.all:
         for column in OPTIONAL_COLUMNS:
             setattr(args, column, True)
-    measure = sort_benchmark if args.sort else benchmark
-    measure(
+    if args.sort:
+        # the sort is measured on its own, over the group counts
+        sort_benchmark(
+            _build_implementations(args),
+            repeat=args.repeat,
+            size=args.size,
+            raise_errors=args.raise_errors,
+            runs=max(1, args.runs),
+        )
+        return
+    benchmark(
         _build_implementations(args),
         repeat=args.repeat,
         size=args.size,
         raise_errors=args.raise_errors,
         runs=max(1, args.runs),
+        funcs=select_funcs(args.funcs),
     )
 
 

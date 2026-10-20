@@ -159,6 +159,31 @@ def test_scalar_input(impl, func, value):
         np.testing.assert_array_equal(res, ref)
 
 
+@pytest.mark.parametrize(
+    "func",
+    ["sum", "mean", "min", "max", "median", "std", "var", "first", "last", "cumsum", "array", "sort"],
+)
+def test_the_input_arrays_are_not_touched(impl, rng, func):
+    """No implementation may write into the data it aggregates.
+
+    The data belongs to the caller, and a write into it would change the
+    results of the calls that follow - silently.  The promise holds whether
+    the caller hands out writable or read-only arrays.
+    """
+    group_idx = rng.integers(0, 4, 100)
+    a = rng.random(100)
+
+    for readonly in (False, True):
+        idx = group_idx.copy()
+        values = a.copy()
+        if readonly:
+            idx.flags.writeable = False
+            values.flags.writeable = False
+        before = (idx.tobytes(), values.tobytes())
+        impl.aggregate(idx, values, func=func, size=4)
+        assert (idx.tobytes(), values.tobytes()) == before
+
+
 def test_custom_callable(impl, rng):
     def custom_callable(x):
         return x.sum()
