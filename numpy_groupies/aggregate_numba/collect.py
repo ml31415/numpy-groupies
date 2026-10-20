@@ -21,11 +21,14 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.aggregate_numpy import _aggregate_base, blocks_to_object_array
 
-# the dtypes the compiled driver can place - the allowlist is exactly what
-# the drivers of the other operations take: numba boxes a float16 at runtime
-# and refuses a float128 at typing time, and strings, objects and the rest it
-# does not know at all - those are copied around by the numpy implementation,
-# which does not have to know their type
+# the dtypes the compiled driver can place - the numeric ones the drivers of
+# the other operations take as well.  The list is no duplication of what numba
+# can type: the other operations let numba refuse a dtype it cannot take (a
+# clean NumbaNotImplementedError), while this one has to hand the values over
+# to the numpy implementation - and the driver would refuse a float128 in the
+# middle of the frontend, with its own source in the traceback.  A float16 is
+# out as well: numba has none, and this operation is the one that hands the
+# values out unchanged.
 _PLACEABLE = frozenset(
     map(
         np.dtype,
