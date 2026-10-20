@@ -1,7 +1,6 @@
 """The numba implementation of aggregate: compiled per-dtype kernels behind
 one dispatch, with ``out=`` support and caching for custom callables."""
 
-import functools
 import typing
 from collections.abc import Callable, Sequence
 
@@ -11,13 +10,11 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
-    can_name_a_function,
-    custom_callable,
     funcs_collecting,
     missing_impl_error,
 )
 from numpy_groupies.aggregate_numba.gather import unpack_into
-from numpy_groupies.aggregate_numba.ops import _dispatch, build_generic_aggregate
+from numpy_groupies.aggregate_numba.ops import _dispatch
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
 from numpy_groupies.utils import AValue, RavelOrder
 
@@ -38,13 +35,12 @@ def aggregate(
     **kwargs: typing.Any,
 ) -> npt.NDArray[np.number]:
     try:
-        funcname, aggregate_op = _dispatch[func]
-    except (KeyError, TypeError):
-        # no key of the table, either because no function goes by that name or
-        # because func could not be one of its keys (a dict asks its keys for a
-        # hash): both leave the caller's own func to ``_aggregate_custom``, which
-        # tells a func that named nothing from a func that can be run
-        funcname, aggregate_op = "", None
+        funcname, op = _dispatch[func]
+    except TypeError:
+        # a func that cannot be a key of the table at all: it names no known
+        # function either, so the registry answers it as a callable of the
+        # caller's own
+        funcname, op = _dispatch.custom(func)
 
     # numba has no float16: the values survive the widening cast to float32
     # exactly, so the kernels run on float32 and an inexact result is rounded
@@ -57,15 +53,20 @@ def aggregate(
         # a float16 input is always an array - the getattr gate does not narrow the union
         a = typing.cast("npt.NDArray[np.number]", a).astype(np.float32)
 
-    if aggregate_op is None:
-        if funcname:
-            # a function that is known but not implemented here
-            raise missing_impl_error(funcname)
+    if op is None:
+        # a function that is known but not implemented here
+        raise missing_impl_error(funcname)
+    if isinstance(funcname, str):
+        ret = typing.cast("npt.NDArray[np.number]", op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
+    else:
+        # a callable of the caller's own: it has no output array of its own,
+        # and its compiled loop is memoized where the cache policy says
         if out is not None:
             raise NotImplementedError("out= is only supported for named functions") from None
-        ret = _aggregate_custom(group_idx, a, func, size, fill_value, order, dtype, axis, cache, **kwargs)
-    else:
-        ret = aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+        ret = typing.cast(
+            "npt.NDArray[np.number]",
+            op(group_idx, a, size, fill_value, order, dtype, axis, cache=cache, **kwargs),
+        )
     if is16 and dtype is None and ret.dtype.kind == "f":
         ret = ret.astype(np.float16)
     if out is not None:
@@ -76,56 +77,6 @@ def aggregate(
         out[...] = ret
         return out
     return ret
-
-
-def _aggregate_custom(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    func: str | Callable[..., typing.Any],
-    size: int | Sequence[int] | None,
-    fill_value: typing.Any,
-    order: RavelOrder,
-    dtype: npt.DTypeLike | None,
-    axis: int | None,
-    cache: bool | None | typing.MutableMapping[typing.Any, typing.Any],
-    **kwargs: typing.Any,
-) -> npt.NDArray[np.number]:
-    """Slow dispatch path for a func that is no key of the dispatch table.
-
-    An object of one's own is what numba cannot compile - it compiles functions,
-    and a *hashable* object of one's own is refused by numba itself, in its own
-    words.  The one that cannot be a key of a dict at all is answered here and in
-    front of the cache: that cache is a dict too and would complain about the
-    missing hash of the func rather than about what it is asked to do with it.
-    """
-    # what is not callable named nothing, and says so in the same words the
-    # other implementations choose, before numba is mentioned at all
-    func = custom_callable(func)
-    if not can_name_a_function(func):
-        raise TypeError(
-            "numba can only compile a function as func, a callable object is not one of those (the numpy implementation runs any callable)"
-        ) from None
-    aggregate_op: typing.Callable[..., typing.Any] | None
-    if cache in (None, False):
-        # Keep None and False in order to accept empty dictionaries
-        aggregate_op = build_generic_aggregate(func)
-    elif cache is True:
-        aggregate_op = _get_cached_generic(func)
-    else:
-        cache_map = typing.cast("typing.MutableMapping[typing.Any, typing.Any]", cache)
-        aggregate_op = cache_map.get(func)
-        if aggregate_op is None:
-            aggregate_op = build_generic_aggregate(func)
-            cache_map[func] = aggregate_op
-    return typing.cast(
-        "npt.NDArray[np.number]", aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
-    )
-
-
-@functools.lru_cache(maxsize=128)
-def _get_cached_generic(func: Callable[..., typing.Any]) -> typing.Any:
-    """LRU-cache generic aggregate loops per user callable (bounded)."""
-    return build_generic_aggregate(func)
 
 
 aggregate.__doc__ = (

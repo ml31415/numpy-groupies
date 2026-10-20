@@ -198,19 +198,20 @@ def test_slow_path_still_reachable(rng):
 def test_numba_callable_cache_construction(monkeypatch):
     pytest.importorskip("numba")
     from numpy_groupies import aggregate_numba
+    from numpy_groupies.aggregate_numba import ops
 
     group_idx = np.array([0, 1, 1, 2])
     a = np.arange(4.0)
     func = lambda x: np.sum(x)
 
     constructed = []
-    orig_build = aggregate_numba.build_generic_aggregate
+    orig_build = ops.build_generic_aggregate
 
     def counting(func):
         constructed.append(func)
         return orig_build(func)
 
-    monkeypatch.setattr(aggregate_numba, "build_generic_aggregate", counting)
+    monkeypatch.setattr(ops, "build_generic_aggregate", counting)
 
     cache = {}
     aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)

@@ -7,7 +7,7 @@ before numpy is known to be available, and has to work without it.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 nan = float("nan")  # nan is just this float
 
@@ -426,7 +426,7 @@ def custom_callable(func: Any) -> Callable[..., Any]:
 
 
 def build_dispatch(
-    impl_dict: Mapping[str, Callable[..., Any]], aliasing: Mapping[Any, str]
+    op_dict: Mapping[str, Callable[..., Any]], aliasing: Mapping[Any, str]
 ) -> dict[Any, tuple[str, Callable[..., Any] | None]]:
     """Fuse an aliasing and an implementation table for single-lookup dispatch.
 
@@ -437,7 +437,65 @@ def build_dispatch(
     holds ``(name, None)``, which the caller reports with ``missing_impl_error``
     - so the table answers that question too, without a second lookup.
     """
-    return {alias: (name, impl_dict.get(name)) for alias, name in aliasing.items()}
+    return {alias: (name, op_dict.get(name)) for alias, name in aliasing.items()}
+
+
+class Resolved(NamedTuple):
+    """What a func resolved to: the func it names and the operation that does the work.
+
+    The funcname is the canonical name of a known function, or the callable of
+    the caller's own - which is what tells the two apart.  The operation is
+    None where the backend knows the function but does not implement it.
+    """
+
+    funcname: Any
+    op: Callable[..., Any] | None
+
+
+class Registry(dict[Any, Resolved]):
+    """The registry of one backend: the functions it knows and the callables of the caller.
+
+    Every alias of every known function is a key of the table, holding the
+    canonical name and the implementation of this backend - None where the
+    backend does not implement the function.  A func that names no known
+    function is resolved by the custom factory of the backend, which turns a
+    callable of the caller's own into an operation of the same shape.  One
+    lookup therefore answers both kinds of func, and the caller does not have
+    to know which kind it got.
+
+    The lookup is a plain subscript, so that the hot path pays for a dict
+    lookup and nothing else: the factory is reached through ``__missing__``,
+    which the dict calls for a key it does not hold.  A func that cannot be a
+    key of a dict at all - an object that defines ``__eq__`` without
+    ``__hash__`` - is answered by ``custom``, which the caller reaches when
+    the subscript raises.
+    """
+
+    def __init__(
+        self,
+        op_dict: Mapping[str, Callable[..., Any]],
+        aliasing: Mapping[Any, str],
+        custom: Callable[..., Resolved],
+    ) -> None:
+        super().__init__({alias: Resolved(name, op) for alias, (name, op) in build_dispatch(op_dict, aliasing).items()})
+        self._custom_factory = custom
+
+    def __missing__(self, key: Any) -> Resolved:
+        """The operation of a func that names no known function.
+
+        The dict calls this for a key it does not hold, so that a callable of
+        the caller's own is resolved by the same lookup that resolves a name.
+        """
+        return self._custom_factory(key)
+
+    def custom(self, func: Any) -> Resolved:
+        """The operation of a func that the table cannot hold as a key.
+
+        A dict asks its keys for a hash, which an object that defines ``__eq__``
+        without ``__hash__`` does not have - such a func names no known
+        function either, and is answered by the same factory.
+        """
+        return self._custom_factory(func)
 
 
 _forced_float_types = {
