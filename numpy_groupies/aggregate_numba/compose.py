@@ -355,9 +355,14 @@ class KernelPair(typing.NamedTuple):
 
     @property
     def nan(self) -> KernelHandle:
-        """The handle of the nan variant of the operation."""
+        """The handle of the nan variant of the operation.
+
+        The four operations that do not skip nans have none - asking for it
+        says so, the way ``missing_impl_error`` says it to the caller of the
+        package.
+        """
         if self.nan_variant is None:
-            raise ValueError(f"{self.plain.name} has no nan variant")
+            raise ValueError(f"{self.plain.name} does not have a nan-version")
         return self.nan_variant
 
 
