@@ -14,7 +14,8 @@ import itertools
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import is_purepy
+from numpy_groupies.tests.helpers import assert_same_result, is_purepy
+from numpy_groupies.tests.reference import aggregate_ref
 
 
 def test_collecting_gives_the_values_of_every_group(impl):
@@ -77,6 +78,20 @@ def test_collecting_keeps_the_dtype(impl):
     if not is_purepy(impl):
         # the pure python implementation carries no dtype at all
         assert res[0].dtype == np.float16
+
+
+@pytest.mark.parametrize("values", ["a_nans", "a_complex"], ids=["nan", "complex"])
+def test_collecting_keeps_the_values_of_the_block(impl, block, values):
+    """the values of a group are handed out as they are.
+
+    A nan in either part of a complex value is a nan of the value - and the
+    collecting function does not look at the values at all: it hands them out,
+    nan parts and all.
+    """
+    data = getattr(block, values)
+    res = impl.aggregate(block.group_idx, data, func="array", size=block.size)
+    want = aggregate_ref(block.group_idx, data, func="array", size=block.size)
+    assert_same_result(res, want, "array")
 
 
 def test_collecting_refuses_a_scalar(impl):
