@@ -12,12 +12,12 @@ import numpy as np
 import pytest
 
 from numpy_groupies.tests.helpers import (
-    assert_same_result,
     func_list,
     is_numba,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
+from numpy_groupies.tests.test_collect import assert_same_result
 from numpy_groupies.utils import default_fill_value
 
 # the one-out-per-item functions (cum*, sort) have nothing to fill an absent

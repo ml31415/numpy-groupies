@@ -13,13 +13,12 @@ import numpy as np
 import pytest
 
 from numpy_groupies.tests.helpers import (
-    assert_same_result,
     func_list,
-    funcs_collecting,
     random_group_idx,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
+from numpy_groupies.tests.test_collect import assert_same_result, funcs_collecting
 
 
 @pytest.mark.parametrize(
