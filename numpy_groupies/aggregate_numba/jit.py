@@ -115,7 +115,9 @@ def njit_stable(
     The fingerprint covers module, qualname, source, options and the
     closure contents (dispatchers contribute their already pinned uuid),
     so dispatchers compiled from the same factory lines for different
-    operations receive distinct identities.  Usable as
+    operations receive distinct identities - a block that is one and the same
+    function in every operation shares one identity instead, which is the
+    point of the unnamed no-ops of ``compose.build_kernel``.  Usable as
     ``njit_stable(func, **options)`` or ``@njit_stable`` /
     ``@njit_stable(**options)``.  Disk caching is enabled by default
     (``cache=True``), which is the main point of this wrapper.
@@ -126,8 +128,9 @@ def njit_stable(
     signature, so two functions that differ only in their closure share a
     symbol - and a dispatcher loaded from the on-disk cache then binds its
     calls into the environment of the other function, which is correct types
-    and wrong results.  Blocks compiled per operation therefore pass the name
-    of their operation; ``compose.build_kernel`` tells the case in full.
+    and wrong results.  Blocks that differ from operation to operation
+    therefore pass the name of their operation; ``compose.build_kernel`` tells
+    the case in full.
     """
 
     def wrap(func: typing.Callable[..., typing.Any]) -> typing.Any:
