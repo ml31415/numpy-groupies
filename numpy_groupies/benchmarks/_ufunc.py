@@ -14,6 +14,7 @@ from numpy_groupies.aggregate_common import (
 )
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.utils import (
+    AFillValue,
     RavelOrder,
     aliasing,
     check_boolean,
@@ -28,7 +29,7 @@ def _anynan(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.bool_]:
     return _any(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
@@ -38,7 +39,7 @@ def _allnan(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.bool_]:
     return _all(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
@@ -48,7 +49,7 @@ def _any(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.bool_],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.bool_]:
     check_boolean(fill_value)
@@ -63,7 +64,7 @@ def _all(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.bool_],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.bool_]:
     check_boolean(fill_value)
@@ -78,7 +79,7 @@ def _sum(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.generic]:
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
@@ -93,7 +94,7 @@ def _len(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.int64]:
     return _sum(group_idx, 1, size, fill_value, dtype=int)
@@ -103,7 +104,7 @@ def _prod(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.generic]:
     """Same as aggregate_numpy.py"""
@@ -119,7 +120,7 @@ def _min(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.generic]:
     """Same as aggregate_numpy.py"""
@@ -138,7 +139,7 @@ def _max(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.generic]:
     """Same as aggregate_numpy.py"""
@@ -166,7 +167,7 @@ _op_dict = {
 }
 
 
-def _custom_operation(func: Any) -> Resolved:
+def _custom_operation(func: Callable[..., Any]) -> Resolved:
     """The ufunc backend has no operation for a callable of the caller's own.
 
     A ufunc dispatch needs a function of numpy's own, so a callable of the
@@ -185,7 +186,7 @@ def aggregate(
     a: npt.NDArray[np.number],
     func: str | Callable[..., Any] = "sum",
     size: int | Sequence[int] | None = None,
-    fill_value: Any = DEFAULT_FILL_VALUE,
+    fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
     dtype: npt.DTypeLike = None,
     axis: int | None = None,

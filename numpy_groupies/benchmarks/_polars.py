@@ -24,6 +24,7 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
 from numpy_groupies.utils import (
+    AFillValue,
     RavelOrder,
     aliasing,
     check_dtype,
@@ -264,7 +265,7 @@ _op_dict.update(
 _op_dict["nancumsum"] = partial(_wrapper, func="nancumsum")
 
 
-def _custom_operation(func: Any) -> Resolved:
+def _custom_operation(func: Callable[..., Any]) -> Resolved:
     """The operation of a callable of the caller's own.
 
     polars' group_by machinery takes any callable, so the wrapper of this
@@ -282,7 +283,7 @@ def aggregate(
     a: npt.NDArray[np.number],
     func: str | Callable[..., Any] = "sum",
     size: int | Sequence[int] | None = None,
-    fill_value: Any = DEFAULT_FILL_VALUE,
+    fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
     dtype: npt.DTypeLike = None,
     axis: int | None = None,
