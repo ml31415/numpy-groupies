@@ -21,6 +21,7 @@ from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     Registry,
     Resolved,
+    _DefaultFillValue,
     can_name_a_function,
     custom_callable,
     funcs_no_separate_nan,
@@ -32,6 +33,7 @@ from numpy_groupies.aggregate_numba.compose import KernelHandle
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.utils import (
     AResult,
+    AScalar,
     AValue,
     RavelOrder,
     aliasing,
@@ -49,22 +51,18 @@ _N_DEPENDENT_ADTYPES = frozenset(
     np.dtype(t) for t in ("bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "uint64")
 )
 
-# the dtypes that can be a key of the dtype plan cache: the hashable ones of
-# DTypeLike.  A structured dtype is given as a list of fields and is not
-# hashable - the cache raises a TypeError for it, which the caller answers
-# with the uncached resolution.
+# the dtypes and fill values that can be a key of the dtype plan cache:
+# the hashable ones - a list is not, and the cache raises a TypeError for it
 _KeyedDType: typing.TypeAlias = str | type | np.dtype | None
+_HashableFillValue: typing.TypeAlias = AScalar | None | tuple[AScalar, ...] | _DefaultFillValue
 
 
 @functools.lru_cache(maxsize=256)
 def _dtype_fill_plan_cached(
     func: str,
     a_dtype: np.dtype,
-    # the cache needs hashable arguments - the dtype and the fill value are
-    # cast to that, and an unhashable one raises a TypeError in the cache
-    # lookup, which the caller answers with the uncached resolution
     dtype: _KeyedDType,
-    fill_value: typing.Hashable,
+    fill_value: _HashableFillValue,
     n: int,
     scalar: bool,
 ) -> tuple[np.dtype, typing.Any]:
@@ -77,9 +75,9 @@ def _dtype_fill_plan_cached(
         # list, so both hand out the input dtype whatever was requested, and
         # the compiled rule of the kernel (``rule_same``) says the same
         out_dtype = a_dtype
-    fill_value = resolve_fill_value(func, fill_value, out_dtype)
-    check_fill_value(fill_value, out_dtype, func=func)
-    return out_dtype, fill_value
+    resolved = resolve_fill_value(func, fill_value, out_dtype)
+    check_fill_value(resolved, out_dtype, func=func)
+    return out_dtype, resolved
 
 
 def _dtype_fill_plan(
@@ -99,7 +97,9 @@ def _dtype_fill_plan(
     lookup with a TypeError, which the caller answers with the uncached
     resolution.
     """
-    return _dtype_fill_plan_cached(func, a_dtype, typing.cast("_KeyedDType", dtype), fill_value, n, scalar)
+    return _dtype_fill_plan_cached(
+        func, a_dtype, typing.cast("_KeyedDType", dtype), typing.cast("_HashableFillValue", fill_value), n, scalar
+    )
 
 
 def _aux_dtype(handle: KernelHandle, a_dtype: np.dtype, out_dtype: np.dtype) -> np.dtype:
@@ -191,8 +191,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
                 if handle.post is not None:
                     ret = handle.post(ret, group_idx, plan_fill)
                 else:
-                    # every other operation's driver returns the result array
-                    # itself - only the collecting one assembles a list
+                    # only the collecting operation assembles a list
                     ret = typing.cast(AResult, ret)
                 return ret
 
@@ -235,8 +234,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
             # result of the caller
             ret = handle.post(ret, group_idx, fill_value)
         else:
-            # every other operation's driver returns the result array itself -
-            # only the collecting one assembles a list
+            # only the collecting operation assembles a list
             ret = typing.cast(AResult, ret)
 
         # Deal with ndimensional indexing
@@ -253,12 +251,9 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
                 )
                 ret[mask] = fill_value
             check_nton_shape(ret, size, func)
-            ret = typing.cast(
-                "AResult",
-                # numpy takes the shape as an int, a sequence of ints or an
-                # array of them - the stub admits only the first two
-                ret.reshape(typing.cast("typing.Any", size), order=order),
-            )
+            # numpy takes the shape as an int, a sequence of ints or an array
+            # of them - the stub admits only the first two
+            ret = typing.cast("AResult", ret.reshape(typing.cast("typing.Any", size), order=order))
         return ret
 
     return aggregate

@@ -328,9 +328,8 @@ class KernelHandle(typing.NamedTuple):
     name: str
     nans: bool
     stub: typing.Callable[..., typing.Any]
-    # the driver returns the result array of the operation - or, for the
-    # collecting function, the list of the arrays of the groups, which the
-    # post hook assembles into the object array the caller gets
+    # the driver returns the result array - or, for the collecting function,
+    # the list of the arrays of the groups
     driver: typing.Callable[..., AResult | list[AResult]]
     forced_fill: float | int | None
     aux_widen: bool
@@ -345,9 +344,7 @@ class KernelPair(typing.NamedTuple):
     """Plain and nan-variant handles of one operation.
 
     The four operations that do not skip nans have no nan variant - their
-    ``nan_variant`` is None, and asking the pair for its nan handle raises
-    there.  The property is what the callers use, so that the type checker
-    knows a nan handle is a handle and not a handle or nothing.
+    ``nan_variant`` is None and the property raises there.
     """
 
     plain: KernelHandle
@@ -355,12 +352,7 @@ class KernelPair(typing.NamedTuple):
 
     @property
     def nan(self) -> KernelHandle:
-        """The handle of the nan variant of the operation.
-
-        The four operations that do not skip nans have none - asking for it
-        says so, the way ``missing_impl_error`` says it to the caller of the
-        package.
-        """
+        """The handle of the nan variant of the operation."""
         if self.nan_variant is None:
             raise ValueError(f"{self.plain.name} does not have a nan-version")
         return self.nan_variant
@@ -369,9 +361,8 @@ class KernelPair(typing.NamedTuple):
 def build_kernel(
     name: str,
     *,
-    # the building blocks are jitted - the state they work on differs from
-    # operation to operation, so their parameters stay open; the ones that
-    # only write into the state return nothing
+    # the building blocks are jitted - their state differs from operation to
+    # operation, so their parameters stay open
     init: typing.Callable[..., typing.Any],
     update: typing.Callable[..., None],
     rule: typing.Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],

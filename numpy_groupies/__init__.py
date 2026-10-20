@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
     from numpy_groupies.aggregate_common import FuncName
-    from numpy_groupies.utils import AResult, AValue, RavelOrder
+    from numpy_groupies.utils import AFillValue, AResult, AValue, RavelOrder
 
     class Aggregate(Protocol):
         """The canonical signature of the public ``aggregate``.
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
             a: AValue,
             func: FuncName | Callable[..., Any] = "sum",
             size: int | Sequence[int] | None = None,
-            fill_value: Any = ...,
+            fill_value: AFillValue = ...,
             order: RavelOrder = "C",
             dtype: npt.DTypeLike | None = None,
             axis: int | None = None,
@@ -49,9 +49,8 @@ def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
     )
 
 
-# the public names are declared with the type of the protocol, so that the
-# type checker keeps them: without the declaration the branches below would
-# join into a plain Any and the signature of the protocol would be lost
+# declared with the type of the protocol, or the branches below would join
+# into a plain Any and lose its signature
 aggregate: Aggregate
 aggregate_np: Aggregate
 

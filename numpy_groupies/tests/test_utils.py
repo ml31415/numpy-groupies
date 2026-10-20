@@ -26,10 +26,9 @@ from numpy_groupies.utils import aliasing, check_dtype, unpack
 def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():
     """The literal type of the func parameter names every function by name.
 
-    A name the alias table does not hold would be one the type checker
-    refuses without a reason, and a name the table holds but the literal does
-    not would be one it refuses wrongly - the type and the table have to
-    agree, in both backends.
+    A name the table does not hold would be one the type checker refuses
+    without a reason, and one the table holds but the literal does not would
+    be one it refuses wrongly.
     """
     names = set(get_args(FuncName))
     assert names == {name for name in aliasing if isinstance(name, str)}

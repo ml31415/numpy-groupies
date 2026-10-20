@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import platform
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Literal, TypeAlias, cast
 
 import numpy as np
@@ -12,6 +12,7 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     FuncName,
+    _DefaultFillValue,
     _forced_float_types,
     _forced_real_float_types,
     check_boolean,
@@ -22,18 +23,20 @@ from numpy_groupies.aggregate_common import (
     resolve_name,
 )
 
-# the values as the dispatchers carry them on: an array of any dtype (bool
-# is no number in numpy, yet kind in "iub" counts it, and the integer and
-# the complex dtypes are numbers of their own kind), or the one python
-# scalar that stands for that value repeated over every label (a np.bool_ is
-# no int)
+# the values as the dispatchers carry them on: an array of any dtype, or
+# the one python scalar that stands for that value repeated over every label
 AValue: TypeAlias = npt.NDArray[np.generic] | int | float | complex | np.bool_
 
-# the result of an aggregation: an array of numbers for most functions, of
-# bools for 'all' and 'any' and of objects for the collecting function
-# 'array' - np.generic is the honest umbrella for all three, np.number is
-# not (np.bool_ and np.object_ are no numbers)
+# the result of an aggregation: numbers for most functions, bools for
+# 'all' and 'any', objects for 'array' - np.generic covers all three
 AResult: TypeAlias = npt.NDArray[np.generic]
+
+# the numbers and flags that can land in an array
+AScalar: TypeAlias = float | int | complex | bool | np.number | np.bool_
+
+# what a fill value can be: a number, the sentinel that asks for the
+# default of the function, a None or - for the object result - a sequence
+AFillValue: TypeAlias = AScalar | None | Sequence[AScalar] | _DefaultFillValue
 
 # the memory layout the output is written in, as every signature of this
 # package spells it: the docstring offers 'F' for fortran-style and the code
@@ -364,12 +367,15 @@ def maxval(fill_value: Any, dtype: np.dtype | None) -> Any:
     return np.finfo(dtype).max
 
 
-def check_fill_value(fill_value: Any, dtype: np.dtype, func: str | Callable[..., Any] | None = None) -> Any:
+def check_fill_value(
+    fill_value: AFillValue, dtype: np.dtype, func: str | Callable[..., Any] | None = None
+) -> AFillValue | None:
     if func in ("all", "any", "allnan", "anynan"):
         check_boolean(fill_value)
+        return None
     else:
         try:
-            return dtype.type(fill_value)
+            return dtype.type(fill_value)  # type: ignore[no-any-return]
         except ValueError:
             raise ValueError(f"fill_value must be convertible into {dtype.type.__name__}")
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import itertools
 import math
 import numbers
@@ -31,7 +33,7 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.utils import AValue, RavelOrder
+    from numpy_groupies.utils import AFillValue, AValue, RavelOrder
 
 
 # min, max, all, any - builtin
@@ -278,13 +280,13 @@ def _check_integer_precision(a: Sequence[Any], func: Callable[..., Any]) -> None
 
 
 def aggregate(
-    group_idx: "npt.NDArray[np.integer]",
-    a: "AValue",
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
     func: FuncName | Callable[..., Any] = "sum",
     size: int | None = None,
-    fill_value: Any = DEFAULT_FILL_VALUE,
-    order: "RavelOrder" = "C",
-    dtype: "npt.DTypeLike | None" = None,
+    fill_value: AFillValue = DEFAULT_FILL_VALUE,
+    order: RavelOrder = "C",
+    dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     **kwargs: Any,
 ) -> list[Any]:

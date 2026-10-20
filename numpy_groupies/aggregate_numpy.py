@@ -21,6 +21,7 @@ from numpy_groupies.aggregate_common import (
     resolve_fill_value,
 )
 from numpy_groupies.utils import (
+    AFillValue,
     AResult,
     AValue,
     RavelOrder,
@@ -133,8 +134,7 @@ def _len(
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.int64]:
     # _sum folds a scalar column of ones into its ndim-0 branch
-    # _sum folds a scalar column of ones into its ndim-0 branch - the
-    # annotation of its value parameter says array, the branch says scalar
+    # _sum folds a scalar column of ones into its ndim-0 branch
     return cast(
         "npt.NDArray[np.int64]",
         _sum(group_idx, cast("npt.NDArray[np.number]", 1), size, fill_value, dtype=int),
@@ -877,7 +877,7 @@ def aggregate(
     a: AValue,
     func: FuncName | Callable[..., Any] | None = "sum",
     size: int | Sequence[int] | None = None,
-    fill_value: Any = DEFAULT_FILL_VALUE,
+    fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,

@@ -7,7 +7,10 @@ before numpy is known to be available, and has to work without it.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any, Literal, NamedTuple, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias, cast
+
+if TYPE_CHECKING:
+    from numpy_groupies.utils import AFillValue
 
 nan = float("nan")  # nan is just this float
 
@@ -160,12 +163,9 @@ funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan"])
 # work on numbers cannot take in one go
 funcs_collecting = frozenset(["array"])
 
-# the names the known functions answer to: their canonical names and the
-# string aliases of the alias table (get_aliasing below) - the literal type
-# names them for the type checker, which then refuses a typo in a function
-# name, and for the editor, which completes them.  A callable of the
-# caller's own is the other half of what a func parameter takes; the test
-# suite keeps this list and the alias table in step.
+# the names the known functions answer to - their canonical names and the
+# string aliases of the alias table.  The literal type names them for the
+# type checker (a typo is a type error) and for the editor.
 # fmt: off
 FuncName: TypeAlias = Literal[
     "add", "all", "allnan", "amax", "amin", "and",
@@ -195,7 +195,7 @@ DEFAULT_FILL_VALUE = _DefaultFillValue()
 # The value an absent group gets, per aggregation function, following the
 # convention that it is whatever numpy returns for an empty slice - where the
 # output datatype can represent it (see ``resolve_fill_value``).
-_default_fill_values = {
+_default_fill_values: dict[str, AFillValue] = {
     "sum": 0,
     "prod": 1,
     "all": False,
@@ -302,7 +302,7 @@ def check_filling_with_none(func: str | Callable[..., Any]) -> None:
         )
 
 
-def resolve_fill_value(func: str | Callable[..., Any], fill_value: Any, dtype: Any) -> Any:
+def resolve_fill_value(func: str | Callable[..., Any], fill_value: AFillValue, dtype: Any) -> AFillValue:
     """Replace the ``DEFAULT_FILL_VALUE`` sentinel with the default of ``func``.
 
     Anything else than the sentinel is returned untouched, except a ``None``: a
@@ -568,7 +568,7 @@ _fixed_result_types: dict[str, type] = {
 }
 
 
-def check_fixed_fill_value(func: str | Callable[..., Any], fill_value: Any) -> None:
+def check_fixed_fill_value(func: str | Callable[..., Any], fill_value: AFillValue) -> None:
     """Refuse a ``fill_value`` that the result type of ``func`` cannot hold, for
     those functions whose result type the function itself settles.
 
@@ -582,7 +582,7 @@ def check_fixed_fill_value(func: str | Callable[..., Any], fill_value: Any) -> N
         check_boolean(fill_value)
     elif target is int:
         try:
-            int(fill_value)
+            int(fill_value)  # type: ignore[arg-type]
         except ValueError:
             raise ValueError("fill_value must be convertible into an integer")
 
