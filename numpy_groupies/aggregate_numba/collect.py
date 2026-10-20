@@ -19,6 +19,7 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_common import DEFAULT_FILL_VALUE
 from numpy_groupies.aggregate_numba.compose import KernelHandle, build_custom_kernel, output_size, rule_object
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.utils import (
     AValue,
@@ -74,6 +75,13 @@ def _array_driver_factory(nan_variant: bool) -> typing.Any:
     applied by the python-level wrapper, which knows the groups that received
     no value.
     """
+    op_name = "array"
+    # the copies get a name of their own: numba mangles the symbol of a
+    # compiled function from module, qualname and signature, and two
+    # operations sharing those share one symbol (see compose.build_kernel)
+    _count = njit_stable(group_count, name=f"{op_name}_group_count")
+    _starts = njit_stable(group_starts, name=f"{op_name}_group_starts")
+    _place = njit_stable(group_place, name=f"{op_name}_group_place")
 
     def driver(
         group_idx: npt.NDArray[np.integer],
@@ -87,21 +95,11 @@ def _array_driver_factory(nan_variant: bool) -> typing.Any:
         # the fill value is of no use here, and the dtypes neither - the
         # sequences carry the dtype of the values
         size = output_size(group_idx, size_arg)
-        n = group_idx.shape[0]
-        counts = np.zeros(size, np.int64)
-        for i in range(n):
-            g = group_idx[i]
-            if g < 0:
-                raise ValueError("negative indices not supported")
-            counts[g] += 1
-        starts = np.cumsum(counts) - counts
-        cursor = starts.copy()
-        values = np.empty(n, a.dtype)
-        for i in range(n):
-            g = group_idx[i]
-            values[cursor[g]] = a[i]
-            cursor[g] += 1
-        return [values[starts[g] : starts[g] + counts[g]] for g in range(size)]
+        counts = _count(group_idx, size)
+        starts = _starts(counts)
+        values = np.empty(group_idx.shape[0], a.dtype)
+        _place(group_idx, a, starts.copy(), values)
+        return [values[s : s + c] for s, c in zip(starts, counts)]
 
     return njit_stable(driver, name="array_driver")
 
