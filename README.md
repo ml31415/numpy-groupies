@@ -235,6 +235,8 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 | `array`          |   7.14 |   1.89 |    --- |    --- |    --- |
 | custom callable  | 110.93 |   5.97 |    --- |  78.98 |  94.13 |
 
+The `polars` column uses all the cores of the machine, the `numpy` and `numba` columns are single-threaded - the Numba kernels of this package do not use `prange`. That matters most for the order statistics: with a single thread polars needs 9.7ms for the quantile, against 4.1ms with six, which puts it level with the single-threaded Numba kernel (9.3ms).
+
 Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root — `--help` explains which columns to ask for:
