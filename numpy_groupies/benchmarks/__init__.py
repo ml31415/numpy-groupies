@@ -99,6 +99,11 @@ def benchmark_data(size=5e5, seed=100, groups=1000):
     nana[(nana < 0.2) & (nana != 0)] = np.nan
     nan_share = np.mean(np.isnan(nana))
     assert 0.15 < nan_share < 0.25, f"{nan_share * 100:3f}% nans"
+    # the participants get the data read-only: one that writes into it would
+    # corrupt the data of the runs that follow, and the write is an error
+    # instead of a silent change
+    for array in (a, nana, group_idx):
+        array.flags.writeable = False
     return a, nana, group_idx
 
 
