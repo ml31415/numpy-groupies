@@ -580,18 +580,28 @@ def _sort(
     return ret
 
 
-def blocks_to_object_array(blocks: Iterable[npt.NDArray[np.generic]]) -> npt.NDArray[np.object_]:
+def blocks_to_object_array(
+    blocks: Iterable[npt.NDArray[np.generic]],
+    group_idx: npt.NDArray[np.integer],
+    fill_value: Any,
+) -> npt.NDArray[np.object_]:
     """The blocks of the groups as an object array, one sequence per group.
 
-    The array is built element by element: ``np.asanyarray`` of a list of
-    blocks collapses it into a regular array whenever the groups happen to be
-    of the same length - and the result would lose the sequences it is meant
-    to hold (and the size the caller asked for).
+    A group without values takes the fill value - an empty sequence leaves the
+    empty block of the group alone.  The array is built element by element:
+    ``np.asanyarray`` of a list of blocks collapses it into a regular array
+    whenever the groups happen to be of the same length - and the result would
+    lose the sequences it is meant to hold (and the size the caller asked
+    for).
     """
+    if fill_value is not None and not (np.isscalar(fill_value) or len(fill_value) == 0):
+        raise ValueError("fill_value must be None, a scalar or an empty sequence")
     blocks = list(blocks)
     ret = np.empty(len(blocks), dtype=object)
     for g, block in enumerate(blocks):
         ret[g] = block
+    if fill_value is None or np.isscalar(fill_value):
+        _fill_untouched(group_idx, ret, fill_value)
     return ret
 
 
@@ -603,15 +613,10 @@ def _array(
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.object_]:
     """groups a into separate arrays, keeping the order intact."""
-    if fill_value is not None and not (np.isscalar(fill_value) or len(fill_value) == 0):
-        raise ValueError("fill_value must be None, a scalar or an empty sequence")
     order_group_idx = np.argsort(group_idx, kind="stable")
     counts = np.bincount(group_idx, minlength=size)
     blocks = np.split(a[order_group_idx], np.cumsum(counts)[:-1])
-    ret = blocks_to_object_array(blocks)
-    if fill_value is None or np.isscalar(fill_value):
-        _fill_untouched(group_idx, ret, fill_value)
-    return ret
+    return blocks_to_object_array(blocks, group_idx, fill_value)
 
 
 def _generic_callable(

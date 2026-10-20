@@ -314,6 +314,14 @@ class KernelHandle(typing.NamedTuple):
     ``fallback``    python-level callable for input dtypes the compiled
                 driver cannot handle (complex medians go to the numpy
                 implementation - numba cannot partition complex values)
+    ``placeable``   which dtypes the compiled driver can take - None means
+                the default: only complex input goes to the fallback
+    ``post``    turns the result of the driver into the result of the caller
+                (the collecting function assembles an object array of the
+                groups out of the list the driver hands out)
+    ``assembles``   the driver assembles the result instead of returning a
+                plain array: the fill value is then the business of the
+                post hook, not of the driver
     """
 
     name: str
@@ -324,6 +332,9 @@ class KernelHandle(typing.NamedTuple):
     aux_widen: bool
     nton: bool
     fallback: typing.Callable[..., typing.Any] | None = None
+    placeable: typing.Callable[[np.dtype | None], bool] | None = None
+    post: typing.Callable[..., typing.Any] | None = None
+    assembles: bool = False
 
 
 class KernelPair(typing.NamedTuple):
@@ -366,6 +377,9 @@ def build_kernel(
     aux_widen: bool = False,
     nton: bool = False,
     fallback: typing.Callable[..., typing.Any] | None = None,
+    placeable: typing.Callable[[np.dtype | None], bool] | None = None,
+    post: typing.Callable[..., typing.Any] | None = None,
+    assembles: bool = False,
     doc: str | None = None,
 ) -> KernelPair:
     """Compose the kernels of one operation from jitted building blocks.
@@ -527,6 +541,9 @@ def build_kernel(
             aux_widen=aux_widen,
             nton=nton,
             fallback=fallback,
+            placeable=placeable,
+            post=post,
+            assembles=assembles,
         )
 
     plain = build(False)
@@ -546,6 +563,9 @@ def build_custom_kernel(
     aux_widen: bool = False,
     nton: bool = False,
     fallback: typing.Callable[..., typing.Any] | None = None,
+    placeable: typing.Callable[[np.dtype | None], bool] | None = None,
+    post: typing.Callable[..., typing.Any] | None = None,
+    assembles: bool = False,
     reject_fill: bool = False,
     doc: str | None = None,
 ) -> KernelPair:
@@ -581,6 +601,9 @@ def build_custom_kernel(
             aux_widen=aux_widen,
             nton=nton,
             fallback=fallback,
+            placeable=placeable,
+            post=post,
+            assembles=assembles,
         )
 
     plain = build(False)

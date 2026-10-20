@@ -85,6 +85,26 @@ def _aux_dtype(handle: KernelHandle, a_dtype: np.dtype, out_dtype: np.dtype) -> 
     return out_dtype
 
 
+def _needs_fallback(handle: KernelHandle, a: typing.Any) -> bool:
+    """Whether the input is one the compiled driver cannot handle.
+
+    The default is the complex input, which the median cannot partition; an
+    operation that knows more says so with the ``placeable`` of its handle.
+    """
+    if handle.placeable is not None:
+        return not handle.placeable(getattr(a, "dtype", None))
+    return getattr(getattr(a, "dtype", None), "kind", "") == "c"
+
+
+def _driver_fill(handle: KernelHandle, fill_value: typing.Any) -> typing.Any:
+    """The fill value the driver takes.
+
+    An assembling driver takes none - the fill value is the business of the
+    post hook - and gets a placeholder in its place.
+    """
+    return 0.0 if handle.assembles else fill_value
+
+
 def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., typing.Any]:
     """Create the python-level wrapper around one compiled kernel.
 
@@ -106,7 +126,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
         ddof: float = 0,
     ) -> npt.NDArray[np.number]:
         # dtypes the compiled driver cannot handle, handed to the numpy twin
-        if handle.fallback is not None and getattr(getattr(a, "dtype", None), "kind", "") == "c":
+        if handle.fallback is not None and _needs_fallback(handle, a):
             return typing.cast(
                 "npt.NDArray[np.number]",
                 handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis),
@@ -140,18 +160,18 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
                 # unhashable dtype/fill_value - resolve on the slow path
                 plan_dtype = None
             if plan_dtype is not None:
-                return typing.cast(
-                    "npt.NDArray[np.number]",
-                    handle.driver(
-                        group_idx,
-                        a,
-                        -1 if size is None else size,
-                        plan_dtype,
-                        _aux_dtype(handle, a_key, plan_dtype),
-                        plan_fill,
-                        ddof,
-                    ),
+                ret = handle.driver(
+                    group_idx,
+                    a,
+                    -1 if size is None else size,
+                    plan_dtype,
+                    _aux_dtype(handle, a_key, plan_dtype),
+                    _driver_fill(handle, plan_fill),
+                    ddof,
                 )
+                if handle.post is not None:
+                    ret = typing.cast("npt.NDArray[np.number]", handle.post(ret, group_idx, plan_fill))
+                return typing.cast("npt.NDArray[np.number]", ret)
 
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=func)
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
@@ -182,8 +202,20 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
 
         ret = typing.cast(
             "npt.NDArray[np.number]",
-            handle.driver(group_idx, a, flat_size, dtype, _aux_dtype(handle, a_key, dtype), fill_value, ddof),
+            handle.driver(
+                group_idx,
+                a,
+                flat_size,
+                dtype,
+                _aux_dtype(handle, a_key, dtype),
+                _driver_fill(handle, fill_value),
+                ddof,
+            ),
         )
+        if handle.post is not None:
+            # the driver assembled something else - the post hook makes it the
+            # result of the caller
+            ret = typing.cast("npt.NDArray[np.number]", handle.post(ret, group_idx, fill_value))
 
         # Deal with ndimensional indexing
         if ndim_idx > 1:
@@ -308,6 +340,9 @@ _TABLE = (
     ("cummax", cumulative.cummax),
     ("cummin", cumulative.cummin),
     ("sort", specials.sort),
+    # the collecting function: its result is a sequence per group, which the
+    # driver assembles into the object array the caller expects
+    ("array", collect.array),
 )
 
 
@@ -375,9 +410,6 @@ def get_funcs() -> dict[str, typing.Callable[..., typing.Any]]:
         if funcname not in funcs_no_separate_nan:
             op = build_aggregate_op("nan" + funcname, pair.nan)  # type: ignore[arg-type]
             funcs["nan" + funcname] = op if wrap is None else wrap(op)
-    # the collecting function has no kernel of the usual shape: its result is
-    # a sequence per group, which the driver hands out as a list
-    funcs["array"] = collect.build_collecting_op("array", collect.array.plain)
     return funcs
 
 
