@@ -23,6 +23,7 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.utils import (
     AFillValue,
     AResult,
+    AScalar,
     AValue,
     RavelOrder,
     aliasing,
@@ -72,7 +73,7 @@ def _sum(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
@@ -115,7 +116,7 @@ def _prod(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
@@ -130,7 +131,7 @@ def _len(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.int64]:
     # _sum folds a scalar column of ones into its ndim-0 branch
@@ -145,7 +146,7 @@ def _last(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
@@ -161,7 +162,7 @@ def _first(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
@@ -174,7 +175,7 @@ def _all(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.bool_],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.bool_]:
     check_boolean(fill_value)
@@ -189,7 +190,7 @@ def _any(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.bool_],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.bool_]:
     check_boolean(fill_value)
@@ -211,7 +212,7 @@ def _min(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
@@ -229,7 +230,7 @@ def _max(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
@@ -247,7 +248,7 @@ def _argmax(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = int,
     _nansqueeze: bool = False,
 ) -> npt.NDArray[np.int64]:
@@ -269,7 +270,7 @@ def _argmin(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = int,
     _nansqueeze: bool = False,
 ) -> npt.NDArray[np.int64]:
@@ -291,7 +292,7 @@ def _mean(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = np.dtype(np.float64),
 ) -> npt.NDArray[np.inexact]:
     if np.ndim(a) == 0:
@@ -330,7 +331,7 @@ def _median(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.inexact]:
     """
@@ -399,7 +400,7 @@ def _trapezoid(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
     dx: float = 1.0,
 ) -> npt.NDArray[np.number]:
@@ -445,7 +446,7 @@ def _sum_of_squres(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = np.dtype(np.float64),
 ) -> npt.NDArray[np.floating]:
     if np.issubdtype(a.dtype, np.integer):
@@ -470,7 +471,7 @@ def _var(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = np.dtype(np.float64),
     sqrt: bool = False,
     ddof: int = 0,
@@ -532,7 +533,7 @@ def _std(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = np.dtype(np.float64),
     ddof: int = 0,
 ) -> npt.NDArray[np.floating]:
@@ -543,7 +544,7 @@ def _allnan(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = bool,
 ) -> npt.NDArray[np.bool_]:
     return _all(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
@@ -553,7 +554,7 @@ def _anynan(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar,
     dtype: npt.DTypeLike | None = bool,
 ) -> npt.NDArray[np.bool_]:
     return _any(group_idx, np.isnan(a), size, fill_value=fill_value, dtype=dtype)
@@ -579,7 +580,7 @@ def _sort(
     group_idx: npt.NDArray[np.integer],
     a: Any,
     size: int | tuple[int, ...] | None = None,
-    fill_value: Any = None,
+    fill_value: AScalar | None = None,
     dtype: npt.DTypeLike | None = None,
     reverse: bool = False,
 ) -> AResult:
@@ -607,7 +608,7 @@ def _sort(
 def blocks_to_object_array(
     blocks: Iterable[npt.NDArray[np.generic]],
     group_idx: npt.NDArray[np.integer],
-    fill_value: Any,
+    fill_value: AScalar | Sequence[AScalar] | None,
 ) -> npt.NDArray[np.object_]:
     """The blocks of the groups as an object array, one sequence per group.
 
@@ -618,7 +619,9 @@ def blocks_to_object_array(
     lose the sequences it is meant to hold (and the size the caller asked
     for).
     """
-    if fill_value is not None and not (np.isscalar(fill_value) or len(fill_value) == 0):
+    if fill_value is not None and not (
+        np.isscalar(fill_value) or (isinstance(fill_value, Sequence) and len(fill_value) == 0)
+    ):
         raise ValueError("fill_value must be None, a scalar or an empty sequence")
     blocks = list(blocks)
     ret = np.empty(len(blocks), dtype=object)
@@ -633,7 +636,7 @@ def _array(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: Sequence[AScalar],
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.object_]:
     """groups a into separate arrays, keeping the order intact."""
@@ -647,7 +650,7 @@ def _generic_callable(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any,
+    fill_value: AScalar | None,
     dtype: npt.DTypeLike | None = None,
     func: Callable[..., Any] = lambda g: g,
     **kwargs: Any,
@@ -700,7 +703,7 @@ def _cumsum(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any = None,
+    fill_value: AScalar | None = None,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     """
@@ -730,7 +733,7 @@ def _nancumsum(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-    fill_value: Any = None,
+    fill_value: AScalar | None = None,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     a_nonans = np.where(np.isnan(a), 0, a)
@@ -779,7 +782,7 @@ def _custom_operation(func: Any) -> Resolved:
         group_idx: npt.NDArray[np.integer],
         a: npt.NDArray[np.number],
         size: int,
-        fill_value: Any = None,
+        fill_value: AScalar | None = None,
         dtype: npt.DTypeLike | None = None,
         **kwargs: Any,
     ) -> npt.NDArray[np.number]:
