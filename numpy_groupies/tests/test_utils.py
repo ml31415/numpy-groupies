@@ -4,10 +4,12 @@
 inverts a group reduction - every backend provides them.
 """
 
+from dataclasses import dataclass
+
 import numpy as np
 import pytest
 
-from numpy_groupies.aggregate_common import build_dispatch, custom_callable, resolve_name
+from numpy_groupies.aggregate_common import Registry, Resolved, build_dispatch, custom_callable, resolve_name
 from numpy_groupies.tests.helpers import random_values
 from numpy_groupies.utils import aliasing, check_dtype, unpack
 
@@ -53,6 +55,72 @@ def test_a_func_that_is_neither_a_name_nor_a_callable_is_said_so():
     for func in (42, [1, 2], {"a": 1}, np.array([1.0])):
         with pytest.raises(ValueError, match="neither a valid function string nor a callable object"):
             custom_callable(func)
+
+
+def _registry():
+    """A registry with two known functions and a factory for the caller's own."""
+    implementation = {"sum": sum, "min": min}
+    aliasing = {"sum": "sum", "add": "sum", "min": "min", "nansum": "nansum"}
+
+    def custom(func):
+        # the factories of the backends tell a func that named nothing from
+        # one that can be run
+        callable_ = custom_callable(func)
+        return Resolved(callable_, callable_)
+
+    return Registry(implementation, aliasing, custom)
+
+
+def test_the_registry_answers_both_kinds_of_func_with_one_lookup():
+    """A known function and a callable of the caller's own come out of one lookup.
+
+    The registry holds the aliases of the known functions, and a func that names
+    no known function is answered by the factory of the backend - so that the
+    caller asks one question and gets the operation of the func it asked about.
+    """
+    registry = _registry()
+
+    name, impl = registry["add"]
+    assert (name, impl) == ("sum", sum)
+    # a function the backend does not implement is a key of the table too
+    assert registry["nansum"] == ("nansum", None)
+
+    # a callable of the caller's own: the factory makes it the operation
+    def my_func(values):
+        return sum(values)
+
+    name, impl = registry[my_func]
+    assert name is my_func
+    assert impl is my_func
+
+
+def test_the_registry_answers_a_func_that_cannot_be_a_key():
+    """A func the table cannot hold as a key names no known function either.
+
+    A dict asks its keys for a hash, which an object that defines ``__eq__``
+    without ``__hash__`` does not have - the registry answers it the same way
+    it answers a callable.
+    """
+
+    @dataclass
+    class Callable:
+        def __call__(self, values):
+            return sum(values)
+
+    registry = _registry()
+    func = Callable()
+    with pytest.raises(TypeError):
+        registry[func]
+    name, impl = registry.custom(func)
+    assert name is func
+    assert impl is func
+
+
+def test_a_func_that_named_nothing_is_said_so_by_the_factory():
+    """The factory of the backend tells a func that named nothing from one that can be run."""
+    registry = _registry()
+    with pytest.raises(ValueError, match="neither a valid function string nor a callable object"):
+        registry[42]
 
 
 def test_unpack(rng):

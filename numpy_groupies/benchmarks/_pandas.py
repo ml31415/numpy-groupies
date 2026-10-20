@@ -8,8 +8,10 @@ import pandas as pd
 
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
+    Registry,
+    Resolved,
     aggregate_common_doc,
-    build_dispatch,
+    custom_callable,
     funcs_no_separate_nan,
 )
 from numpy_groupies.aggregate_numpy import _aggregate_base
@@ -121,11 +123,20 @@ _impl_dict.update(
     argmin=partial(_wrapper, func="idxmin"),
     nanargmax=partial(_wrapper, func="idxmax"),
     nanargmin=partial(_wrapper, func="idxmin"),
-    generic=_wrapper,
 )
 
 
-_dispatch = build_dispatch(_impl_dict, aliasing)
+def _custom_operation(func: Any) -> Resolved:
+    """The operation of a callable of the caller's own.
+
+    pandas' groupby machinery takes any callable, so the wrapper of this
+    backend runs it.
+    """
+    callable_ = custom_callable(func)
+    return Resolved(callable_, partial(_wrapper, func=callable_))
+
+
+_dispatch = Registry(_impl_dict, aliasing, _custom_operation)
 
 
 def aggregate(
@@ -162,7 +173,6 @@ def aggregate(
         dtype=dtype,
         func=func,
         axis=axis,
-        _impl_dict=_impl_dict,
         _dispatch=_dispatch,
         is_pandas=True,
         **kwargs,

@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any, cast
 
 import numpy as np
@@ -8,8 +8,9 @@ from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
+    Registry,
+    Resolved,
     aggregate_common_doc,
-    build_dispatch,
     custom_callable,
     funcs_no_separate_nan,
     missing_impl_error,
@@ -754,12 +755,34 @@ _impl_dict: dict[str, Callable[..., Any]] = {
     "cumsum": _cumsum,
     "sumofsquares": _sum_of_squres,
     "trapezoid": _trapezoid,
-    "generic": _generic_callable,
 }
 _impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not in funcs_no_separate_nan)
 _impl_dict["nancumsum"] = _nancumsum
 
-_dispatch = build_dispatch(_impl_dict, aliasing)
+
+def _custom_operation(func: Any) -> Resolved:
+    """The operation of a callable of the caller's own.
+
+    The callable is applied to the values of every group, which are collected
+    first.  The operation is the same for every callable - only the callable
+    differs - so the registry holds one of them per caller's callable.
+    """
+    callable_ = custom_callable(func)
+
+    def operation(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size: int,
+        fill_value: Any = None,
+        dtype: npt.DTypeLike | None = None,
+        **kwargs: Any,
+    ) -> npt.NDArray[np.number]:
+        return _generic_callable(group_idx, a, size, fill_value, func=callable_, dtype=dtype, **kwargs)
+
+    return Resolved(callable_, operation)
+
+
+_dispatch = Registry(_impl_dict, aliasing, _custom_operation)
 
 
 def _aggregate_base(
@@ -771,8 +794,7 @@ def _aggregate_base(
     order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
-    _impl_dict: dict[str, Callable[..., Any]] = _impl_dict,
-    _dispatch: Mapping[Any, tuple[str, Callable[..., Any] | None]] = _dispatch,
+    _dispatch: Registry = _dispatch,
     is_pandas: bool = False,
     **kwargs: Any,
 ) -> npt.NDArray[np.number]:
@@ -784,29 +806,18 @@ def _aggregate_base(
         group_idx = group_idx.astype(int)
 
     try:
-        funcname, func = _dispatch[func]
-    except (KeyError, TypeError):
-        # no key of the table, either because no function goes by that name or
-        # because func could not be one of its keys (a dict asks its keys for a
-        # hash, which an object defining __eq__ without __hash__ does not have):
-        # both leave a callable of the caller's own to run, and anything else
-        # says that it named nothing
-        func = custom_callable(func)
-        funcname = cast("Any", func)
-        fill_value = resolve_fill_value(func, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
-        # do simple grouping and execute function in loop
-        ret = _impl_dict.get("generic", _generic_callable)(
-            group_idx, a, flat_size, fill_value, func=func, dtype=dtype, **kwargs
-        )
-        if ndim_idx > 1:
-            check_nton_shape(ret, size, funcname)
-            ret = ret.reshape(size, order=order)
-        return cast("npt.NDArray[np.number]", ret)
-    else:
-        if func is None:
-            # a function that is known but not implemented here
-            raise missing_impl_error(funcname)
-        # deal with nans and find the function
+        funcname, func_impl = _dispatch[func]
+    except TypeError:
+        # a func that cannot be a key of the table at all (a dict asks its keys
+        # for a hash, which an object defining __eq__ without __hash__ does not
+        # have): it names no known function either, so the registry answers it
+        # as a callable of the caller's own
+        funcname, func_impl = _dispatch.custom(func)
+    if func_impl is None:
+        # a function that is known but not implemented here
+        raise missing_impl_error(funcname)
+    if isinstance(funcname, str):
+        # a known function: the nan variants drop the nans of the input first
         if funcname.startswith("nan"):
             if np.ndim(a) == 0:
                 raise ValueError("nan-version not supported for scalar input.")
@@ -829,7 +840,13 @@ def _aggregate_base(
         dtype = check_dtype(dtype, funcname, a, len(group_idx))
         fill_value = resolve_fill_value(funcname, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=funcname)
-        ret = func(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
+    else:
+        # a callable of the caller's own: it sees the values as they are, and
+        # its result is a number of its own making - the dtype it asked for is
+        # the one it gets
+        fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
+
+    ret = func_impl(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
     # deal with ndimensional indexing
     if ndim_idx > 1:
@@ -867,7 +884,6 @@ def aggregate(
         dtype=dtype,
         func=func,
         axis=axis,
-        _impl_dict=_impl_dict,
         **kwargs,
     )
 

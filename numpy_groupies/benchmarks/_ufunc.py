@@ -6,11 +6,11 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
+    Registry,
+    Resolved,
     aggregate_common_doc,
-    build_dispatch,
     custom_callable,
     missing_impl_error,
-    resolve_name,
 )
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.utils import (
@@ -165,7 +165,19 @@ _impl_dict = {
     "len": _len,
 }
 
-_dispatch = build_dispatch(_impl_dict, aliasing)
+
+def _custom_operation(func: Any) -> Resolved:
+    """The ufunc backend has no operation for a callable of the caller's own.
+
+    A ufunc dispatch needs a function of numpy's own, so a callable of the
+    caller's own is nothing this backend can do - and a func that named
+    nothing at all says so first.
+    """
+    custom_callable(func)
+    raise NotImplementedError("No such ufunc available") from None
+
+
+_dispatch = Registry(_impl_dict, aliasing, _custom_operation)
 
 
 def aggregate(
@@ -179,19 +191,15 @@ def aggregate(
     axis: int | None = None,
     **kwargs: Any,
 ) -> npt.NDArray[np.generic]:
-    funcname: str
     try:
-        funcname, _ = _dispatch[func]
-    except (KeyError, TypeError):
-        # no key of the table, so not a function this backend can hand to a
-        # ufunc: a name that is known elsewhere says which one is missing, a
-        # callable of the caller's own is nothing a ufunc dispatch has, and
-        # anything else named nothing at all
-        name = resolve_name(func, aliasing)
-        if name is not None:
-            raise missing_impl_error(name) from None
-        custom_callable(func)
-        raise NotImplementedError("No such ufunc available") from None
+        funcname, impl = _dispatch[func]
+    except TypeError:
+        # a func that cannot be a key of the table at all: the registry answers
+        # it as a callable of the caller's own, which a ufunc dispatch cannot do
+        funcname, impl = _dispatch.custom(func)
+    if impl is None:
+        # a name that is known elsewhere says which one is missing here
+        raise missing_impl_error(funcname)
     return _aggregate_base(
         group_idx,
         a,
@@ -201,7 +209,6 @@ def aggregate(
         dtype=dtype,
         func=funcname,
         axis=axis,
-        _impl_dict=_impl_dict,
         _dispatch=_dispatch,
         **kwargs,
     )

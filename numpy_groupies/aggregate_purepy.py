@@ -9,8 +9,9 @@ from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
+    Registry,
+    Resolved,
     aggregate_common_doc,
-    build_dispatch,
     check_complex_dtype,
     check_fixed_fill_value,
     custom_callable,
@@ -225,7 +226,18 @@ _impl_dict: dict[str, Callable[..., Any]] = {
 }
 _impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not in funcs_no_separate_nan)
 
-_dispatch = build_dispatch(_impl_dict, aliasing)
+
+def _custom_operation(func: Any) -> Resolved:
+    """The operation of a callable of the caller's own.
+
+    The pure python implementation runs any callable, so the callable is its
+    own implementation.
+    """
+    callable_ = custom_callable(func)
+    return Resolved(callable_, callable_)
+
+
+_dispatch = Registry(_impl_dict, aliasing, _custom_operation)
 
 
 def _a_dtype(a: Sequence[Any]) -> type:
@@ -311,20 +323,18 @@ def aggregate(
                 raise ValueError("group_idx contains negative value")
 
     try:
-        func, impl = _dispatch[func]
-    except (KeyError, TypeError):
-        # no key of the table, either because no function goes by that name or
-        # because func could not be one of its keys (a dict asks its keys for a
-        # hash): a callable of the caller's own is its own implementation, and
-        # anything else says that it named nothing
-        func = impl = custom_callable(func)
-    else:
-        # a function that is known but not implemented here - the table answers
-        # that too, and says it before a single group is aggregated
-        if impl is None:
-            raise missing_impl_error(func)
+        funcname, impl = _dispatch[func]
+    except TypeError:
+        # a func that cannot be a key of the table at all: it names no known
+        # function either, so the registry answers it as a callable of the
+        # caller's own
+        funcname, impl = _dispatch.custom(func)
+    if impl is None:
+        # a function that is known but not implemented here - the registry
+        # answers that too, and says it before a single group is aggregated
+        raise missing_impl_error(funcname)
     if is_scalar_input(vals):
-        if func not in ("sum", "prod", "len"):
+        if funcname not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
         # a 0d array stands in for the numpy scalar it holds and the list wants
         # values, not 0d arrays - [()] is the dtype preserving way to get one
@@ -336,46 +346,43 @@ def aggregate(
 
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it
-    fill_value = resolve_fill_value(func, fill_value, _a_dtype(vals))
+    fill_value = resolve_fill_value(funcname, fill_value, _a_dtype(vals))
     # the numpy implementations look the fill value against the datatype of the
     # result, not of the values: neither a count nor a boolean answer holds a nan
-    check_fixed_fill_value(func, fill_value)
-    if dtype is not None and isinstance(func, str):
+    check_fixed_fill_value(funcname, fill_value)
+    if dtype is not None and isinstance(funcname, str):
         # python numbers carry no dtype at all, so this is the one place where
         # the pure python implementation has to reject a non-complex dtype
-        check_complex_dtype(_a_dtype(vals), dtype, func)
+        check_complex_dtype(_a_dtype(vals), dtype, funcname)
 
     # the position of every value in the input, which is the position the
     # reductions reporting one have to name.  Taken before the nan filter below
     # shortens the input, or those positions would count the removed values too
     pos: Sequence[int] = range(len(vals))
 
-    if isinstance(func, str):
-        if func.startswith("nan"):
-            func = func[3:]
-            # remove nans (works for complex values, where math.isnan fails) -
-            # a group of nothing but nans loses every one of its values and is
-            # then left to the fill value, exactly like a group missing from
-            # group_idx, which is what the numpy implementations make of such a
-            # group too.  Without the case below there is nothing left to
-            # unpack once every value was a nan
-            kept = [(p, ix, val) for p, ix, val in zip(pos, idx, vals) if val == val]
-            if not kept:
-                return [fill_value] * size
-            pos, idx, vals = zip(*kept)
+    if isinstance(funcname, str) and funcname.startswith("nan"):
+        # remove nans (works for complex values, where math.isnan fails) -
+        # a group of nothing but nans loses every one of its values and is
+        # then left to the fill value, exactly like a group missing from
+        # group_idx, which is what the numpy implementations make of such a
+        # group too.  Without the case below there is nothing left to
+        # unpack once every value was a nan
+        kept = [(p, ix, val) for p, ix, val in zip(pos, idx, vals) if val == val]
+        if not kept:
+            return [fill_value] * size
+        pos, idx, vals = zip(*kept)
 
-        func = _impl_dict[func]
-    if func is _sort:
+    if impl is _sort:
         return _sort(idx, vals, reverse=kwargs.get("reverse", False))
-    if func in (_mean, _var, _std):
-        _check_integer_precision(vals, func)
+    if impl in (_mean, _var, _std):
+        _check_integer_precision(vals, impl)
 
     # sort data and evaluate function on groups
     ret = [fill_value] * size
-    if not getattr(func, "x_and_idx", False):
+    if not getattr(impl, "x_and_idx", False):
         data: list[tuple[Any, ...]] = sorted(zip(idx, vals), key=operator.itemgetter(0))
         for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
-            ret[ix] = func([val for _, val in group], **kwargs)
+            ret[ix] = impl([val for _, val in group], **kwargs)
     else:
         # a group holding a nan has no extreme to point at, and so no position to
         # name either: the vectorised kernels leave such a group to the fill
@@ -385,7 +392,7 @@ def aggregate(
         for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
             if ix in poisoned:
                 continue  # stays at the fill value
-            ret[ix] = func([(p, val) for p, _, val in group], **kwargs)
+            ret[ix] = impl([(p, val) for p, _, val in group], **kwargs)
 
     return ret
 
