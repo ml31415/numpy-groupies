@@ -1,8 +1,8 @@
 """Operations with fully custom pass structures.
 
 ``median`` is an order statistic: values are placed group by group via a
-counting sort (O(n)) and the middle of each group is then *selected* via
-partition (O(n) on average) instead of sorting within the groups.
+counting sort (O(n)) and the middle of each group is then *selected* (O(n) on
+average) instead of sorting within the groups.
 ``sort`` uses the same counting-sort placement, but orders every group-block -
 by insertion sort while the block is small, by ``np.sort`` beyond that - and
 scatters the blocks back to the positions their group occupies in the input.
@@ -19,33 +19,13 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numba.compose import (
     build_custom_kernel,
     build_kernel,
+    complex_less,
     output_size,
     rule_float,
     rule_same,
 )
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
-from numpy_groupies.aggregate_numpy import _aggregate_base
-from numpy_groupies.utils import AValue, RavelOrder
-
-
-def _numpy_fallback(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    func: str,
-    size: int | None,
-    fill_value: float,
-    order: RavelOrder,
-    dtype: npt.DTypeLike | None,
-    axis: int | None,
-) -> npt.NDArray[np.number]:
-    """Hand an input dtype the compiled drivers cannot handle to numpy.
-
-    Reached for complex input of ``median``: numba can neither partition
-    complex values nor select a middle one of them.  ``sort`` does not need
-    this - ``np.sort`` of numba orders complex like numpy does.
-    """
-    return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
 
 
 def _median_valid_plain(
@@ -91,29 +71,132 @@ def _median_valid_nan(
     return m
 
 
-def _median_middle(values: npt.NDArray[np.number]) -> typing.Any:
-    """select the middle value(s) of a group - no sorting needed"""
-    m = len(values)
-    part = np.partition(values, m // 2)
-    if m % 2 == 1:
-        return part[m // 2]
-    # the lower middle is the maximum of the unsorted left half; the 1.0
-    # promotes integral input to float64, just like np.median promotes
-    # before averaging - summing the two middles in their own dtype
-    # overflows (int64 2**62 + 2**62) and adds bool as a logical or
-    return (np.max(part[: m // 2]) * 1.0 + part[m // 2]) / 2
+# The number of partition passes a selection may make per power of two of the
+# length of the block it works on, before it orders the block instead: a
+# quickselect is O(n) on average, and the fallback keeps the worst case at
+# O(n log n).
+_SELECT_PASSES = 8
+
+
+def _select_kth(
+    arr: npt.NDArray[np.number],
+    lo: int,
+    hi: int,
+    k: int,
+) -> typing.Any:
+    """The k-th smallest of ``arr[lo:hi]``, the block reordered in place.
+
+    A quickselect: the block is partitioned around a pivot until the position
+    of the wanted element is settled.  The pivot is the median of the first,
+    the middle and the last element of the range, which keeps the number of
+    passes logarithmic for the blocks a group is made of - sorted, reversed
+    and constant blocks alike.  A block that needs more passes than the limit
+    allows is ordered instead, so that the worst case stays at O(n log n).
+
+    ``k`` is an index into ``arr``, not an offset into the range.
+
+    Numba's ``np.partition`` would do the same job, but it copies every block
+    it is given and hands the copy back (measured 9.2ms against 1.2ms for
+    this, over 500k values in 1000 groups) - and the copy is not even needed,
+    since the block is a temporary that the median does not care about.
+
+    The values are compared with ``complex_less``, the ordering every other
+    kernel of this package compares with: numpy orders complex values
+    lexicographically, and the median of a complex group is the middle of that
+    order.  For the real dtypes the call is the plain comparison - the branch
+    on the dtype is settled when the kernel is compiled.
+    """
+    limit = _SELECT_PASSES
+    span = hi - lo
+    remaining = span
+    while remaining > 1:
+        remaining >>= 1
+        limit += 4
+    while span > 1:
+        limit -= 1
+        if limit <= 0:
+            # the fallback: order the range and take the element from there
+            arr[lo:hi].sort()
+            return arr[k]
+        mid = lo + span // 2
+        # the pivot: the median of the first, the middle and the last value of
+        # the range, with the ordering of the package - for the real dtypes
+        # that is the plain comparison, for complex values it is the
+        # lexicographic order numpy uses
+        x = arr[lo]
+        y = arr[mid]
+        z = arr[hi - 1]
+        if complex_less(x, y):
+            small, middle = x, y
+        else:
+            small, middle = y, x
+        if complex_less(middle, z):
+            pivot = middle
+        elif complex_less(small, z):
+            pivot = z
+        else:
+            pivot = small
+        i = lo - 1
+        j = hi
+        while True:
+            i += 1
+            while complex_less(arr[i], pivot):
+                i += 1
+            j -= 1
+            while complex_less(pivot, arr[j]):
+                j -= 1
+            if i >= j:
+                break
+            arr[i], arr[j] = arr[j], arr[i]
+        # everything in arr[lo..j] is at most the pivot and everything in
+        # arr[j+1..hi-1] is at least it, so the wanted element is in one of
+        # the two halves
+        if k <= j:
+            hi = j + 1
+        else:
+            lo = j + 1
+        span = hi - lo
+    return arr[k]
 
 
 def _median_driver_factory(nans: bool) -> typing.Any:
     # every operation builds its own copies of the shared helpers - the
     # compiled specialization of one must not reach into the other (see
     # compose.build_kernel)
+    op_name = "nanmedian" if nans else "median"
     _count = njit_stable(group_count)
     _starts = njit_stable(group_starts)
     _place = njit_stable(group_place)
     _valid_plain = njit_stable(_median_valid_plain)
     _valid_nan = njit_stable(_median_valid_nan)
-    _middle = njit_stable(_median_middle)
+    # the selection and the middle that uses it: the middle closes over the
+    # selection, so that the compiled block belongs to the operation that uses
+    # it (see njit_stable)
+    _select = njit_stable(_select_kth, name=f"{op_name}_select")
+
+    def _middle(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> typing.Any:
+        """the middle value(s) of the block at ``a_sorted[begin:begin+m]``.
+
+        No sorting needed: the wanted element is selected in place, and the
+        block is left in the order the selection put it in - the median does
+        not care about the order of the values it looks at.
+        """
+        k = m // 2
+        upper = _select(a_sorted, begin, begin + m, begin + k)
+        if m % 2 == 1:
+            return upper
+        # the lower middle is the largest of the left half, which the
+        # selection left in place; the 1.0 promotes integral input to float64,
+        # just like np.median promotes before averaging - summing the two
+        # middles in their own dtype overflows (int64 2**62 + 2**62) and adds
+        # bool as a logical or
+        lower = a_sorted[begin]
+        for i in range(begin + 1, begin + k):
+            if complex_less(lower, a_sorted[i]):
+                lower = a_sorted[i]
+        return (lower * 1.0 + upper) / 2
+
+    _middle = njit_stable(_middle, name=f"{op_name}_middle")
 
     def driver(
         group_idx: npt.NDArray[np.integer],
@@ -145,7 +228,7 @@ def _median_driver_factory(nans: bool) -> typing.Any:
                     # all-nan group: it keeps the fill value
                     out[g] = fill_value
                 else:
-                    out[g] = _middle(buf[:m])
+                    out[g] = _middle(buf, 0, m)
             else:
                 m = _valid_plain(g, a_sorted, counts, starts)
                 if m == 0:
@@ -158,7 +241,7 @@ def _median_driver_factory(nans: bool) -> typing.Any:
                     # nan in every part it has (for a real dtype: the plain nan)
                     out[g] = out[g] * np.nan
                 else:
-                    out[g] = _middle(a_sorted[starts[g] : starts[g] + m])
+                    out[g] = _middle(a_sorted, starts[g], m)
         return out
 
     return njit_stable(driver, name=f"{'nan' if nans else ''}median_driver")
@@ -169,7 +252,6 @@ median = build_custom_kernel(
     driver_factory=_median_driver_factory,
     rule=rule_float,
     fill_default=np.nan,
-    fallback=_numpy_fallback,
     doc="Median of the values of every group",
 )
 
