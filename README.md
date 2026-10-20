@@ -230,6 +230,7 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 | `median`         |  48.30 |  11.54 |    --- |  27.98 |
 | `sort`           | 137.69 |  26.21 |    --- |    --- |
 | `cumsum`         |  44.65 |   0.62 |    --- |   7.27 |
+| `array`          |  36.52 |   2.07 |    --- |    --- |
 | custom callable  | 143.21 |  42.99 |    --- | 109.29 |
 
 Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.

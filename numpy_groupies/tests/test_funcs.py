@@ -14,11 +14,11 @@ import numpy as np
 import pytest
 
 from numpy_groupies.tests.helpers import (
+    assert_same_result,
     func_list,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
-from numpy_groupies.tests.test_collect import assert_same_result
 
 
 def test_len(impl, group_size=5):

@@ -62,6 +62,9 @@ See `--help` for further options. `----` in the table below means the function i
 | cummin       |         ---- |        0.804 |         ---- |         ---- |       13.140 |
 | arbitrary    |      143.205 |       42.987 |         ---- |         ---- |      109.294 |
 | sort         |      137.691 |       26.210 |         ---- |         ---- |         ---- |
+| array        |       36.524 |        2.074 |         ---- |         ---- |         ---- |
+
+The `array` row is the collecting function, which hands out the values of every group instead of reducing them to one number. It is the one function where the two numpy-based backends differ by an order of magnitude: the NumPy implementation sorts the values by their group (a stable argsort of 500,000 labels), the Numba one counts the groups and places the values in their blocks - a counting sort, which is linear and needs no comparison at all. The other implementations have no such function.
 
 ## Sorting across group counts
 

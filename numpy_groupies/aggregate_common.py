@@ -155,6 +155,11 @@ funcs_common = [
 ]
 funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan"])
 
+# the functions that collect the values of a group instead of reducing them to
+# one number: their result is a sequence per group, which the comparisons that
+# work on numbers cannot take in one go
+funcs_collecting = frozenset(["array"])
+
 
 class _DefaultFillValue:
     """Sentinel for ``fill_value``, asking for the function specific default."""

@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
+from numpy_groupies.aggregate_common import funcs_collecting
 
 aggregate_numba: Any
 
@@ -176,6 +177,31 @@ func_list = (
     "nansumofsquares",
     "array",
 )
+
+
+def assert_same_result(got, want, func, rtol=10**-10):
+    """Compare the results of two backends, whatever the function returns.
+
+    The collecting functions hand out a sequence per group, the others one
+    number - the comparison looks at the one it is given, so that the tests
+    over ``func_list`` need no exception for the shape of the result.
+    """
+    if func in funcs_collecting:
+        _assert_same_groups(got, want)
+    else:
+        np.testing.assert_allclose(got, want, rtol=rtol)
+
+
+def _assert_same_groups(got, want):
+    """Compare two collections of per-group sequences."""
+    groups = list(got) if isinstance(got, list) else np.ravel(got)
+    expected = list(want) if isinstance(want, list) else np.ravel(want)
+    assert len(groups) == len(expected), f"{len(groups)} groups against {len(expected)}"
+    for g, (one, other) in enumerate(zip(groups, expected)):
+        if one is None or other is None:
+            assert one is None and other is None, f"group {g}: {one!r} != {other!r}"
+        else:
+            np.testing.assert_array_equal(one, other, err_msg=f"group {g}")
 
 
 def is_purepy(impl, *args, **kwargs):

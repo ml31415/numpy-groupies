@@ -16,6 +16,7 @@ import timeit
 import numpy as np
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
+from numpy_groupies.aggregate_common import funcs_collecting
 from numpy_groupies.benchmarks import _grouploop, _ufunc
 
 try:
@@ -80,6 +81,7 @@ func_list = (
     "cummin",
     arbitrary,
     "sort",
+    "array",
 )
 
 
@@ -93,6 +95,25 @@ def benchmark_data(size=5e5, seed=100, groups=1000):
     nan_share = np.mean(np.isnan(nana))
     assert 0.15 < nan_share < 0.25, f"{nan_share * 100:3f}% nans"
     return a, nana, group_idx
+
+
+def _assert_same_result(got, want, func_name):
+    """Whether two results of the same function agree.
+
+    The collecting function hands out a sequence per group, which numpy's own
+    comparison cannot take in one go - the groups are compared one by one.
+    """
+    if func_name in funcs_collecting:
+        groups = list(got) if isinstance(got, list) else np.ravel(got)
+        expected = list(want) if isinstance(want, list) else np.ravel(want)
+        assert len(groups) == len(expected), f"{len(groups)} groups against {len(expected)}"
+        for one, other in zip(groups, expected):
+            if one is None or other is None:
+                assert one is None and other is None, f"{one!r} != {other!r}"
+            else:
+                np.testing.assert_array_equal(one, other)
+        return
+    np.testing.assert_array_almost_equal(got, want)
 
 
 def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, funcs=func_list, on_row=None):
@@ -124,7 +145,7 @@ def single_run(implementations, group_idx, a, nana, *, repeat, raise_errors, fun
             else:
                 results.append(res)
                 try:
-                    np.testing.assert_array_almost_equal(res, results[0])
+                    _assert_same_result(res, results[0], func_name)
                 except AssertionError:
                     cells.append("FAIL")
                 else:

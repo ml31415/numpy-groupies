@@ -13,11 +13,11 @@ import pytest
 
 from numpy_groupies import aggregate_np, aggregate_purepy
 from numpy_groupies.tests.helpers import (
+    assert_same_result,
     func_list,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
-from numpy_groupies.tests.test_collect import assert_same_result
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64], ids=["float16", "float32", "float64"])
