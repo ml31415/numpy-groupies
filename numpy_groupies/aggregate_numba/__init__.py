@@ -37,11 +37,6 @@ def aggregate(
     cache: bool = True,
     **kwargs: typing.Any,
 ) -> npt.NDArray[np.number]:
-    # the name of the function and the implementation of it - a name the
-    # dispatch table does not know leaves the name empty and hands the func
-    # to the custom-callable path below
-    funcname = ""
-    aggregate_op: typing.Callable[..., typing.Any] | None = None
     try:
         funcname, aggregate_op = _dispatch[func]
     except (KeyError, TypeError):
@@ -49,10 +44,7 @@ def aggregate(
         # because func could not be one of its keys (a dict asks its keys for a
         # hash): both leave the caller's own func to ``_aggregate_custom``, which
         # tells a func that named nothing from a func that can be run
-        aggregate_op = None
-    if aggregate_op is None and funcname:
-        # a function that is known but not implemented here
-        raise missing_impl_error(funcname)
+        funcname, aggregate_op = "", None
 
     # numba has no float16: the values survive the widening cast to float32
     # exactly, so the kernels run on float32 and an inexact result is rounded
@@ -66,6 +58,9 @@ def aggregate(
         a = typing.cast("npt.NDArray[np.number]", a).astype(np.float32)
 
     if aggregate_op is None:
+        if funcname:
+            # a function that is known but not implemented here
+            raise missing_impl_error(funcname)
         if out is not None:
             raise NotImplementedError("out= is only supported for named functions") from None
         ret = _aggregate_custom(group_idx, a, func, size, fill_value, order, dtype, axis, cache, **kwargs)
