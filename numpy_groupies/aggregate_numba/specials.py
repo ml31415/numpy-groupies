@@ -454,6 +454,6 @@ trapezoid = build_kernel(
     forced_fill=0,
     fill_default=0,
     rule=rule_float,
-    ddof_default=1.0,
+    ddof_default=1,
     doc="Trapezoidal integration of the samples of every group",
 )

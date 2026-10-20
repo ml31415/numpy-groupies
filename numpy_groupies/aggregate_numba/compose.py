@@ -43,7 +43,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.utils import AResult
+from numpy_groupies.utils import AResult, AScalar
 
 
 @njit_stable
@@ -185,7 +185,7 @@ def rule_int64(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     return out, out
 
 
-def _resolve_default_fill(fill_default: Any, out_dtype: np.dtype) -> Any:
+def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar:
     """The njit-kernel twin of the DEFAULT_FILL_VALUE resolution: a nan
     default only fits inexact outputs (a complex output needs the nan in both
     parts), integer and bool outputs fall back to 0."""
@@ -217,9 +217,9 @@ def _make_stub(
     stub_name: str,
     driver_getter: Callable[[], Any],
     rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
-    fill_default: Any,
+    fill_default: AScalar,
     doc: str | None,
-    ddof_default: Any = 0,
+    ddof_default: int = 0,
     reject_fill: bool = False,
 ) -> Callable[..., Any]:
     """Create the njit-callable ``aggregate_*`` function of one variant.
@@ -367,7 +367,7 @@ def build_kernel(
     init: Callable[..., Any],
     update: Callable[..., None],
     rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
-    fill_default: Any = 0,
+    fill_default: AScalar = 0,
     forced_fill: float | None = None,
     seed: Callable[..., None] | None = None,
     record: Callable[..., None] | None = None,
@@ -376,12 +376,12 @@ def build_kernel(
     untouched: Callable[..., npt.NDArray[np.bool_]] | None = None,
     update_nan: Callable[..., None] | None = None,
     nans: bool = True,
-    ddof_default: float = 0,
+    ddof_default: int = 0,
     aux_widen: bool = False,
     nton: bool = False,
-    fallback: Callable[..., Any] | None = None,
+    fallback: Callable[..., AResult] | None = None,
     placeable: Callable[[np.dtype | None], bool] | None = None,
-    post: Callable[..., Any] | None = None,
+    post: Callable[..., AResult] | None = None,
     assembles: bool = False,
     doc: str | None = None,
 ) -> KernelPair:
@@ -572,15 +572,15 @@ def build_custom_kernel(
     *,
     driver_factory: Callable[[bool], Any],
     rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
-    fill_default: Any = 0,
+    fill_default: AScalar = 0,
     forced_fill: float | None = None,
     nans: bool = True,
-    ddof_default: float = 0,
+    ddof_default: int = 0,
     aux_widen: bool = False,
     nton: bool = False,
-    fallback: Callable[..., Any] | None = None,
+    fallback: Callable[..., AResult] | None = None,
     placeable: Callable[[np.dtype | None], bool] | None = None,
-    post: Callable[..., Any] | None = None,
+    post: Callable[..., AResult] | None = None,
     assembles: bool = False,
     reject_fill: bool = False,
     doc: str | None = None,

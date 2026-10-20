@@ -33,6 +33,7 @@ from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cu
 from numpy_groupies.aggregate_numba.compose import KernelHandle
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.utils import (
+    AFillValue,
     AResult,
     AScalar,
     AValue,
@@ -66,7 +67,7 @@ def _dtype_fill_plan_cached(
     fill_value: _HashableFillValue,
     n: int,
     scalar: bool,
-) -> tuple[np.dtype, Any]:
+) -> tuple[np.dtype, AFillValue]:
     if scalar and func not in ("sum", "prod", "len"):
         raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
     out_dtype = resolve_output_dtype(dtype, func, a_dtype, n)
@@ -88,7 +89,7 @@ def _dtype_fill_plan(
     fill_value: Any,
     n: int,
     scalar: bool,
-) -> tuple[np.dtype, Any]:
+) -> tuple[np.dtype, AFillValue]:
     """Memoized output-dtype and fill-value resolution.
 
     ``a_dtype`` is the dtype of the aggregated data, ``scalar`` whether that
@@ -121,16 +122,17 @@ def _needs_fallback(handle: KernelHandle, a: AValue) -> bool:
     return getattr(getattr(a, "dtype", None), "kind", "") == "c"
 
 
-def _driver_fill(handle: KernelHandle, fill_value: AScalar) -> AScalar:
+def _driver_fill(handle: KernelHandle, fill_value: AFillValue) -> AScalar:
     """The fill value the driver takes.
 
     An assembling driver takes none - the fill value is the business of the
     post hook - and gets a placeholder in its place.
     """
-    return 0.0 if handle.assembles else fill_value
+    # only the collecting function fills with a sequence, and it assembles
+    return 0.0 if handle.assembles else cast("AScalar", fill_value)
 
 
-def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., Any]:
+def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult]:
     """Create the python-level wrapper around one compiled kernel.
 
     The wrapper holds no kernel machinery of its own: it resolves dtype and
@@ -144,7 +146,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., Any]:
         group_idx: npt.NDArray[np.integer],
         a: AValue,
         size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
-        fill_value: Any = DEFAULT_FILL_VALUE,
+        fill_value: AFillValue = DEFAULT_FILL_VALUE,
         order: RavelOrder = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
@@ -250,7 +252,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., Any]:
                     "AResult",
                     np.unravel_index(cast("npt.NDArray[np.integer]", ret), unravel_shape)[axis],
                 )
-                ret[mask] = fill_value
+                ret[mask] = cast("AScalar", fill_value)
             check_nton_shape(ret, size, func)
             # numpy takes the shape as an int, a sequence of ints or an array
             # of them - the stub admits only the first two
@@ -271,7 +273,7 @@ def _compiled_group_loop(func: Callable[..., Any]) -> Callable[..., Any]:
     place = nb.njit(group_place)
 
     @nb.njit
-    def loop(group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number], ret: Any) -> None:
+    def loop(group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number], ret: npt.NDArray[np.number]) -> None:
         size = len(ret)
         # the counting sort groups the values: it places the values of every
         # group in a contiguous block, in the order they appear in the input
@@ -304,7 +306,7 @@ def build_generic_aggregate(func: Callable[..., Any]) -> Callable[..., Any]:
         group_idx: npt.NDArray[np.integer],
         a: AValue,
         size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
-        fill_value: Any = DEFAULT_FILL_VALUE,
+        fill_value: AFillValue = DEFAULT_FILL_VALUE,
         order: RavelOrder = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
@@ -376,7 +378,7 @@ def _custom_operation(func: Any) -> Resolved:
         group_idx: npt.NDArray[np.integer],
         a: AValue,
         size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
-        fill_value: Any = DEFAULT_FILL_VALUE,
+        fill_value: AFillValue = DEFAULT_FILL_VALUE,
         order: RavelOrder = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
@@ -435,7 +437,7 @@ def _dx_argument(op: Callable[..., Any]) -> Callable[..., Any]:
         group_idx: npt.NDArray[np.integer],
         a: AValue,
         size: int | tuple[int, ...] | None = None,
-        fill_value: Any = DEFAULT_FILL_VALUE,
+        fill_value: AFillValue = DEFAULT_FILL_VALUE,
         order: RavelOrder = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
@@ -460,7 +462,7 @@ def _sort_arguments(op: Callable[..., Any]) -> Callable[..., Any]:
         group_idx: npt.NDArray[np.integer],
         a: AValue,
         size: int | tuple[int, ...] | None = None,
-        fill_value: Any = DEFAULT_FILL_VALUE,
+        fill_value: AFillValue = DEFAULT_FILL_VALUE,
         order: RavelOrder = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
