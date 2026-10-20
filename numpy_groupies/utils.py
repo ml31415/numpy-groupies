@@ -31,8 +31,9 @@ AValue: TypeAlias = npt.NDArray[np.generic] | int | float | complex | np.bool_
 # 'all' and 'any', objects for 'array' - np.generic covers all three
 AResult: TypeAlias = npt.NDArray[np.generic]
 
-# the numbers and flags that can land in an array
-AScalar: TypeAlias = float | int | complex | bool | np.number | np.bool_
+# the numbers and flags that can land in an array - a bool is an int, a
+# np.bool_ is neither an int nor an np.number
+AScalar: TypeAlias = float | int | complex | np.number | np.bool_
 
 # what a fill value can be: a number, the sentinel that asks for the
 # default of the function, a None or - for the object result - a sequence
