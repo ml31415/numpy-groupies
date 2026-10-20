@@ -1,8 +1,8 @@
 """The numba implementation of aggregate: compiled per-dtype kernels behind
 one dispatch, with ``out=`` support and caching for custom callables."""
 
-import typing
 from collections.abc import Callable, Sequence
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -25,7 +25,7 @@ __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
-    func: FuncName | Callable[..., typing.Any] = "sum",
+    func: FuncName | Callable[..., Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
@@ -33,7 +33,7 @@ def aggregate(
     axis: int | None = None,
     out: AResult | None = None,
     cache: bool = True,
-    **kwargs: typing.Any,
+    **kwargs: Any,
 ) -> AResult:
     try:
         funcname, op = _dispatch[func]
@@ -52,19 +52,19 @@ def aggregate(
     is16 = getattr(a, "dtype", None) == np.float16
     if is16 and funcname not in funcs_collecting:
         # a float16 input is always an array - the getattr gate does not narrow the union
-        a = typing.cast("npt.NDArray[np.number]", a).astype(np.float32)
+        a = cast("npt.NDArray[np.number]", a).astype(np.float32)
 
     if op is None:
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
     if isinstance(funcname, str):
-        ret = typing.cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
+        ret = cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
     else:
         # a callable of the caller's own: it has no output array of its own,
         # and its compiled loop is memoized where the cache policy says
         if out is not None:
             raise NotImplementedError("out= is only supported for named functions") from None
-        ret = typing.cast(
+        ret = cast(
             "AResult",
             op(group_idx, a, size, fill_value, order, dtype, axis, cache=cache, **kwargs),
         )

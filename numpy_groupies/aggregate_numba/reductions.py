@@ -1,6 +1,6 @@
 """Streaming one-pass reductions: sums, products, lengths, logic, min/max."""
 
-import typing
+from typing import Any, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
@@ -20,7 +20,7 @@ from numpy_groupies.aggregate_numba.compose import (
 from numpy_groupies.aggregate_numba.jit import njit_stable
 
 
-class ReductionState(typing.NamedTuple):
+class ReductionState(NamedTuple):
     """The state of the streaming reductions that fold every value into a
     per-group accumulator: ``out`` accumulates the reduction and doubles as
     the result, ``untouched`` marks the groups that have not received a value
@@ -34,7 +34,7 @@ class ReductionState(typing.NamedTuple):
     track: bool
 
 
-class SelectionState(typing.NamedTuple):
+class SelectionState(NamedTuple):
     """The state of the select-form reductions (min, max): ``out``
     holds the selected value or the running best and doubles as the result,
     ``pending`` marks the groups that have not seen a value yet - their first
@@ -283,7 +283,7 @@ any = build_kernel(
 )
 
 
-class LastState(typing.NamedTuple):
+class LastState(NamedTuple):
     """The output array carries the last value of each group itself."""
 
     out: npt.NDArray[np.number]
@@ -325,7 +325,7 @@ last = build_kernel(
 )
 
 
-def _first_driver_factory(nan_variant: bool) -> typing.Any:
+def _first_driver_factory(nan_variant: bool) -> Any:
     # The loop body is inlined on purpose: with numba >= 0.67 the composed
     # driver plus a separate njit update call compiles ~12x slower here -
     # see the note in argreductions._argmax_driver_factory.

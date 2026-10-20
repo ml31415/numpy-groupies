@@ -11,7 +11,7 @@ same way the numpy implementation collects the blocks of its own sort, so that
 the two hand out the very same object.
 """
 
-import typing
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -55,7 +55,7 @@ def _placeable(dtype: np.dtype | None) -> bool:
     return dtype in _PLACEABLE
 
 
-def _array_driver_factory(nan_variant: bool) -> typing.Any:
+def _array_driver_factory(nan_variant: bool) -> Any:
     """The compiled driver of the collecting function.
 
     The values of a group are placed in a contiguous block, in the order they
@@ -82,7 +82,7 @@ def _array_driver_factory(nan_variant: bool) -> typing.Any:
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
-    ) -> typing.Any:
+    ) -> Any:
         # the fill value is of no use here, and the dtypes neither - the
         # sequences carry the dtype of the values
         size = output_size(group_idx, size_arg)
@@ -100,11 +100,11 @@ def _array_driver_factory(nan_variant: bool) -> typing.Any:
 
 def _numpy_fallback(
     group_idx: npt.NDArray[np.integer],
-    a: typing.Any,
+    a: Any,
     func: FuncName,
     size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
-    fill_value: typing.Any,
-    order: typing.Any,
+    fill_value: Any,
+    order: Any,
     dtype: npt.DTypeLike | None,
     axis: int | None,
 ) -> npt.NDArray[np.object_]:
@@ -113,7 +113,7 @@ def _numpy_fallback(
     It copies the values around without knowing their type, which the
     compiled driver cannot do - numba has no float16 and no object arrays.
     """
-    return typing.cast(
+    return cast(
         "npt.NDArray[np.object_]",
         _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis),
     )

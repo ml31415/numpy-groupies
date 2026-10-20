@@ -11,14 +11,15 @@ import contextlib
 import hashlib
 import inspect
 import os
-import typing
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import numba as nb
 from numba.core import caching
 
 # windows has no flock - the name is an Optional so the no-op fallback below is
 # an honest annotation and not a type error
-flock: typing.Callable[[int, int], None] | None
+flock: Callable[[int, int], None] | None
 
 try:
     from fcntl import LOCK_EX, LOCK_SH, LOCK_UN, flock
@@ -37,7 +38,7 @@ _cache_revision = "7"
 
 
 @contextlib.contextmanager
-def _advisory_lock(path: str, shared: bool) -> typing.Iterator[None]:
+def _advisory_lock(path: str, shared: bool) -> Iterator[None]:
     """An advisory whole-file lock on *path*, held for the duration of the block.
 
     Without ``fcntl`` (windows) this is a no-op: the platform has no ``flock``
@@ -78,11 +79,11 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
     def _lock_path(self) -> str:
         return os.path.join(self._cache_path, f"{self._index_name}.lock")
 
-    def save(self, key: typing.Any, data: typing.Any) -> None:
+    def save(self, key: Any, data: Any) -> None:
         with _advisory_lock(self._lock_path(), shared=False):
             return super().save(key, data)  # type: ignore[no-any-return]  # numba leaves caching.py unannotated
 
-    def load(self, key: typing.Any) -> typing.Any:
+    def load(self, key: Any) -> Any:
         with _advisory_lock(self._lock_path(), shared=True):
             return super().load(key)
 
@@ -92,11 +93,11 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
 
 
 def njit_stable(
-    py_func: typing.Callable[..., typing.Any] | None = None,
+    py_func: Callable[..., Any] | None = None,
     cache: bool = True,
     name: str | None = None,
-    **options: typing.Any,
-) -> typing.Any:
+    **options: Any,
+) -> Any:
     """``nb.njit`` plus a deterministic dispatcher identity.
 
     Numba draws a dispatcher's uuid lazily from ``uuid.uuid4()`` and embeds
@@ -133,12 +134,12 @@ def njit_stable(
     the case in full.
     """
 
-    def wrap(func: typing.Callable[..., typing.Any]) -> typing.Any:
+    def wrap(func: Callable[..., Any]) -> Any:
         if name is not None:
             # both the fingerprint and the mangled symbol read the qualname,
             # so the rename has to happen before nb.njit is reached
             func.__qualname__ = func.__name__ = name
-        disp: typing.Any = nb.njit(func, cache=cache, **options)
+        disp: Any = nb.njit(func, cache=cache, **options)
         try:
             cells = []
             if func.__closure__ is not None:

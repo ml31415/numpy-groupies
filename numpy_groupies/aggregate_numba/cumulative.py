@@ -5,7 +5,7 @@ position of the value that just arrived - one pass over the data in input
 order (these operations are order-sensitive, unlike the reductions).
 """
 
-import typing
+from typing import NamedTuple
 
 import numpy as np
 import numpy.typing as npt
@@ -13,7 +13,7 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_widen_int
 
 
-class CumulativeState(typing.NamedTuple):
+class CumulativeState(NamedTuple):
     """``running`` accumulates per group, ``out`` records the running value
     at every input position."""
 
@@ -108,7 +108,7 @@ cumprod = build_kernel(
 )
 
 
-class CumExtremaState(typing.NamedTuple):
+class CumExtremaState(NamedTuple):
     """The state of the running extrema: ``running`` holds the best value
     seen so far per group, ``out`` records it at every input position and
     ``pending`` marks the groups that have not seen a value yet (their first

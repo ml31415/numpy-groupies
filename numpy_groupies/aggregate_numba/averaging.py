@@ -6,7 +6,8 @@ between the passes and raise ``OverflowError`` for the same inputs in every
 backend (see ``aggregate_common`` for the policy constants).
 """
 
-import typing
+from collections.abc import Callable
+from typing import Any, NamedTuple
 
 import numba as nb
 import numpy as np
@@ -34,7 +35,7 @@ def _track_extrema(val: float, low: float, high: float) -> None:
 
 
 @nb.extending.overload(_track_extrema)
-def _track_extrema_overload(val: float, low: float, high: float) -> typing.Callable[..., None]:
+def _track_extrema_overload(val: float, low: float, high: float) -> Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
         def _impl(val: float, low: float, high: float) -> None:
@@ -91,7 +92,7 @@ def _mean_limit_check(low: float, high: float, count: int) -> None:
 
 
 @nb.extending.overload(_mean_limit_check)
-def _mean_limit_check_overload(low: float, high: float, count: int) -> typing.Callable[..., None]:
+def _mean_limit_check_overload(low: float, high: float, count: int) -> Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
         def _impl(low: float, high: float, count: int) -> None:
@@ -131,7 +132,7 @@ def _span_limit_check(low: float, high: float, count: int) -> None:
 
 
 @nb.extending.overload(_span_limit_check)
-def _span_limit_check_overload(low: float, high: float, count: int) -> typing.Callable[..., None]:
+def _span_limit_check_overload(low: float, high: float, count: int) -> Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
         def _impl(low: float, high: float, count: int) -> None:
@@ -157,7 +158,7 @@ def _span_limit_check_overload(low: float, high: float, count: int) -> typing.Ca
     return _impl
 
 
-class MeanState(typing.NamedTuple):
+class MeanState(NamedTuple):
     """``out`` doubles as the running sum until the finishing pass divides it
     by ``count``; ``low``/``high`` are the single-element global extrema
     scratch that feed the integer exactness gate."""
@@ -202,7 +203,7 @@ def _mean_gate(st: MeanState, n_values: int) -> None:
     _mean_limit_check(st.low[0], st.high[0], n_values)
 
 
-def _mean_finish(st: MeanState, g: int, fill_value: float, ddof: int) -> typing.Any:
+def _mean_finish(st: MeanState, g: int, fill_value: float, ddof: int) -> Any:
     if st.count[g] > ddof:
         return st.out[g] / st.count[g]
     return fill_value
@@ -222,7 +223,7 @@ mean = build_kernel(
 )
 
 
-class StdState(typing.NamedTuple):
+class StdState(NamedTuple):
     """The running sums of the dispersion kernels: ``out`` accumulates the
     squared deviations in the real output dtype, ``dev`` the deviations
     themselves in the widened auxiliary dtype (complex stays complex),
@@ -248,7 +249,7 @@ def _accumulate_std(val: float, st: StdState, ri: int) -> None:
 
 
 @nb.extending.overload(_accumulate_std)
-def _accumulate_std_overload(val: float, st: StdState, ri: int) -> typing.Callable[..., None]:
+def _accumulate_std_overload(val: float, st: StdState, ri: int) -> Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
         def _impl(val: float, st: StdState, ri: int) -> None:
@@ -315,7 +316,7 @@ def _std_gate(st: StdState, n_values: int) -> None:
     _span_limit_check(st.low[0], st.high[0], n_values)
 
 
-def _std_finish(st: StdState, g: int, fill_value: float, ddof: int) -> typing.Any:
+def _std_finish(st: StdState, g: int, fill_value: float, ddof: int) -> Any:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
@@ -338,7 +339,7 @@ std = build_kernel(
 )
 
 
-def _var_finish(st: StdState, g: int, fill_value: float, ddof: int) -> typing.Any:
+def _var_finish(st: StdState, g: int, fill_value: float, ddof: int) -> Any:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
