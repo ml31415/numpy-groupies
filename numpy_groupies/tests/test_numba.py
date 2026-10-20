@@ -150,6 +150,16 @@ def test_errors_match_slow_path(rng):
         aggregate(group_idx, a[:-1], func="sum")
 
 
+def test_custom_callable_checks_the_indices():
+    """The custom callable groups the values with the counting sort, which
+    checks the group indices on the way."""
+    a = np.arange(4.0)
+    with pytest.raises(ValueError, match="negative"):
+        aggregate(np.array([0, -1, 0, 1]), a, func=np.sum)
+    with pytest.raises(ValueError, match="too large"):
+        aggregate(np.array([0, 1, 0, 1]), a, func=np.sum, size=1)
+
+
 def test_integer_sum_dtype_guess(rng):
     # the 'sum' overflow guess is length dependent, so check several lengths
     for adtype in (np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint32, np.bool_):

@@ -176,6 +176,21 @@ def test_custom_callable(impl, rng):
     np.testing.assert_allclose(actual, expected)
 
 
+def test_custom_callable_gets_the_values_in_the_order_of_the_input(impl):
+    """The values of a group reach the callable in the order they appear in
+    the input - the backends group them in different ways (the numba one
+    counts them into blocks, the numpy ones sort them), and the order has to
+    come out the same everywhere."""
+    group_idx = np.array([0, 1, 0, 1, 0])
+    a = np.array([1.0, 10.0, 2.0, 11.0, 3.0])
+
+    def first_and_last(x):
+        return x[0] + 10 * x[-1]
+
+    actual = impl.aggregate(group_idx, a, func=first_and_last)
+    np.testing.assert_allclose(actual, [31.0, 120.0])
+
+
 @dataclass
 class _spread:
     """The spread of a group, written as an object of one's own.
