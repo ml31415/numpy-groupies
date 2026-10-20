@@ -230,7 +230,7 @@ _default_fill_values: dict[str, AFillValue] = {
 }
 
 
-def _fill_value_key(func: str | Callable[..., Any]) -> str:
+def _fill_value_key(func: str | Callable[..., AScalar]) -> str:
     """Map a function (name, alias or callable) onto a ``_default_fill_values`` key."""
     name = resolve_name(func)
     if name is None:
@@ -286,7 +286,7 @@ def nan_of(dtype: npt.DTypeLike | None) -> AScalar:
 _no_none_result_functions = frozenset(_default_fill_values) - {"array"}
 
 
-def check_filling_with_none(func: str | Callable[..., Any]) -> None:
+def check_filling_with_none(func: str | Callable[..., AScalar]) -> None:
     """Refuse to fill with ``None`` where no result can hold it.
 
     ``None`` is a value and not a request: the request for the default of a
@@ -305,7 +305,7 @@ def check_filling_with_none(func: str | Callable[..., Any]) -> None:
 
 
 def resolve_fill_value(
-    func: str | Callable[..., Any], fill_value: AFillValue, dtype: npt.DTypeLike | None
+    func: str | Callable[..., AScalar], fill_value: AFillValue, dtype: npt.DTypeLike | None
 ) -> AFillValue:
     """Replace the ``DEFAULT_FILL_VALUE`` sentinel with the default of ``func``.
 
@@ -365,7 +365,7 @@ _alias_str = {
     "dsort": "sort",
 }
 
-_alias_builtin: dict[str | Callable[..., Any], str] = {
+_alias_builtin: dict[str | Callable[..., object], str] = {
     all: "all",
     any: "any",
     len: "len",
@@ -378,7 +378,7 @@ _alias_builtin: dict[str | Callable[..., Any], str] = {
 }
 
 
-def get_aliasing(*extra: dict[str | Callable[..., Any], str]) -> dict[str | Callable[..., Any], str]:
+def get_aliasing(*extra: dict[str | Callable[..., object], str]) -> dict[str | Callable[..., object], str]:
     """
     Assembles a dictionary that maps both strings and functions to a list of supported function names.
 
@@ -388,12 +388,12 @@ def get_aliasing(*extra: dict[str | Callable[..., Any], str]) -> dict[str | Call
 
     This function should only be called during import.
     """
-    alias: dict[str | Callable[..., Any], str] = {k: k for k in funcs_common}
+    alias: dict[str | Callable[..., object], str] = {k: k for k in funcs_common}
     alias.update(_alias_str)
     alias.update((fn, fn) for fn in _alias_builtin.values())
     alias.update(_alias_builtin)
     for d in extra:
-        alias.update(cast("dict[str | Callable[..., Any], str]", d))
+        alias.update(cast("dict[str | Callable[..., object], str]", d))
     alias.update((k, k) for k in set(alias.values()))
     # Treat nan-functions as firstclass member and add them directly
     for key in set(alias.values()):
@@ -419,7 +419,7 @@ def can_name_a_function(obj: object) -> bool:
     return type(obj).__hash__ is not None
 
 
-def resolve_name(func: Any, aliasing: Mapping[str | Callable[..., Any], str] = aliasing_py) -> str | None:
+def resolve_name(func: Any, aliasing: Mapping[str | Callable[..., object], str] = aliasing_py) -> str | None:
     """The canonical name of ``func``, or ``None`` where it names no function.
 
     Every name and every alias is a key of ``aliasing`` and every key of it is
@@ -430,14 +430,14 @@ def resolve_name(func: Any, aliasing: Mapping[str | Callable[..., Any], str] = a
     return aliasing.get(func) if can_name_a_function(func) else None
 
 
-def missing_impl_error(name: str | Callable[..., Any]) -> Exception:
+def missing_impl_error(name: str | Callable[..., AScalar]) -> Exception:
     """The error for a function that is known but not implemented by this backend."""
     if isinstance(name, str) and name.startswith("nan") and name[3:] in funcs_no_separate_nan:
         return ValueError(f"{name[3:]} does not have a nan-version")
     return NotImplementedError("No such function available")
 
 
-def custom_callable(func: Any) -> Callable[..., Any]:
+def custom_callable(func: Any) -> Callable[..., AScalar]:
     """The callable behind a ``func`` that is no key of the resolved dispatch table.
 
     A miss of that table says all there is to know: ``func`` is not one of the
@@ -447,7 +447,7 @@ def custom_callable(func: Any) -> Callable[..., Any]:
     here; the hot path is the lookup itself.
     """
     if callable(func):
-        return cast(Callable[..., Any], func)
+        return cast("Callable[..., AScalar]", func)
     raise ValueError(f"func {func} is neither a valid function string nor a callable object")
 
 
@@ -474,11 +474,11 @@ class Resolved(NamedTuple):
     None where the backend knows the function but does not implement it.
     """
 
-    funcname: str | Callable[..., Any]
+    funcname: str | Callable[..., AScalar]
     op: Callable[..., Any] | None
 
 
-class Registry(dict[str | Callable[..., Any], Resolved]):
+class Registry(dict[str | Callable[..., object], Resolved]):
     """The registry of one backend: the functions it knows and the callables of the caller.
 
     Every alias of every known function is a key of the table, holding the
@@ -500,7 +500,7 @@ class Registry(dict[str | Callable[..., Any], Resolved]):
     def __init__(
         self,
         op_dict: Mapping[str, Callable[..., Any]],
-        aliasing: Mapping[str | Callable[..., Any], str],
+        aliasing: Mapping[str | Callable[..., object], str],
         custom: Callable[..., Resolved],
     ) -> None:
         super().__init__({alias: Resolved(name, op) for alias, (name, op) in build_dispatch(op_dict, aliasing).items()})
@@ -572,7 +572,7 @@ _fixed_result_types: dict[str, type] = {
 }
 
 
-def check_fixed_fill_value(func: str | Callable[..., Any], fill_value: AFillValue) -> None:
+def check_fixed_fill_value(func: str | Callable[..., AScalar], fill_value: AFillValue) -> None:
     """Refuse a ``fill_value`` that the result type of ``func`` cannot hold, for
     those functions whose result type the function itself settles.
 
@@ -620,7 +620,7 @@ _complex_real_result = (
 
 
 def check_complex_dtype(
-    a_dtype: npt.DTypeLike, dtype: npt.DTypeLike | None, func_str: str | Callable[..., Any]
+    a_dtype: npt.DTypeLike, dtype: npt.DTypeLike | None, func_str: str | Callable[..., AScalar]
 ) -> None:
     """Complain when a non-complex ``dtype`` is requested for complex input.
 

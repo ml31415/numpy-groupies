@@ -652,7 +652,7 @@ def _generic_callable(
     size: int,
     fill_value: AScalar | None,
     dtype: npt.DTypeLike | None = None,
-    func: Callable[..., Any] = lambda g: g,
+    func: Callable[..., AScalar] = lambda g: g,
     **kwargs: Any,
 ) -> npt.NDArray[np.number]:
     """groups a by inds, and then applies foo to each group in turn, placing
@@ -741,7 +741,7 @@ def _nancumsum(
     return _cumsum(group_idx_nonans, a_nonans, size, fill_value=fill_value, dtype=dtype)
 
 
-_op_dict: dict[str, Callable[..., Any]] = {
+_op_dict: dict[str, Callable[..., AResult]] = {
     "min": _min,
     "max": _max,
     "sum": _sum,
@@ -769,7 +769,7 @@ _op_dict.update(("nan" + k, v) for k, v in list(_op_dict.items()) if k not in fu
 _op_dict["nancumsum"] = _nancumsum
 
 
-def _custom_operation(func: Callable[..., Any]) -> Resolved:
+def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     """The operation of a callable of the caller's own.
 
     The callable is applied to the values of every group, which are collected
@@ -797,7 +797,7 @@ _dispatch = Registry(_op_dict, aliasing, _custom_operation)
 def _aggregate_base(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
-    func: FuncName | Callable[..., Any] | None = "sum",
+    func: FuncName | Callable[..., AScalar] | None = "sum",
     size: int | Sequence[int] | npt.NDArray[np.integer] | None = None,
     fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
@@ -815,7 +815,7 @@ def _aggregate_base(
         group_idx = group_idx.astype(int)
 
     try:
-        funcname, op = _dispatch[cast("str | Callable[..., Any]", func)]
+        funcname, op = _dispatch[cast("str | Callable[..., AScalar]", func)]
     except TypeError:
         # a func that cannot be a key of the table at all (a dict asks its keys
         # for a hash, which an object defining __eq__ without __hash__ does not
@@ -878,7 +878,7 @@ def _aggregate_base(
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
-    func: FuncName | Callable[..., Any] | None = "sum",
+    func: FuncName | Callable[..., AScalar] | None = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",

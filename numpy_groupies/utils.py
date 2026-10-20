@@ -58,7 +58,7 @@ ValidatedInput: TypeAlias = tuple[
 ]
 
 
-def default_fill_value(func: FuncName | Callable[..., Any], dtype: npt.DTypeLike | None = None) -> AFillValue:
+def default_fill_value(func: FuncName | Callable[..., AScalar], dtype: npt.DTypeLike | None = None) -> AFillValue:
     """The value ``aggregate`` uses for groups missing from ``group_idx``.
 
     ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your
@@ -71,7 +71,7 @@ def default_fill_value(func: FuncName | Callable[..., Any], dtype: npt.DTypeLike
 def check_nton_shape(
     ret: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
-    func: str | Callable[..., Any],
+    func: str | Callable[..., AScalar],
 ) -> None:
     """Complain early when a one-out-per-in function has to fill a hole.
 
@@ -100,7 +100,7 @@ def _size_tuple(size: int | tuple[int, ...] | npt.NDArray[np.integer] | None) ->
     return tuple(int(s) for s in size)
 
 
-_alias_numpy: dict[str | Callable[..., Any], str] = {
+_alias_numpy: dict[str | Callable[..., object], str] = {
     np.add: "sum",
     np.sum: "sum",
     np.any: "any",
@@ -262,7 +262,7 @@ def scalar_dtype(a: Any) -> np.dtype:
 
 def check_dtype(
     dtype: npt.DTypeLike | None,
-    func_str: str | Callable[..., Any],
+    func_str: str | Callable[..., AScalar],
     # an array of any dtype the operation may meet, or the one python scalar
     # that stands for it - is_scalar_input below is what tells the two apart
     a: Any,
@@ -280,7 +280,7 @@ def check_dtype(
 
 def resolve_output_dtype(
     dtype: npt.DTypeLike | None,
-    func_str: str | Callable[..., Any],
+    func_str: str | Callable[..., AScalar],
     a_dtype: np.dtype,
     n: int | tuple[int, ...] | None,
 ) -> np.dtype:
@@ -379,7 +379,7 @@ def maxval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
 
 
 def check_fill_value(
-    fill_value: AFillValue, dtype: np.dtype, func: str | Callable[..., Any] | None = None
+    fill_value: AFillValue, dtype: np.dtype, func: str | Callable[..., AScalar] | None = None
 ) -> AFillValue | None:
     if func in ("all", "any", "allnan", "anynan"):
         check_boolean(fill_value)
@@ -479,7 +479,7 @@ def input_validation(
     axis: int | None = None,
     ravel_group_idx: bool = True,
     check_bounds: bool = True,
-    func: str | Callable[..., Any] | None = None,
+    func: str | Callable[..., AScalar] | None = None,
 ) -> ValidatedInput:
     """
     Do some fairly extensive checking of group_idx and a, trying to give the user as much help as

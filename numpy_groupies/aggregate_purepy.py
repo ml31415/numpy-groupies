@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.utils import AFillValue, AValue, RavelOrder
+    from numpy_groupies.utils import AFillValue, AScalar, AValue, RavelOrder
 
 
 # min, max, all, any - builtin
@@ -205,6 +205,8 @@ def _propagate_nan(reduction: Callable[[Sequence[Any]], Any]) -> Callable[[Seque
     return reduction_with_nan
 
 
+# the reductions hand out a scalar, the sorting and the collecting function a
+# sequence - hence Any
 _op_dict: dict[str, Callable[..., Any]] = {
     "min": _propagate_nan(min),
     "max": _propagate_nan(max),
@@ -260,7 +262,7 @@ def _a_dtype(a: Sequence[Any]) -> type:
     return dtype
 
 
-def _check_integer_precision(a: Sequence[Any], func: Callable[..., Any]) -> None:
+def _check_integer_precision(a: Sequence[Any], func: Callable[..., AScalar]) -> None:
     """The backend-uniform overflow gates for integer mean/var/std.
 
     Python ints could compute these exactly, but every backend has to refuse
@@ -282,7 +284,7 @@ def _check_integer_precision(a: Sequence[Any], func: Callable[..., Any]) -> None
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
-    func: FuncName | Callable[..., Any] = "sum",
+    func: FuncName | Callable[..., AScalar] = "sum",
     size: int | None = None,
     fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",

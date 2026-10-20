@@ -262,7 +262,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
     return aggregate
 
 
-def _compiled_group_loop(func: Callable[..., Any]) -> Callable[..., Any]:
+def _compiled_group_loop(func: Callable[..., AScalar]) -> Callable[..., None]:
     """Compile a user callable and wrap the per-group loop around it."""
     nb_func = nb.njit(func)
     # the counting sort of the steps module, compiled for this loop alone:
@@ -291,7 +291,7 @@ def _compiled_group_loop(func: Callable[..., Any]) -> Callable[..., Any]:
     return loop
 
 
-def build_generic_aggregate(func: Callable[..., Any]) -> Callable[..., Any]:
+def build_generic_aggregate(func: Callable[..., AScalar]) -> Callable[..., AResult]:
     """Create the aggregation loop for an arbitrary user callable.
 
     The callable is applied to the values of every group, the data is
@@ -336,12 +336,12 @@ def build_generic_aggregate(func: Callable[..., Any]) -> Callable[..., Any]:
 
 
 @functools.lru_cache(maxsize=128)
-def _get_cached_generic(func: Callable[..., Any]) -> Callable[..., Any]:
+def _get_cached_generic(func: Callable[..., AScalar]) -> Callable[..., AResult]:
     """LRU-cache generic aggregate loops per user callable (bounded)."""
     return build_generic_aggregate(func)
 
 
-def _compiled_loop(func: Callable[..., Any], cache: Any) -> Callable[..., Any]:
+def _compiled_loop(func: Callable[..., AScalar], cache: Any) -> Callable[..., AResult]:
     """The compiled loop of a callable, memoized where the cache policy says.
 
     The policy is a parameter of the call, so that one operation serves every
@@ -353,7 +353,7 @@ def _compiled_loop(func: Callable[..., Any], cache: Any) -> Callable[..., Any]:
         return build_generic_aggregate(func)
     if cache is True:
         return _get_cached_generic(func)
-    cache_map = cast("MutableMapping[Callable[..., Any], Callable[..., Any]]", cache)
+    cache_map = cast("MutableMapping[Callable[..., AScalar], Callable[..., AResult]]", cache)
     op = cache_map.get(func)
     if op is None:
         op = build_generic_aggregate(func)
@@ -361,7 +361,7 @@ def _compiled_loop(func: Callable[..., Any], cache: Any) -> Callable[..., Any]:
     return op
 
 
-def _custom_operation(func: Callable[..., Any]) -> Resolved:
+def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     """The operation of a callable of the caller's own.
 
     The callable is compiled into a loop over the groups.  The compilation is
@@ -382,7 +382,7 @@ def _custom_operation(func: Callable[..., Any]) -> Resolved:
         order: RavelOrder = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
-        cache: bool | MutableMapping[Callable[..., Any], Callable[..., Any]] | None = True,
+        cache: bool | MutableMapping[Callable[..., AScalar], Callable[..., AResult]] | None = True,
         **kwargs: Any,
     ) -> AResult:
         loop = _compiled_loop(callable_, cache)
@@ -427,7 +427,7 @@ _TABLE = (
 )
 
 
-def _dx_argument(op: Callable[..., Any]) -> Callable[..., Any]:
+def _dx_argument(op: Callable[..., AResult]) -> Callable[..., AResult]:
     """Expose the trapezoid's sample spacing under its public name ``dx``.
 
     The kernels receive it in the position otherwise used for ``ddof``.
@@ -448,7 +448,7 @@ def _dx_argument(op: Callable[..., Any]) -> Callable[..., Any]:
     return trapezoid_op
 
 
-def _sort_arguments(op: Callable[..., Any]) -> Callable[..., Any]:
+def _sort_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
     """Expose ``reverse`` and keep the driver arguments jittable.
 
     The flag reaches the kernel in the position otherwise used for ``ddof``,
@@ -479,9 +479,9 @@ def _sort_arguments(op: Callable[..., Any]) -> Callable[..., Any]:
 _ARGUMENT_WRAPPERS = {"trapezoid": _dx_argument, "sort": _sort_arguments}
 
 
-def get_ops() -> dict[str, Callable[..., Any]]:
+def get_ops() -> dict[str, Callable[..., AResult]]:
     """Create the wrapper function of every registered operation variant."""
-    funcs: dict[str, Callable[..., Any]] = {}
+    funcs: dict[str, Callable[..., AResult]] = {}
     for funcname, pair in _TABLE:
         wrap = _ARGUMENT_WRAPPERS.get(funcname)
         op = build_aggregate_op(funcname, pair.plain)

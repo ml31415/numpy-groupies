@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
     from numpy_groupies.aggregate_common import FuncName
-    from numpy_groupies.utils import AFillValue, AResult, AValue, RavelOrder
+    from numpy_groupies.utils import AFillValue, AResult, AScalar, AValue, RavelOrder
 
     class Aggregate(Protocol):
         """The canonical signature of the public ``aggregate``.
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
             self,
             group_idx: npt.NDArray[np.integer],
             a: AValue,
-            func: FuncName | Callable[..., Any] = "sum",
+            func: FuncName | Callable[..., AScalar] = "sum",
             size: int | Sequence[int] | None = None,
             fill_value: AFillValue = ...,
             order: RavelOrder = "C",

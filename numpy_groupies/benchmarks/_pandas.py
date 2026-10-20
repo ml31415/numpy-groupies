@@ -18,6 +18,8 @@ from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
 from numpy_groupies.utils import (
     AFillValue,
+    AResult,
+    AScalar,
     RavelOrder,
     aliasing,
     allnan,
@@ -32,7 +34,7 @@ def _wrapper(
     a: npt.NDArray[np.number],
     size: int | tuple[int, ...] | None,
     fill_value: float,
-    func: str | Callable[..., Any] = "sum",
+    func: str | Callable[..., AScalar] = "sum",
     dtype: np.dtype | None = None,
     ddof: int = 0,
     **kwargs: Any,
@@ -104,7 +106,7 @@ _supported_funcs = [
     "cummax",
     "cummin",
 ]
-_op_dict: dict[str, Callable[..., Any]] = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
+_op_dict: dict[str, Callable[..., AResult]] = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
 _op_dict.update(("nan" + fn, partial(_wrapper, func=fn)) for fn in _supported_funcs if fn not in funcs_no_separate_nan)
 # plain cumsum must propagate NaNs within their group (issue #91), which is
 # pandas skipna=False - nancumsum is handled inside _wrapper instead
@@ -125,7 +127,7 @@ _op_dict.update(
 )
 
 
-def _custom_operation(func: Callable[..., Any]) -> Resolved:
+def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     """The operation of a callable of the caller's own.
 
     pandas' groupby machinery takes any callable, so the wrapper of this
@@ -141,7 +143,7 @@ _dispatch = Registry(_op_dict, aliasing, _custom_operation)
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
-    func: str | Callable[..., Any] = "sum",
+    func: str | Callable[..., AScalar] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",

@@ -15,6 +15,7 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.utils import (
     AFillValue,
+    AScalar,
     RavelOrder,
     aliasing,
     check_boolean,
@@ -167,7 +168,7 @@ _op_dict = {
 }
 
 
-def _custom_operation(func: Callable[..., Any]) -> Resolved:
+def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     """The ufunc backend has no operation for a callable of the caller's own.
 
     A ufunc dispatch needs a function of numpy's own, so a callable of the
@@ -184,7 +185,7 @@ _dispatch = Registry(_op_dict, aliasing, _custom_operation)
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
-    func: str | Callable[..., Any] = "sum",
+    func: str | Callable[..., AScalar] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
