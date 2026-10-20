@@ -182,14 +182,16 @@ def test_pure_python_call_raises():
 
 
 def test_median_rejects_complex_from_njit():
-    # the median driver partitions the values and numba has no order for
-    # complex dtypes - the kernel refuses to compile, aggregate() hands
-    # complex medians to the numpy implementation instead
+    # the median driver selects the middle of every group and numba has no
+    # order for complex dtypes - the kernel refuses to compile, aggregate()
+    # hands complex medians to the numpy implementation instead.  The refusal
+    # comes from the comparison the selection makes: numba types it and fails
+    # to lower it, so the error is a typing error or a not-implemented one.
     @nb.njit
     def wrapped(group_idx, a):
         return kernels.aggregate_median(group_idx, a)
 
-    with pytest.raises(nb.TypingError):
+    with pytest.raises((nb.TypingError, NotImplementedError)):
         wrapped(np.array([0, 1]), np.array([1 + 2j, 3 + 4j]))
 
 
