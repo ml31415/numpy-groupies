@@ -397,13 +397,21 @@ def build_kernel(
 
     # synthesized no-ops for the unused building blocks - all of them get
     # inlined and folded away, the driver never branches on their presence.
-    # Every operation builds its own copies on purpose: numba 0.68 reuses the
-    # compiled specialization of a shared helper across the dispatchers of two
-    # operations with matching signatures in a way that corrupts the boxing of
-    # the second driver's return array (RuntimeError "In
-    # 'NRT_adapt_ndarray_to_python', 'descr' is NULL", reproduced by calling
-    # the nan variants of sum and sumofsquares in that order) - per-operation
-    # copies keep the callers apart
+    # They carry no operation in their name: the four of them are one and the
+    # same function in every operation - same source, no closure over
+    # anything operation specific - so symbol, cache entry and specialization
+    # name the same function everywhere and the operations share one compiled
+    # artifact instead of each carrying a copy of it.  Sharing is only sound
+    # while that holds, and these four once did carry the operation: numba
+    # 0.68 corrupted the boxing of the second driver's return array when the
+    # nan variants of sum and sumofsquares ran in that order (one state
+    # struct, one signature between them), which #129 answered with a name
+    # per operation.  The corruption does not reproduce in either order, cold
+    # or warm cache, so they are shared again - should the error ("In
+    # 'NRT_adapt_ndarray_to_python', 'descr' is NULL") ever come back, the
+    # name is the knob.  The building blocks that *are* used are different
+    # functions per operation, so they keep the name of their operation (see
+    # below) - and so do the drivers and the kernels.
     # the building blocks below are jitted: numba compiles them from the
     # argument types and ignores these annotations, the type checker needs them
     def _seed_none(st: typing.Any, a: typing.Any) -> None:
@@ -420,11 +428,16 @@ def build_kernel(
 
     # the same story in the other direction: the qualname is part of numba's
     # mangled symbol, so nested blocks of this factory need the operation in
-    # their name to keep their environments apart (see njit_stable)
-    seed_c = njit_stable(seed) if seed is not None else njit_stable(_seed_none, name=f"{name}_seed_none")
-    record_c = njit_stable(record) if record is not None else njit_stable(_record_none, name=f"{name}_record_none")
-    gate_c = njit_stable(gate) if gate is not None else njit_stable(_gate_none, name=f"{name}_gate_none")
-    finish_c = njit_stable(finish) if finish is not None else njit_stable(_finish_none, name=f"{name}_finish_none")
+    # their name to keep their environments apart (see njit_stable) - two
+    # different functions that share module, qualname and signature share one
+    # symbol, and a driver loaded from the on-disk cache then binds its
+    # callees into the environment of the other function, correct types and
+    # wrong results (caught for ``last`` against ``nanlast``, both taking an
+    # int64 and a float64 array)
+    seed_c = njit_stable(seed) if seed is not None else njit_stable(_seed_none)
+    record_c = njit_stable(record) if record is not None else njit_stable(_record_none)
+    gate_c = njit_stable(gate) if gate is not None else njit_stable(_gate_none)
+    finish_c = njit_stable(finish) if finish is not None else njit_stable(_finish_none)
     if untouched is not None:
         untouched_c = njit_stable(untouched)
 
