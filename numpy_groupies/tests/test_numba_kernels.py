@@ -15,6 +15,7 @@ import pytest
 
 from numpy_groupies import aggregate_numba, aggregate_numpy
 from numpy_groupies.aggregate_numba import kernels
+from numpy_groupies.tests.reference import aggregate_ref
 
 GROUP_IDX = np.array([0, 0, 1, 1, 1, 3])  # group 2 stays empty
 FLOAT_A = np.array([3.0, 1.0, np.nan, 2.0, 5.0, 4.0])
@@ -181,34 +182,19 @@ def test_pure_python_call_raises():
         kernels.aggregate_mean(GROUP_IDX, FLOAT_A)
 
 
-def test_median_orders_complex_from_njit_like_numpy():
+def test_median_orders_complex_from_njit_like_the_reference():
     # the median driver selects the middle of every group with the ordering
     # of the package, which for complex values is the lexicographic order
-    # numpy uses - so the kernel compiles for them and answers like numpy
+    # numpy uses - so the kernel compiles for them and answers like the
+    # reference does.  The backends themselves are compared against the
+    # reference by the generic tests of the suite.
     @nb.njit
     def wrapped(group_idx, a):
         return kernels.aggregate_median(group_idx, a)
 
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
-    np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_numpy.aggregate(group_idx, a, func="median"))
-
-
-def test_median_complex_agrees_with_numpy():
-    # the layer-2 wrapper answers complex input with the compiled kernel now -
-    # it must agree with the numpy backend exactly
-    group_idx = np.array([0, 0, 1])
-    a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
-    ret = aggregate_numba.aggregate(group_idx, a, func="median")
-    assert ret.dtype == np.complex128
-    np.testing.assert_array_equal(ret, aggregate_numpy.aggregate(group_idx, a, func="median"))
-
-
-def test_nanmedian_complex_agrees_with_numpy():
-    group_idx = np.array([0, 0, 1])
-    a = np.array([1 + 2j, np.nan * 1j, 5 + 6j])
-    ret = aggregate_numba.aggregate(group_idx, a, func="nanmedian")
-    np.testing.assert_array_equal(ret, aggregate_numpy.aggregate(group_idx, a, func="nanmedian"))
+    np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="median", size=2))
 
 
 def test_sort_orders_complex_from_njit_like_numpy():
