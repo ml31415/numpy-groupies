@@ -66,13 +66,12 @@ def _array_driver_factory(nan_variant: bool) -> typing.Any:
     function is an empty sequence, and a custom one (a scalar or ``None``) is
     applied by the post hook, which knows the groups that received no value.
     """
-    op_name = "array"
-    # the copies get a name of their own: numba mangles the symbol of a
-    # compiled function from module, qualname and signature, and two
-    # operations sharing those share one symbol (see compose.build_kernel)
-    _count = njit_stable(group_count, name=f"{op_name}_group_count")
-    _starts = njit_stable(group_starts, name=f"{op_name}_group_starts")
-    _place = njit_stable(group_place, name=f"{op_name}_group_place")
+    # every operation builds its own copies of the shared helpers - the
+    # compiled specialization of one must not reach into the other (see
+    # compose.build_kernel)
+    _count = njit_stable(group_count)
+    _starts = njit_stable(group_starts)
+    _place = njit_stable(group_place)
 
     def driver(
         group_idx: npt.NDArray[np.integer],

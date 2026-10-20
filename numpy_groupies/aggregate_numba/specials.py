@@ -89,13 +89,12 @@ def _median_middle(values: npt.NDArray[np.number]) -> typing.Any:
 
 
 def _median_driver_factory(nans: bool) -> typing.Any:
-    op_name = "nanmedian" if nans else "median"
-    # the copies get a name of their own: numba mangles the symbol of a
-    # compiled function from module, qualname and signature, and two
-    # operations sharing those share one symbol (see compose.build_kernel)
-    _count = njit_stable(group_count, name=f"{op_name}_group_count")
-    _starts = njit_stable(group_starts, name=f"{op_name}_group_starts")
-    _place = njit_stable(group_place, name=f"{op_name}_group_place")
+    # every operation builds its own copies of the shared helpers - the
+    # compiled specialization of one must not reach into the other (see
+    # compose.build_kernel)
+    _count = njit_stable(group_count)
+    _starts = njit_stable(group_starts)
+    _place = njit_stable(group_place)
     _valid = njit_stable(_median_valid)
     _middle = njit_stable(_median_middle)
 
@@ -245,13 +244,12 @@ def _sort_scatter(
 
 
 def _sort_driver_factory(nans: bool) -> typing.Any:
-    op_name = "sort"
-    # the copies get a name of their own: numba mangles the symbol of a
-    # compiled function from module, qualname and signature, and two
-    # operations sharing those share one symbol (see compose.build_kernel)
-    _count = njit_stable(group_count, name=f"{op_name}_group_count")
-    _starts = njit_stable(group_starts, name=f"{op_name}_group_starts")
-    _place = njit_stable(group_place, name=f"{op_name}_group_place")
+    # every operation builds its own copies of the shared helpers - the
+    # compiled specialization of one must not reach into the other (see
+    # compose.build_kernel)
+    _count = njit_stable(group_count)
+    _starts = njit_stable(group_starts)
+    _place = njit_stable(group_place)
     _blocks = njit_stable(_sort_blocks)
     _scatter = njit_stable(_sort_scatter)
 
