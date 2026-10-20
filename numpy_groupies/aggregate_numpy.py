@@ -580,7 +580,7 @@ def _sort(
     return ret
 
 
-def blocks_to_object_array(blocks: Iterable[npt.NDArray[np.number]]) -> npt.NDArray[np.object_]:
+def blocks_to_object_array(blocks: Iterable[npt.NDArray[np.generic]]) -> npt.NDArray[np.object_]:
     """The blocks of the groups as an object array, one sequence per group.
 
     The array is built element by element: ``np.asanyarray`` of a list of
