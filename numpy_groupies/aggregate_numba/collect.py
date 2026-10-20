@@ -31,10 +31,25 @@ from numpy_groupies.utils import (
     resolve_fill_value,
 )
 
-# the dtypes the compiled driver can place - the others (strings, objects,
-# ...) are copied around by the numpy implementation, which does not have to
-# know their type
-_PLACEABLE_KINDS = "biufc"
+# the dtypes the compiled driver can place - the allowlist is exactly what
+# the drivers of the other operations take: numba boxes a float16 at runtime
+# and refuses a float128 at typing time, and strings, objects and the rest it
+# does not know at all - those are copied around by the numpy implementation,
+# which does not have to know their type
+_PLACEABLE = frozenset(
+    map(
+        np.dtype,
+        (
+            np.bool_,
+            *(getattr(np, f"int{w}") for w in (8, 16, 32, 64)),
+            *(getattr(np, f"uint{w}") for w in (8, 16, 32, 64)),
+            np.float32,
+            np.float64,
+            np.complex64,
+            np.complex128,
+        ),
+    )
+)
 
 
 def _can_place(a: AValue) -> bool:
@@ -43,10 +58,7 @@ def _can_place(a: AValue) -> bool:
     Numba has no float16 - the numpy implementation copies the values of that
     dtype around, which keeps them exactly as they are.
     """
-    dtype = getattr(a, "dtype", None)
-    if dtype is None or dtype.kind not in _PLACEABLE_KINDS:
-        return False
-    return not (dtype.kind == "f" and dtype.itemsize == 2)
+    return getattr(a, "dtype", None) in _PLACEABLE
 
 
 def _array_driver_factory(nan_variant: bool) -> typing.Any:

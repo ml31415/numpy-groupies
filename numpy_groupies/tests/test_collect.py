@@ -80,6 +80,18 @@ def test_collecting_keeps_the_dtype(impl):
         assert res[0].dtype == np.float16
 
 
+def test_collecting_keeps_the_widest_float(impl):
+    # float128 is no dtype a compiled driver can place - numba refuses it
+    # while typing - so the values are copied around by the numpy
+    # implementation, which keeps them exact
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1.5, 2.5, 3.5], dtype=np.longdouble)
+    res = impl.aggregate(group_idx, a, func="array")
+    np.testing.assert_array_equal(res[0], [1.5, 2.5])
+    if not is_purepy(impl):
+        assert res[0].dtype == np.longdouble
+
+
 @pytest.mark.parametrize("values", ["a_nans", "a_complex"], ids=["nan", "complex"])
 def test_collecting_keeps_the_values_of_the_block(impl, block, values):
     """the values of a group are handed out as they are.
