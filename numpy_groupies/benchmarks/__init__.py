@@ -12,6 +12,7 @@ import argparse
 import platform
 import sys
 import timeit
+from typing import Any
 
 import numpy as np
 
@@ -31,6 +32,10 @@ try:
     from numpy_groupies.benchmarks import _pandas
 except ImportError:
     _pandas = None
+try:
+    from numpy_groupies.benchmarks import _polars
+except ImportError:
+    _polars = None
 
 
 def arbitrary(iterator):
@@ -248,15 +253,37 @@ def _versions_line(implementations):
         import pandas
 
         postfix += f", Pandas {pandas.__version__}"
+    if "polars" in implementation_names:
+        import polars
+
+        postfix += f", Polars {polars.__version__}"
     return (
         f"*{platform.system()}({platform.machine()}), Python {sys.version.split()[0]}, "
         f"Numpy {np.version.version}{postfix}*"
     )
 
 
-def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1):
+def select_funcs(names: str | None) -> tuple[Any, ...]:
+    """The functions to measure, picked by name.
+
+    Without a selection every function of the table is measured.  The names
+    are the ones the table shows, so ``--funcs min,max`` measures the two
+    extremes and nothing else.
+    """
+    if not names:
+        return func_list
+    known = {getattr(func, "__name__", func): func for func in func_list}
+    wanted = [name.strip() for name in names.split(",") if name.strip()]
+    unknown = [name for name in wanted if name not in known]
+    if unknown:
+        raise SystemExit(f"unknown function(s): {', '.join(unknown)} - known are: {', '.join(known)}")
+    return tuple(known[name] for name in wanted)
+
+
+def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1, funcs=None):
     a, nana, group_idx = benchmark_data(size=size, seed=seed)
-    labels = [getattr(func, "__name__", func) for func in func_list]
+    funcs = func_list if funcs is None else funcs
+    labels = [getattr(func, "__name__", func) for func in funcs]
     out, label_width = _open_report("function", implementations, labels, runs)
 
     def report(label, cells):
@@ -275,6 +302,7 @@ def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False,
                 nana,
                 repeat=repeat,
                 raise_errors=raise_errors,
+                funcs=funcs,
                 on_row=report,
             )
         )
@@ -334,7 +362,7 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
 
 
 # The columns in the order they appear in the table.
-COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "ufunc", "numbagg", "pandas")
+COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "numbagg", "polars", "pandas", "ufunc")
 # of those, the ones that have to be asked for
 OPTIONAL_COLUMNS = COLUMN_ORDER[2:]
 
@@ -353,6 +381,7 @@ def _build_implementations(args):
         # the optional dependencies are None when they are not installed
         "numbagg": _numbagg.aggregate if _numbagg is not None else None,
         "pandas": _pandas.aggregate if _pandas is not None else None,
+        "polars": _polars.aggregate if _polars is not None else None,
     }
     impls = []
     for name in COLUMN_ORDER:
@@ -400,10 +429,15 @@ the two coincide.""",
         help="the numbagg grouped reductions (optional dependency, part of the dev extras)",
     )
     parser.add_argument("--pandas", action="store_true", help="the pandas groupby wrapper (optional dependency)")
+    parser.add_argument("--polars", action="store_true", help="the polars group_by wrapper (optional dependency)")
     parser.add_argument(
         "--sort",
         action="store_true",
         help=f"measure 'sort' only, over the group counts {'-'.join(str(g) for g in SORT_GROUPS)} instead of the full table",
+    )
+    parser.add_argument(
+        "--funcs",
+        help="comma-separated names of the functions to measure, e.g. 'min,max' (default: all of them)",
     )
     parser.add_argument(
         "--runs", type=int, default=1, help="complete measurement passes, the per-cell minimum is reported (default: 1)"
@@ -427,13 +461,23 @@ the two coincide.""",
     if args.all:
         for column in OPTIONAL_COLUMNS:
             setattr(args, column, True)
-    measure = sort_benchmark if args.sort else benchmark
-    measure(
+    if args.sort:
+        # the sort is measured on its own, over the group counts
+        sort_benchmark(
+            _build_implementations(args),
+            repeat=args.repeat,
+            size=args.size,
+            raise_errors=args.raise_errors,
+            runs=max(1, args.runs),
+        )
+        return
+    benchmark(
         _build_implementations(args),
         repeat=args.repeat,
         size=args.size,
         raise_errors=args.raise_errors,
         runs=max(1, args.runs),
+        funcs=select_funcs(args.funcs),
     )
 
 

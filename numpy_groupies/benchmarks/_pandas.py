@@ -172,7 +172,7 @@ def aggregate(
         func=func,
         axis=axis,
         _dispatch=_dispatch,
-        is_pandas=True,
+        len_counts_values=True,
         **kwargs,
     )
 

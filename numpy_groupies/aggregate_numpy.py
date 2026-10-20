@@ -795,7 +795,7 @@ def _aggregate_base(
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     _dispatch: Registry = _dispatch,
-    is_pandas: bool = False,
+    len_counts_values: bool = False,
     **kwargs: Any,
 ) -> npt.NDArray[np.number]:
     iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
@@ -828,7 +828,7 @@ def _aggregate_base(
                     pass
                 else:
                     good = ~np.isnan(a)
-                    if "len" not in funcname or is_pandas:
+                    if "len" not in funcname or len_counts_values:
                         # a is not needed for len, nanlen!
                         # a scalar a raised a branch above, only columns remain
                         a = cast("npt.NDArray[np.number]", a)[good]
