@@ -19,33 +19,13 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numba.compose import (
     build_custom_kernel,
     build_kernel,
+    complex_less,
     output_size,
     rule_float,
     rule_same,
 )
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
-from numpy_groupies.aggregate_numpy import _aggregate_base
-from numpy_groupies.utils import AValue, RavelOrder
-
-
-def _numpy_fallback(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    func: str,
-    size: int | None,
-    fill_value: float,
-    order: RavelOrder,
-    dtype: npt.DTypeLike | None,
-    axis: int | None,
-) -> npt.NDArray[np.number]:
-    """Hand an input dtype the compiled drivers cannot handle to numpy.
-
-    Reached for complex input of ``median``: numba can neither partition
-    complex values nor select a middle one of them.  ``sort`` does not need
-    this - ``np.sort`` of numba orders complex like numpy does.
-    """
-    return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
 
 
 def _median_valid_plain(
@@ -119,6 +99,12 @@ def _select_kth(
     it is given and hands the copy back (measured 9.2ms against 1.2ms for
     this, over 500k values in 1000 groups) - and the copy is not even needed,
     since the block is a temporary that the median does not care about.
+
+    The values are compared with ``complex_less``, the ordering every other
+    kernel of this package compares with: numpy orders complex values
+    lexicographically, and the median of a complex group is the middle of that
+    order.  For the real dtypes the call is the plain comparison - the branch
+    on the dtype is settled when the kernel is compiled.
     """
     limit = _SELECT_PASSES
     span = hi - lo
@@ -133,18 +119,31 @@ def _select_kth(
             arr[lo:hi].sort()
             return arr[k]
         mid = lo + span // 2
+        # the pivot: the median of the first, the middle and the last value of
+        # the range, with the ordering of the package - for the real dtypes
+        # that is the plain comparison, for complex values it is the
+        # lexicographic order numpy uses
         x = arr[lo]
         y = arr[mid]
         z = arr[hi - 1]
-        pivot = max(min(x, y), min(max(x, y), z))
+        if complex_less(x, y):
+            small, middle = x, y
+        else:
+            small, middle = y, x
+        if complex_less(middle, z):
+            pivot = middle
+        elif complex_less(small, z):
+            pivot = z
+        else:
+            pivot = small
         i = lo - 1
         j = hi
         while True:
             i += 1
-            while arr[i] < pivot:
+            while complex_less(arr[i], pivot):
                 i += 1
             j -= 1
-            while arr[j] > pivot:
+            while complex_less(pivot, arr[j]):
                 j -= 1
             if i >= j:
                 break
@@ -193,7 +192,8 @@ def _median_driver_factory(nans: bool) -> typing.Any:
         # bool as a logical or
         lower = a_sorted[begin]
         for i in range(begin + 1, begin + k):
-            lower = max(lower, a_sorted[i])
+            if complex_less(lower, a_sorted[i]):
+                lower = a_sorted[i]
         return (lower * 1.0 + upper) / 2
 
     _middle = njit_stable(_middle, name=f"{op_name}_middle")
@@ -252,7 +252,6 @@ median = build_custom_kernel(
     driver_factory=_median_driver_factory,
     rule=rule_float,
     fill_default=np.nan,
-    fallback=_numpy_fallback,
     doc="Median of the values of every group",
 )
 

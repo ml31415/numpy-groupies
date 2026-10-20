@@ -181,23 +181,22 @@ def test_pure_python_call_raises():
         kernels.aggregate_mean(GROUP_IDX, FLOAT_A)
 
 
-def test_median_rejects_complex_from_njit():
-    # the median driver selects the middle of every group and numba has no
-    # order for complex dtypes - the kernel refuses to compile, aggregate()
-    # hands complex medians to the numpy implementation instead.  The refusal
-    # comes from the comparison the selection makes: numba types it and fails
-    # to lower it, so the error is a typing error or a not-implemented one.
+def test_median_orders_complex_from_njit_like_numpy():
+    # the median driver selects the middle of every group with the ordering
+    # of the package, which for complex values is the lexicographic order
+    # numpy uses - so the kernel compiles for them and answers like numpy
     @nb.njit
     def wrapped(group_idx, a):
         return kernels.aggregate_median(group_idx, a)
 
-    with pytest.raises((nb.TypingError, NotImplementedError)):
-        wrapped(np.array([0, 1]), np.array([1 + 2j, 3 + 4j]))
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
+    np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_numpy.aggregate(group_idx, a, func="median"))
 
 
-def test_median_complex_falls_back_to_numpy():
-    # the layer-2 wrapper keeps working for complex input via the handle's
-    # python-level fallback - it must agree with the numpy backend exactly
+def test_median_complex_agrees_with_numpy():
+    # the layer-2 wrapper answers complex input with the compiled kernel now -
+    # it must agree with the numpy backend exactly
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
     ret = aggregate_numba.aggregate(group_idx, a, func="median")
@@ -205,7 +204,7 @@ def test_median_complex_falls_back_to_numpy():
     np.testing.assert_array_equal(ret, aggregate_numpy.aggregate(group_idx, a, func="median"))
 
 
-def test_nanmedian_complex_falls_back_to_numpy():
+def test_nanmedian_complex_agrees_with_numpy():
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, np.nan * 1j, 5 + 6j])
     ret = aggregate_numba.aggregate(group_idx, a, func="nanmedian")
