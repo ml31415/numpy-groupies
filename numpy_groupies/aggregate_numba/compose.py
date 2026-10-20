@@ -364,17 +364,15 @@ def build_kernel(
 
     # synthesized no-ops for the unused building blocks - all of them get
     # inlined and folded away, the driver never branches on their presence.
-    # They carry no name of their own: the four of them are the same code in
-    # every operation, so one compiled artifact serves them all.
-    # Every operation builds its own copies on purpose: numba 0.68 reuses
-    # the compiled specialization of a shared helper across the dispatchers of
-    # two operations with matching signatures in a way that corrupts the
-    # boxing of the second driver's return array (RuntimeError "In
-    # 'NRT_adapt_ndarray_to_python', 'descr' is NULL", reproduced by calling
-    # the nan variants of sum and sumofsquares in that order) - per-operation
-    # copies keep the callers apart.  The building blocks that *are* used
-    # differ from operation to operation, so they keep the name of their
-    # operation (see below) - and so do the drivers and the kernels.
+    # They carry no operation in their name on purpose: the four of them are
+    # one and the same function in every operation, same source and no
+    # closure over anything operation specific, so symbol, cache entry and
+    # specialization name the same function everywhere and the operations
+    # share one compiled artifact instead of each carrying a copy of it.
+    # That is reuse, and it is only sound as long as it is literally one
+    # function - the building blocks that *are* used are different functions
+    # per operation, so they keep the name of their operation (see below),
+    # and so do the drivers and the kernels.
     # the building blocks below are jitted: numba compiles them from the
     # argument types and ignores these annotations, the type checker needs them
     def _seed_none(st: typing.Any, a: typing.Any) -> None:
@@ -391,7 +389,17 @@ def build_kernel(
 
     # the same story in the other direction: the qualname is part of numba's
     # mangled symbol, so nested blocks of this factory need the operation in
-    # their name to keep their environments apart (see njit_stable)
+    # their name to keep their environments apart (see njit_stable).  Two
+    # different functions that share module, qualname and signature share one
+    # symbol, and a driver loaded from the on-disk cache then binds its
+    # callees into the environment of the other function - correct types and
+    # wrong results (caught for ``last`` against ``nanlast``, both taking an
+    # int64 and a float64 array), and a helper shared by the nan variants of
+    # sum and sumofsquares - one state struct and one signature between them -
+    # corrupted the boxing of the second driver's return array (RuntimeError
+    # "In 'NRT_adapt_ndarray_to_python', 'descr' is NULL", reproduced by
+    # calling the two in that order).  Naming is what keeps two functions
+    # apart, sharing what the operations genuinely have in common
     seed_c = njit_stable(seed) if seed is not None else njit_stable(_seed_none)
     record_c = njit_stable(record) if record is not None else njit_stable(_record_none)
     gate_c = njit_stable(gate) if gate is not None else njit_stable(_gate_none)
