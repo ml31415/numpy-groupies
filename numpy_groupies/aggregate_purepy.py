@@ -202,7 +202,7 @@ def _propagate_nan(reduction: Callable[[Sequence[Any]], Any]) -> Callable[[Seque
     return reduction_with_nan
 
 
-_impl_dict: dict[str, Callable[..., Any]] = {
+_op_dict: dict[str, Callable[..., Any]] = {
     "min": _propagate_nan(min),
     "max": _propagate_nan(max),
     "sum": _sum,
@@ -224,7 +224,7 @@ _impl_dict: dict[str, Callable[..., Any]] = {
     "argmin": _argmin,
     "len": len,
 }
-_impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not in funcs_no_separate_nan)
+_op_dict.update(("nan" + k, v) for k, v in list(_op_dict.items()) if k not in funcs_no_separate_nan)
 
 
 def _custom_operation(func: Any) -> Resolved:
@@ -237,7 +237,7 @@ def _custom_operation(func: Any) -> Resolved:
     return Resolved(callable_, callable_)
 
 
-_dispatch = Registry(_impl_dict, aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation)
 
 
 def _a_dtype(a: Sequence[Any]) -> type:
@@ -323,13 +323,13 @@ def aggregate(
                 raise ValueError("group_idx contains negative value")
 
     try:
-        funcname, impl = _dispatch[func]
+        funcname, op = _dispatch[func]
     except TypeError:
         # a func that cannot be a key of the table at all: it names no known
         # function either, so the registry answers it as a callable of the
         # caller's own
-        funcname, impl = _dispatch.custom(func)
-    if impl is None:
+        funcname, op = _dispatch.custom(func)
+    if op is None:
         # a function that is known but not implemented here - the registry
         # answers that too, and says it before a single group is aggregated
         raise missing_impl_error(funcname)
@@ -372,17 +372,17 @@ def aggregate(
             return [fill_value] * size
         pos, idx, vals = zip(*kept)
 
-    if impl is _sort:
+    if op is _sort:
         return _sort(idx, vals, reverse=kwargs.get("reverse", False))
-    if impl in (_mean, _var, _std):
-        _check_integer_precision(vals, impl)
+    if op in (_mean, _var, _std):
+        _check_integer_precision(vals, op)
 
     # sort data and evaluate function on groups
     ret = [fill_value] * size
-    if not getattr(impl, "x_and_idx", False):
+    if not getattr(op, "x_and_idx", False):
         data: list[tuple[Any, ...]] = sorted(zip(idx, vals), key=operator.itemgetter(0))
         for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
-            ret[ix] = impl([val for _, val in group], **kwargs)
+            ret[ix] = op([val for _, val in group], **kwargs)
     else:
         # a group holding a nan has no extreme to point at, and so no position to
         # name either: the vectorised kernels leave such a group to the fill
@@ -392,7 +392,7 @@ def aggregate(
         for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
             if ix in poisoned:
                 continue  # stays at the fill value
-            ret[ix] = impl([(p, val) for p, _, val in group], **kwargs)
+            ret[ix] = op([(p, val) for p, _, val in group], **kwargs)
 
     return ret
 

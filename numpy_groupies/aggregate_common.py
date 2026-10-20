@@ -426,7 +426,7 @@ def custom_callable(func: Any) -> Callable[..., Any]:
 
 
 def build_dispatch(
-    impl_dict: Mapping[str, Callable[..., Any]], aliasing: Mapping[Any, str]
+    op_dict: Mapping[str, Callable[..., Any]], aliasing: Mapping[Any, str]
 ) -> dict[Any, tuple[str, Callable[..., Any] | None]]:
     """Fuse an aliasing and an implementation table for single-lookup dispatch.
 
@@ -437,19 +437,19 @@ def build_dispatch(
     holds ``(name, None)``, which the caller reports with ``missing_impl_error``
     - so the table answers that question too, without a second lookup.
     """
-    return {alias: (name, impl_dict.get(name)) for alias, name in aliasing.items()}
+    return {alias: (name, op_dict.get(name)) for alias, name in aliasing.items()}
 
 
 class Resolved(NamedTuple):
-    """What a func resolved to: the name of the function and the operation that does the work.
+    """What a func resolved to: the func it names and the operation that does the work.
 
-    The name is the canonical name of a known function, or the callable of the
-    caller's own - which is what tells the two apart.  The operation is None
-    where the backend knows the function but does not implement it.
+    The funcname is the canonical name of a known function, or the callable of
+    the caller's own - which is what tells the two apart.  The operation is
+    None where the backend knows the function but does not implement it.
     """
 
-    name: Any
-    impl: Callable[..., Any] | None
+    funcname: Any
+    op: Callable[..., Any] | None
 
 
 class Registry(dict[Any, Resolved]):
@@ -473,13 +473,11 @@ class Registry(dict[Any, Resolved]):
 
     def __init__(
         self,
-        impl_dict: Mapping[str, Callable[..., Any]],
+        op_dict: Mapping[str, Callable[..., Any]],
         aliasing: Mapping[Any, str],
         custom: Callable[..., Resolved],
     ) -> None:
-        super().__init__(
-            {alias: Resolved(name, impl) for alias, (name, impl) in build_dispatch(impl_dict, aliasing).items()}
-        )
+        super().__init__({alias: Resolved(name, op) for alias, (name, op) in build_dispatch(op_dict, aliasing).items()})
         self._custom_factory = custom
 
     def __missing__(self, key: Any) -> Resolved:

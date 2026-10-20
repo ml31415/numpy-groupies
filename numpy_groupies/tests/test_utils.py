@@ -27,10 +27,10 @@ def test_build_dispatch_resolves_every_alias():
     and no implementation, rather than missing and sending the caller off to a
     second table to find out which of the two it was.
     """
-    implementation = {"sum": sum, "min": min}
+    op_dict = {"sum": sum, "min": min}
     aliasing = {"sum": "sum", "add": "sum", "min": "min", "amin": "min", "nansum": "nansum"}
 
-    dispatch = build_dispatch(implementation, aliasing)
+    dispatch = build_dispatch(op_dict, aliasing)
 
     assert set(dispatch) == set(aliasing)
     assert dispatch["add"] == ("sum", sum)
@@ -59,7 +59,7 @@ def test_a_func_that_is_neither_a_name_nor_a_callable_is_said_so():
 
 def _registry():
     """A registry with two known functions and a factory for the caller's own."""
-    implementation = {"sum": sum, "min": min}
+    op_dict = {"sum": sum, "min": min}
     aliasing = {"sum": "sum", "add": "sum", "min": "min", "nansum": "nansum"}
 
     def custom(func):
@@ -68,7 +68,7 @@ def _registry():
         callable_ = custom_callable(func)
         return Resolved(callable_, callable_)
 
-    return Registry(implementation, aliasing, custom)
+    return Registry(op_dict, aliasing, custom)
 
 
 def test_the_registry_answers_both_kinds_of_func_with_one_lookup():
@@ -80,8 +80,8 @@ def test_the_registry_answers_both_kinds_of_func_with_one_lookup():
     """
     registry = _registry()
 
-    name, impl = registry["add"]
-    assert (name, impl) == ("sum", sum)
+    funcname, impl = registry["add"]
+    assert (funcname, impl) == ("sum", sum)
     # a function the backend does not implement is a key of the table too
     assert registry["nansum"] == ("nansum", None)
 
@@ -89,8 +89,8 @@ def test_the_registry_answers_both_kinds_of_func_with_one_lookup():
     def my_func(values):
         return sum(values)
 
-    name, impl = registry[my_func]
-    assert name is my_func
+    funcname, impl = registry[my_func]
+    assert funcname is my_func
     assert impl is my_func
 
 
@@ -111,8 +111,8 @@ def test_the_registry_answers_a_func_that_cannot_be_a_key():
     func = Callable()
     with pytest.raises(TypeError):
         registry[func]
-    name, impl = registry.custom(func)
-    assert name is func
+    funcname, impl = registry.custom(func)
+    assert funcname is func
     assert impl is func
 
 

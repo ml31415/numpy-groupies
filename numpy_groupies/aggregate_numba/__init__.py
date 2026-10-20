@@ -35,12 +35,12 @@ def aggregate(
     **kwargs: typing.Any,
 ) -> npt.NDArray[np.number]:
     try:
-        funcname, aggregate_op = _dispatch[func]
+        funcname, op = _dispatch[func]
     except TypeError:
         # a func that cannot be a key of the table at all: it names no known
         # function either, so the registry answers it as a callable of the
         # caller's own
-        funcname, aggregate_op = _dispatch.custom(func)
+        funcname, op = _dispatch.custom(func)
 
     # numba has no float16: the values survive the widening cast to float32
     # exactly, so the kernels run on float32 and an inexact result is rounded
@@ -53,13 +53,11 @@ def aggregate(
         # a float16 input is always an array - the getattr gate does not narrow the union
         a = typing.cast("npt.NDArray[np.number]", a).astype(np.float32)
 
-    if aggregate_op is None:
+    if op is None:
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
     if isinstance(funcname, str):
-        ret = typing.cast(
-            "npt.NDArray[np.number]", aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
-        )
+        ret = typing.cast("npt.NDArray[np.number]", op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
     else:
         # a callable of the caller's own: it has no output array of its own,
         # and its compiled loop is memoized where the cache policy says
@@ -67,7 +65,7 @@ def aggregate(
             raise NotImplementedError("out= is only supported for named functions") from None
         ret = typing.cast(
             "npt.NDArray[np.number]",
-            aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, cache=cache, **kwargs),
+            op(group_idx, a, size, fill_value, order, dtype, axis, cache=cache, **kwargs),
         )
     if is16 and dtype is None and ret.dtype.kind == "f":
         ret = ret.astype(np.float16)

@@ -732,7 +732,7 @@ def _nancumsum(
     return _cumsum(group_idx_nonans, a_nonans, size, fill_value=fill_value, dtype=dtype)
 
 
-_impl_dict: dict[str, Callable[..., Any]] = {
+_op_dict: dict[str, Callable[..., Any]] = {
     "min": _min,
     "max": _max,
     "sum": _sum,
@@ -756,8 +756,8 @@ _impl_dict: dict[str, Callable[..., Any]] = {
     "sumofsquares": _sum_of_squres,
     "trapezoid": _trapezoid,
 }
-_impl_dict.update(("nan" + k, v) for k, v in list(_impl_dict.items()) if k not in funcs_no_separate_nan)
-_impl_dict["nancumsum"] = _nancumsum
+_op_dict.update(("nan" + k, v) for k, v in list(_op_dict.items()) if k not in funcs_no_separate_nan)
+_op_dict["nancumsum"] = _nancumsum
 
 
 def _custom_operation(func: Any) -> Resolved:
@@ -769,7 +769,7 @@ def _custom_operation(func: Any) -> Resolved:
     """
     callable_ = custom_callable(func)
 
-    def operation(
+    def op(
         group_idx: npt.NDArray[np.integer],
         a: npt.NDArray[np.number],
         size: int,
@@ -779,10 +779,10 @@ def _custom_operation(func: Any) -> Resolved:
     ) -> npt.NDArray[np.number]:
         return _generic_callable(group_idx, a, size, fill_value, func=callable_, dtype=dtype, **kwargs)
 
-    return Resolved(callable_, operation)
+    return Resolved(callable_, op)
 
 
-_dispatch = Registry(_impl_dict, aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation)
 
 
 def _aggregate_base(
@@ -806,14 +806,14 @@ def _aggregate_base(
         group_idx = group_idx.astype(int)
 
     try:
-        funcname, func_impl = _dispatch[func]
+        funcname, op = _dispatch[func]
     except TypeError:
         # a func that cannot be a key of the table at all (a dict asks its keys
         # for a hash, which an object defining __eq__ without __hash__ does not
         # have): it names no known function either, so the registry answers it
         # as a callable of the caller's own
-        funcname, func_impl = _dispatch.custom(func)
-    if func_impl is None:
+        funcname, op = _dispatch.custom(func)
+    if op is None:
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
     if isinstance(funcname, str):
@@ -846,7 +846,7 @@ def _aggregate_base(
         # the one it gets
         fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
 
-    ret = func_impl(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
+    ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
     # deal with ndimensional indexing
     if ndim_idx > 1:

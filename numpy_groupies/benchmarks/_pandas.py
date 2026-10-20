@@ -103,18 +103,16 @@ _supported_funcs = [
     "cummax",
     "cummin",
 ]
-_impl_dict: dict[str, Callable[..., Any]] = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
-_impl_dict.update(
-    ("nan" + fn, partial(_wrapper, func=fn)) for fn in _supported_funcs if fn not in funcs_no_separate_nan
-)
+_op_dict: dict[str, Callable[..., Any]] = {fn: partial(_wrapper, func=fn) for fn in _supported_funcs}
+_op_dict.update(("nan" + fn, partial(_wrapper, func=fn)) for fn in _supported_funcs if fn not in funcs_no_separate_nan)
 # plain cumsum must propagate NaNs within their group (issue #91), which is
 # pandas skipna=False - nancumsum is handled inside _wrapper instead
-_impl_dict["cumsum"] = partial(_wrapper, func="cumsum", skipna=False)
-_impl_dict["nancumsum"] = partial(_wrapper, func="nancumsum")
+_op_dict["cumsum"] = partial(_wrapper, func="cumsum", skipna=False)
+_op_dict["nancumsum"] = partial(_wrapper, func="nancumsum")
 # plain median propagates NaNs like np.median - pandas skips them by default
 # and GroupBy.median() takes no skipna argument
-_impl_dict["median"] = partial(_wrapper, func="median", _nan_poison=True)
-_impl_dict.update(
+_op_dict["median"] = partial(_wrapper, func="median", _nan_poison=True)
+_op_dict.update(
     allnan=partial(_wrapper, func=allnan),
     anynan=partial(_wrapper, func=anynan),
     len=partial(_wrapper, func="count"),
@@ -136,7 +134,7 @@ def _custom_operation(func: Any) -> Resolved:
     return Resolved(callable_, partial(_wrapper, func=callable_))
 
 
-_dispatch = Registry(_impl_dict, aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation)
 
 
 def aggregate(

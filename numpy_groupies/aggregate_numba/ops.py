@@ -335,11 +335,11 @@ def _compiled_loop(func: typing.Callable[..., typing.Any], cache: typing.Any) ->
     if cache is True:
         return _get_cached_generic(func)
     cache_map = typing.cast("typing.MutableMapping[typing.Any, typing.Any]", cache)
-    aggregate_op = cache_map.get(func)
-    if aggregate_op is None:
-        aggregate_op = build_generic_aggregate(func)
-        cache_map[func] = aggregate_op
-    return aggregate_op
+    op = cache_map.get(func)
+    if op is None:
+        op = build_generic_aggregate(func)
+        cache_map[func] = op
+    return op
 
 
 def _custom_operation(func: typing.Any) -> Resolved:
@@ -355,7 +355,7 @@ def _custom_operation(func: typing.Any) -> Resolved:
             "numba can only compile a function as func, a callable object is not one of those (the numpy implementation runs any callable)"
         ) from None
 
-    def operation(
+    def op(
         group_idx: npt.NDArray[np.integer],
         a: AValue,
         size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
@@ -366,12 +366,10 @@ def _custom_operation(func: typing.Any) -> Resolved:
         cache: typing.Any = True,
         **kwargs: typing.Any,
     ) -> npt.NDArray[np.number]:
-        aggregate_op = _compiled_loop(callable_, cache)
-        return typing.cast(
-            "npt.NDArray[np.number]", aggregate_op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
-        )
+        loop = _compiled_loop(callable_, cache)
+        return typing.cast("npt.NDArray[np.number]", loop(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
 
-    return Resolved(callable_, operation)
+    return Resolved(callable_, op)
 
 
 # --------------------------------------------------------------- registry
@@ -464,7 +462,7 @@ def _sort_arguments(op: typing.Callable[..., typing.Any]) -> typing.Callable[...
 _ARGUMENT_WRAPPERS = {"trapezoid": _dx_argument, "sort": _sort_arguments}
 
 
-def get_funcs() -> dict[str, typing.Callable[..., typing.Any]]:
+def get_ops() -> dict[str, typing.Callable[..., typing.Any]]:
     """Create the wrapper function of every registered operation variant."""
     funcs: dict[str, typing.Callable[..., typing.Any]] = {}
     for funcname, pair in _TABLE:
@@ -477,10 +475,10 @@ def get_funcs() -> dict[str, typing.Callable[..., typing.Any]]:
     return funcs
 
 
-_impl_dict = get_funcs()
+_op_dict = get_ops()
 
 # alias (string or callable) -> (canonical name, wrapper function), every alias
 # of every known function and so one dict lookup on the call path - names this
 # backend has no wrapper for come along holding None, so the lookup answers that
 # question too instead of a second table having to be asked
-_dispatch = Registry(_impl_dict, aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation)

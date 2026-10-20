@@ -153,7 +153,7 @@ def _max(
     return ret
 
 
-_impl_dict = {
+_op_dict = {
     "min": _min,
     "max": _max,
     "sum": _sum,
@@ -177,7 +177,7 @@ def _custom_operation(func: Any) -> Resolved:
     raise NotImplementedError("No such ufunc available") from None
 
 
-_dispatch = Registry(_impl_dict, aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation)
 
 
 def aggregate(
@@ -192,12 +192,12 @@ def aggregate(
     **kwargs: Any,
 ) -> npt.NDArray[np.generic]:
     try:
-        funcname, impl = _dispatch[func]
+        funcname, op = _dispatch[func]
     except TypeError:
         # a func that cannot be a key of the table at all: the registry answers
         # it as a callable of the caller's own, which a ufunc dispatch cannot do
-        funcname, impl = _dispatch.custom(func)
-    if impl is None:
+        funcname, op = _dispatch.custom(func)
+    if op is None:
         # a name that is known elsewhere says which one is missing here
         raise missing_impl_error(funcname)
     return _aggregate_base(
