@@ -7,7 +7,7 @@ of the real implementations with.
 
 from collections.abc import Callable, Sequence
 from functools import partial
-from typing import Any
+from typing import Any, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -29,6 +29,9 @@ from numpy_groupies.utils import (
     check_dtype,
     iscomplexobj,
 )
+
+# the engines of a lazy query, the ones polars knows since 1.29
+Engine = Literal["in-memory", "streaming"]
 
 # the expressions of the group_by machinery, per function name
 _EXPRESSIONS: dict[str, Callable[[], pl.Expr]] = {
@@ -55,10 +58,10 @@ _EXPRESSIONS: dict[str, Callable[[], pl.Expr]] = {
     "anynan": lambda: pl.col("a").is_nan().any(),
     "allnan": lambda: pl.col("a").is_nan().all(),
     # the position of the extreme in the input, not in the group: the position
-    # is a column of its own and the index of the extreme gathers from it
-    # (the gather yields a list, of which the wrapper takes the one element)
-    "argmax": lambda: pl.col("i").gather(pl.col("a").arg_max()).first(),
-    "argmin": lambda: pl.col("i").gather(pl.col("a").arg_min()).first(),
+    # is a column of its own and the index of the extreme picks from it (the
+    # index is that of the group, so the position is fetched from it)
+    "argmax": lambda: pl.col("i").get(pl.col("a").arg_max()),
+    "argmin": lambda: pl.col("i").get(pl.col("a").arg_min()),
 }
 
 # the functions whose result polars reports per group, and that the group
@@ -66,6 +69,68 @@ _EXPRESSIONS: dict[str, Callable[[], pl.Expr]] = {
 # median, while the package counts a nan as a value that makes the whole group
 # answer with the nan
 _POISONED_BY_NAN = frozenset(["min", "max", "median", "argmax", "argmin"])
+
+# the reductions whose aggregation is faster in the in-memory engine than in
+# the streaming one: the product multiplies over the whole group and the
+# median sorts it, and the streaming engine keeps neither in one piece
+# (measured 6.5ms against 4.8ms for the product, 4.4ms against 4.0ms for the
+# median, of 500k values in 1000 groups)
+_IN_MEMORY = frozenset(["prod", "median"])
+
+# the positions of the values in the input, per length: the arg-reductions
+# name them, and building them anew for every call costs 4MB of memory and
+# 0.3ms of a cell of 4.6ms
+_POSITIONS: dict[int, npt.NDArray[np.intp]] = {}
+
+
+def _positions(size: int) -> npt.NDArray[np.intp]:
+    """The position of every value in the input, cached per length."""
+    positions = _POSITIONS.get(size)
+    if positions is None:
+        if len(_POSITIONS) > 8:
+            _POSITIONS.clear()
+        positions = np.arange(size)
+        _POSITIONS[size] = positions
+    return positions
+
+
+def _knows_engines() -> bool:
+    """Whether the polars in use can pick the engine of a query.
+
+    The argument came with polars 1.29; before that the query knew a
+    ``streaming`` flag, and before polars 1.0 there was no streaming at all.
+    """
+    try:
+        pl.LazyFrame({"a": [1.0]}).collect(engine="in-memory")
+    except TypeError:
+        return False
+    return True
+
+
+_HAS_ENGINES = _knows_engines()
+
+
+def _engine(plain: str) -> Engine:
+    """The engine that gathers the aggregation of a function fastest."""
+    return "in-memory" if plain in _IN_MEMORY else "streaming"
+
+
+def _collect(query: pl.LazyFrame, engine: Engine) -> pl.DataFrame:
+    """The result of a lazy query, gathered by the engine that suits it.
+
+    The lazy frame is the faster way into the group_by machinery: the eager
+    one collects its query with the in-memory engine, which measured 3.7ms for
+    a sum where the streaming engine needs 2.3ms.
+    """
+    if _HAS_ENGINES:
+        return query.collect(engine=engine)
+    # polars before 1.29 knows no engine, but a streaming flag - and before
+    # polars 1.0 there was no streaming at all
+    collect: Any = query.collect
+    try:
+        return cast("pl.DataFrame", collect(streaming=engine == "streaming"))
+    except TypeError:
+        return cast("pl.DataFrame", collect())
 
 
 def _expression(funcname: str, ddof: int) -> pl.Expr:
@@ -114,31 +179,56 @@ def _wrapper(
         expression = pl.col("a").implode().map_elements(func, return_dtype=pl.Float64)
     else:
         expression = _expression(plain, ddof)
-    # the position of every value in the input, which the arg-reductions name
-    frame = pl.DataFrame({"g": group_idx, "a": a, "i": np.arange(len(group_idx))})
+    # the columns of the query: the labels and the values, and the position of
+    # every value in the input - only the arg-reductions name it, so only they
+    # get the column.  A sum does not read positions, and the 4MB of them
+    # (measured 0.3ms of a 4.6ms cell, 2.2ms in the first calls of a process,
+    # where their pages still have to arrive) are theirs to pay for
+    columns: dict[str, pl.Series] = {
+        "g": pl.Series("g", group_idx),
+        "a": pl.Series("a", a),
+    }
+    if plain.startswith("arg"):
+        columns["i"] = pl.Series("i", _positions(len(group_idx)))
+    query = pl.LazyFrame(columns)
     if plain.startswith("cum"):
         # the cumulative functions emit one value per input item, so they are
         # a window over the labels and not an aggregation of them - the window
         # keeps the order of the input
-        result = frame.with_columns(expression.over("g").alias("v"))
-        return result["v"].to_numpy()
-    grouped = frame.group_by("g", maintain_order=True)
-    result = grouped.agg(expression.alias("v"))
+        window = query.with_columns(expression.over("g").alias("v"))
+        # the in-memory engine, which keeps the order of the rows
+        return _collect(window, "in-memory")["v"].to_numpy()
+    # the groups holding a nan have no extreme in the package, where the nan is
+    # a value that makes the whole group answer with the nan - polars asks for
+    # the flag of the group in the same aggregation, which is cheaper than a
+    # pass over the whole input in numpy (0.4ms of a cell of 4.6ms)
+    poisoned = plain in _POISONED_BY_NAN and not is_nan_version and a.dtype.kind in "fc"
+    # the groups come in no order of their own: the result is scattered into
+    # the output by the labels, so the order of the groups does not matter -
+    # and not keeping it is faster (2.2ms against 3.1ms for a sum)
+    grouped = query.group_by("g", maintain_order=False)
+    if poisoned:
+        aggregated = grouped.agg(expression.alias("v"), pl.col("a").is_nan().any().alias("n"))
+    else:
+        aggregated = grouped.agg(expression.alias("v"))
+    result = _collect(aggregated, _engine(plain))
 
-    # the sum overflow guess needs the maximum number of values that can be
-    # summed into a single group, i.e. the input length - not the output size
-    dtype = check_dtype(dtype, plain, a, len(group_idx))
+    # the dtype of the output: the base has resolved it for the known functions
+    # already, only a callable of the caller's own comes without one
+    if dtype is None:
+        dtype = check_dtype(dtype, plain, a, len(group_idx))
     ret = np.full(size, fill_value, dtype=dtype)
-    ret[result["g"].to_numpy()] = result["v"].to_numpy()
-    if plain in _POISONED_BY_NAN and not is_nan_version and a.dtype.kind in "fc":
-        # polars skips the nans in the extremes, the package does not: a group
-        # holding one has no extreme at all
-        poisoned = np.bincount(group_idx, weights=np.isnan(a), minlength=size) > 0
+    labels = result["g"].to_numpy()
+    ret[labels] = result["v"].to_numpy()
+    if poisoned:
+        # the groups holding a nan: polars skips the nans in the extremes, the
+        # package does not, so such a group has no extreme at all
+        bad = labels[result["n"].to_numpy()]
         if plain in ("argmax", "argmin"):
             # the position of an extreme that does not exist
-            ret[poisoned] = fill_value
+            ret[bad] = fill_value
         else:
-            ret[poisoned] = np.nan
+            ret[bad] = np.nan
     return ret
 
 
