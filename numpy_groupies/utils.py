@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import platform
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, TypeAlias, cast
 
 import numpy as np
@@ -11,6 +11,8 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
+    FuncName,
+    _DefaultFillValue,
     _forced_float_types,
     _forced_real_float_types,
     check_boolean,
@@ -21,10 +23,21 @@ from numpy_groupies.aggregate_common import (
     resolve_name,
 )
 
-# the values as the dispatchers carry them on: an array of numbers or of bools
-# (bool is no number in numpy, yet kind in "iub" counts it), or the one scalar
-# that stands for that value repeated over every label (a np.bool_ is no int)
-AValue: TypeAlias = npt.NDArray[np.number] | npt.NDArray[np.bool_] | int | float | complex | np.bool_
+# the values as the dispatchers carry them on: an array of any dtype, or
+# the one python scalar that stands for that value repeated over every label
+AValue: TypeAlias = npt.NDArray[np.generic] | int | float | complex | np.bool_
+
+# the result of an aggregation: numbers for most functions, bools for
+# 'all' and 'any', objects for 'array' - np.generic covers all three
+AResult: TypeAlias = npt.NDArray[np.generic]
+
+# the numbers and flags that can land in an array - a bool is an int, a
+# np.bool_ is neither an int nor an np.number
+AScalar: TypeAlias = float | int | complex | np.number | np.bool_
+
+# what a fill value can be: a number, the sentinel that asks for the
+# default of the function, a None or - for the object result - a sequence
+AFillValue: TypeAlias = AScalar | None | Sequence[AScalar] | _DefaultFillValue
 
 # the memory layout the output is written in, as every signature of this
 # package spells it: the docstring offers 'F' for fortran-style and the code
@@ -45,7 +58,7 @@ ValidatedInput: TypeAlias = tuple[
 ]
 
 
-def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike | None = None) -> Any:
+def default_fill_value(func: FuncName | Callable[..., AScalar], dtype: npt.DTypeLike | None = None) -> AFillValue:
     """The value ``aggregate`` uses for groups missing from ``group_idx``.
 
     ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your
@@ -58,7 +71,7 @@ def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike | No
 def check_nton_shape(
     ret: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
-    func: str | Callable[..., Any],
+    func: str | Callable[..., AScalar],
 ) -> None:
     """Complain early when a one-out-per-in function has to fill a hole.
 
@@ -72,11 +85,22 @@ def check_nton_shape(
         name = getattr(func, "__name__", func)
         raise ValueError(
             f"'{name}' gives one value per input item and cannot fill the "
-            f"{prod - ret.size} absent group entries of size {tuple(cast('Any', size))}"
+            f"{prod - ret.size} absent group entries of size {_size_tuple(size)}"
         )
 
 
-_alias_numpy = {
+def _size_tuple(size: int | tuple[int, ...] | npt.NDArray[np.integer] | None) -> tuple[int, ...]:
+    """The size as a tuple of its dimensions - an int is one dimension."""
+    if size is None:
+        return ()
+    if isinstance(size, tuple):
+        return size
+    if isinstance(size, int):
+        return (size,)
+    return tuple(int(s) for s in size)
+
+
+_alias_numpy: dict[str | Callable[..., object], str] = {
     np.add: "sum",
     np.sum: "sum",
     np.any: "any",
@@ -136,22 +160,24 @@ _next_float_dtype = {
 }
 
 
-def minimum_dtype(x: Any, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:
+def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:
     """
     Returns the "most basic" dtype which represents `x` properly, which provides at least the same
     value range as the specified dtype.
     """
 
-    def check_type(x: Any, dtype: np.dtype) -> bool:
+    def check_type(x: AFillValue, dtype: np.dtype) -> bool:
         try:
             with np.errstate(invalid="ignore"):
-                converted = np.array(x).astype(dtype)
+                converted = np.array(cast("Any", x)).astype(dtype)
         except (ValueError, OverflowError):
             return False
         # False if some overflow has happened
-        return bool(converted == x) or (np.ndim(x) == 0 and np.isnan(x))
+        return bool(converted == x) or (np.ndim(cast("Any", x)) == 0 and np.isnan(cast("Any", x)))
 
-    def type_loop(x: Any, dtype: np.dtype, dtype_dict: dict[str, Any], default: Any = None) -> np.dtype:
+    def type_loop(
+        x: AFillValue, dtype: np.dtype, dtype_dict: Mapping[str, type], default: type | None = None
+    ) -> np.dtype:
         while True:
             try:
                 dtype = np.dtype(dtype_dict[dtype.name])
@@ -159,7 +185,7 @@ def minimum_dtype(x: Any, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:
                     return np.dtype(dtype)
             except KeyError:
                 if default is not None:
-                    return cast(np.dtype, np.dtype(default))
+                    return np.dtype(default)
                 raise ValueError(f"Can not determine dtype of {x!r}")
 
     dtype = np.dtype(dtype)
@@ -172,7 +198,7 @@ def minimum_dtype(x: Any, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:
         return type_loop(x, dtype, _next_int_dtype, default=np.float32)
 
 
-def minimum_dtype_scalar(x: Any, dtype: npt.DTypeLike | None, a: Any) -> np.dtype:
+def minimum_dtype_scalar(x: AFillValue, dtype: npt.DTypeLike | None, a: AValue) -> np.dtype:
     if dtype is None:
         dtype = np.dtype(type(a)) if isinstance(a, (int, float, complex)) else a.dtype
     return minimum_dtype(x, dtype)
@@ -236,7 +262,7 @@ def scalar_dtype(a: Any) -> np.dtype:
 
 def check_dtype(
     dtype: npt.DTypeLike | None,
-    func_str: str,
+    func_str: str | Callable[..., AScalar],
     # an array of any dtype the operation may meet, or the one python scalar
     # that stands for it - is_scalar_input below is what tells the two apart
     a: Any,
@@ -253,26 +279,34 @@ def check_dtype(
 
 
 def resolve_output_dtype(
-    dtype: npt.DTypeLike | None, func_str: str, a_dtype: np.dtype, n: int | tuple[int, ...] | None
+    dtype: npt.DTypeLike | None,
+    func_str: str | Callable[..., AScalar],
+    a_dtype: np.dtype,
+    n: int | tuple[int, ...] | None,
 ) -> np.dtype:
     """The dtype resolution of ``check_dtype`` given the input dtype directly.
 
     ``a_dtype`` is the dtype of the input data and ``n`` the number of values
     to be aggregated (only needed by the ``sum`` overflow guesses).
     """
+    named = isinstance(func_str, str)
     if dtype is not None:
         # dtype set by the user
         # Careful here: np.bool != np.bool_ !
-        if np.issubdtype(dtype, np.bool_) and not ("all" in func_str or "any" in func_str):
+        if np.issubdtype(dtype, np.bool_) and not (
+            isinstance(func_str, str) and ("all" in func_str or "any" in func_str)
+        ):
             raise TypeError(f"function {func_str} requires a more complex datatype than bool")
-        if not np.issubdtype(dtype, np.integer) and func_str in ("len", "nanlen"):
+        if not np.issubdtype(dtype, np.integer) and named and func_str in ("len", "nanlen"):
             raise TypeError(f"function {func_str} requires an integer datatype")
         check_complex_dtype(a_dtype, dtype, func_str)
         # TODO: Maybe have some more checks here
         return np.dtype(dtype)
     else:
         try:
-            return np.dtype(_forced_types[func_str])
+            # a callable of the caller's own names no function - the lookup
+            # misses, like a name the table does not hold
+            return np.dtype(_forced_types[func_str if isinstance(func_str, str) else ""])
         except KeyError:
             if func_str in _forced_float_types:
                 if np.issubdtype(a_dtype, np.inexact):
@@ -317,7 +351,7 @@ def resolve_output_dtype(
                         return a_dtype
 
 
-def minval(fill_value: Any, dtype: np.dtype | None) -> Any:
+def minval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return -np.inf
@@ -328,28 +362,31 @@ def minval(fill_value: Any, dtype: np.dtype | None) -> Any:
         return complex(-np.inf, -np.inf)
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).min
-    return np.finfo(dtype).min
+    return cast("AScalar", np.finfo(dtype).min)
 
 
-def maxval(fill_value: Any, dtype: np.dtype | None) -> Any:
+def maxval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
-        return np.inf
+        return cast("AScalar", np.inf)
     if issubclass(dtype.type, np.complexfloating):
         # see minval: the seed of the reduction has to be the largest value of
         # numpy's order, which is inf+infj and not inf+0j
-        return complex(np.inf, np.inf)
+        return cast("AScalar", complex(np.inf, np.inf))
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).max
-    return np.finfo(dtype).max
+    return cast("AScalar", np.finfo(dtype).max)
 
 
-def check_fill_value(fill_value: Any, dtype: np.dtype, func: str | None = None) -> Any:
+def check_fill_value(
+    fill_value: AFillValue, dtype: np.dtype, func: str | Callable[..., AScalar] | None = None
+) -> AFillValue | None:
     if func in ("all", "any", "allnan", "anynan"):
         check_boolean(fill_value)
+        return None
     else:
         try:
-            return dtype.type(fill_value)
+            return cast("AScalar", dtype.type(fill_value))
         except ValueError:
             raise ValueError(f"fill_value must be convertible into {dtype.type.__name__}")
 
@@ -410,7 +447,7 @@ def _ravel_group_idx(
 
 def offset_labels(
     group_idx: npt.NDArray[np.integer], inshape: tuple[int, ...], axis: int, order: RavelOrder, size: int
-) -> Any:
+) -> npt.NDArray[np.integer]:
     """
     Offset group labels by dimension. This is used when we reduce over a subset of the dimensions of
     group_idx. It assumes that the reductions dimensions have been flattened in the last dimension
@@ -442,7 +479,7 @@ def input_validation(
     axis: int | None = None,
     ravel_group_idx: bool = True,
     check_bounds: bool = True,
-    func: str | Callable[..., Any] | None = None,
+    func: str | Callable[..., AScalar] | None = None,
 ) -> ValidatedInput:
     """
     Do some fairly extensive checking of group_idx and a, trying to give the user as much help as
@@ -530,8 +567,10 @@ def input_validation(
         else:
             if not np.isscalar(size):
                 raise ValueError("output size must be scalar or None")
-            if check_bounds and np.any(group_idx > cast("Any", size) - 1):
-                raise ValueError(f"one or more indices are too large for size {cast('Any', size)}")
+            # a scalar size, which the comparison below needs as a number
+            scalar_size = cast("int | float | np.number", size)
+            if check_bounds and np.any(group_idx > scalar_size - 1):
+                raise ValueError(f"one or more indices are too large for size {scalar_size}")
         flat_size = size
     else:
         if size is None:
@@ -553,13 +592,14 @@ def input_validation(
 # General tools
 
 
-def unpack(group_idx: npt.NDArray[np.integer], ret: npt.NDArray[np.number]) -> npt.NDArray[np.number]:
+def unpack(group_idx: npt.NDArray[np.integer], ret: npt.NDArray[np.generic]) -> npt.NDArray[np.generic]:
     """
     Take an aggregate packed array and uncompress it to the size of group_idx. This is equivalent to
     ret[group_idx].
     """
     # fancy indexing is unannotated in numpy, the result is the same dtype as ret
-    return cast("npt.NDArray[np.number]", ret[group_idx])
+    gathered: AResult = ret[group_idx]
+    return gathered
 
 
 def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:
@@ -697,7 +737,7 @@ def relabel_groups_masked(
     return cast("npt.NDArray[np.intp]", relabel[group_idx])
 
 
-def is_duck_array(value: Any) -> bool:
+def is_duck_array(value: object) -> bool:
     """This function was copied from xarray/core/utils.py under the terms of Xarray's Apache-2 license."""
 
     if isinstance(value, np.ndarray):

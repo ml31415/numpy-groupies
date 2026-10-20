@@ -314,7 +314,7 @@ def _all_drivers():
         for pair in vars(module).values():
             if type(pair).__name__ != "KernelPair":
                 continue
-            for handle in (pair.plain, pair.nan):
+            for handle in (pair.plain, pair.nan_variant):
                 if handle is not None:
                     yield handle.name, handle.driver
 

@@ -35,17 +35,19 @@ building blocks are replaced by synthesized no-ops - the driver always runs
 every stage, and LLVM folds the empty calls away.
 """
 
-import typing
+from collections.abc import Callable
+from typing import Any, NamedTuple, cast
 
 import numba as nb
 import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.utils import AResult, AScalar
 
 
 @njit_stable
-def complex_less(x: typing.Any, y: typing.Any) -> bool:
+def complex_less(x: Any, y: Any) -> bool:
     """The ordering every reduction kernel of this package compares with.
 
     For real values this is plain ``<``.  numpy orders complex values
@@ -95,7 +97,7 @@ def _as_np_dtype(a_type: nb.types.Type) -> np.dtype:
     """The np.dtype of the numba array type an overload builder sees."""
     # every rule is handed the numba type of the value array and nothing else -
     # the type lattice has no named ancestor of ArrayCTypes that carries dtype
-    array_type = typing.cast("nb.types.ArrayCTypes", a_type)
+    array_type = cast("nb.types.ArrayCTypes", a_type)
     return nb.np.numpy_support.as_dtype(array_type.dtype)
 
 
@@ -183,7 +185,7 @@ def rule_int64(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     return out, out
 
 
-def _resolve_default_fill(fill_default: typing.Any, out_dtype: np.dtype) -> typing.Any:
+def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar:
     """The njit-kernel twin of the DEFAULT_FILL_VALUE resolution: a nan
     default only fits inexact outputs (a complex output needs the nan in both
     parts), integer and bool outputs fall back to 0."""
@@ -213,13 +215,13 @@ def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
 
 def _make_stub(
     stub_name: str,
-    driver_getter: typing.Callable[[], typing.Any],
-    rule: typing.Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
-    fill_default: typing.Any,
+    driver_getter: Callable[[], Any],
+    rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
+    fill_default: AScalar,
     doc: str | None,
-    ddof_default: typing.Any = 0,
+    ddof_default: int = 0,
     reject_fill: bool = False,
-) -> typing.Callable[..., typing.Any]:
+) -> Callable[..., Any]:
     """Create the njit-callable ``aggregate_*`` function of one variant.
 
     The stub is a plain python function: calling it from python raises, from
@@ -240,12 +242,12 @@ def _make_stub(
     # implementation it returns, argument names *and* annotations included, so
     # they have to be spelled alike - see the note in ``averaging``
     def stub(
-        group_idx: typing.Any,
-        a: typing.Any,
+        group_idx: Any,
+        a: Any,
         ddof: int = ddof_default,
         size: int = -1,
         fill_value: float | None = None,
-    ) -> typing.Any:
+    ) -> Any:
         raise NotImplementedError("only callable from jitted code - use aggregate() otherwise")
 
     stub.__name__ = stub_name
@@ -261,12 +263,12 @@ def _make_stub(
     # (the driver) stays cached through ``njit_stable``.
     @nb.extending.overload(stub)
     def _overload(
-        group_idx: typing.Any,
-        a: typing.Any,
+        group_idx: Any,
+        a: Any,
         ddof: int = ddof_default,
         size: int = -1,
         fill_value: float | None = None,
-    ) -> typing.Callable[..., typing.Any]:
+    ) -> Callable[..., Any]:
         driver = driver_getter()
         # here ``a`` is the numba *type* of the values (an ``Array`` of the
         # input dtype), not the values - those only arrive in the impl below,
@@ -276,12 +278,12 @@ def _make_stub(
         default_fill = _resolve_default_fill(fill_default, out_dtype)
 
         def impl(
-            group_idx: typing.Any,
-            a: typing.Any,
+            group_idx: Any,
+            a: Any,
             ddof: int = ddof_default,
             size: int = -1,
             fill_value: float | None = None,
-        ) -> typing.Any:
+        ) -> Any:
             if reject_fill:
                 # the driver of this operation cannot place a fill value -
                 # saying so beats ignoring the argument silently
@@ -299,7 +301,7 @@ def _make_stub(
     return stub
 
 
-class KernelHandle(typing.NamedTuple):
+class KernelHandle(NamedTuple):
     """The compiled artifact of one operation variant.
 
     ``stub``    the njit-callable function, exported via the ``kernels``
@@ -326,59 +328,60 @@ class KernelHandle(typing.NamedTuple):
 
     name: str
     nans: bool
-    stub: typing.Any
-    driver: typing.Any
+    stub: Callable[..., Any]
+    # the driver returns the result array - or, for the collecting function,
+    # the list of the arrays of the groups
+    driver: Callable[..., AResult | list[AResult]]
     forced_fill: float | int | None
     aux_widen: bool
     nton: bool
-    fallback: typing.Callable[..., typing.Any] | None = None
-    placeable: typing.Callable[[np.dtype | None], bool] | None = None
-    post: typing.Callable[..., typing.Any] | None = None
+    fallback: Callable[..., AResult] | None = None
+    placeable: Callable[[np.dtype | None], bool] | None = None
+    post: Callable[..., AResult] | None = None
     assembles: bool = False
 
 
-class KernelPair(typing.NamedTuple):
-    """Plain and nan-variant handles of one operation - ``nan`` is None for
-    the operations without a separate nan variant."""
+class KernelPair(NamedTuple):
+    """Plain and nan-variant handles of one operation.
+
+    The four operations that do not skip nans have no nan variant - their
+    ``nan_variant`` is None and the property raises there.
+    """
 
     plain: KernelHandle
-    nan: KernelHandle | None
+    nan_variant: KernelHandle | None
 
-
-def nan_handle(pair: KernelPair, name: str) -> KernelHandle:
-    """The nan variant of a pair that the caller knows has one.
-
-    Callers reach for it behind the ``funcs_no_separate_nan`` gate (or the
-    kernel table), where ``nan`` is never None - this only states that
-    promise for the type checker and keeps the message honest if it breaks.
-    """
-    handle = pair.nan
-    if handle is None:
-        raise ValueError(f"{name} has no nan variant")
-    return handle
+    @property
+    def nan(self) -> KernelHandle:
+        """The handle of the nan variant of the operation."""
+        if self.nan_variant is None:
+            raise ValueError(f"{self.plain.name} does not have a nan-version")
+        return self.nan_variant
 
 
 def build_kernel(
     name: str,
     *,
-    init: typing.Callable[..., typing.Any],
-    update: typing.Callable[..., typing.Any],
-    rule: typing.Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
-    fill_default: typing.Any = 0,
+    # the building blocks are jitted - their state differs from operation to
+    # operation, so their parameters stay open
+    init: Callable[..., Any],
+    update: Callable[..., None],
+    rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
+    fill_default: AScalar = 0,
     forced_fill: float | None = None,
-    seed: typing.Callable[..., typing.Any] | None = None,
-    record: typing.Callable[..., typing.Any] | None = None,
-    gate: typing.Callable[..., typing.Any] | None = None,
-    finish: typing.Callable[..., typing.Any] | None = None,
-    untouched: typing.Callable[..., typing.Any] | None = None,
-    update_nan: typing.Callable[..., typing.Any] | None = None,
+    seed: Callable[..., None] | None = None,
+    record: Callable[..., None] | None = None,
+    gate: Callable[..., None] | None = None,
+    finish: Callable[..., Any] | None = None,
+    untouched: Callable[..., npt.NDArray[np.bool_]] | None = None,
+    update_nan: Callable[..., None] | None = None,
     nans: bool = True,
-    ddof_default: float = 0,
+    ddof_default: int = 0,
     aux_widen: bool = False,
     nton: bool = False,
-    fallback: typing.Callable[..., typing.Any] | None = None,
-    placeable: typing.Callable[[np.dtype | None], bool] | None = None,
-    post: typing.Callable[..., typing.Any] | None = None,
+    fallback: Callable[..., AResult] | None = None,
+    placeable: Callable[[np.dtype | None], bool] | None = None,
+    post: Callable[..., AResult] | None = None,
     assembles: bool = False,
     doc: str | None = None,
 ) -> KernelPair:
@@ -414,16 +417,16 @@ def build_kernel(
     # below) - and so do the drivers and the kernels.
     # the building blocks below are jitted: numba compiles them from the
     # argument types and ignores these annotations, the type checker needs them
-    def _seed_none(st: typing.Any, a: typing.Any) -> None:
+    def _seed_none(st: Any, a: Any) -> None:
         pass
 
-    def _record_none(st: typing.Any, ri: int, i: int) -> None:
+    def _record_none(st: Any, ri: int, i: int) -> None:
         pass
 
-    def _gate_none(st: typing.Any, n_values: int) -> None:
+    def _gate_none(st: Any, n_values: int) -> None:
         pass
 
-    def _finish_none(st: typing.Any, g: int, fill_value: float, ddof: int) -> typing.Any:
+    def _finish_none(st: Any, g: int, fill_value: float, ddof: int) -> Any:
         return st.out[g]
 
     # the same story in the other direction: the qualname is part of numba's
@@ -441,7 +444,7 @@ def build_kernel(
     if untouched is not None:
         untouched_c = njit_stable(untouched)
 
-        def fill_untouched(st: typing.Any, size: int, fill_value: float) -> None:
+        def fill_untouched(st: Any, size: int, fill_value: float) -> None:
             # a custom fill value also belongs to the groups that never
             # received a value - their output was seeded with the forced
             # default of the operation
@@ -453,7 +456,7 @@ def build_kernel(
 
     else:
 
-        def fill_untouched(st: typing.Any, size: int, fill_value: float) -> None:
+        def fill_untouched(st: Any, size: int, fill_value: float) -> None:
             pass
 
     fill_untouched = njit_stable(fill_untouched, name=f"{name}_fill_untouched")
@@ -469,7 +472,7 @@ def build_kernel(
             else:
 
                 def guarded_update(
-                    st: typing.Any,
+                    st: Any,
                     ri: int,
                     i: int,
                     val: float,
@@ -486,7 +489,7 @@ def build_kernel(
         def kernel(
             group_idx: npt.NDArray[np.integer],
             a: npt.NDArray[np.number],
-            st: typing.Any,
+            st: Any,
             fill_value: float,
             ddof: int,
             size: int,
@@ -515,7 +518,7 @@ def build_kernel(
             aux_dtype: np.dtype,
             fill_value: float,
             ddof: int,
-        ) -> typing.Any:
+        ) -> Any:
             # numba's np.max reduction is several times faster than a scalar
             # loop here; negative indices slip through and are caught by the
             # bounds check inside the kernel below
@@ -567,17 +570,17 @@ def build_kernel(
 def build_custom_kernel(
     name: str,
     *,
-    driver_factory: typing.Callable[[bool], typing.Any],
-    rule: typing.Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
-    fill_default: typing.Any = 0,
+    driver_factory: Callable[[bool], Any],
+    rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
+    fill_default: AScalar = 0,
     forced_fill: float | None = None,
     nans: bool = True,
-    ddof_default: float = 0,
+    ddof_default: int = 0,
     aux_widen: bool = False,
     nton: bool = False,
-    fallback: typing.Callable[..., typing.Any] | None = None,
-    placeable: typing.Callable[[np.dtype | None], bool] | None = None,
-    post: typing.Callable[..., typing.Any] | None = None,
+    fallback: Callable[..., AResult] | None = None,
+    placeable: Callable[[np.dtype | None], bool] | None = None,
+    post: Callable[..., AResult] | None = None,
     assembles: bool = False,
     reject_fill: bool = False,
     doc: str | None = None,

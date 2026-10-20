@@ -11,7 +11,7 @@ single pass - it composes like the streaming reductions, but carries the
 sample spacing ``dx`` in the ``ddof`` slot.
 """
 
-import typing
+from typing import Any, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
@@ -83,7 +83,7 @@ def _select_kth(
     lo: int,
     hi: int,
     k: int,
-) -> typing.Any:
+) -> Any:
     """The k-th smallest of ``arr[lo:hi]``, the block reordered in place.
 
     A quickselect: the block is partitioned around a pivot until the position
@@ -159,7 +159,7 @@ def _select_kth(
     return arr[k]
 
 
-def _median_driver_factory(nans: bool) -> typing.Any:
+def _median_driver_factory(nans: bool) -> Any:
     # every operation builds its own copies of the shared helpers - the
     # compiled specialization of one must not reach into the other (see
     # compose.build_kernel)
@@ -174,7 +174,7 @@ def _median_driver_factory(nans: bool) -> typing.Any:
     # it (see njit_stable)
     _select = njit_stable(_select_kth, name=f"{op_name}_select")
 
-    def _middle(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> typing.Any:
+    def _middle(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> Any:
         """the middle value(s) of the block at ``a_sorted[begin:begin+m]``.
 
         No sorting needed: the wanted element is selected in place, and the
@@ -352,7 +352,7 @@ def _sort_scatter(
         cursor[g] += 1
 
 
-def _sort_driver_factory(nans: bool) -> typing.Any:
+def _sort_driver_factory(nans: bool) -> Any:
     # every operation builds its own copies of the shared helpers - the
     # compiled specialization of one must not reach into the other (see
     # compose.build_kernel)
@@ -397,7 +397,7 @@ sort = build_custom_kernel(
 )
 
 
-class TrapezoidState(typing.NamedTuple):
+class TrapezoidState(NamedTuple):
     """``out`` accumulates the integral and doubles as the result, ``prev``
     keeps the previous sample of each group, ``pending`` marks the groups
     whose first sample is still due and ``untouched`` the groups without
@@ -454,6 +454,6 @@ trapezoid = build_kernel(
     forced_fill=0,
     fill_default=0,
     rule=rule_float,
-    ddof_default=1.0,
+    ddof_default=1,
     doc="Trapezoidal integration of the samples of every group",
 )

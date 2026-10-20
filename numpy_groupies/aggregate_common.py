@@ -7,7 +7,12 @@ before numpy is known to be available, and has to work without it.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, SupportsInt, TypeAlias, cast
+
+if TYPE_CHECKING:
+    import numpy.typing as npt
+
+    from numpy_groupies.utils import AFillValue, AScalar
 
 nan = float("nan")  # nan is just this float
 
@@ -160,6 +165,25 @@ funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan"])
 # work on numbers cannot take in one go
 funcs_collecting = frozenset(["array"])
 
+# the names the known functions answer to - their canonical names and the
+# string aliases of the alias table.  The literal type names them for the
+# type checker (a typo is a type error) and for the editor.
+# fmt: off
+FuncName: TypeAlias = Literal[
+    "add", "all", "allnan", "amax", "amin", "and",
+    "any", "anynan", "argmax", "argmin", "array", "asort",
+    "asorted", "count", "cummax", "cummin", "cumprod", "cumsum",
+    "dsort", "first", "last", "len", "max", "maximum",
+    "mean", "median", "min", "minimum", "multiply", "nanall",
+    "nanany", "nanargmax", "nanargmin", "nancummax", "nancummin", "nancumprod",
+    "nancumsum", "nanfirst", "nanlast", "nanlen", "nanmax", "nanmean",
+    "nanmedian", "nanmin", "nanprod", "nanstd", "nansum", "nansumofsquares",
+    "nantrapezoid", "nanvar", "or", "plus", "prod", "product",
+    "rsorted", "sort", "sorted", "splice", "split", "std",
+    "sum", "sumofsquares", "times", "trapezoid", "var",
+]
+# fmt: on
+
 
 class _DefaultFillValue:
     """Sentinel for ``fill_value``, asking for the function specific default."""
@@ -173,7 +197,7 @@ DEFAULT_FILL_VALUE = _DefaultFillValue()
 # The value an absent group gets, per aggregation function, following the
 # convention that it is whatever numpy returns for an empty slice - where the
 # output datatype can represent it (see ``resolve_fill_value``).
-_default_fill_values = {
+_default_fill_values: dict[str, AFillValue] = {
     "sum": 0,
     "prod": 1,
     "all": False,
@@ -206,7 +230,7 @@ _default_fill_values = {
 }
 
 
-def _fill_value_key(func: str | Callable[..., Any]) -> str:
+def _fill_value_key(func: str | Callable[..., AScalar]) -> str:
     """Map a function (name, alias or callable) onto a ``_default_fill_values`` key."""
     name = resolve_name(func)
     if name is None:
@@ -219,7 +243,7 @@ def _fill_value_key(func: str | Callable[..., Any]) -> str:
     return name
 
 
-def _is_inexact_dtype(dtype: Any) -> bool:
+def _is_inexact_dtype(dtype: npt.DTypeLike | None) -> bool:
     """True for everything that can hold nan - numpy dtypes by kind, python types by identity."""
     kind = getattr(dtype, "kind", None)
     if kind is not None:  # a numpy dtype
@@ -229,7 +253,7 @@ def _is_inexact_dtype(dtype: Any) -> bool:
     return isinstance(dtype, type) and issubclass(dtype, (float, complex))
 
 
-def _is_complex_dtype(dtype: Any) -> bool:
+def _is_complex_dtype(dtype: npt.DTypeLike | None) -> bool:
     """True for complex numpy dtypes, the complex builtin and complex dtype strings."""
     kind: str | None = getattr(dtype, "kind", None)  # the kind of a numpy dtype is a one letter string
     if kind is not None:  # a numpy dtype
@@ -243,7 +267,7 @@ def _is_complex_dtype(dtype: Any) -> bool:
     )
 
 
-def nan_of(dtype: Any) -> Any:
+def nan_of(dtype: npt.DTypeLike | None) -> AScalar:
     """A nan shaped like ``dtype``: a nan in every part it has.
 
     A plain ``nan`` written into a complex result lands as ``nan+0j``, which
@@ -262,7 +286,7 @@ def nan_of(dtype: Any) -> Any:
 _no_none_result_functions = frozenset(_default_fill_values) - {"array"}
 
 
-def check_filling_with_none(func: str | Callable[..., Any]) -> None:
+def check_filling_with_none(func: str | Callable[..., AScalar]) -> None:
     """Refuse to fill with ``None`` where no result can hold it.
 
     ``None`` is a value and not a request: the request for the default of a
@@ -280,7 +304,9 @@ def check_filling_with_none(func: str | Callable[..., Any]) -> None:
         )
 
 
-def resolve_fill_value(func: str | Callable[..., Any], fill_value: Any, dtype: Any) -> Any:
+def resolve_fill_value(
+    func: str | Callable[..., AScalar], fill_value: AFillValue, dtype: npt.DTypeLike | None
+) -> AFillValue:
     """Replace the ``DEFAULT_FILL_VALUE`` sentinel with the default of ``func``.
 
     Anything else than the sentinel is returned untouched, except a ``None``: a
@@ -339,7 +365,7 @@ _alias_str = {
     "dsort": "sort",
 }
 
-_alias_builtin = {
+_alias_builtin: dict[str | Callable[..., object], str] = {
     all: "all",
     any: "any",
     len: "len",
@@ -352,7 +378,7 @@ _alias_builtin = {
 }
 
 
-def get_aliasing(*extra: dict[Any, str]) -> dict[Any, str]:
+def get_aliasing(*extra: dict[str | Callable[..., object], str]) -> dict[str | Callable[..., object], str]:
     """
     Assembles a dictionary that maps both strings and functions to a list of supported function names.
 
@@ -362,7 +388,7 @@ def get_aliasing(*extra: dict[Any, str]) -> dict[Any, str]:
 
     This function should only be called during import.
     """
-    alias: dict[Any, str] = {k: k for k in funcs_common}
+    alias: dict[str | Callable[..., object], str] = {k: k for k in funcs_common}
     alias.update(_alias_str)
     alias.update((fn, fn) for fn in _alias_builtin.values())
     alias.update(_alias_builtin)
@@ -380,7 +406,7 @@ def get_aliasing(*extra: dict[Any, str]) -> dict[Any, str]:
 aliasing_py = get_aliasing()
 
 
-def can_name_a_function(obj: Any) -> bool:
+def can_name_a_function(obj: object) -> bool:
     """Whether ``obj`` can be a key of the alias table, and so can name a function.
 
     The table is a dict, which asks its keys for a hash, and an object that
@@ -393,7 +419,7 @@ def can_name_a_function(obj: Any) -> bool:
     return type(obj).__hash__ is not None
 
 
-def resolve_name(func: Any, aliasing: Mapping[Any, str] = aliasing_py) -> str | None:
+def resolve_name(func: Any, aliasing: Mapping[str | Callable[..., object], str] = aliasing_py) -> str | None:
     """The canonical name of ``func``, or ``None`` where it names no function.
 
     Every name and every alias is a key of ``aliasing`` and every key of it is
@@ -404,14 +430,14 @@ def resolve_name(func: Any, aliasing: Mapping[Any, str] = aliasing_py) -> str | 
     return aliasing.get(func) if can_name_a_function(func) else None
 
 
-def missing_impl_error(name: str) -> Exception:
+def missing_impl_error(name: str | Callable[..., AScalar]) -> Exception:
     """The error for a function that is known but not implemented by this backend."""
-    if name.startswith("nan") and name[3:] in funcs_no_separate_nan:
+    if isinstance(name, str) and name.startswith("nan") and name[3:] in funcs_no_separate_nan:
         return ValueError(f"{name[3:]} does not have a nan-version")
     return NotImplementedError("No such function available")
 
 
-def custom_callable(func: Any) -> Callable[..., Any]:
+def custom_callable(func: Any) -> Callable[..., AScalar]:
     """The callable behind a ``func`` that is no key of the resolved dispatch table.
 
     A miss of that table says all there is to know: ``func`` is not one of the
@@ -421,7 +447,7 @@ def custom_callable(func: Any) -> Callable[..., Any]:
     here; the hot path is the lookup itself.
     """
     if callable(func):
-        return cast(Callable[..., Any], func)
+        return cast("Callable[..., AScalar]", func)
     raise ValueError(f"func {func} is neither a valid function string nor a callable object")
 
 
@@ -448,11 +474,11 @@ class Resolved(NamedTuple):
     None where the backend knows the function but does not implement it.
     """
 
-    funcname: Any
+    funcname: str | Callable[..., AScalar]
     op: Callable[..., Any] | None
 
 
-class Registry(dict[Any, Resolved]):
+class Registry(dict[str | Callable[..., object], Resolved]):
     """The registry of one backend: the functions it knows and the callables of the caller.
 
     Every alias of every known function is a key of the table, holding the
@@ -474,7 +500,7 @@ class Registry(dict[Any, Resolved]):
     def __init__(
         self,
         op_dict: Mapping[str, Callable[..., Any]],
-        aliasing: Mapping[Any, str],
+        aliasing: Mapping[str | Callable[..., object], str],
         custom: Callable[..., Resolved],
     ) -> None:
         super().__init__({alias: Resolved(name, op) for alias, (name, op) in build_dispatch(op_dict, aliasing).items()})
@@ -519,7 +545,7 @@ _forced_real_float_types = {
 }
 
 
-def check_boolean(x: Any) -> None:
+def check_boolean(x: AFillValue) -> None:
     if x not in (0, 1):
         raise ValueError("Value not boolean")
 
@@ -546,7 +572,7 @@ _fixed_result_types: dict[str, type] = {
 }
 
 
-def check_fixed_fill_value(func: str | Callable[..., Any], fill_value: Any) -> None:
+def check_fixed_fill_value(func: str | Callable[..., AScalar], fill_value: AFillValue) -> None:
     """Refuse a ``fill_value`` that the result type of ``func`` cannot hold, for
     those functions whose result type the function itself settles.
 
@@ -560,7 +586,7 @@ def check_fixed_fill_value(func: str | Callable[..., Any], fill_value: Any) -> N
         check_boolean(fill_value)
     elif target is int:
         try:
-            int(fill_value)
+            int(cast("SupportsInt", fill_value))
         except ValueError:
             raise ValueError("fill_value must be convertible into an integer")
 
@@ -593,7 +619,9 @@ _complex_real_result = (
 )
 
 
-def check_complex_dtype(a_dtype: Any, dtype: Any, func_str: str) -> None:
+def check_complex_dtype(
+    a_dtype: npt.DTypeLike, dtype: npt.DTypeLike | None, func_str: str | Callable[..., AScalar]
+) -> None:
     """Complain when a non-complex ``dtype`` is requested for complex input.
 
     ``resolve_output_dtype`` applies this for the backends that honour ``dtype``;

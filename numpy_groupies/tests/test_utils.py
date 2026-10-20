@@ -5,13 +5,34 @@ inverts a group reduction - every backend provides them.
 """
 
 from dataclasses import dataclass
+from typing import get_args
 
 import numpy as np
 import pytest
 
-from numpy_groupies.aggregate_common import Registry, Resolved, build_dispatch, custom_callable, resolve_name
+from numpy_groupies.aggregate_common import (
+    FuncName,
+    Registry,
+    Resolved,
+    aliasing_py,
+    build_dispatch,
+    custom_callable,
+    resolve_name,
+)
 from numpy_groupies.tests.helpers import random_values
 from numpy_groupies.utils import aliasing, check_dtype, unpack
+
+
+def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():
+    """The literal type of the func parameter names every function by name.
+
+    A name the table does not hold would be one the type checker refuses
+    without a reason, and one the table holds but the literal does not would
+    be one it refuses wrongly.
+    """
+    names = set(get_args(FuncName))
+    assert names == {name for name in aliasing if isinstance(name, str)}
+    assert names == {name for name in aliasing_py if isinstance(name, str)}
 
 
 def test_check_dtype():

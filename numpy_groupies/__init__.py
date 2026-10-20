@@ -13,7 +13,8 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.utils import AValue, RavelOrder
+    from numpy_groupies.aggregate_common import FuncName
+    from numpy_groupies.utils import AFillValue, AResult, AScalar, AValue, RavelOrder
 
     class Aggregate(Protocol):
         """The canonical signature of the public ``aggregate``.
@@ -30,16 +31,16 @@ if TYPE_CHECKING:
             self,
             group_idx: npt.NDArray[np.integer],
             a: AValue,
-            func: str | Callable[..., Any] = "sum",
+            func: FuncName | Callable[..., AScalar] = "sum",
             size: int | Sequence[int] | None = None,
-            fill_value: Any = ...,
+            fill_value: AFillValue = ...,
             order: RavelOrder = "C",
             dtype: npt.DTypeLike | None = None,
             axis: int | None = None,
             out: npt.NDArray[np.number] | None = None,
             cache: bool = True,
             **kwargs: Any,
-        ) -> npt.NDArray[np.number]: ...
+        ) -> AResult: ...
 
 
 def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
@@ -47,6 +48,11 @@ def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
         "You may need to install another package (numpy or numba) to access a working implementation."
     )
 
+
+# declared with the type of the protocol, or the branches below would join
+# into a plain Any and lose its signature
+aggregate: Aggregate
+aggregate_np: Aggregate
 
 aggregate = cast("Aggregate", aggregate_py)
 
@@ -96,9 +102,9 @@ else:
 def uaggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
-    out: npt.NDArray[np.number] | None = None,
+    out: AResult | None = None,
     **kwargs: Any,
-) -> npt.NDArray[np.number]:
+) -> AResult:
     """
     Aggregate the values of ``a`` by the groups in ``group_idx`` and broadcast the result
     back to the size of ``a``, so that every element carries the result of its own group.
