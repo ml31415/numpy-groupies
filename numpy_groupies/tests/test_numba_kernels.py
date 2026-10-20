@@ -147,6 +147,22 @@ def test_collecting_kernel_matches_layer2():
     assert len(result[2]) == 0
 
 
+def test_collecting_kernel_refuses_a_fill_value():
+    """The collecting kernel cannot place a fill value.
+
+    An absent group holds an empty sequence, and the driver cannot put
+    anything else there - so the kernel says so instead of ignoring the
+    argument, as no other kernel does.
+    """
+
+    @nb.njit
+    def caller(group_idx, a, fill_value):
+        return kernels.aggregate_array(group_idx, a, 0, -1, fill_value)
+
+    with pytest.raises(nb.TypingError, match="has no fill_value"):
+        caller(GROUP_IDX, FLOAT_A, 7.0)
+
+
 def test_njit_composition():
     """Kernels compose within jitted code - the motivating use case."""
 

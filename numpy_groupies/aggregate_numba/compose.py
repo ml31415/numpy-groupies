@@ -218,6 +218,7 @@ def _make_stub(
     fill_default: typing.Any,
     doc: str | None,
     ddof_default: typing.Any = 0,
+    reject_fill: bool = False,
 ) -> typing.Callable[..., typing.Any]:
     """Create the njit-callable ``aggregate_*`` function of one variant.
 
@@ -281,6 +282,14 @@ def _make_stub(
             size: int = -1,
             fill_value: float | None = None,
         ) -> typing.Any:
+            if reject_fill:
+                # the driver of this operation cannot place a fill value -
+                # saying so beats ignoring the argument silently
+                if fill_value is not None:
+                    raise nb.TypingError(
+                        f"aggregate_{stub_name} has no fill_value - an absent group holds an empty sequence"
+                    )
+                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
             return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, ddof)
@@ -537,6 +546,7 @@ def build_custom_kernel(
     aux_widen: bool = False,
     nton: bool = False,
     fallback: typing.Callable[..., typing.Any] | None = None,
+    reject_fill: bool = False,
     doc: str | None = None,
 ) -> KernelPair:
     """Compose the kernels of an operation with a hand-written driver.
@@ -545,6 +555,9 @@ def build_custom_kernel(
     signature as the composed ones - used by operations whose pass structure
     does not fit the accumulate/finish pattern (median groups the data with a
     counting sort before selecting, sort groups it before ordering).
+
+    ``reject_fill`` says that the driver cannot place a fill value: the
+    njit-callable stub then refuses one instead of ignoring it silently.
     """
 
     def build(nan_variant: bool) -> KernelHandle:
@@ -557,6 +570,7 @@ def build_custom_kernel(
             fill_default,
             doc,
             ddof_default,
+            reject_fill,
         )
         return KernelHandle(
             name=stub_name_variant,
