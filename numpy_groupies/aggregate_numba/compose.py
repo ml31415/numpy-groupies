@@ -342,24 +342,23 @@ class KernelHandle(typing.NamedTuple):
 
 
 class KernelPair(typing.NamedTuple):
-    """Plain and nan-variant handles of one operation - ``nan`` is None for
-    the operations without a separate nan variant."""
+    """Plain and nan-variant handles of one operation.
+
+    The four operations that do not skip nans have no nan variant - their
+    ``nan_variant`` is None, and asking the pair for its nan handle raises
+    there.  The property is what the callers use, so that the type checker
+    knows a nan handle is a handle and not a handle or nothing.
+    """
 
     plain: KernelHandle
-    nan: KernelHandle | None
+    nan_variant: KernelHandle | None
 
-
-def nan_handle(pair: KernelPair, name: str) -> KernelHandle:
-    """The nan variant of a pair that the caller knows has one.
-
-    Callers reach for it behind the ``funcs_no_separate_nan`` gate (or the
-    kernel table), where ``nan`` is never None - this only states that
-    promise for the type checker and keeps the message honest if it breaks.
-    """
-    handle = pair.nan
-    if handle is None:
-        raise ValueError(f"{name} has no nan variant")
-    return handle
+    @property
+    def nan(self) -> KernelHandle:
+        """The handle of the nan variant of the operation."""
+        if self.nan_variant is None:
+            raise ValueError(f"{self.plain.name} has no nan variant")
+        return self.nan_variant
 
 
 def build_kernel(

@@ -33,47 +33,46 @@ overflow guesses for narrow integers are approximated by widening to int64 -
 """
 
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
-from numpy_groupies.aggregate_numba.compose import nan_handle
 
 aggregate_sum = reductions.sum.plain.stub
-aggregate_nansum = nan_handle(reductions.sum, "sum").stub
+aggregate_nansum = reductions.sum.nan.stub
 aggregate_prod = reductions.prod.plain.stub
-aggregate_nanprod = nan_handle(reductions.prod, "prod").stub
+aggregate_nanprod = reductions.prod.nan.stub
 aggregate_len = reductions.len.plain.stub
-aggregate_nanlen = nan_handle(reductions.len, "len").stub
+aggregate_nanlen = reductions.len.nan.stub
 aggregate_all = reductions.all.plain.stub
-aggregate_nanall = nan_handle(reductions.all, "all").stub
+aggregate_nanall = reductions.all.nan.stub
 aggregate_any = reductions.any.plain.stub
-aggregate_nanany = nan_handle(reductions.any, "any").stub
+aggregate_nanany = reductions.any.nan.stub
 aggregate_last = reductions.last.plain.stub
-aggregate_nanlast = nan_handle(reductions.last, "last").stub
+aggregate_nanlast = reductions.last.nan.stub
 aggregate_first = reductions.first.plain.stub
-aggregate_nanfirst = nan_handle(reductions.first, "first").stub
+aggregate_nanfirst = reductions.first.nan.stub
 aggregate_allnan = reductions.allnan.plain.stub
 aggregate_anynan = reductions.anynan.plain.stub
 aggregate_min = reductions.min.plain.stub
-aggregate_nanmin = nan_handle(reductions.min, "min").stub
+aggregate_nanmin = reductions.min.nan.stub
 aggregate_max = reductions.max.plain.stub
-aggregate_nanmax = nan_handle(reductions.max, "max").stub
+aggregate_nanmax = reductions.max.nan.stub
 aggregate_sumofsquares = reductions.sumofsquares.plain.stub
-aggregate_nansumofsquares = nan_handle(reductions.sumofsquares, "sumofsquares").stub
+aggregate_nansumofsquares = reductions.sumofsquares.nan.stub
 
 aggregate_argmax = argreductions.argmax.plain.stub
-aggregate_nanargmax = nan_handle(argreductions.argmax, "argmax").stub
+aggregate_nanargmax = argreductions.argmax.nan.stub
 aggregate_argmin = argreductions.argmin.plain.stub
-aggregate_nanargmin = nan_handle(argreductions.argmin, "argmin").stub
+aggregate_nanargmin = argreductions.argmin.nan.stub
 
 aggregate_mean = averaging.mean.plain.stub
-aggregate_nanmean = nan_handle(averaging.mean, "mean").stub
+aggregate_nanmean = averaging.mean.nan.stub
 aggregate_std = averaging.std.plain.stub
-aggregate_nanstd = nan_handle(averaging.std, "std").stub
+aggregate_nanstd = averaging.std.nan.stub
 aggregate_var = averaging.var.plain.stub
-aggregate_nanvar = nan_handle(averaging.var, "var").stub
+aggregate_nanvar = averaging.var.nan.stub
 
 aggregate_median = specials.median.plain.stub
-aggregate_nanmedian = nan_handle(specials.median, "median").stub
+aggregate_nanmedian = specials.median.nan.stub
 aggregate_trapezoid = specials.trapezoid.plain.stub
-aggregate_nantrapezoid = nan_handle(specials.trapezoid, "trapezoid").stub
+aggregate_nantrapezoid = specials.trapezoid.nan.stub
 aggregate_sort = specials.sort.plain.stub
 
 # the collecting function: its result is a sequence per group, so the kernel
@@ -82,13 +81,13 @@ aggregate_sort = specials.sort.plain.stub
 aggregate_array = collect.array.plain.stub
 
 aggregate_cumsum = cumulative.cumsum.plain.stub
-aggregate_nancumsum = nan_handle(cumulative.cumsum, "cumsum").stub
+aggregate_nancumsum = cumulative.cumsum.nan.stub
 aggregate_cumprod = cumulative.cumprod.plain.stub
-aggregate_nancumprod = nan_handle(cumulative.cumprod, "cumprod").stub
+aggregate_nancumprod = cumulative.cumprod.nan.stub
 aggregate_cummax = cumulative.cummax.plain.stub
-aggregate_nancummax = nan_handle(cumulative.cummax, "cummax").stub
+aggregate_nancummax = cumulative.cummax.nan.stub
 aggregate_cummin = cumulative.cummin.plain.stub
-aggregate_nancummin = nan_handle(cumulative.cummin, "cummin").stub
+aggregate_nancummin = cumulative.cummin.nan.stub
 
 __all__ = [
     "aggregate_all",

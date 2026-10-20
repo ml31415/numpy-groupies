@@ -28,7 +28,7 @@ from numpy_groupies.aggregate_common import (
     resolve_fill_value,
 )
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
-from numpy_groupies.aggregate_numba.compose import KernelHandle, nan_handle
+from numpy_groupies.aggregate_numba.compose import KernelHandle
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.utils import (
     AResult,
@@ -483,7 +483,7 @@ def get_ops() -> dict[str, typing.Callable[..., typing.Any]]:
         op = build_aggregate_op(funcname, pair.plain)
         funcs[funcname] = op if wrap is None else wrap(op)
         if funcname not in funcs_no_separate_nan:
-            op = build_aggregate_op("nan" + funcname, nan_handle(pair, funcname))
+            op = build_aggregate_op("nan" + funcname, pair.nan)
             funcs["nan" + funcname] = op if wrap is None else wrap(op)
     return funcs
 
