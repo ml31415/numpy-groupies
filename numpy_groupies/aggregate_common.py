@@ -7,7 +7,7 @@ before numpy is known to be available, and has to work without it.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, SupportsInt, TypeAlias, cast
 
 if TYPE_CHECKING:
     from numpy_groupies.utils import AFillValue
@@ -582,7 +582,7 @@ def check_fixed_fill_value(func: str | Callable[..., Any], fill_value: AFillValu
         check_boolean(fill_value)
     elif target is int:
         try:
-            int(fill_value)  # type: ignore[arg-type]
+            int(cast("SupportsInt", fill_value))
         except ValueError:
             raise ValueError("fill_value must be convertible into an integer")
 

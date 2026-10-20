@@ -375,7 +375,7 @@ def check_fill_value(
         return None
     else:
         try:
-            return dtype.type(fill_value)  # type: ignore[no-any-return]
+            return cast("AScalar", dtype.type(fill_value))
         except ValueError:
             raise ValueError(f"fill_value must be convertible into {dtype.type.__name__}")
 
