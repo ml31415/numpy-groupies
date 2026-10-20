@@ -21,6 +21,7 @@ from numpy_groupies.aggregate_numba.compose import build_custom_kernel, output_s
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.aggregate_numpy import _aggregate_base, blocks_to_object_array
+from numpy_groupies.utils import AFillValue, AValue, RavelOrder
 
 # the dtypes the compiled driver can place - the numeric ones the drivers of
 # the other operations take as well.  The list is no duplication of what numba
@@ -82,7 +83,7 @@ def _array_driver_factory(nan_variant: bool) -> Any:
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
-    ) -> Any:
+    ) -> list[npt.NDArray[np.generic]]:
         # the fill value is of no use here, and the dtypes neither - the
         # sequences carry the dtype of the values
         size = output_size(group_idx, size_arg)
@@ -100,11 +101,11 @@ def _array_driver_factory(nan_variant: bool) -> Any:
 
 def _numpy_fallback(
     group_idx: npt.NDArray[np.integer],
-    a: Any,
+    a: AValue,
     func: FuncName,
     size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
-    fill_value: Any,
-    order: Any,
+    fill_value: AFillValue,
+    order: RavelOrder,
     dtype: npt.DTypeLike | None,
     axis: int | None,
 ) -> npt.NDArray[np.object_]:

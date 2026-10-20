@@ -419,7 +419,7 @@ def can_name_a_function(obj: object) -> bool:
     return type(obj).__hash__ is not None
 
 
-def resolve_name(func: Any, aliasing: Mapping[Any, str] = aliasing_py) -> str | None:
+def resolve_name(func: Any, aliasing: Mapping[str | Callable[..., Any], str] = aliasing_py) -> str | None:
     """The canonical name of ``func``, or ``None`` where it names no function.
 
     Every name and every alias is a key of ``aliasing`` and every key of it is

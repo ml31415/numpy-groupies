@@ -86,7 +86,7 @@ def _dtype_fill_plan(
     func: str,
     a_dtype: np.dtype,
     dtype: npt.DTypeLike | None,
-    fill_value: Any,
+    fill_value: AFillValue,
     n: int,
     scalar: bool,
 ) -> tuple[np.dtype, AFillValue]:
@@ -353,7 +353,7 @@ def _compiled_loop(func: Callable[..., Any], cache: Any) -> Callable[..., Any]:
         return build_generic_aggregate(func)
     if cache is True:
         return _get_cached_generic(func)
-    cache_map = cast("MutableMapping[Any, Any]", cache)
+    cache_map = cast("MutableMapping[Callable[..., Any], Callable[..., Any]]", cache)
     op = cache_map.get(func)
     if op is None:
         op = build_generic_aggregate(func)
@@ -361,7 +361,7 @@ def _compiled_loop(func: Callable[..., Any], cache: Any) -> Callable[..., Any]:
     return op
 
 
-def _custom_operation(func: Any) -> Resolved:
+def _custom_operation(func: Callable[..., Any]) -> Resolved:
     """The operation of a callable of the caller's own.
 
     The callable is compiled into a loop over the groups.  The compilation is
@@ -382,7 +382,7 @@ def _custom_operation(func: Any) -> Resolved:
         order: RavelOrder = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
-        cache: Any = True,
+        cache: bool | MutableMapping[Callable[..., Any], Callable[..., Any]] | None = True,
         **kwargs: Any,
     ) -> AResult:
         loop = _compiled_loop(callable_, cache)
