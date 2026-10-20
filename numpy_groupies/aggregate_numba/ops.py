@@ -49,6 +49,12 @@ _N_DEPENDENT_ADTYPES = frozenset(
     np.dtype(t) for t in ("bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "uint64")
 )
 
+# the dtypes that can be a key of the dtype plan cache: the hashable ones of
+# DTypeLike.  A structured dtype is given as a list of fields and is not
+# hashable - the cache raises a TypeError for it, which the caller answers
+# with the uncached resolution.
+_KeyedDType: typing.TypeAlias = str | type | np.dtype | None
+
 
 @functools.lru_cache(maxsize=256)
 def _dtype_fill_plan_cached(
@@ -93,7 +99,7 @@ def _dtype_fill_plan(
     lookup with a TypeError, which the caller answers with the uncached
     resolution.
     """
-    return _dtype_fill_plan_cached(func, a_dtype, typing.cast("typing.Hashable", dtype), fill_value, n, scalar)
+    return _dtype_fill_plan_cached(func, a_dtype, typing.cast("_KeyedDType", dtype), fill_value, n, scalar)
 
 
 def _aux_dtype(handle: KernelHandle, a_dtype: np.dtype, out_dtype: np.dtype) -> np.dtype:
