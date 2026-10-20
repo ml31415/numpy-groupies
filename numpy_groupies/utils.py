@@ -581,7 +581,7 @@ def unpack(group_idx: npt.NDArray[np.integer], ret: npt.NDArray[np.generic]) -> 
     ret[group_idx].
     """
     # fancy indexing is unannotated in numpy, the result is the same dtype as ret
-    return cast("AResult", ret[group_idx])
+    return cast(AResult, ret[group_idx])
 
 
 def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:

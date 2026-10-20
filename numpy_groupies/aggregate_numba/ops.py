@@ -187,7 +187,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
                 else:
                     # every other operation's driver returns the result array
                     # itself - only the collecting one assembles a list
-                    ret = typing.cast("AResult", ret)
+                    ret = typing.cast(AResult, ret)
                 return ret
 
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=func)
@@ -231,7 +231,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> typing.Callable[..., 
         else:
             # every other operation's driver returns the result array itself -
             # only the collecting one assembles a list
-            ret = typing.cast("AResult", ret)
+            ret = typing.cast(AResult, ret)
 
         # Deal with ndimensional indexing
         if ndim_idx > 1:
@@ -382,7 +382,7 @@ def _custom_operation(func: typing.Any) -> Resolved:
         **kwargs: typing.Any,
     ) -> AResult:
         loop = _compiled_loop(callable_, cache)
-        return typing.cast("AResult", loop(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
+        return typing.cast(AResult, loop(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
 
     return Resolved(callable_, op)
 
@@ -439,7 +439,7 @@ def _dx_argument(op: typing.Callable[..., typing.Any]) -> typing.Callable[..., t
         axis: int | None = None,
         dx: float = 1.0,
     ) -> AResult:
-        return typing.cast("AResult", op(group_idx, a, size, fill_value, order, dtype, axis, dx))
+        return typing.cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, dx))
 
     return trapezoid_op
 
@@ -466,7 +466,7 @@ def _sort_arguments(op: typing.Callable[..., typing.Any]) -> typing.Callable[...
     ) -> AResult:
         if fill_value is DEFAULT_FILL_VALUE:
             fill_value = 0
-        return typing.cast("AResult", op(group_idx, a, size, fill_value, order, dtype, axis, 1.0 if reverse else 0.0))
+        return typing.cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, 1.0 if reverse else 0.0))
 
     return sort_op
 

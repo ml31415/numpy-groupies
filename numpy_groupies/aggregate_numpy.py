@@ -599,7 +599,7 @@ def _sort(
     # sorting: scattering through the group-stable argsort is exactly the
     # inverse permutation, avoiding the classic argsort-of-argsort.
     gsort = np.argsort(sort_group_idx, kind="stable")
-    ret = cast("AResult", np.empty_like(a))
+    ret = cast(AResult, np.empty_like(a))
     ret[gsort] = a[sortidx]
     return ret
 
@@ -869,7 +869,7 @@ def _aggregate_base(
             ret[mask] = fill_value
         check_nton_shape(ret, size, funcname)
         ret = ret.reshape(size, order=order)
-    return cast("AResult", ret)
+    return cast(AResult, ret)
 
 
 def aggregate(

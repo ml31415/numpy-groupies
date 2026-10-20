@@ -58,7 +58,7 @@ def aggregate(
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
     if isinstance(funcname, str):
-        ret = typing.cast("AResult", op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
+        ret = typing.cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
     else:
         # a callable of the caller's own: it has no output array of its own,
         # and its compiled loop is memoized where the cache policy says
