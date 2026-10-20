@@ -10,7 +10,9 @@ from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, SupportsInt, TypeAlias, cast
 
 if TYPE_CHECKING:
-    from numpy_groupies.utils import AFillValue
+    import numpy.typing as npt
+
+    from numpy_groupies.utils import AFillValue, AScalar
 
 nan = float("nan")  # nan is just this float
 
@@ -241,7 +243,7 @@ def _fill_value_key(func: str | Callable[..., Any]) -> str:
     return name
 
 
-def _is_inexact_dtype(dtype: Any) -> bool:
+def _is_inexact_dtype(dtype: npt.DTypeLike | None) -> bool:
     """True for everything that can hold nan - numpy dtypes by kind, python types by identity."""
     kind = getattr(dtype, "kind", None)
     if kind is not None:  # a numpy dtype
@@ -251,7 +253,7 @@ def _is_inexact_dtype(dtype: Any) -> bool:
     return isinstance(dtype, type) and issubclass(dtype, (float, complex))
 
 
-def _is_complex_dtype(dtype: Any) -> bool:
+def _is_complex_dtype(dtype: npt.DTypeLike | None) -> bool:
     """True for complex numpy dtypes, the complex builtin and complex dtype strings."""
     kind: str | None = getattr(dtype, "kind", None)  # the kind of a numpy dtype is a one letter string
     if kind is not None:  # a numpy dtype
@@ -265,7 +267,7 @@ def _is_complex_dtype(dtype: Any) -> bool:
     )
 
 
-def nan_of(dtype: Any) -> Any:
+def nan_of(dtype: npt.DTypeLike | None) -> AScalar:
     """A nan shaped like ``dtype``: a nan in every part it has.
 
     A plain ``nan`` written into a complex result lands as ``nan+0j``, which
@@ -302,7 +304,9 @@ def check_filling_with_none(func: str | Callable[..., Any]) -> None:
         )
 
 
-def resolve_fill_value(func: str | Callable[..., Any], fill_value: AFillValue, dtype: Any) -> AFillValue:
+def resolve_fill_value(
+    func: str | Callable[..., Any], fill_value: AFillValue, dtype: npt.DTypeLike | None
+) -> AFillValue:
     """Replace the ``DEFAULT_FILL_VALUE`` sentinel with the default of ``func``.
 
     Anything else than the sentinel is returned untouched, except a ``None``: a
@@ -426,9 +430,9 @@ def resolve_name(func: Any, aliasing: Mapping[Any, str] = aliasing_py) -> str | 
     return aliasing.get(func) if can_name_a_function(func) else None
 
 
-def missing_impl_error(name: str) -> Exception:
+def missing_impl_error(name: str | Callable[..., Any]) -> Exception:
     """The error for a function that is known but not implemented by this backend."""
-    if name.startswith("nan") and name[3:] in funcs_no_separate_nan:
+    if isinstance(name, str) and name.startswith("nan") and name[3:] in funcs_no_separate_nan:
         return ValueError(f"{name[3:]} does not have a nan-version")
     return NotImplementedError("No such function available")
 
@@ -470,7 +474,7 @@ class Resolved(NamedTuple):
     None where the backend knows the function but does not implement it.
     """
 
-    funcname: Any
+    funcname: str | Callable[..., Any]
     op: Callable[..., Any] | None
 
 
@@ -615,7 +619,9 @@ _complex_real_result = (
 )
 
 
-def check_complex_dtype(a_dtype: Any, dtype: Any, func_str: str) -> None:
+def check_complex_dtype(
+    a_dtype: npt.DTypeLike, dtype: npt.DTypeLike | None, func_str: str | Callable[..., Any]
+) -> None:
     """Complain when a non-complex ``dtype`` is requested for complex input.
 
     ``resolve_output_dtype`` applies this for the backends that honour ``dtype``;

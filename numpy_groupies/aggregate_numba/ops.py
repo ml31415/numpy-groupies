@@ -110,7 +110,7 @@ def _aux_dtype(handle: KernelHandle, a_dtype: np.dtype, out_dtype: np.dtype) -> 
     return out_dtype
 
 
-def _needs_fallback(handle: KernelHandle, a: Any) -> bool:
+def _needs_fallback(handle: KernelHandle, a: AValue) -> bool:
     """Whether the input is one the compiled driver cannot handle.
 
     The default is the complex input, which the median cannot partition; an
@@ -121,7 +121,7 @@ def _needs_fallback(handle: KernelHandle, a: Any) -> bool:
     return getattr(getattr(a, "dtype", None), "kind", "") == "c"
 
 
-def _driver_fill(handle: KernelHandle, fill_value: Any) -> Any:
+def _driver_fill(handle: KernelHandle, fill_value: AScalar) -> AScalar:
     """The fill value the driver takes.
 
     An assembling driver takes none - the fill value is the business of the
@@ -316,7 +316,7 @@ def build_generic_aggregate(func: Callable[..., Any]) -> Callable[..., Any]:
         group_idx, a, flat_size, ndim_idx, size, _ = iv
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
-        dtype = check_dtype(dtype, cast("Any", func), a, len(group_idx))
+        dtype = check_dtype(dtype, func, a, len(group_idx))
         fill_value = resolve_fill_value(func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=func)
         ret = np.full(flat_size, fill_value, dtype=dtype)

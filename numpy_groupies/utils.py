@@ -58,7 +58,7 @@ ValidatedInput: TypeAlias = tuple[
 ]
 
 
-def default_fill_value(func: FuncName | Callable[..., Any], dtype: npt.DTypeLike | None = None) -> Any:
+def default_fill_value(func: FuncName | Callable[..., Any], dtype: npt.DTypeLike | None = None) -> AFillValue:
     """The value ``aggregate`` uses for groups missing from ``group_idx``.
 
     ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your
@@ -160,7 +160,7 @@ _next_float_dtype = {
 }
 
 
-def minimum_dtype(x: Any, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:
+def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:
     """
     Returns the "most basic" dtype which represents `x` properly, which provides at least the same
     value range as the specified dtype.
@@ -260,7 +260,7 @@ def scalar_dtype(a: Any) -> np.dtype:
 
 def check_dtype(
     dtype: npt.DTypeLike | None,
-    func_str: str,
+    func_str: str | Callable[..., Any],
     # an array of any dtype the operation may meet, or the one python scalar
     # that stands for it - is_scalar_input below is what tells the two apart
     a: Any,
@@ -277,26 +277,34 @@ def check_dtype(
 
 
 def resolve_output_dtype(
-    dtype: npt.DTypeLike | None, func_str: str, a_dtype: np.dtype, n: int | tuple[int, ...] | None
+    dtype: npt.DTypeLike | None,
+    func_str: str | Callable[..., Any],
+    a_dtype: np.dtype,
+    n: int | tuple[int, ...] | None,
 ) -> np.dtype:
     """The dtype resolution of ``check_dtype`` given the input dtype directly.
 
     ``a_dtype`` is the dtype of the input data and ``n`` the number of values
     to be aggregated (only needed by the ``sum`` overflow guesses).
     """
+    named = isinstance(func_str, str)
     if dtype is not None:
         # dtype set by the user
         # Careful here: np.bool != np.bool_ !
-        if np.issubdtype(dtype, np.bool_) and not ("all" in func_str or "any" in func_str):
+        if np.issubdtype(dtype, np.bool_) and not (
+            isinstance(func_str, str) and ("all" in func_str or "any" in func_str)
+        ):
             raise TypeError(f"function {func_str} requires a more complex datatype than bool")
-        if not np.issubdtype(dtype, np.integer) and func_str in ("len", "nanlen"):
+        if not np.issubdtype(dtype, np.integer) and named and func_str in ("len", "nanlen"):
             raise TypeError(f"function {func_str} requires an integer datatype")
         check_complex_dtype(a_dtype, dtype, func_str)
         # TODO: Maybe have some more checks here
         return np.dtype(dtype)
     else:
         try:
-            return np.dtype(_forced_types[func_str])
+            # a callable of the caller's own names no function - the lookup
+            # misses, like a name the table does not hold
+            return np.dtype(_forced_types[func_str if isinstance(func_str, str) else ""])
         except KeyError:
             if func_str in _forced_float_types:
                 if np.issubdtype(a_dtype, np.inexact):
@@ -341,7 +349,7 @@ def resolve_output_dtype(
                         return a_dtype
 
 
-def minval(fill_value: Any, dtype: np.dtype | None) -> Any:
+def minval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
         return -np.inf
@@ -352,20 +360,20 @@ def minval(fill_value: Any, dtype: np.dtype | None) -> Any:
         return complex(-np.inf, -np.inf)
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).min
-    return np.finfo(dtype).min
+    return cast("AScalar", np.finfo(dtype).min)
 
 
-def maxval(fill_value: Any, dtype: np.dtype | None) -> Any:
+def maxval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.floating):
-        return np.inf
+        return cast("AScalar", np.inf)
     if issubclass(dtype.type, np.complexfloating):
         # see minval: the seed of the reduction has to be the largest value of
         # numpy's order, which is inf+infj and not inf+0j
-        return complex(np.inf, np.inf)
+        return cast("AScalar", complex(np.inf, np.inf))
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).max
-    return np.finfo(dtype).max
+    return cast("AScalar", np.finfo(dtype).max)
 
 
 def check_fill_value(
@@ -437,7 +445,7 @@ def _ravel_group_idx(
 
 def offset_labels(
     group_idx: npt.NDArray[np.integer], inshape: tuple[int, ...], axis: int, order: RavelOrder, size: int
-) -> Any:
+) -> npt.NDArray[np.integer]:
     """
     Offset group labels by dimension. This is used when we reduce over a subset of the dimensions of
     group_idx. It assumes that the reductions dimensions have been flattened in the last dimension
