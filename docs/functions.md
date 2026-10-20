@@ -167,7 +167,7 @@ npg.default_fill_value("argmin")         # -1
 
 Complex input is supported wherever the result is well defined, following NumPy's conventions.
 
-- **Keep the complex dtype:** `sum`, `prod`, `mean`, `median`, `trapezoid`, `sort`, `first`, `last`, `array` and the `cumsum` functions. `median` and `sort` use NumPy's lexicographic ordering (real part first, then imaginary part).
+- **Keep the complex dtype:** `sum`, `prod`, `mean`, `median`, `trapezoid`, `sort`, `first`, `last`, `array` and the `cumsum` functions. `median` and `sort` use NumPy's lexicographic ordering (real part first, then imaginary part) - the Numba implementation compares the two parts itself, since neither Python nor Numba orders complex numbers.
 - **Return a real dtype:** `var`, `std` and `sumofsquares` measure squared magnitudes, like `np.var` on complex input.
 - **Order statistics** `min`, `max`, `argmin`, `argmax` and their `nan` counterparts follow the same lexicographic ordering everywhere — the real part decides, the imaginary part only breaks ties — including the Numba implementation, which compares the two parts itself since neither Python nor Numba orders complex numbers. As in NumPy, a value with a NaN in either part compares neither smaller nor greater.
 
