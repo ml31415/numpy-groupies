@@ -89,7 +89,10 @@ def _array_driver_factory(nan_variant: bool) -> typing.Any:
         _place(group_idx, a, starts.copy(), values)
         return [values[s : s + c] for s, c in zip(starts, counts)]
 
-    return njit_stable(driver, name="array_driver")
+    # the name carries the variant: numba mangles the symbol of a compiled
+    # function from module, qualname and signature, so the plain and the nan
+    # variant of one operation must not share it (see compose.build_kernel)
+    return njit_stable(driver, name=f"{'nan' if nan_variant else ''}array_driver")
 
 
 def _numpy_fallback(

@@ -13,6 +13,7 @@ from numpy_groupies.aggregate_common import (
     aggregate_common_doc,
     can_name_a_function,
     custom_callable,
+    funcs_collecting,
     missing_impl_error,
 )
 from numpy_groupies.aggregate_numba.gather import unpack_into
@@ -57,10 +58,10 @@ def aggregate(
     # exactly, so the kernels run on float32 and an inexact result is rounded
     # back - like the numpy twin does, whose bincount accumulates in float64
     # and rounds once at the end
-    # the collecting function is the exception: it hands out the values
+    # the collecting functions are the exception: they hand out the values
     # themselves, so they keep the dtype they came in with
     is16 = getattr(a, "dtype", None) == np.float16
-    if is16 and funcname != "array":
+    if is16 and funcname not in funcs_collecting:
         # a float16 input is always an array - the getattr gate does not narrow the union
         a = typing.cast("npt.NDArray[np.number]", a).astype(np.float32)
 
