@@ -223,16 +223,16 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 
 | function        | numpy  | numba  | numbagg | polars | pandas |
 | --------------- | -----: | -----: | ------: | -----: | -----: |
-| `sum`            |   0.90 |   0.45 |   0.45 |   2.74 |   6.70 |
-| `mean`           |   1.50 |   0.51 |   0.61 |   2.73 |   7.08 |
-| `max`            |   1.64 |   0.60 |   0.84 |   3.49 |   6.42 |
-| `std`            |   3.12 |   0.66 |   0.67 |   2.96 |   7.33 |
-| `nansum`         |   4.16 |   0.43 |   1.78 |   6.29 |   8.61 |
-| `median`         |  18.43 |  10.50 |    --- |   3.79 |  15.73 |
-| `sort`           |  70.66 |  25.81 |    --- |    --- |    --- |
-| `cumsum`         |  15.32 |   0.55 |    --- |   9.06 |   6.76 |
-| `array`          |   7.31 |   1.91 |    --- |    --- |    --- |
-| custom callable  | 111.83 |   6.07 |    --- |  78.02 |  94.24 |
+| `sum`            |   0.92 |   0.45 |   0.48 |   2.68 |   6.89 |
+| `mean`           |   1.49 |   0.48 |   0.55 |   2.69 |   7.32 |
+| `max`            |   1.64 |   0.60 |   0.86 |   2.81 |   6.61 |
+| `std`            |   3.03 |   0.66 |   0.69 |   2.17 |   7.64 |
+| `nansum`         |   4.05 |   0.44 |   1.75 |   5.88 |   8.25 |
+| `median`         |  11.01 |   9.28 |    --- |   3.72 |  15.60 |
+| `sort`           |  70.29 |  25.72 |    --- |    --- |    --- |
+| `cumsum`         |  14.48 |   0.60 |    --- |   7.94 |   7.23 |
+| `array`          |   7.54 |   1.90 |    --- |    --- |    --- |
+| custom callable  | 111.39 |   5.90 |    --- |  80.97 |  96.79 |
 
 Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 
