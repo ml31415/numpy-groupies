@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies.tests.helpers import (
+    assert_same_result,
     func_list,
     is_numba,
     random_values,
@@ -302,7 +303,7 @@ def test_the_fill_value_matches_the_group_loop(impl, func, fill_value, block):
         with pytest.raises(ValueError):
             impl.aggregate(labels, a, **kwargs)
     else:
-        np.testing.assert_allclose(impl.aggregate(labels, a, **kwargs), want, rtol=10**-10)
+        assert_same_result(impl.aggregate(labels, a, **kwargs), want, func)
 
 
 def test_the_arg_reductions_name_a_position_in_the_input(impl):

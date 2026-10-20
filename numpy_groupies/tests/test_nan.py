@@ -13,6 +13,7 @@ import pytest
 
 from numpy_groupies import aggregate_np, aggregate_purepy
 from numpy_groupies.tests.helpers import (
+    assert_same_result,
     func_list,
     random_values,
 )
@@ -278,4 +279,4 @@ def test_matches_the_group_loop(impl, func, block):
     """
     got = impl.aggregate(block.group_idx, block.a_nans, func=func, size=block.size)
     want = aggregate_ref(block.group_idx, block.a_nans, func=func, size=block.size)
-    np.testing.assert_allclose(got, want, rtol=10**-10)
+    assert_same_result(got, want, func)

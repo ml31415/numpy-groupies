@@ -12,6 +12,7 @@ import pytest
 from numpy_groupies import uaggregate
 from numpy_groupies.aggregate_numba import aggregate
 from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile
+from numpy_groupies.aggregate_numba.ops import _dispatch
 from numpy_groupies.utils import resolve_output_dtype
 
 
@@ -230,18 +231,29 @@ def test_aggregate_out(rng):
         aggregate(group_idx, a, func=lambda x: np.sum(x), out=out)
 
 
-def test_a_known_function_without_a_kernel():
-    """A function the aliasing knows and the kernels of this backend do not have.
+def test_every_known_function_is_implemented():
+    """A function the aliasing knows and this backend does not have.
 
     The dispatch table holds such a name too, with no implementation behind it,
     so the answer is about a function that is not available here rather than
-    about a func that named nothing at all.
+    about a func that named nothing at all.  This backend knows them all - the
+    collecting function included, which has no compiled kernel but a python
+    implementation of its own.
+    """
+    missing = sorted({name for name, impl in _dispatch.values() if impl is None})
+    assert missing == []
+
+
+def test_a_func_that_named_nothing():
+    """A func that is no key of the dispatch table at all.
+
+    It is neither a function anybody knows nor a callable of the caller's own,
+    so it says so - the error of a callable is a different one.
     """
     group_idx = np.array([0, 0, 1, 1])
     a = np.array([1.0, 3.0, 7.0, 2.0])
-    for func in ("array", list, np.array):
-        with pytest.raises(NotImplementedError, match="No such function available"):
-            aggregate(group_idx, a, func=func, size=2)
+    with pytest.raises(ValueError, match="neither a valid function string"):
+        aggregate(group_idx, a, func="no_such_function", size=2)
 
 
 def test_uaggregate_out(rng):
@@ -308,6 +320,30 @@ def test_float16_follows_the_float32_plan():
 
     ref = aggregate(group_idx, a.astype(np.float32), func="cumsum").astype(np.float16)
     np.testing.assert_array_equal(aggregate(group_idx, a, func="cumsum"), ref)
+
+
+# the collecting function - the one function whose result is a sequence per
+# group; its semantics are tested against every backend in test_funcs.py, what
+# is left here is what only this backend offers
+
+
+def test_collecting_out():
+    # the result is an object array, so it can be gathered into
+    group_idx = np.array([0, 1, 1])
+    a = np.arange(3.0)
+    out = np.empty(2, dtype=object)
+    ret = aggregate(group_idx, a, func="array", out=out)
+    assert ret is out
+    np.testing.assert_array_equal(out[1], [1.0, 2.0])
+    with pytest.raises(TypeError, match="out must have shape"):
+        aggregate(group_idx, a, func="array", out=np.empty(3, dtype=object))
+
+
+def test_collecting_refuses_an_index_beyond_the_size():
+    group_idx = np.array([0, 1, 1])
+    a = np.arange(3.0)
+    with pytest.raises(ValueError, match="too large"):
+        aggregate(group_idx, a, func="array", size=1)
 
 
 # The on-disk cache is shared by the workers of a parallel test run: numba

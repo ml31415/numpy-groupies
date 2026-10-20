@@ -130,6 +130,39 @@ def test_bool_ops_match_layer2(name, kwargs):
     np.testing.assert_array_equal(result, expected)
 
 
+def test_collecting_kernel_matches_layer2():
+    """The collecting kernel hands out the sequences of the groups.
+
+    Its result is a list of arrays where every other kernel returns one
+    number per group - the python-level aggregate() collects them in an
+    object array, and the two hold the same sequences.
+    """
+    expected = aggregate_numba.aggregate(GROUP_IDX, FLOAT_A, func="array")
+    result = _kernel_result("array", FLOAT_A)
+    assert len(result) == len(expected)
+    for got, other in zip(result, expected):
+        np.testing.assert_array_equal(got, other)
+        assert got.dtype == other.dtype
+    # the group without values holds an empty sequence
+    assert len(result[2]) == 0
+
+
+def test_collecting_kernel_refuses_a_fill_value():
+    """The collecting kernel cannot place a fill value.
+
+    An absent group holds an empty sequence, and the driver cannot put
+    anything else there - so the kernel says so instead of ignoring the
+    argument, as no other kernel does.
+    """
+
+    @nb.njit
+    def caller(group_idx, a, fill_value):
+        return kernels.aggregate_array(group_idx, a, 0, -1, fill_value)
+
+    with pytest.raises(nb.TypingError, match="has no fill_value"):
+        caller(GROUP_IDX, FLOAT_A, 7.0)
+
+
 def test_njit_composition():
     """Kernels compose within jitted code - the motivating use case."""
 
@@ -284,7 +317,7 @@ def test_layer1_layer2_share_the_driver():
     assert result.tobytes() == expected.tobytes()
 
 
-_OP_MODULES = ("reductions", "averaging", "cumulative", "argreductions", "specials")
+_OP_MODULES = ("reductions", "averaging", "cumulative", "argreductions", "specials", "collect")
 
 
 def _all_drivers():

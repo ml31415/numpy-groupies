@@ -168,6 +168,16 @@ def rule_bool(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     return out, out
 
 
+def rule_object(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
+    """array: the result is a sequence per group.
+
+    The sequences carry the dtype of the values, the collection of them is of
+    the object dtype - it holds the sequences themselves, not numbers.
+    """
+    out = np.dtype(object)
+    return out, out
+
+
 def rule_int64(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
     out = np.dtype(np.int64)
     return out, out
@@ -208,6 +218,7 @@ def _make_stub(
     fill_default: typing.Any,
     doc: str | None,
     ddof_default: typing.Any = 0,
+    reject_fill: bool = False,
 ) -> typing.Callable[..., typing.Any]:
     """Create the njit-callable ``aggregate_*`` function of one variant.
 
@@ -271,6 +282,14 @@ def _make_stub(
             size: int = -1,
             fill_value: float | None = None,
         ) -> typing.Any:
+            if reject_fill:
+                # the driver of this operation cannot place a fill value -
+                # saying so beats ignoring the argument silently
+                if fill_value is not None:
+                    raise nb.TypingError(
+                        f"aggregate_{stub_name} has no fill_value - an absent group holds an empty sequence"
+                    )
+                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
             return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, ddof)
@@ -295,6 +314,14 @@ class KernelHandle(typing.NamedTuple):
     ``fallback``    python-level callable for input dtypes the compiled
                 driver cannot handle (complex medians go to the numpy
                 implementation - numba cannot partition complex values)
+    ``placeable``   which dtypes the compiled driver can take - None means
+                the default: only complex input goes to the fallback
+    ``post``    turns the result of the driver into the result of the caller
+                (the collecting function assembles an object array of the
+                groups out of the list the driver hands out)
+    ``assembles``   the driver assembles the result instead of returning a
+                plain array: the fill value is then the business of the
+                post hook, not of the driver
     """
 
     name: str
@@ -305,6 +332,9 @@ class KernelHandle(typing.NamedTuple):
     aux_widen: bool
     nton: bool
     fallback: typing.Callable[..., typing.Any] | None = None
+    placeable: typing.Callable[[np.dtype | None], bool] | None = None
+    post: typing.Callable[..., typing.Any] | None = None
+    assembles: bool = False
 
 
 class KernelPair(typing.NamedTuple):
@@ -347,6 +377,9 @@ def build_kernel(
     aux_widen: bool = False,
     nton: bool = False,
     fallback: typing.Callable[..., typing.Any] | None = None,
+    placeable: typing.Callable[[np.dtype | None], bool] | None = None,
+    post: typing.Callable[..., typing.Any] | None = None,
+    assembles: bool = False,
     doc: str | None = None,
 ) -> KernelPair:
     """Compose the kernels of one operation from jitted building blocks.
@@ -508,6 +541,9 @@ def build_kernel(
             aux_widen=aux_widen,
             nton=nton,
             fallback=fallback,
+            placeable=placeable,
+            post=post,
+            assembles=assembles,
         )
 
     plain = build(False)
@@ -527,6 +563,10 @@ def build_custom_kernel(
     aux_widen: bool = False,
     nton: bool = False,
     fallback: typing.Callable[..., typing.Any] | None = None,
+    placeable: typing.Callable[[np.dtype | None], bool] | None = None,
+    post: typing.Callable[..., typing.Any] | None = None,
+    assembles: bool = False,
+    reject_fill: bool = False,
     doc: str | None = None,
 ) -> KernelPair:
     """Compose the kernels of an operation with a hand-written driver.
@@ -535,6 +575,9 @@ def build_custom_kernel(
     signature as the composed ones - used by operations whose pass structure
     does not fit the accumulate/finish pattern (median groups the data with a
     counting sort before selecting, sort groups it before ordering).
+
+    ``reject_fill`` says that the driver cannot place a fill value: the
+    njit-callable stub then refuses one instead of ignoring it silently.
     """
 
     def build(nan_variant: bool) -> KernelHandle:
@@ -547,6 +590,7 @@ def build_custom_kernel(
             fill_default,
             doc,
             ddof_default,
+            reject_fill,
         )
         return KernelHandle(
             name=stub_name_variant,
@@ -557,6 +601,9 @@ def build_custom_kernel(
             aux_widen=aux_widen,
             nton=nton,
             fallback=fallback,
+            placeable=placeable,
+            post=post,
+            assembles=assembles,
         )
 
     plain = build(False)

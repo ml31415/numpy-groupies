@@ -4,6 +4,8 @@ The reductions that need more than one pass over a group (a mean, a variance,
 a median, a trapezoid), the cumulative ones and the sort - each against the
 reference result of the numpy function of the same name, or against the
 group loop of :mod:`.reference` where a numpy function is not the definition.
+The collecting function, whose result is a sequence per group rather than one
+number, has a module of its own: :mod:`.test_collect`.
 """
 
 import itertools
@@ -11,7 +13,11 @@ import itertools
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import func_list, random_values
+from numpy_groupies.tests.helpers import (
+    assert_same_result,
+    func_list,
+    random_values,
+)
 from numpy_groupies.tests.reference import aggregate_ref
 
 
@@ -244,4 +250,4 @@ def test_matches_the_group_loop(impl, func, block):
     """
     got = impl.aggregate(block.group_idx, block.a, func=func, size=block.size)
     want = aggregate_ref(block.group_idx, block.a, func=func, size=block.size)
-    np.testing.assert_allclose(got, want, rtol=10**-10)
+    assert_same_result(got, want, func)

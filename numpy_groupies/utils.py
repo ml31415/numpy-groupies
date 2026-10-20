@@ -56,7 +56,7 @@ def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike | No
 
 
 def check_nton_shape(
-    ret: npt.NDArray[np.number],
+    ret: npt.NDArray[np.generic],
     size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
     func: str | Callable[..., Any],
 ) -> None:

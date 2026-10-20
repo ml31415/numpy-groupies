@@ -12,7 +12,9 @@ import warnings
 import numpy as np
 import pytest
 
+from numpy_groupies.aggregate_common import funcs_collecting
 from numpy_groupies.tests.helpers import (
+    assert_same_result,
     func_list,
     random_group_idx,
     random_values,
@@ -63,6 +65,22 @@ def test_arg_alias_axis_coordinates(impl, func, axis, order):
     np.testing.assert_array_equal(actual, expected)
 
 
+def _other_shape(size, axis):
+    """The shape of the positions beside the aggregated axis."""
+    return tuple(s for i, s in enumerate(size) if i != axis)
+
+
+def _collecting_shape(size, axis):
+    """The shape of the result of a collecting function along an axis.
+
+    The axis dimension holds the groups, the other ones the positions beside
+    it - one group per label, so the dimension is of the groups alone.
+    """
+    shape = list(size)
+    shape[axis] = 1
+    return tuple(shape)
+
+
 @pytest.mark.parametrize(
     ("size", "axis"),
     [((12,), 0), ((12, 5), 0), ((12, 5), 1)],
@@ -100,6 +118,13 @@ def test_along_axis(impl, rng, func, size, axis):
         # numpy has no nan-aware trapezoid - nantrapezoid integrates the
         # samples that are left, bridging over the gaps the nans leave
         expected = np.apply_along_axis(lambda v: trapezoid_ref(v[~np.isnan(v)]), axis, a)
+    elif func in funcs_collecting:
+        # the values of every group, along the axis: the labels are all zero,
+        # so the one group holds the values of one position along the axis
+        expected = np.empty(_collecting_shape(size, axis), dtype=object)
+        for index in np.ndindex(*_other_shape(size, axis)):
+            where = index[:axis] + (slice(None),) + index[axis:]
+            expected[index[:axis] + (0,) + index[axis:]] = a[where]
     else:
         with warnings.catch_warnings():
             # the numpy reference warns about the all-nan slices it averages
@@ -112,7 +137,7 @@ def test_along_axis(impl, rng, func, size, axis):
 
     # argmin, argmax don't support keepdims, so we can't use that to construct expected
     # instead we squeeze out the extra dims in actual.
-    np.testing.assert_allclose(actual.squeeze(), expected)
+    assert_same_result(actual.squeeze(), expected.squeeze(), func)
 
 
 def test_not_last_axis_reduction(impl):

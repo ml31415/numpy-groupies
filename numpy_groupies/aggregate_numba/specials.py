@@ -24,6 +24,7 @@ from numpy_groupies.aggregate_numba.compose import (
     rule_same,
 )
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.utils import AValue, RavelOrder
 
@@ -45,37 +46,6 @@ def _numpy_fallback(
     this - ``np.sort`` of numba orders complex like numpy does.
     """
     return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
-
-
-def _group_count(group_idx: npt.NDArray[np.integer], size: int) -> npt.NDArray[np.int64]:
-    """bounds-checked per-group element counts"""
-    counts = np.zeros(size, np.int64)
-    for i in range(len(group_idx)):
-        g = group_idx[i]
-        if g < 0:
-            raise ValueError("negative indices not supported")
-        if g >= size:
-            raise ValueError("one or more indices in group_idx are too large")
-        counts[g] += 1
-    return counts
-
-
-def _group_starts(counts: npt.NDArray[np.int64]) -> npt.NDArray[np.int64]:
-    """first index of each group-block"""
-    return np.cumsum(counts) - counts
-
-
-def _group_place(
-    group_idx: npt.NDArray[np.integer],
-    a: npt.NDArray[np.number],
-    cursor: npt.NDArray[np.int64],
-    a_sorted: npt.NDArray[np.number],
-) -> None:
-    """scatter the values into their group-blocks"""
-    for i in range(len(group_idx)):
-        g = group_idx[i]
-        a_sorted[cursor[g]] = a[i]
-        cursor[g] += 1
 
 
 def _median_valid(
@@ -119,9 +89,12 @@ def _median_middle(values: npt.NDArray[np.number]) -> typing.Any:
 
 
 def _median_driver_factory(nans: bool) -> typing.Any:
-    _count = njit_stable(_group_count)
-    _starts = njit_stable(_group_starts)
-    _place = njit_stable(_group_place)
+    # every operation builds its own copies of the shared helpers - the
+    # compiled specialization of one must not reach into the other (see
+    # compose.build_kernel)
+    _count = njit_stable(group_count)
+    _starts = njit_stable(group_starts)
+    _place = njit_stable(group_place)
     _valid = njit_stable(_median_valid)
     _middle = njit_stable(_median_middle)
 
@@ -271,9 +244,12 @@ def _sort_scatter(
 
 
 def _sort_driver_factory(nans: bool) -> typing.Any:
-    _count = njit_stable(_group_count)
-    _starts = njit_stable(_group_starts)
-    _place = njit_stable(_group_place)
+    # every operation builds its own copies of the shared helpers - the
+    # compiled specialization of one must not reach into the other (see
+    # compose.build_kernel)
+    _count = njit_stable(group_count)
+    _starts = njit_stable(group_starts)
+    _place = njit_stable(group_place)
     _blocks = njit_stable(_sort_blocks)
     _scatter = njit_stable(_sort_scatter)
 
