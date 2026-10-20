@@ -393,7 +393,7 @@ def get_aliasing(*extra: dict[str | Callable[..., object], str]) -> dict[str | C
     alias.update((fn, fn) for fn in _alias_builtin.values())
     alias.update(_alias_builtin)
     for d in extra:
-        alias.update(cast("dict[str | Callable[..., object], str]", d))
+        alias.update(d)
     alias.update((k, k) for k in set(alias.values()))
     # Treat nan-functions as firstclass member and add them directly
     for key in set(alias.values()):

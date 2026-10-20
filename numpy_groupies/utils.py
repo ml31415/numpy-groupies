@@ -185,7 +185,7 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
                     return np.dtype(dtype)
             except KeyError:
                 if default is not None:
-                    return cast(np.dtype, np.dtype(default))
+                    return np.dtype(default)
                 raise ValueError(f"Can not determine dtype of {x!r}")
 
     dtype = np.dtype(dtype)
@@ -598,7 +598,8 @@ def unpack(group_idx: npt.NDArray[np.integer], ret: npt.NDArray[np.generic]) -> 
     ret[group_idx].
     """
     # fancy indexing is unannotated in numpy, the result is the same dtype as ret
-    return cast(AResult, ret[group_idx])
+    gathered: AResult = ret[group_idx]
+    return gathered
 
 
 def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:

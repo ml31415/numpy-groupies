@@ -11,7 +11,7 @@ import contextlib
 import hashlib
 import inspect
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from typing import Any
 
 import numba as nb
@@ -38,7 +38,7 @@ _cache_revision = "7"
 
 
 @contextlib.contextmanager
-def _advisory_lock(path: str, shared: bool) -> Iterator[None]:
+def _advisory_lock(path: str, shared: bool) -> Generator[None, None, None]:
     """An advisory whole-file lock on *path*, held for the duration of the block.
 
     Without ``fcntl`` (windows) this is a no-op: the platform has no ``flock``
