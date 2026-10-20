@@ -70,7 +70,7 @@ def default_fill_value(func: FuncName | Callable[..., AScalar], dtype: npt.DType
 
 def check_nton_shape(
     ret: npt.NDArray[np.generic],
-    size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
+    size: int | tuple[int, ...] | npt.NDArray[np.integer],
     func: str | Callable[..., AScalar],
 ) -> None:
     """Complain early when a one-out-per-in function has to fill a hole.
@@ -89,10 +89,8 @@ def check_nton_shape(
         )
 
 
-def _size_tuple(size: int | tuple[int, ...] | npt.NDArray[np.integer] | None) -> tuple[int, ...]:
+def _size_tuple(size: int | tuple[int, ...] | npt.NDArray[np.integer]) -> tuple[int, ...]:
     """The size as a tuple of its dimensions - an int is one dimension."""
-    if size is None:
-        return ()
     if isinstance(size, tuple):
         return size
     if isinstance(size, int):
