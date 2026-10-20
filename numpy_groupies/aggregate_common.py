@@ -7,7 +7,7 @@ before numpy is known to be available, and has to work without it.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any, NamedTuple, cast
+from typing import Any, Literal, NamedTuple, TypeAlias, cast
 
 nan = float("nan")  # nan is just this float
 
@@ -159,6 +159,28 @@ funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan"])
 # one number: their result is a sequence per group, which the comparisons that
 # work on numbers cannot take in one go
 funcs_collecting = frozenset(["array"])
+
+# the names the known functions answer to: their canonical names and the
+# string aliases of the alias table (get_aliasing below) - the literal type
+# names them for the type checker, which then refuses a typo in a function
+# name, and for the editor, which completes them.  A callable of the
+# caller's own is the other half of what a func parameter takes; the test
+# suite keeps this list and the alias table in step.
+# fmt: off
+FuncName: TypeAlias = Literal[
+    "add", "all", "allnan", "amax", "amin", "and",
+    "any", "anynan", "argmax", "argmin", "array", "asort",
+    "asorted", "count", "cummax", "cummin", "cumprod", "cumsum",
+    "dsort", "first", "last", "len", "max", "maximum",
+    "mean", "median", "min", "minimum", "multiply", "nanall",
+    "nanany", "nanargmax", "nanargmin", "nancummax", "nancummin", "nancumprod",
+    "nancumsum", "nanfirst", "nanlast", "nanlen", "nanmax", "nanmean",
+    "nanmedian", "nanmin", "nanprod", "nanstd", "nansum", "nansumofsquares",
+    "nantrapezoid", "nanvar", "or", "plus", "prod", "product",
+    "rsorted", "sort", "sorted", "splice", "split", "std",
+    "sum", "sumofsquares", "times", "trapezoid", "var",
+]
+# fmt: on
 
 
 class _DefaultFillValue:

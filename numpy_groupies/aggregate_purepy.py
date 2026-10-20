@@ -9,6 +9,7 @@ from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
+    FuncName,
     Registry,
     Resolved,
     aggregate_common_doc,
@@ -279,7 +280,7 @@ def _check_integer_precision(a: Sequence[Any], func: Callable[..., Any]) -> None
 def aggregate(
     group_idx: "npt.NDArray[np.integer]",
     a: "AValue",
-    func: str | Callable[..., Any] = "sum",
+    func: FuncName | Callable[..., Any] = "sum",
     size: int | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
     order: "RavelOrder" = "C",

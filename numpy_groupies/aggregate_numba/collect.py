@@ -16,6 +16,7 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
+from numpy_groupies.aggregate_common import FuncName
 from numpy_groupies.aggregate_numba.compose import build_custom_kernel, output_size, rule_object
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
@@ -100,7 +101,7 @@ def _array_driver_factory(nan_variant: bool) -> typing.Any:
 def _numpy_fallback(
     group_idx: npt.NDArray[np.integer],
     a: typing.Any,
-    func: str,
+    func: FuncName,
     size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
     fill_value: typing.Any,
     order: typing.Any,

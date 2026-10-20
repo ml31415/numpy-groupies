@@ -11,6 +11,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
+    FuncName,
     _forced_float_types,
     _forced_real_float_types,
     check_boolean,
@@ -21,10 +22,18 @@ from numpy_groupies.aggregate_common import (
     resolve_name,
 )
 
-# the values as the dispatchers carry them on: an array of numbers or of bools
-# (bool is no number in numpy, yet kind in "iub" counts it), or the one scalar
-# that stands for that value repeated over every label (a np.bool_ is no int)
-AValue: TypeAlias = npt.NDArray[np.number] | npt.NDArray[np.bool_] | int | float | complex | np.bool_
+# the values as the dispatchers carry them on: an array of any dtype (bool
+# is no number in numpy, yet kind in "iub" counts it, and the integer and
+# the complex dtypes are numbers of their own kind), or the one python
+# scalar that stands for that value repeated over every label (a np.bool_ is
+# no int)
+AValue: TypeAlias = npt.NDArray[np.generic] | int | float | complex | np.bool_
+
+# the result of an aggregation: an array of numbers for most functions, of
+# bools for 'all' and 'any' and of objects for the collecting function
+# 'array' - np.generic is the honest umbrella for all three, np.number is
+# not (np.bool_ and np.object_ are no numbers)
+AResult: TypeAlias = npt.NDArray[np.generic]
 
 # the memory layout the output is written in, as every signature of this
 # package spells it: the docstring offers 'F' for fortran-style and the code
@@ -45,7 +54,7 @@ ValidatedInput: TypeAlias = tuple[
 ]
 
 
-def default_fill_value(func: str | Callable[..., Any], dtype: npt.DTypeLike | None = None) -> Any:
+def default_fill_value(func: FuncName | Callable[..., Any], dtype: npt.DTypeLike | None = None) -> Any:
     """The value ``aggregate`` uses for groups missing from ``group_idx``.
 
     ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your
@@ -72,8 +81,19 @@ def check_nton_shape(
         name = getattr(func, "__name__", func)
         raise ValueError(
             f"'{name}' gives one value per input item and cannot fill the "
-            f"{prod - ret.size} absent group entries of size {tuple(cast('Any', size))}"
+            f"{prod - ret.size} absent group entries of size {_size_tuple(size)}"
         )
+
+
+def _size_tuple(size: int | tuple[int, ...] | npt.NDArray[np.integer] | None) -> tuple[int, ...]:
+    """The size as a tuple of its dimensions - an int is one dimension."""
+    if size is None:
+        return ()
+    if isinstance(size, tuple):
+        return size
+    if isinstance(size, int):
+        return (size,)
+    return tuple(int(s) for s in size)
 
 
 _alias_numpy = {
@@ -344,7 +364,7 @@ def maxval(fill_value: Any, dtype: np.dtype | None) -> Any:
     return np.finfo(dtype).max
 
 
-def check_fill_value(fill_value: Any, dtype: np.dtype, func: str | None = None) -> Any:
+def check_fill_value(fill_value: Any, dtype: np.dtype, func: str | Callable[..., Any] | None = None) -> Any:
     if func in ("all", "any", "allnan", "anynan"):
         check_boolean(fill_value)
     else:
@@ -530,8 +550,10 @@ def input_validation(
         else:
             if not np.isscalar(size):
                 raise ValueError("output size must be scalar or None")
-            if check_bounds and np.any(group_idx > cast("Any", size) - 1):
-                raise ValueError(f"one or more indices are too large for size {cast('Any', size)}")
+            # a scalar size, which the comparison below needs as a number
+            scalar_size = cast("int | float | np.number", size)
+            if check_bounds and np.any(group_idx > scalar_size - 1):
+                raise ValueError(f"one or more indices are too large for size {scalar_size}")
         flat_size = size
     else:
         if size is None:
@@ -553,13 +575,13 @@ def input_validation(
 # General tools
 
 
-def unpack(group_idx: npt.NDArray[np.integer], ret: npt.NDArray[np.number]) -> npt.NDArray[np.number]:
+def unpack(group_idx: npt.NDArray[np.integer], ret: npt.NDArray[np.generic]) -> npt.NDArray[np.generic]:
     """
     Take an aggregate packed array and uncompress it to the size of group_idx. This is equivalent to
     ret[group_idx].
     """
     # fancy indexing is unannotated in numpy, the result is the same dtype as ret
-    return cast("npt.NDArray[np.number]", ret[group_idx])
+    return cast("AResult", ret[group_idx])
 
 
 def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:

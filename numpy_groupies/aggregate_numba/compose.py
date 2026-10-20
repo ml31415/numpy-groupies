@@ -42,6 +42,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.utils import AResult
 
 
 @njit_stable
@@ -326,14 +327,17 @@ class KernelHandle(typing.NamedTuple):
 
     name: str
     nans: bool
-    stub: typing.Any
-    driver: typing.Any
+    stub: typing.Callable[..., typing.Any]
+    # the driver returns the result array of the operation - or, for the
+    # collecting function, the list of the arrays of the groups, which the
+    # post hook assembles into the object array the caller gets
+    driver: typing.Callable[..., "AResult | list[AResult]"]
     forced_fill: float | int | None
     aux_widen: bool
     nton: bool
-    fallback: typing.Callable[..., typing.Any] | None = None
+    fallback: typing.Callable[..., "AResult"] | None = None
     placeable: typing.Callable[[np.dtype | None], bool] | None = None
-    post: typing.Callable[..., typing.Any] | None = None
+    post: typing.Callable[..., "AResult"] | None = None
     assembles: bool = False
 
 
@@ -361,17 +365,20 @@ def nan_handle(pair: KernelPair, name: str) -> KernelHandle:
 def build_kernel(
     name: str,
     *,
+    # the building blocks are jitted - the state they work on differs from
+    # operation to operation, so their parameters stay open; the ones that
+    # only write into the state return nothing
     init: typing.Callable[..., typing.Any],
-    update: typing.Callable[..., typing.Any],
+    update: typing.Callable[..., None],
     rule: typing.Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
     fill_default: typing.Any = 0,
     forced_fill: float | None = None,
-    seed: typing.Callable[..., typing.Any] | None = None,
-    record: typing.Callable[..., typing.Any] | None = None,
-    gate: typing.Callable[..., typing.Any] | None = None,
+    seed: typing.Callable[..., None] | None = None,
+    record: typing.Callable[..., None] | None = None,
+    gate: typing.Callable[..., None] | None = None,
     finish: typing.Callable[..., typing.Any] | None = None,
-    untouched: typing.Callable[..., typing.Any] | None = None,
-    update_nan: typing.Callable[..., typing.Any] | None = None,
+    untouched: typing.Callable[..., npt.NDArray[np.bool_]] | None = None,
+    update_nan: typing.Callable[..., None] | None = None,
     nans: bool = True,
     ddof_default: float = 0,
     aux_widen: bool = False,

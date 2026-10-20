@@ -8,6 +8,7 @@ from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
+    FuncName,
     Registry,
     Resolved,
     aggregate_common_doc,
@@ -20,6 +21,7 @@ from numpy_groupies.aggregate_common import (
     resolve_fill_value,
 )
 from numpy_groupies.utils import (
+    AResult,
     AValue,
     RavelOrder,
     aliasing,
@@ -131,6 +133,8 @@ def _len(
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.int64]:
     # _sum folds a scalar column of ones into its ndim-0 branch
+    # _sum folds a scalar column of ones into its ndim-0 branch - the
+    # annotation of its value parameter says array, the branch says scalar
     return cast(
         "npt.NDArray[np.int64]",
         _sum(group_idx, cast("npt.NDArray[np.number]", 1), size, fill_value, dtype=int),
@@ -578,7 +582,7 @@ def _sort(
     fill_value: Any = None,
     dtype: npt.DTypeLike | None = None,
     reverse: bool = False,
-) -> npt.NDArray[np.number]:
+) -> AResult:
     if reverse:
         # the descending key.  Bitwise inversion reverses the order of the
         # integral and boolean dtypes exactly, where negation does not: the
@@ -595,7 +599,7 @@ def _sort(
     # sorting: scattering through the group-stable argsort is exactly the
     # inverse permutation, avoiding the classic argsort-of-argsort.
     gsort = np.argsort(sort_group_idx, kind="stable")
-    ret = cast("npt.NDArray[np.number]", np.empty_like(a))
+    ret = cast("AResult", np.empty_like(a))
     ret[gsort] = a[sortidx]
     return ret
 
@@ -790,7 +794,7 @@ _dispatch = Registry(_op_dict, aliasing, _custom_operation)
 def _aggregate_base(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
-    func: str | Callable[..., Any] | None = "sum",
+    func: FuncName | Callable[..., Any] | None = "sum",
     size: int | Sequence[int] | npt.NDArray[np.integer] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
@@ -799,7 +803,7 @@ def _aggregate_base(
     _dispatch: Registry = _dispatch,
     len_counts_values: bool = False,
     **kwargs: Any,
-) -> npt.NDArray[np.number]:
+) -> AResult:
     iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
     group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
@@ -833,7 +837,7 @@ def _aggregate_base(
                     if "len" not in funcname or len_counts_values:
                         # a is not needed for len, nanlen!
                         # a scalar a raised a branch above, only columns remain
-                        a = cast("npt.NDArray[np.number]", a)[good]
+                        a = cast("npt.NDArray[np.generic]", a)[good]
                     group_idx = group_idx[good]
 
         # the sum overflow guess needs the maximum number of values that can
@@ -856,27 +860,29 @@ def _aggregate_base(
             # A negative fill_value cannot, and should not, be unraveled.
             mask = ret == fill_value
             ret[mask] = 0
+            # the axis is not None whenever the shape to unravel to is known
+            assert axis is not None
             ret = cast(
-                "npt.NDArray[np.number]",
-                np.unravel_index(ret, unravel_shape)[cast("int", axis)],
+                "AResult",
+                np.unravel_index(ret, unravel_shape)[axis],
             )
             ret[mask] = fill_value
         check_nton_shape(ret, size, funcname)
         ret = ret.reshape(size, order=order)
-    return cast("npt.NDArray[np.number]", ret)
+    return cast("AResult", ret)
 
 
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
-    func: str | Callable[..., Any] | None = "sum",
+    func: FuncName | Callable[..., Any] | None = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: Any = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     **kwargs: Any,
-) -> npt.NDArray[np.number]:
+) -> AResult:
     return _aggregate_base(
         group_idx,
         a,

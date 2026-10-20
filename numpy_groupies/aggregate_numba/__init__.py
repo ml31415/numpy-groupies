@@ -9,6 +9,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_common import (
     DEFAULT_FILL_VALUE,
+    FuncName,
     aggregate_common_doc,
     funcs_collecting,
     missing_impl_error,
@@ -16,7 +17,7 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.aggregate_numba.gather import unpack_into
 from numpy_groupies.aggregate_numba.ops import _dispatch
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
-from numpy_groupies.utils import AValue, RavelOrder
+from numpy_groupies.utils import AResult, AValue, RavelOrder
 
 __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 
@@ -24,16 +25,16 @@ __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
-    func: str | Callable[..., typing.Any] = "sum",
+    func: FuncName | Callable[..., typing.Any] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: typing.Any = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
-    out: npt.NDArray[np.number] | None = None,
+    out: AResult | None = None,
     cache: bool = True,
     **kwargs: typing.Any,
-) -> npt.NDArray[np.number]:
+) -> AResult:
     try:
         funcname, op = _dispatch[func]
     except TypeError:
@@ -57,14 +58,14 @@ def aggregate(
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
     if isinstance(funcname, str):
-        ret = typing.cast("npt.NDArray[np.number]", op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
+        ret = typing.cast("AResult", op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
     else:
         # a callable of the caller's own: it has no output array of its own,
         # and its compiled loop is memoized where the cache policy says
         if out is not None:
             raise NotImplementedError("out= is only supported for named functions") from None
         ret = typing.cast(
-            "npt.NDArray[np.number]",
+            "AResult",
             op(group_idx, a, size, fill_value, order, dtype, axis, cache=cache, **kwargs),
         )
     if is16 and dtype is None and ret.dtype.kind == "f":
