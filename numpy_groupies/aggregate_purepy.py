@@ -205,6 +205,19 @@ def _propagate_nan(reduction: Callable[[Sequence[Any]], Any]) -> Callable[[Seque
     return reduction_with_nan
 
 
+def _quantile(x: Sequence[Any], **kwargs: Any) -> Any:
+    """The quantile is not implemented by the pure python backend.
+
+    The quantile is an order statistic over the values of a group - the same
+    kind of operation the median is, and the median is implemented here.  The
+    quantile needs the same machinery, though: the two values it interpolates
+    between have to be picked out of the sorted group.  The numpy and the
+    numba implementations do that; this one does not, and says so instead of
+    answering something else.
+    """
+    raise NotImplementedError("the quantile is not implemented by the pure python backend")
+
+
 # the reductions hand out a scalar, the sorting and the collecting function a
 # sequence - hence Any
 _op_dict: dict[str, Callable[..., Any]] = {
@@ -218,6 +231,8 @@ _op_dict: dict[str, Callable[..., Any]] = {
     "any": any,
     "mean": _mean,
     "median": _median,
+    "quantile": _quantile,
+    "percentile": _quantile,
     "trapezoid": _trapezoid,
     "std": _std,
     "var": _var,

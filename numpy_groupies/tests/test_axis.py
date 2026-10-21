@@ -118,6 +118,14 @@ def test_along_axis(impl, rng, func, size, axis):
         # numpy has no nan-aware trapezoid - nantrapezoid integrates the
         # samples that are left, bridging over the gaps the nans leave
         expected = np.apply_along_axis(lambda v: trapezoid_ref(v[~np.isnan(v)]), axis, a)
+    elif func == "quantile":
+        expected = np.quantile(a, 0.5, axis=axis)
+    elif func == "nanquantile":
+        expected = np.nanquantile(a, 0.5, axis=axis)
+    elif func == "percentile":
+        expected = np.percentile(a, 50.0, axis=axis)
+    elif func == "nanpercentile":
+        expected = np.nanpercentile(a, 50.0, axis=axis)
     elif func in funcs_collecting:
         # the values of every group, along the axis: the labels are all zero,
         # so the one group holds the values of one position along the axis

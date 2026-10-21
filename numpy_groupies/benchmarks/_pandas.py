@@ -97,6 +97,7 @@ _supported_funcs = [
     "max",
     "mean",
     "median",
+    "quantile",
     "var",
     "std",
     "first",
@@ -115,6 +116,8 @@ _op_dict["nancumsum"] = partial(_wrapper, func="nancumsum")
 # plain median propagates NaNs like np.median - pandas skips them by default
 # and GroupBy.median() takes no skipna argument
 _op_dict["median"] = partial(_wrapper, func="median", _nan_poison=True)
+# the same for the quantile: GroupBy.quantile() skips the NaNs as well
+_op_dict["quantile"] = partial(_wrapper, func="quantile", _nan_poison=True)
 _op_dict.update(
     allnan=partial(_wrapper, func=allnan),
     anynan=partial(_wrapper, func=anynan),

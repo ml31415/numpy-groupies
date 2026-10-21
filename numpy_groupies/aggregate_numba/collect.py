@@ -83,6 +83,7 @@ def _array_driver_factory(nan_variant: bool) -> Any:
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
+        q: float,
     ) -> list[npt.NDArray[np.generic]]:
         # the fill value is of no use here, and the dtypes neither - the
         # sequences carry the dtype of the values
