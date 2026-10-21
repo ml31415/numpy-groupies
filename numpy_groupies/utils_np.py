@@ -9,9 +9,7 @@ from typing import Any, Literal, TypeAlias, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import (
-    DEFAULT_FILL_VALUE,
-    FuncName,
+from numpy_groupies.common import (
     _DefaultFillValue,
     _forced_float_types,
     _forced_real_float_types,
@@ -19,7 +17,6 @@ from numpy_groupies.aggregate_common import (
     check_complex_dtype,
     get_aliasing,
     is_scalar_input,
-    resolve_fill_value,
     resolve_name,
 )
 
@@ -56,16 +53,6 @@ ValidatedInput: TypeAlias = tuple[
     int | tuple[int, ...] | npt.NDArray[np.integer],
     tuple[int, ...] | None,
 ]
-
-
-def default_fill_value(func: FuncName | Callable[..., AScalar], dtype: npt.DTypeLike | None = None) -> AFillValue:
-    """The value ``aggregate`` uses for groups missing from ``group_idx``.
-
-    ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your
-    actual output to get the value that would really be used, ``None`` assumes
-    a floating result (which is what the averaging functions give anyway).
-    """
-    return resolve_fill_value(func, DEFAULT_FILL_VALUE, np.dtype(dtype) if dtype is not None else np.float64)
 
 
 def check_nton_shape(
@@ -614,14 +601,6 @@ def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:
 
 def anynan(x: npt.NDArray[np.inexact]) -> np.bool_:
     return np.any(np.isnan(x))
-
-
-def nanfirst(x: npt.NDArray[np.inexact]) -> Any:
-    return x[~np.isnan(x)][0]
-
-
-def nanlast(x: npt.NDArray[np.inexact]) -> Any:
-    return x[~np.isnan(x)][-1]
 
 
 def multi_arange(n: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:

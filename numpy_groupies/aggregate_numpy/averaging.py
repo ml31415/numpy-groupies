@@ -10,14 +10,14 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import (
-    EXACT_FLOAT64_INTEGER_LIMIT,
-    INT64_DEVIATION_LIMIT,
-    raise_integer_mean_overflow,
-    raise_integer_variance_span_overflow,
-)
 from numpy_groupies.aggregate_numpy.reductions import _first, _last, _sum
-from numpy_groupies.utils import AScalar, iscomplexobj
+from numpy_groupies.common import (
+    EXACT_FLOAT64_INTEGER_LIMIT,
+    check_integer_mean_overflow,
+    check_integer_variance_span_overflow,
+    is_scalar_input,
+)
+from numpy_groupies.utils_np import AScalar, iscomplexobj
 
 
 def _mean(
@@ -27,15 +27,14 @@ def _mean(
     fill_value: AScalar,
     dtype: npt.DTypeLike | None = np.dtype(np.float64),
 ) -> npt.NDArray[np.inexact]:
-    if np.ndim(a) == 0:
+    if is_scalar_input(a):
         raise ValueError("cannot take mean with scalar a")
     if a.dtype.kind in "iu" and a.size:
         # the sums are accumulated in float64; once the exact integer sums can
         # leave the +/-2**53 window, the mean would silently round - refuse
         # instead (every backend raises for the same inputs)
         bound = max(int(a.max()), -int(a.min()))
-        if a.size * bound > EXACT_FLOAT64_INTEGER_LIMIT:
-            raise_integer_mean_overflow(a.size, bound)
+        check_integer_mean_overflow(a.size, bound)
     counts = np.bincount(group_idx, minlength=size)
     if iscomplexobj(a):
         # np.bincount does not take complex weights - accumulate the real and
@@ -139,7 +138,7 @@ def _var(
     sqrt: bool = False,
     ddof: int = 0,
 ) -> npt.NDArray[np.floating]:
-    if np.ndim(a) == 0:
+    if is_scalar_input(a):
         raise ValueError("cannot take variance with scalar a")
     if a.dtype.kind in "iu" and a.size:
         # center each group on its first value: the deviations stay exact in
@@ -148,8 +147,7 @@ def _var(
         low = int(a.min())
         high = int(a.max())
         if a.size * max(high, -low) > EXACT_FLOAT64_INTEGER_LIMIT:
-            if high - low > INT64_DEVIATION_LIMIT:
-                raise_integer_variance_span_overflow(low, high)
+            check_integer_variance_span_overflow(low, high)
             origins = _first(group_idx, a, size, 0, dtype=a.dtype)
             if a.dtype == np.dtype(np.uint64):
                 # uint64 subtraction wraps modulo 2**64, which is the exact

@@ -7,7 +7,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.reductions import _max, _min
-from numpy_groupies.utils import AScalar, maxval, minval
+from numpy_groupies.utils_np import AScalar, maxval, minval
 
 
 def _argmax(

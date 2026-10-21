@@ -13,7 +13,7 @@ from numpy_groupies import uaggregate
 from numpy_groupies.aggregate_numba import aggregate
 from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile
 from numpy_groupies.aggregate_numba.ops import _dispatch
-from numpy_groupies.utils import resolve_output_dtype
+from numpy_groupies.utils_np import resolve_output_dtype
 
 
 @pytest.fixture(

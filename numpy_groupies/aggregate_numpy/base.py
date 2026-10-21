@@ -8,15 +8,16 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.aggregate_numpy.ops import _dispatch
+from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     FuncName,
     Registry,
+    is_scalar_input,
     missing_impl_error,
     resolve_fill_value,
 )
-from numpy_groupies.aggregate_numpy.ops import _dispatch
-from numpy_groupies.utils import (
+from numpy_groupies.utils_np import (
     AFillValue,
     AResult,
     AScalar,
@@ -63,7 +64,7 @@ def _aggregate_base(
     if isinstance(funcname, str):
         # a known function: the nan variants drop the nans of the input first
         if funcname.startswith("nan"):
-            if np.ndim(a) == 0:
+            if is_scalar_input(a):
                 raise ValueError("nan-version not supported for scalar input.")
             if "nan" in funcname:
                 if "arg" in funcname:

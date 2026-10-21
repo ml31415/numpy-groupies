@@ -19,7 +19,11 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
+from numpy_groupies.aggregate_numba.compose import KernelHandle
+from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
+from numpy_groupies.aggregate_numpy.base import _aggregate_base
+from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     FuncName,
     Registry,
@@ -31,11 +35,7 @@ from numpy_groupies.aggregate_common import (
     is_scalar_input,
     resolve_fill_value,
 )
-from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
-from numpy_groupies.aggregate_numba.compose import KernelHandle
-from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
-from numpy_groupies.utils import (
+from numpy_groupies.utils_np import (
     AFillValue,
     AResult,
     AScalar,

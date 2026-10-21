@@ -4,7 +4,8 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.aggregate_numpy.base import _aggregate_base
+from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     Registry,
     Resolved,
@@ -12,8 +13,7 @@ from numpy_groupies.aggregate_common import (
     custom_callable,
     missing_impl_error,
 )
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
-from numpy_groupies.utils import (
+from numpy_groupies.utils_np import (
     AFillValue,
     AScalar,
     RavelOrder,

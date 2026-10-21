@@ -7,25 +7,23 @@ import operator
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
-    EXACT_FLOAT64_INTEGER_LIMIT,
-    INT64_DEVIATION_LIMIT,
     FuncName,
     Registry,
     Resolved,
     aggregate_common_doc,
     check_complex_dtype,
     check_fixed_fill_value,
+    check_integer_mean_overflow,
+    check_integer_variance_span_overflow,
     custom_callable,
     funcs_no_separate_nan,
     is_scalar_input,
     missing_impl_error,
-    raise_integer_mean_overflow,
-    raise_integer_variance_span_overflow,
     resolve_fill_value,
 )
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.common import (
     aliasing_py as aliasing,
 )
 
@@ -33,7 +31,7 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.utils import AFillValue, AScalar, AValue, RavelOrder
+    from numpy_groupies.utils_np import AFillValue, AScalar, AValue, RavelOrder
 
 
 # min, max, all, any - builtin
@@ -307,11 +305,9 @@ def _check_integer_precision(a: Sequence[Any], func: Callable[..., AScalar]) -> 
     low = min(values)
     high = max(values)
     if func is _mean:
-        bound = max(high, -low)
-        if len(values) * bound > EXACT_FLOAT64_INTEGER_LIMIT:
-            raise_integer_mean_overflow(len(values), bound)
-    elif high - low > INT64_DEVIATION_LIMIT:
-        raise_integer_variance_span_overflow(low, high)
+        check_integer_mean_overflow(len(values), max(high, -low))
+    else:
+        check_integer_variance_span_overflow(low, high)
 
 
 def aggregate(

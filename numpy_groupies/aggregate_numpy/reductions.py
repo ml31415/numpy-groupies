@@ -10,7 +10,8 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.steps import fill_untouched
-from numpy_groupies.utils import (
+from numpy_groupies.common import is_scalar_input
+from numpy_groupies.utils_np import (
     AScalar,
     check_boolean,
     iscomplexobj,
@@ -30,7 +31,7 @@ def _sum(
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
 
-    if np.ndim(a) == 0:
+    if is_scalar_input(a):
         ret = np.bincount(group_idx, minlength=size).astype(dtype, copy=False)
         if a != 1:
             ret *= a

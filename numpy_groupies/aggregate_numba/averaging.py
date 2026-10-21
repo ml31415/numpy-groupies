@@ -3,7 +3,7 @@
 Integer input is centered on the first value of each group and the global
 min/max is tracked in the same accumulation pass; the exactness gates run
 between the passes and raise ``OverflowError`` for the same inputs in every
-backend (see ``aggregate_common`` for the policy constants).
+backend (see ``common`` for the policy constants).
 """
 
 from collections.abc import Callable
@@ -13,9 +13,9 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import EXACT_FLOAT64_INTEGER_LIMIT, INT64_DEVIATION_LIMIT, INT64_MIN
 from numpy_groupies.aggregate_numba.compose import build_kernel, rule_float, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.common import EXACT_FLOAT64_INTEGER_LIMIT, INT64_DEVIATION_LIMIT, INT64_MIN
 
 
 # the building blocks and overload shims of this file are jitted: numba
@@ -52,8 +52,8 @@ def _track_extrema_overload(val: float, low: float, high: float) -> Callable[...
 
 @njit_stable
 def _mean_overflow_message(count: int, bound: int) -> str:
-    """The numba twin of ``raise_integer_mean_overflow`` - numba cannot call
-    the python helper (aggregate_common must stay numpy-free), so the text is
+    """The numba twin of ``check_integer_mean_overflow`` - numba cannot call
+    the python helper (common must stay numpy-free), so the text is
     mirrored here and must be kept in sync with it."""
     return (
         "cannot compute an exact mean of "
@@ -69,7 +69,7 @@ def _mean_overflow_message(count: int, bound: int) -> str:
 
 @njit_stable
 def _span_overflow_message(low: int, high: int) -> str:
-    """The numba twin of ``raise_integer_variance_span_overflow``."""
+    """The numba twin of ``check_integer_variance_span_overflow``."""
     # numba's str() negates int64-min internally, wraps, and then fails to
     # size the string buffer - spell that one value out
     low_text = "-9223372036854775808" if low == INT64_MIN else str(low)

@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.aggregate_common import FuncName
-    from numpy_groupies.utils import AFillValue, AResult, AScalar, AValue, RavelOrder
+    from numpy_groupies.common import FuncName
+    from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
 
     class Aggregate(Protocol):
         """The canonical signature of the public ``aggregate``.
@@ -73,8 +73,8 @@ else:
 
     aggregate = cast("Aggregate", aggregate_np_impl)
     aggregate_np = aggregate
-    from numpy_groupies.utils import (
-        default_fill_value,
+    from numpy_groupies.common import default_fill_value
+    from numpy_groupies.utils_np import (
         label_contiguous_1d,
         multi_arange,
         relabel_groups_masked,

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, SupportsInt, TypeAli
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from numpy_groupies.utils import AFillValue, AScalar
+    from numpy_groupies.utils_np import AFillValue, AScalar
 
 nan = float("nan")  # nan is just this float
 
@@ -27,26 +27,34 @@ INT64_DEVIATION_LIMIT = 2**63 - 1
 INT64_MIN = -(2**63)
 
 
-def raise_integer_mean_overflow(count: int, bound: int) -> None:
+def check_integer_mean_overflow(count: int, bound: int) -> None:
     """Refuse integer means that float64 cannot compute exactly.
 
-    Every implementation raises this for the same inputs, so the backends
-    never disagree silently on inexact integer means.
+    The mean of ``count`` integers of magnitude up to ``bound`` is exact in
+    float64 only while their sums stay inside the window float64 represents
+    exactly.  Every implementation applies this rule, so the backends never
+    disagree silently on inexact integer means.
     """
-    raise OverflowError(
-        f"cannot compute an exact mean of {count} integer values with magnitude up to {bound}: "
-        f"their sums can exceed +/-{EXACT_FLOAT64_INTEGER_LIMIT}, the range float64 represents "
-        f"exactly - cast the input to a float dtype to accept rounding, or use sum and len"
-    )
+    if count * bound > EXACT_FLOAT64_INTEGER_LIMIT:
+        raise OverflowError(
+            f"cannot compute an exact mean of {count} integer values with magnitude up to {bound}: "
+            f"their sums can exceed +/-{EXACT_FLOAT64_INTEGER_LIMIT}, the range float64 represents "
+            f"exactly - cast the input to a float dtype to accept rounding, or use sum and len"
+        )
 
 
-def raise_integer_variance_span_overflow(low: int, high: int) -> None:
-    """Refuse integer variances whose exact centering would overflow int64."""
-    raise OverflowError(
-        f"cannot compute an exact variance: the integer values span [{low}, {high}], wider than "
-        f"+/-{INT64_DEVIATION_LIMIT}, so centering each group on its first value would overflow "
-        f"the signed 64-bit deviation - cast the input to a float dtype first"
-    )
+def check_integer_variance_span_overflow(low: int, high: int) -> None:
+    """Refuse integer variances whose exact centering would overflow int64.
+
+    The deviations of the values of a group from its first value have to stay
+    inside the signed 64-bit range for the variance to be exact.
+    """
+    if high - low > INT64_DEVIATION_LIMIT:
+        raise OverflowError(
+            f"cannot compute an exact variance: the integer values span [{low}, {high}], wider than "
+            f"+/-{INT64_DEVIATION_LIMIT}, so centering each group on its first value would overflow "
+            f"the signed 64-bit deviation - cast the input to a float dtype first"
+        )
 
 
 aggregate_common_doc = """
@@ -318,6 +326,16 @@ def check_filling_with_none(func: str | Callable[..., AScalar]) -> None:
         raise TypeError(
             "fill_value=None fills an object result, which is what func='array' returns and no other function does (the default of a function is asked for with DEFAULT_FILL_VALUE)"
         )
+
+
+def default_fill_value(func: FuncName | Callable[..., AScalar], dtype: npt.DTypeLike | None = None) -> AFillValue:
+    """The value ``aggregate`` uses for groups missing from ``group_idx``.
+
+    ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your
+    actual output to get the value that would really be used, ``None`` assumes
+    a floating result (which is what the averaging functions give anyway).
+    """
+    return resolve_fill_value(func, DEFAULT_FILL_VALUE, float if dtype is None else dtype)
 
 
 def resolve_fill_value(

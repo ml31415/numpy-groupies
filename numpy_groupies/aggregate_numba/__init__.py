@@ -7,17 +7,17 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.aggregate_numba.gather import unpack_into
+from numpy_groupies.aggregate_numba.ops import _dispatch
+from numpy_groupies.aggregate_numba.steps import step_count, step_indices
+from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     FuncName,
     aggregate_common_doc,
     funcs_collecting,
     missing_impl_error,
 )
-from numpy_groupies.aggregate_numba.gather import unpack_into
-from numpy_groupies.aggregate_numba.ops import _dispatch
-from numpy_groupies.aggregate_numba.steps import step_count, step_indices
-from numpy_groupies.utils import AFillValue, AResult, AScalar, AValue, RavelOrder
+from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
 
 __all__ = ["aggregate", "step_count", "step_indices", "unpack_into"]
 

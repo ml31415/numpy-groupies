@@ -11,12 +11,6 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import (
-    Registry,
-    Resolved,
-    custom_callable,
-    funcs_no_separate_nan,
-)
 from numpy_groupies.aggregate_numpy.argreductions import _argmax, _argmin
 from numpy_groupies.aggregate_numpy.averaging import _mean, _std, _sum_of_squres, _trapezoid, _var
 from numpy_groupies.aggregate_numpy.collect import _array, _generic_callable
@@ -35,7 +29,13 @@ from numpy_groupies.aggregate_numpy.reductions import (
     _sum,
 )
 from numpy_groupies.aggregate_numpy.specials import _median, _nunique, _percentile, _quantile, _sort
-from numpy_groupies.utils import AResult, AScalar, aliasing
+from numpy_groupies.common import (
+    Registry,
+    Resolved,
+    custom_callable,
+    funcs_no_separate_nan,
+)
+from numpy_groupies.utils_np import AResult, AScalar, aliasing
 
 _op_dict: dict[str, Callable[..., AResult]] = {
     "min": _min,
