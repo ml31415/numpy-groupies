@@ -12,7 +12,7 @@ from numpy_groupies.aggregate_common import (
     custom_callable,
     missing_impl_error,
 )
-from numpy_groupies.aggregate_numpy import _aggregate_base
+from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.utils import (
     AFillValue,
     AScalar,

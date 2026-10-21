@@ -55,8 +55,6 @@ conda install -c conda-forge numpy_groupies
 
 NumPy is the only declared dependency. Numba is optional and only the fastest implementation needs it; the pure-Python implementation runs without Numba but still imports NumPy (see [Implementations](#implementations)).
 
-If you only want one implementation, you can copy a single file (e.g. `aggregate_numpy.py`) into your project: paste the contents of `utils.py` at its top, replacing the `from .utils import (...)` line.
-
 ## Quickstart
 
 **Counting, and other reductions.** The default function is `sum`; pass a scalar to count items per group (this is what `np.bincount` does under the hood in the NumPy implementation). Labels must be non-negative integers. For strings or other objects, map them first with `np.unique(labels, return_inverse=True)` and pass the inverse as `group_idx`. `a` are the values that you want to run your reductions on.

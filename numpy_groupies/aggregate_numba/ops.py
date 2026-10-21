@@ -34,7 +34,7 @@ from numpy_groupies.aggregate_common import (
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.aggregate_numba.compose import KernelHandle
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
-from numpy_groupies.aggregate_numpy import _aggregate_base
+from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.utils import (
     AFillValue,
     AResult,
