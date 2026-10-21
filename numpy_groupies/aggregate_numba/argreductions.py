@@ -113,6 +113,7 @@ def _argmax_driver_factory(nan_variant: bool) -> Any:
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
+        q: float,
     ) -> npt.NDArray[np.number]:
         # once this resolved, every index is within [0, size) - the loop does
         # not need an upper bounds check (negative ones are flagged and raised
@@ -213,6 +214,7 @@ def _argmin_driver_factory(nan_variant: bool) -> Any:
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
+        q: float,
     ) -> npt.NDArray[np.number]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)

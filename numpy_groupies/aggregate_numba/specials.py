@@ -206,8 +206,10 @@ def _median_driver_factory(nans: bool) -> Any:
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
+        q: float,
     ) -> npt.NDArray[np.number]:
-        # median is order-insensitive and takes no ddof - both slots unused
+        # median is order-insensitive and takes no ddof and no quantile -
+        # both slots unused
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         counts = _count(group_idx, size)
@@ -309,10 +311,11 @@ def _quantile_driver_factory(nans: bool) -> Any:
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
+        ddof: int,
         q: float,
     ) -> npt.NDArray[np.number]:
-        # the quantile is order-insensitive and takes no ddof - the slot the
-        # other kernels use for the ddof carries the quantile here
+        # the quantile is order-insensitive and takes no ddof - the slot stays
+        # unused, the quantile has one of its own
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         counts = _count(group_idx, size)
@@ -358,7 +361,6 @@ quantile = build_custom_kernel(
     driver_factory=_quantile_driver_factory,
     rule=rule_float,
     fill_default=np.nan,
-    ddof_default=0.5,
     doc="Quantile of the values of every group",
 )
 
@@ -477,6 +479,7 @@ def _sort_driver_factory(nans: bool) -> Any:
         aux_dtype: np.dtype,
         fill_value: float,
         ddof: int,
+        q: float,
     ) -> npt.NDArray[np.number]:
         # sort emits one value per input item, so neither the group count nor
         # the fill value is of any use here; the reverse flag arrives in the

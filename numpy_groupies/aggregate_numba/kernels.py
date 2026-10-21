@@ -71,12 +71,10 @@ aggregate_nanvar = averaging.var.nan.stub
 
 aggregate_median = specials.median.plain.stub
 aggregate_nanmedian = specials.median.nan.stub
-# the percentile is the quantile in percent - the kernel is the same one, the
-# argument arrives scaled down
+# the percentile is the quantile in percent - the python-level aggregate
+# scales its argument down, so the kernel only knows the quantile
 aggregate_quantile = specials.quantile.plain.stub
 aggregate_nanquantile = specials.quantile.nan.stub
-aggregate_percentile = specials.quantile.plain.stub
-aggregate_nanpercentile = specials.quantile.nan.stub
 aggregate_trapezoid = specials.trapezoid.plain.stub
 aggregate_nantrapezoid = specials.trapezoid.nan.stub
 aggregate_sort = specials.sort.plain.stub
@@ -129,7 +127,6 @@ __all__ = [
     "aggregate_nanmean",
     "aggregate_nanmedian",
     "aggregate_nanmin",
-    "aggregate_nanpercentile",
     "aggregate_nanprod",
     "aggregate_nanquantile",
     "aggregate_nanstd",
@@ -137,7 +134,6 @@ __all__ = [
     "aggregate_nansumofsquares",
     "aggregate_nantrapezoid",
     "aggregate_nanvar",
-    "aggregate_percentile",
     "aggregate_prod",
     "aggregate_quantile",
     "aggregate_sort",

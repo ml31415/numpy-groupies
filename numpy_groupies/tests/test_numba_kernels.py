@@ -45,6 +45,10 @@ _FLOAT_OPS = [
     ("nanlast", {}),
     ("median", {}),
     ("nanmedian", {}),
+    ("quantile", {}),
+    ("nanquantile", {}),
+    ("quantile", {"q": 0.9}),
+    ("nanquantile", {"q": 0.9}),
     ("trapezoid", {"ddof": 1.0}),
     ("nantrapezoid", {"ddof": 1.0}),
     ("sumofsquares", {}),
@@ -70,6 +74,7 @@ _INT_OPS = [
     ("first", {}),
     ("last", {}),
     ("median", {}),
+    ("quantile", {}),
     ("argmin", {}),
     ("argmax", {}),
     ("cumsum", {}),
@@ -89,24 +94,27 @@ _BOOL_OPS = [
 ]
 
 
-def _kernel_result(name, values, ddof=0):
+def _kernel_result(name, values, ddof=0, q=0.5):
     """Call the kernel of ``name`` from jitted code (fill default via None)."""
     stub = getattr(kernels, "aggregate_" + name)
 
     @nb.njit
-    def caller(group_idx, a, ddof, size, fill_value):
-        return stub(group_idx, a, ddof, size, fill_value)
+    def caller(group_idx, a, ddof, q, size, fill_value):
+        return stub(group_idx, a, ddof, q, size, fill_value)
 
-    return caller(GROUP_IDX, values, ddof, -1, None)
+    return caller(GROUP_IDX, values, ddof, q, -1, None)
 
 
-def _layer2_result(name, values, ddof=0):
+def _layer2_result(name, values, ddof=0, q=0.5):
     if name in ("trapezoid", "nantrapezoid"):
         # the python-level wrapper carries the sample spacing as dx
         return aggregate_numba.aggregate(GROUP_IDX, values, func=name, dx=ddof)
     if name == "sort":
         # ... and the reverse flag of the sort kernel as its third argument
         return aggregate_numba.aggregate(GROUP_IDX, values, func=name, reverse=bool(ddof))
+    if name in ("quantile", "nanquantile"):
+        # ... and the quantile of the quantile kernel in the slot of its own
+        return aggregate_numba.aggregate(GROUP_IDX, values, func=name, q=q)
     return aggregate_numba.aggregate(GROUP_IDX, values, func=name, ddof=ddof)
 
 
@@ -158,7 +166,7 @@ def test_collecting_kernel_refuses_a_fill_value():
 
     @nb.njit
     def caller(group_idx, a, fill_value):
-        return kernels.aggregate_array(group_idx, a, 0, -1, fill_value)
+        return kernels.aggregate_array(group_idx, a, 0, 0.5, -1, fill_value)
 
     with pytest.raises(nb.TypingError, match="has no fill_value"):
         caller(GROUP_IDX, FLOAT_A, 7.0)
@@ -246,7 +254,7 @@ def test_fill_value_passthrough():
 
     @nb.njit
     def caller(group_idx, a, fill_value):
-        return kernels.aggregate_sum(group_idx, a, 0, -1, fill_value)
+        return kernels.aggregate_sum(group_idx, a, 0, 0.5, -1, fill_value)
 
     result = caller(GROUP_IDX, INT_A, 42)
     assert result[2] == 42
@@ -256,7 +264,7 @@ def test_size_too_small_raises():
 
     @nb.njit
     def caller(group_idx, a, size):
-        return kernels.aggregate_sum(group_idx, a, 0, size)
+        return kernels.aggregate_sum(group_idx, a, 0, 0.5, size)
 
     with pytest.raises(ValueError, match="too large"):
         caller(GROUP_IDX, FLOAT_A, 1)

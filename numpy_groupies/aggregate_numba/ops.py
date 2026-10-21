@@ -154,6 +154,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
         ddof: float = 0,
+        q: float = 0.5,
     ) -> AResult:
         # dtypes the compiled driver cannot handle, handed to the numpy twin
         if handle.fallback is not None and _needs_fallback(handle, a):
@@ -193,6 +194,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
                     _aux_dtype(handle, a_key, plan_dtype),
                     _driver_fill(handle, plan_fill),
                     ddof,
+                    q,
                 )
                 if handle.post is not None:
                     ret = handle.post(ret, group_idx, plan_fill)
@@ -234,6 +236,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
             _aux_dtype(handle, a_key, dtype),
             _driver_fill(handle, fill_value),
             ddof,
+            q,
         )
         if handle.post is not None:
             # the driver assembled something else - the post hook makes it the
@@ -485,11 +488,11 @@ def _quantile_arguments(
 ) -> Callable[..., AResult]:
     """Expose the quantile of the quantile and of the percentile.
 
-    The kernels receive the quantile in the position otherwise used for
-    ``ddof``; the percentile is the quantile in percent, so its argument is
-    scaled down before it goes there.  The compiled driver interpolates
-    linearly - the way numpy does it by default - while the other methods of
-    numpy are answered by the numpy implementation.
+    The kernels receive the quantile in the slot of their own; the
+    percentile is the quantile in percent, so its argument is scaled down
+    before it goes there.  The compiled driver interpolates linearly - the way
+    numpy does it by default - while the other methods of numpy are answered
+    by the numpy implementation.
     """
 
     def quantile_op(
@@ -518,7 +521,7 @@ def _quantile_arguments(
                 q=q,
                 method=method,
             )
-        return op(group_idx, a, size, fill_value, order, dtype, axis, q * scale)
+        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q * scale)
 
     return quantile_op
 

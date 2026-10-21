@@ -219,7 +219,7 @@ def _make_stub(
     rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
     fill_default: AScalar,
     doc: str | None,
-    ddof_default: float = 0,
+    ddof_default: int = 0,
     reject_fill: bool = False,
 ) -> Callable[..., Any]:
     """Create the njit-callable ``aggregate_*`` function of one variant.
@@ -244,7 +244,8 @@ def _make_stub(
     def stub(
         group_idx: Any,
         a: Any,
-        ddof: float = ddof_default,
+        ddof: int = ddof_default,
+        q: float = 0.5,
         size: int = -1,
         fill_value: float | None = None,
     ) -> Any:
@@ -265,7 +266,8 @@ def _make_stub(
     def _overload(
         group_idx: Any,
         a: Any,
-        ddof: float = ddof_default,
+        ddof: int = ddof_default,
+        q: float = 0.5,
         size: int = -1,
         fill_value: float | None = None,
     ) -> Callable[..., Any]:
@@ -280,7 +282,8 @@ def _make_stub(
         def impl(
             group_idx: Any,
             a: Any,
-            ddof: float = ddof_default,
+            ddof: int = ddof_default,
+            q: float = 0.5,
             size: int = -1,
             fill_value: float | None = None,
         ) -> Any:
@@ -291,10 +294,10 @@ def _make_stub(
                     raise nb.TypingError(
                         f"aggregate_{stub_name} has no fill_value - an absent group holds an empty sequence"
                     )
-                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
+                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof, q)
             if fill_value is None:
-                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
-            return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, ddof)
+                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof, q)
+            return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, ddof, q)
 
         return impl
 
@@ -376,7 +379,7 @@ def build_kernel(
     untouched: Callable[..., npt.NDArray[np.bool_]] | None = None,
     update_nan: Callable[..., None] | None = None,
     nans: bool = True,
-    ddof_default: float = 0,
+    ddof_default: int = 0,
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
@@ -518,6 +521,7 @@ def build_kernel(
             aux_dtype: np.dtype,
             fill_value: float,
             ddof: int,
+            q: float,
         ) -> Any:
             # numba's np.max reduction is several times faster than a scalar
             # loop here; negative indices slip through and are caught by the
@@ -575,7 +579,7 @@ def build_custom_kernel(
     fill_default: AScalar = 0,
     forced_fill: float | None = None,
     nans: bool = True,
-    ddof_default: float = 0,
+    ddof_default: int = 0,
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
