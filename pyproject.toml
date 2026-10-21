@@ -22,7 +22,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -32,7 +31,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 keywords = ["accumarray", "aggregate", "groupby", "grouping", "indexing"]
-requires-python = ">=3.10" # 0.15 will raise this to ">=3.11"
+requires-python = ">=3.11"
 dependencies = ["numpy"]
 
 [project.optional-dependencies]
@@ -46,10 +45,8 @@ dev = [
     "pandas",
     "polars",
     "numbagg",
-    # pre-commit 4 requires Python >= 3.11, but the project still supports
-    # 3.10, so stay on the 3.x line.
     "mypy>=2.4",
-    "pre-commit>=3.8,<4",
+    "pre-commit>=4",
     "ruff>=0.17",
 ]
 

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-import warnings
 from typing import TYPE_CHECKING, Any, cast
 
 from numpy_groupies.aggregate_purepy import aggregate as aggregate_py
@@ -145,11 +143,3 @@ except ImportError:
     else:
         __version__ = get_version(root="..", relative_to=__file__)
         del get_version
-
-if sys.version_info[:2] < (3, 11):
-    warnings.warn(
-        "numpy-groupies will require Python 3.11 or newer from version 0.15, "
-        "and the 0.14 releases are the last to support Python 3.10.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
