@@ -16,13 +16,13 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import FuncName
 from numpy_groupies.aggregate_numba.compose import build_custom_kernel, output_size, rule_object
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.aggregate_numpy.collect import blocks_to_object_array
-from numpy_groupies.utils import AFillValue, AValue, RavelOrder
+from numpy_groupies.common import FuncName
+from numpy_groupies.utils_np import AFillValue, AValue, RavelOrder
 
 # the dtypes the compiled driver can place - the numeric ones the drivers of
 # the other operations take as well.  The list is no duplication of what numba

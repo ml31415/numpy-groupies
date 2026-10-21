@@ -10,7 +10,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.steps import fill_untouched
-from numpy_groupies.utils import (
+from numpy_groupies.utils_np import (
     AScalar,
     check_boolean,
     iscomplexobj,

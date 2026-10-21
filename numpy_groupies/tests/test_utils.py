@@ -11,7 +11,7 @@ from typing import get_args
 import numpy as np
 import pytest
 
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.common import (
     FuncName,
     Registry,
     Resolved,
@@ -21,7 +21,7 @@ from numpy_groupies.aggregate_common import (
     resolve_name,
 )
 from numpy_groupies.tests.helpers import random_values
-from numpy_groupies.utils import aliasing, check_dtype, check_nton_shape, unpack
+from numpy_groupies.utils_np import aliasing, check_dtype, check_nton_shape, unpack
 
 
 def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():

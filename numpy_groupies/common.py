@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, SupportsInt, TypeAli
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from numpy_groupies.utils import AFillValue, AScalar
+    from numpy_groupies.utils_np import AFillValue, AScalar
 
 nan = float("nan")  # nan is just this float
 
@@ -318,6 +318,16 @@ def check_filling_with_none(func: str | Callable[..., AScalar]) -> None:
         raise TypeError(
             "fill_value=None fills an object result, which is what func='array' returns and no other function does (the default of a function is asked for with DEFAULT_FILL_VALUE)"
         )
+
+
+def default_fill_value(func: FuncName | Callable[..., AScalar], dtype: npt.DTypeLike | None = None) -> AFillValue:
+    """The value ``aggregate`` uses for groups missing from ``group_idx``.
+
+    ``func`` may be a name, an alias or a callable.  Pass the ``dtype`` of your
+    actual output to get the value that would really be used, ``None`` assumes
+    a floating result (which is what the averaging functions give anyway).
+    """
+    return resolve_fill_value(func, DEFAULT_FILL_VALUE, float if dtype is None else dtype)
 
 
 def resolve_fill_value(

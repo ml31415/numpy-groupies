@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
+from numpy_groupies.common import default_fill_value
 from numpy_groupies.tests.helpers import (
     assert_same_result,
     func_list,
@@ -18,7 +19,6 @@ from numpy_groupies.tests.helpers import (
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
-from numpy_groupies.utils import default_fill_value
 
 # the one-out-per-item functions (cum*, sort) have nothing to fill an absent
 # group with - see test_one_out_per_in_cannot_fill in test_axis.py

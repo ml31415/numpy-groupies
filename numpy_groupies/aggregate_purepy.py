@@ -7,7 +7,7 @@ import operator
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
@@ -25,7 +25,7 @@ from numpy_groupies.aggregate_common import (
     raise_integer_variance_span_overflow,
     resolve_fill_value,
 )
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.common import (
     aliasing_py as aliasing,
 )
 
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.utils import AFillValue, AScalar, AValue, RavelOrder
+    from numpy_groupies.utils_np import AFillValue, AScalar, AValue, RavelOrder
 
 
 # min, max, all, any - builtin

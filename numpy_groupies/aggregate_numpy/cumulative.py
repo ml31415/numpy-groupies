@@ -7,7 +7,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.steps import group_bounds, group_order
-from numpy_groupies.utils import AScalar
+from numpy_groupies.utils_np import AScalar
 
 
 def _group_cumsum_sorted(

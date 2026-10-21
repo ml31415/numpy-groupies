@@ -12,7 +12,7 @@ from typing import NamedTuple
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.utils import AScalar
+from numpy_groupies.utils_np import AScalar
 
 
 def step_count(group_idx: npt.NDArray[np.integer]) -> int:

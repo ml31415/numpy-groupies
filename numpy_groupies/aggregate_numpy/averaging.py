@@ -10,14 +10,14 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_common import (
+from numpy_groupies.aggregate_numpy.reductions import _first, _last, _sum
+from numpy_groupies.common import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
     raise_integer_mean_overflow,
     raise_integer_variance_span_overflow,
 )
-from numpy_groupies.aggregate_numpy.reductions import _first, _last, _sum
-from numpy_groupies.utils import AScalar, iscomplexobj
+from numpy_groupies.utils_np import AScalar, iscomplexobj
 
 
 def _mean(
