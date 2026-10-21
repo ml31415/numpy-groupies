@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 from numba.core.dispatcher import Dispatcher
 
-from numpy_groupies import uaggregate
-from numpy_groupies.aggregate_numba import aggregate
+from numpy_groupies import aggregate_numba, uaggregate
+from numpy_groupies.aggregate_numba import aggregate, ops
 from numpy_groupies.aggregate_numba.gather import _gather_1d
 from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile
 from numpy_groupies.aggregate_numba.ops import _dispatch
@@ -198,9 +198,6 @@ def test_slow_path_still_reachable(rng):
 
 
 def test_numba_callable_cache_construction(monkeypatch):
-    from numpy_groupies import aggregate_numba
-    from numpy_groupies.aggregate_numba import ops
-
     group_idx = np.array([0, 1, 1, 2])
     a = np.arange(4.0)
     func = lambda x: np.sum(x)
