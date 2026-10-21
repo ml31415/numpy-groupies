@@ -205,6 +205,32 @@ def test_median_orders_complex_from_njit_like_the_reference():
     np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="median", size=2))
 
 
+def test_quantile_orders_complex_from_njit_like_the_reference():
+    # the quantile driver selects the wanted quantile out of the block of every
+    # group with the ordering of the package, which for complex values is the
+    # lexicographic order numpy uses - so the kernel compiles for them and
+    # answers like the reference does.
+    @nb.njit
+    def wrapped(group_idx, a):
+        return kernels.aggregate_quantile(group_idx, a, 0, 0.5, 2, None)
+
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
+    np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="quantile", q=0.5, size=2))
+
+
+def test_quantile_of_a_complex_group_with_a_nan_poisons_it_from_njit():
+    # a nan in either part of a complex value makes the value incomparable, and
+    # the whole group answers with a nan - the plain quantile is contagious
+    @nb.njit
+    def wrapped(group_idx, a):
+        return kernels.aggregate_quantile(group_idx, a, 0, 0.5, 2, None)
+
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1 + 2j, complex(np.nan, 4.0), 5 + 6j])
+    np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="quantile", q=0.5, size=2))
+
+
 def test_sort_orders_complex_from_njit_like_numpy():
     # the kernel jitted code reaches orders complex like numpy does: numba
     # compares the real part first, the imaginary part on a tie, and leaves a
