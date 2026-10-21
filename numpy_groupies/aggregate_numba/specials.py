@@ -167,12 +167,14 @@ def _median_driver_factory(nans: bool) -> Any:
     _count = njit_stable(group_count)
     _starts = njit_stable(group_starts)
     _place = njit_stable(group_place)
-    _valid_plain = njit_stable(_group_valid_plain, name="median_valid_plain")
-    _valid_nan = njit_stable(_group_valid_nan, name="median_valid_nan")
+    # the same helper serves the quantile as well - the same source, the same
+    # signature, the same specializations: one compiled artifact serves both
+    _valid_plain = njit_stable(_group_valid_plain)
+    _valid_nan = njit_stable(_group_valid_nan)
     # the selection and the middle that uses it: the middle closes over the
     # selection, so that the compiled block belongs to the operation that uses
     # it (see njit_stable)
-    _select = njit_stable(_select_kth, name=f"{op_name}_select")
+    _select = njit_stable(_select_kth)
 
     def _middle(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> Any:
         """the middle value(s) of the block at ``a_sorted[begin:begin+m]``.
@@ -270,11 +272,13 @@ def _quantile_driver_factory(nans: bool) -> Any:
     _count = njit_stable(group_count)
     _starts = njit_stable(group_starts)
     _place = njit_stable(group_place)
-    _valid_plain = njit_stable(_group_valid_plain, name=f"{op_name}_valid_plain")
-    _valid_nan = njit_stable(_group_valid_nan, name=f"{op_name}_valid_nan")
-    # the selection closes over the operation, so that the compiled block
-    # belongs to the operation that uses it (see njit_stable)
-    _select = njit_stable(_select_kth, name=f"{op_name}_select")
+    # the same helper serves the median as well - the same source, the same
+    # signature, the same specializations: one compiled artifact serves both
+    _valid_plain = njit_stable(_group_valid_plain)
+    _valid_nan = njit_stable(_group_valid_nan)
+    # the selection is the same block for every operation that selects - the
+    # median and the quantile share it, one compiled artifact serves both
+    _select = njit_stable(_select_kth)
 
     def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float) -> Any:
         """the quantile q of the block at ``a_sorted[begin:begin+m]``.
