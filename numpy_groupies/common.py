@@ -166,6 +166,8 @@ funcs_common = [
     "trapezoid",
     "var",
     "std",
+    "skew",
+    "kurt",
     "allnan",
     "anynan",
     "max",
@@ -198,7 +200,8 @@ FuncName: TypeAlias = Literal[
     "nanany", "nanargmax", "nanargmin", "nancummax", "nancummin", "nancumprod",
     "nancumsum", "nanfirst", "nanlast", "nanlen", "nanmax", "nanmean",
     "nanmedian", "nanmin", "nanpercentile", "nanprod", "nanquantile",
-    "nanstd", "nansum", "nansumofsquares", "nantrapezoid", "nanvar", "or",
+    "nanskew", "nankurt", "nanstd", "nansum", "nansumofsquares",
+    "nantrapezoid", "nanvar", "or", "skew", "kurt", "kurtosis",
     "percentile", "plus", "prod", "product", "quantile",
     "rsorted", "sort", "sorted", "splice", "split", "std",
     "sum", "sumofsquares", "times", "trapezoid", "var", "nunique",
@@ -235,6 +238,8 @@ _default_fill_values: dict[str, AFillValue] = {
     "trapezoid": 0,
     "var": nan,
     "std": nan,
+    "skew": nan,
+    "kurt": nan,
     "min": nan,
     "max": nan,
     "first": nan,
@@ -397,6 +402,7 @@ _alias_str = {
     "asorted": "sort",
     "rsorted": "sort",
     "dsort": "sort",
+    "kurtosis": "kurt",
 }
 
 _alias_builtin: dict[str | Callable[..., object], str] = {
@@ -561,6 +567,10 @@ class Registry(dict[str | Callable[..., object], Resolved]):
 _forced_float_types = {
     "mean",
     "median",
+    "skew",
+    "kurt",
+    "nanskew",
+    "nankurt",
     "quantile",
     "percentile",
     "trapezoid",

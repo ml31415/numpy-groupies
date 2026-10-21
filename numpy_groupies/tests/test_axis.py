@@ -22,7 +22,7 @@ from numpy_groupies.tests.helpers import (
     random_group_idx,
     random_values,
 )
-from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
+from numpy_groupies.tests.reference import _kurt_ref, _skew_ref, _skip_nans, aggregate_ref, trapezoid_ref
 
 
 def _quiet_reference(func: Callable[..., Any], a: npt.NDArray[Any], *args: Any, **kwargs: Any) -> Any:
@@ -151,6 +151,13 @@ def test_along_axis(impl, rng, func, size, axis):
         expected = _quiet_reference(np.percentile, a, 50.0, axis=axis)
     elif func == "nanpercentile":
         expected = _quiet_reference(np.nanpercentile, a, 50.0, axis=axis)
+    elif func in ("skew", "kurt", "nanskew", "nankurt"):
+        # numpy has no skewness of its own - the reference of the package
+        # computes it, and the nan variants leave the nans out
+        ref = _skew_ref if "skew" in func else _kurt_ref
+        if func.startswith("nan"):
+            ref = _skip_nans(ref)
+        expected = np.apply_along_axis(lambda v: ref(v, np.zeros(v.size, dtype=np.intp)), axis, a)
     elif func in ("nunique", "nannunique"):
         # numpy has no count of the distinct values along an axis, so the
         # slices are counted one by one - the nans are one value among

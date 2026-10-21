@@ -68,6 +68,10 @@ aggregate_std = averaging.std.plain.stub
 aggregate_nanstd = averaging.std.nan.stub
 aggregate_var = averaging.var.plain.stub
 aggregate_nanvar = averaging.var.nan.stub
+aggregate_skew = averaging.skew.plain.stub
+aggregate_nanskew = averaging.skew.nan.stub
+aggregate_kurt = averaging.kurt.plain.stub
+aggregate_nankurt = averaging.kurt.nan.stub
 
 aggregate_median = specials.median.plain.stub
 aggregate_nanmedian = specials.median.nan.stub
@@ -108,6 +112,7 @@ __all__ = [
     "aggregate_cumprod",
     "aggregate_cumsum",
     "aggregate_first",
+    "aggregate_kurt",
     "aggregate_last",
     "aggregate_len",
     "aggregate_max",
@@ -123,6 +128,7 @@ __all__ = [
     "aggregate_nancumprod",
     "aggregate_nancumsum",
     "aggregate_nanfirst",
+    "aggregate_nankurt",
     "aggregate_nanlast",
     "aggregate_nanlen",
     "aggregate_nanmax",
@@ -132,6 +138,7 @@ __all__ = [
     "aggregate_nannunique",
     "aggregate_nanprod",
     "aggregate_nanquantile",
+    "aggregate_nanskew",
     "aggregate_nanstd",
     "aggregate_nansum",
     "aggregate_nansumofsquares",

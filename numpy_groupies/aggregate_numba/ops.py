@@ -423,6 +423,8 @@ _TABLE = (
     ("trapezoid", specials.trapezoid),
     ("std", averaging.std),
     ("var", averaging.var),
+    ("skew", averaging.skew),
+    ("kurt", averaging.kurt),
     ("sumofsquares", reductions.sumofsquares),
     ("cumsum", cumulative.cumsum),
     ("cumprod", cumulative.cumprod),

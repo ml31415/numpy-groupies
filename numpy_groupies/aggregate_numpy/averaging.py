@@ -129,6 +129,129 @@ def _sum_of_squres(
     return ret.astype(dtype, copy=False)
 
 
+def _central_moments(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
+    size: int,
+) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.floating], npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+    """The counts and the sums of the squared, cubed and fourth powers of the
+    deviations of the values of every group from their mean.
+
+    The mean comes first and the deviations from it second, as in the
+    variance: the moments of the raw values would cancel each other out.
+    """
+    counts = np.bincount(group_idx, minlength=size)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        means = (
+            np.bincount(
+                group_idx,
+                weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating] | npt.NDArray[np.bool_]", a),
+                minlength=size,
+            )
+            / counts
+        )
+    devs = a - means[group_idx]
+    # bincount takes the weights as floats - the signature says generic.  The
+    # casts say so as well: numpy 2.4 types the result of a bincount with
+    # weights as an integer array, numpy 2.5 as a float one - the array holds
+    # floats either way.
+    s2 = cast(
+        "npt.NDArray[np.floating]",
+        np.bincount(
+            group_idx, weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating]", devs * devs), minlength=size
+        ),
+    )
+    s3 = cast(
+        "npt.NDArray[np.floating]",
+        np.bincount(
+            group_idx,
+            weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating]", devs * devs * devs),
+            minlength=size,
+        ),
+    )
+    s4 = cast(
+        "npt.NDArray[np.floating]",
+        np.bincount(
+            group_idx,
+            weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating]", devs * devs * devs * devs),
+            minlength=size,
+        ),
+    )
+    return counts, s2, s3, s4
+
+
+def _skew(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
+    size: int,
+    fill_value: AScalar,
+    dtype: npt.DTypeLike | None = np.dtype(np.float64),
+) -> npt.NDArray[np.floating]:
+    """The skewness of the values of every group.
+
+    The skewness is the third central moment over the second one to the
+    three-halves power, corrected for the size of the group the way pandas
+    corrects it: a group of fewer than three values has no skewness, and a
+    group whose values are all the same has none either - its spread is zero,
+    and the answer is zero as well.
+    """
+    if iscomplexobj(a):
+        # the skewness of a complex value is not defined - the moments of the
+        # deviations would be complex, and their ratio meaningless
+        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+    if a.dtype.kind in "iu" and a.size:
+        # the cubes of the deviations leave the window float64 represents
+        # exactly - refuse instead of answering an inexact number
+        bound = max(int(a.max()), -int(a.min()))
+        check_integer_mean_overflow(a.size, bound)
+    counts, s2, s3, _ = _central_moments(group_idx, a, size)
+    present = counts > 0
+    enough = present & (counts >= 3)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        n = counts.astype(np.float64)
+        values = n * np.sqrt(n - 1) / (n - 2) * s3 / s2**1.5
+    # a group without spread has no skewness to speak of - pandas answers
+    # zero for it, and so do we
+    values = np.where(enough & (s2 == 0), 0.0, values)
+    values = np.where(enough, values, np.nan)
+    ret = np.full(size, fill_value, dtype=np.float64)
+    ret[present] = values[present]
+    return ret.astype(dtype, copy=False)
+
+
+def _kurt(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
+    size: int,
+    fill_value: AScalar,
+    dtype: npt.DTypeLike | None = np.dtype(np.float64),
+) -> npt.NDArray[np.floating]:
+    """The excess kurtosis of the values of every group.
+
+    The kurtosis is the fourth central moment over the square of the second
+    one, minus three - the excess over the three of a normal distribution -
+    corrected for the size of the group the way pandas corrects it: a group
+    of fewer than four values has no kurtosis, and a group whose values are
+    all the same has none either.
+    """
+    if iscomplexobj(a):
+        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+    if a.dtype.kind in "iu" and a.size:
+        bound = max(int(a.max()), -int(a.min()))
+        check_integer_mean_overflow(a.size, bound)
+    counts, s2, _, s4 = _central_moments(group_idx, a, size)
+    present = counts > 0
+    enough = present & (counts >= 4)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        n = counts.astype(np.float64)
+        values = n * (n + 1) * (n - 1) * s4 / ((n - 2) * (n - 3) * s2**2) - 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
+    values = np.where(enough & (s2 == 0), 0.0, values)
+    values = np.where(enough, values, np.nan)
+    ret = np.full(size, fill_value, dtype=np.float64)
+    ret[present] = values[present]
+    return ret.astype(dtype, copy=False)
+
+
 def _var(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],

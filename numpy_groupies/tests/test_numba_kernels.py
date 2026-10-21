@@ -194,6 +194,19 @@ def test_pure_python_call_raises():
         kernels.aggregate_mean(GROUP_IDX, FLOAT_A)
 
 
+def test_the_moments_answer_from_njit_like_the_reference():
+    # the skewness and the kurtosis are available inside jitted code as well
+    @nb.njit
+    def wrapped(group_idx, a):
+        return kernels.aggregate_skew(group_idx, a), kernels.aggregate_kurt(group_idx, a)
+
+    group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+    a = np.array([1.0, 2.0, 3.0, 10.0, 1.0, 2.0, 3.0, 4.0])
+    skew, kurt = wrapped(group_idx, a)
+    np.testing.assert_allclose(skew, aggregate_ref(group_idx, a, func="skew", size=2))
+    np.testing.assert_allclose(kurt, aggregate_ref(group_idx, a, func="kurt", size=2))
+
+
 def test_median_orders_complex_from_njit_like_the_reference():
     # the median driver selects the middle of every group with the ordering
     # of the package, which for complex values is the lexicographic order

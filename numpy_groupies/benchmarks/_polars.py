@@ -49,6 +49,11 @@ _EXPRESSIONS: dict[str, Callable[[], pl.Expr]] = {
     "quantile": lambda: pl.col("a").quantile(0.5, interpolation="linear"),
     "var": lambda: pl.col("a").var(),
     "std": lambda: pl.col("a").std(),
+    # the moments of the deviations from the mean: polars computes the
+    # biased ones (the moments of the population), the package - like pandas
+    # - the corrected ones, so the correction is applied further down
+    "skew": lambda: pl.col("a").skew(),
+    "kurt": lambda: pl.col("a").kurtosis(),
     "first": lambda: pl.col("a").first(),
     "last": lambda: pl.col("a").last(),
     "cumsum": lambda: pl.col("a").cum_sum(),
@@ -77,7 +82,7 @@ _EXPRESSIONS: dict[str, Callable[[], pl.Expr]] = {
 # holding a nan poisons: polars skips the nans in the extremes and in the
 # median, while the package counts a nan as a value that makes the whole group
 # answer with the nan
-_POISONED_BY_NAN = frozenset(["min", "max", "median", "quantile", "percentile", "argmax", "argmin"])
+_POISONED_BY_NAN = frozenset(["min", "max", "median", "quantile", "percentile", "argmax", "argmin", "skew", "kurt"])
 
 # the reductions whose aggregation is faster in the in-memory engine than in
 # the streaming one: the product multiplies over the whole group and the
@@ -212,14 +217,23 @@ def _wrapper(
     # the flag of the group in the same aggregation, which is cheaper than a
     # pass over the whole input in numpy (0.4ms of a cell of 4.6ms)
     poisoned = plain in _POISONED_BY_NAN and not is_nan_version and a.dtype.kind in "fc"
+    # the moments are corrected for the size of their group, so it comes with
+    # them - it is free, the aggregation counts the rows anyway
+    corrected = plain in ("skew", "kurt")
     # the groups come in no order of their own: the result is scattered into
     # the output by the labels, so the order of the groups does not matter -
     # and not keeping it is faster (2.2ms against 3.1ms for a sum)
     grouped = query.group_by("g", maintain_order=False)
+    # the columns of the aggregation: the moment itself, the flag of the
+    # groups a nan poisons, and the size of every group - the last two are
+    # only asked for when they are needed, and both come out of the same
+    # aggregation
+    columns_of_agg: list[pl.Expr] = [expression.alias("v")]
     if poisoned:
-        aggregated = grouped.agg(expression.alias("v"), pl.col("a").is_nan().any().alias("n"))
-    else:
-        aggregated = grouped.agg(expression.alias("v"))
+        columns_of_agg.append(pl.col("a").is_nan().any().alias("n"))
+    if corrected:
+        columns_of_agg.append(pl.len().alias("c"))
+    aggregated = grouped.agg(columns_of_agg)
     result = _collect(aggregated, _engine(plain))
 
     # the dtype of the output: the base has resolved it for the known functions
@@ -228,7 +242,17 @@ def _wrapper(
         dtype = check_dtype(dtype, plain, a, len(group_idx))
     ret = np.full(size, fill_value, dtype=dtype)
     labels = result["g"].to_numpy()
-    ret[labels] = result["v"].to_numpy()
+    values = result["v"].to_numpy()
+    if corrected:
+        # the correction for the size of the group that pandas applies, and
+        # that polars does not: the biased moments of the population become
+        # the unbiased ones of the sample
+        n = result["c"].to_numpy().astype(np.float64)
+        if plain == "skew":
+            values = values * np.sqrt(n * (n - 1)) / (n - 2)
+        else:
+            values = (n + 1) * (n - 1) * (values + 3) / ((n - 2) * (n - 3)) - 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
+    ret[labels] = values
     if poisoned:
         # the groups holding a nan: polars skips the nans in the extremes, the
         # package does not, so such a group has no extreme at all
@@ -253,6 +277,8 @@ _supported_funcs = [
     "quantile",
     "var",
     "std",
+    "skew",
+    "kurt",
     "first",
     "last",
     "cumsum",
