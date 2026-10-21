@@ -8,8 +8,11 @@ memory order and number of dimensions.
 
 import itertools
 import warnings
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from numpy_groupies.aggregate_common import funcs_collecting
@@ -20,6 +23,17 @@ from numpy_groupies.tests.helpers import (
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
+
+
+def _quiet_reference(func: Callable[..., Any], a: npt.NDArray[Any], *args: Any, **kwargs: Any) -> Any:
+    """The numpy reference, without its warning about the all-nan slices.
+
+    Numpy warns when it averages or quantiles a slice that holds nothing but
+    nans - the reference is asked for exactly that here.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return func(a, *args, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -130,13 +144,13 @@ def test_along_axis(impl, rng, func, size, axis):
         # samples that are left, bridging over the gaps the nans leave
         expected = np.apply_along_axis(lambda v: trapezoid_ref(v[~np.isnan(v)]), axis, a)
     elif func == "quantile":
-        expected = np.quantile(a, 0.5, axis=axis)
+        expected = _quiet_reference(np.quantile, a, 0.5, axis=axis)
     elif func == "nanquantile":
-        expected = np.nanquantile(a, 0.5, axis=axis)
+        expected = _quiet_reference(np.nanquantile, a, 0.5, axis=axis)
     elif func == "percentile":
-        expected = np.percentile(a, 50.0, axis=axis)
+        expected = _quiet_reference(np.percentile, a, 50.0, axis=axis)
     elif func == "nanpercentile":
-        expected = np.nanpercentile(a, 50.0, axis=axis)
+        expected = _quiet_reference(np.nanpercentile, a, 50.0, axis=axis)
     elif func in ("nunique", "nannunique"):
         # numpy has no count of the distinct values along an axis, so the
         # slices are counted one by one - the nans are one value among
@@ -150,10 +164,7 @@ def test_along_axis(impl, rng, func, size, axis):
             where = index[:axis] + (slice(None),) + index[axis:]
             expected[index[:axis] + (0,) + index[axis:]] = a[where]
     else:
-        with warnings.catch_warnings():
-            # the numpy reference warns about the all-nan slices it averages
-            warnings.simplefilter("ignore", RuntimeWarning)
-            expected = getattr(np, func)(a, axis=axis)
+        expected = _quiet_reference(getattr(np, func), a, axis=axis)
 
     # no fill_value needed - the function specific defaults match numpy
     actual = impl.aggregate(group_idx, a, axis=axis, func=func)
