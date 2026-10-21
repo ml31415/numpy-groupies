@@ -267,6 +267,20 @@ def test_a_func_that_named_nothing():
         aggregate(group_idx, a, func="no_such_function", size=2)
 
 
+def test_gather_is_jitted():
+    """The gather of the results must stay jitted.
+
+    A plain python loop needs 220ms for a million values, the jitted one
+    0.8ms - and the docstring of ``unpack_into`` promises the latter.
+    """
+    pytest.importorskip("numba")
+    from numba.core.dispatcher import Dispatcher
+
+    from numpy_groupies.aggregate_numba.gather import _gather_1d
+
+    assert isinstance(_gather_1d, Dispatcher)
+
+
 def test_uaggregate_out(rng):
     group_idx = rng.integers(0, 6, 300)
     a = rng.random(300)
