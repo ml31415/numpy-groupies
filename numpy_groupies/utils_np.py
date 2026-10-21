@@ -1,7 +1,5 @@
 """Numpy specific functionality shared by the numpy-based aggregate implementations."""
 
-from __future__ import annotations
-
 import platform
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, TypeAlias, cast
