@@ -758,7 +758,7 @@ class Backend:
         # up in the dict instead of being set one by one, so that the object
         # stays small and the names cannot drift from the dict
         try:
-            return self.__dict__["_functions"][name]
+            return self._functions[name]
         except KeyError:
             raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}") from None
 
