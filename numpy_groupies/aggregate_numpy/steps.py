@@ -65,9 +65,14 @@ def sort_key(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.integer]:
     """
     if group_idx.size == 0:
         return group_idx
-    if group_idx.min() < 0 or group_idx.max() > np.iinfo(np.int16).max:
+    if group_idx.min() < 0:
         return group_idx
-    return group_idx.astype(np.int16)
+    maxval = group_idx.max()
+    if maxval <= np.iinfo(np.int16).max:
+        return group_idx.astype(np.int16)
+    if maxval <= np.iinfo(np.int32).max:
+        return group_idx.astype(np.int32)
+    return group_idx
 
 
 def group_bounds(group_idx_srt: npt.NDArray[np.integer]) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.intp]]:
