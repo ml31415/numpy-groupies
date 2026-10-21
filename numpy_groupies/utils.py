@@ -175,7 +175,7 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
         except (ValueError, OverflowError):
             return False
         # False if some overflow has happened
-        return bool(converted == x) or (np.ndim(cast(Any, x)) == 0 and np.isnan(cast(Any, x)))
+        return bool(converted == x) or (np.ndim(cast(np.generic, x)) == 0 and np.isnan(cast(np.generic, x)))
 
     def type_loop(
         x: AFillValue, dtype: np.dtype, dtype_dict: Mapping[str, type], default: type | None = None
