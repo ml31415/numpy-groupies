@@ -50,6 +50,23 @@ def _sum(x: Sequence[Any]) -> Any:
     return sum(x)
 
 
+def _nunique(x: Sequence[Any]) -> int:
+    """The number of distinct values of the group.
+
+    The values that are equal count once, and the nans count once among
+    themselves: a nan in either part of a complex value is a nan, and the
+    nans of a group are one value of their own.
+    """
+    distinct: set[Any] = set()
+    nans = 0
+    for val in x:
+        if val != val:  # val != val - np.isnan does not cover ints and objects
+            nans = 1
+        else:
+            distinct.add(val)
+    return len(distinct) + nans
+
+
 def _last(x: Sequence[Any]) -> Any:
     return x[-1]
 
@@ -243,6 +260,7 @@ _op_dict: dict[str, Callable[..., Any]] = {
     "argmax": _argmax,
     "argmin": _argmin,
     "len": len,
+    "nunique": _nunique,
 }
 _op_dict.update(("nan" + k, v) for k, v in list(_op_dict.items()) if k not in funcs_no_separate_nan)
 

@@ -59,6 +59,9 @@ _EXPRESSIONS: dict[str, Callable[[], pl.Expr]] = {
     "any": lambda: pl.col("a").any(),
     # the length of a group is the number of its rows
     "len": lambda: pl.col("a").len(),
+    # the number of the distinct values of a group - polars counts the nans
+    # as a value of their own, like the package does
+    "nunique": lambda: pl.col("a").n_unique(),
     # polars has no nan-aware reductions: the nans are values there, so the
     # nan-functions ask the mask of them
     "anynan": lambda: pl.col("a").is_nan().any(),
@@ -257,6 +260,7 @@ _supported_funcs = [
     "cummax",
     "cummin",
     "len",
+    "nunique",
     "anynan",
     "allnan",
     "argmax",

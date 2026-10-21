@@ -167,7 +167,7 @@ Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix 
 
 | Category                        | Functions |
 | ------------------------------- | --------- |
-| Reductions                      | `sum` `prod` `mean` `median` `quantile` `percentile` `var` `std` `min` `max` `first` `last` `len` `sumofsquares` `trapezoid` |
+| Reductions                      | `sum` `prod` `mean` `median` `quantile` `percentile` `var` `std` `min` `max` `first` `last` `len` `nunique` `sumofsquares` `trapezoid` |
 | Index of extremes               | `argmin` `argmax` |
 | Boolean                         | `all` `any` `allnan` `anynan` |
 | NaN-skipping variants           | `nansum` `nanmean` `nanvar` `nanmax` … — a `nan` prefix on every reduction above except `allnan`/`anynan` |
@@ -223,17 +223,18 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 
 | function        | numpy  | numba  | numbagg | polars | pandas |
 | --------------- | -----: | -----: | ------: | -----: | -----: |
-| `sum`            |   0.90 |   0.43 |   0.46 |   2.61 |   7.09 |
-| `mean`           |   1.49 |   0.48 |   0.53 |   2.64 |   7.79 |
-| `max`            |   1.65 |   0.62 |   0.86 |   2.87 |   6.72 |
-| `std`            |   3.10 |   0.65 |   0.68 |   2.79 |   8.27 |
-| `nansum`         |   4.11 |   0.45 |   1.76 |   6.09 |   8.70 |
-| `median`         |  11.38 |   9.30 |    --- |   4.15 |  15.80 |
-| `quantile`       |  13.80 |   9.27 |    --- |   4.05 |  23.93 |
-| `sort`           |  70.86 |  25.91 |    --- |    --- |    --- |
-| `cumsum`         |  14.40 |   0.57 |    --- |   8.64 |   7.38 |
-| `array`          |   6.88 |   1.89 |    --- |    --- |    --- |
-| custom callable  | 110.98 |   6.01 |    --- |  80.05 |  97.99 |
+| `sum`            |  0.943 |  0.473 |  0.466 |  2.658 |  6.969 |
+| `mean`           |  1.488 |  0.491 |  0.538 |  2.575 |  7.105 |
+| `max`            |  1.671 |  0.628 |  0.850 |  2.705 |  6.416 |
+| `std`            |  3.065 |  0.660 |  0.674 |  2.766 |  7.560 |
+| `nansum`         |  4.042 |  0.449 |  1.758 |  6.239 |  8.955 |
+| `median`         | 12.785 |  9.325 |   ---- |  4.037 | 15.632 |
+| `quantile`       | 13.997 |  9.274 |   ---- |  4.066 | 22.808 |
+| `nunique`        | 14.456 |  8.324 |   ---- | 10.596 | 58.380 |
+| `sort`           | 70.939 | 25.928 |   ---- |   ---- |   ---- |
+| `cumsum`         | 14.808 |  0.582 |   ---- |  8.518 |  7.454 |
+| `array`          |  7.047 |  1.949 |   ---- |   ---- |   ---- |
+| custom callable  | 112.127 |  5.991 |   ---- | 79.784 | 94.001 |
 
 The `polars` column uses all the cores of the machine, the `numpy` and `numba` columns are single-threaded - the Numba kernels of this package do not use `prange`. That matters most for the order statistics: with a single thread polars needs 9.7ms for the quantile, against 4.0ms with six, which puts it level with the single-threaded Numba kernel (9.3ms).
 

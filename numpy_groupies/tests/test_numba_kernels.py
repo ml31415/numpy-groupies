@@ -53,6 +53,8 @@ _FLOAT_OPS = [
     ("nantrapezoid", {"ddof": 1.0}),
     ("sumofsquares", {}),
     ("nansumofsquares", {}),
+    ("nunique", {}),
+    ("nannunique", {}),
     ("argmin", {}),
     ("nanargmin", {}),
     ("argmax", {}),
@@ -69,6 +71,8 @@ _INT_OPS = [
     ("prod", {}),
     ("len", {}),
     ("nanlen", {}),
+    ("nunique", {}),
+    ("nannunique", {}),
     ("min", {}),
     ("max", {}),
     ("first", {}),
@@ -229,6 +233,30 @@ def test_quantile_of_a_complex_group_with_a_nan_poisons_it_from_njit():
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, complex(np.nan, 4.0), 5 + 6j])
     np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="quantile", q=0.5, size=2))
+
+
+def test_nunique_counts_the_distinct_values_from_njit_like_the_reference():
+    # the driver of the distinct values orders the block of every group, so
+    # that the values that differ from their predecessor are the distinct
+    # ones - for complex values the order is the lexicographic one numpy
+    # uses, and the nans are one value among themselves
+    @nb.njit
+    def wrapped(group_idx, a):
+        return kernels.aggregate_nunique(group_idx, a)
+
+    group_idx = np.array([0, 0, 0, 1])
+    a = np.array([1 + 2j, 1 + 2j, 3 + 4j, complex(np.nan, 1.0)])
+    np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="nunique", size=2))
+
+
+def test_nannunique_leaves_the_nans_out_from_njit_like_the_reference():
+    @nb.njit
+    def wrapped(group_idx, a):
+        return kernels.aggregate_nannunique(group_idx, a)
+
+    group_idx = np.array([0, 0, 0, 1])
+    a = np.array([1.0, 1.0, 3.0, np.nan])
+    np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="nannunique", size=2))
 
 
 def test_sort_orders_complex_from_njit_like_numpy():

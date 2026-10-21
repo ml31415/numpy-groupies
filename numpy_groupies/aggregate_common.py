@@ -150,6 +150,7 @@ funcs_common = [
     "first",
     "last",
     "len",
+    "nunique",
     "mean",
     "median",
     "quantile",
@@ -184,7 +185,7 @@ FuncName: TypeAlias = Literal[
     "add", "all", "allnan", "amax", "amin", "and",
     "any", "anynan", "argmax", "argmin", "array", "asort",
     "asorted", "count", "cummax", "cummin", "cumprod", "cumsum",
-    "dsort", "first", "last", "len", "max", "maximum",
+    "dsort", "first", "last", "len", "max", "maximum", "nannunique",
     "mean", "median", "min", "minimum", "multiply", "nanall",
     "nanany", "nanargmax", "nanargmin", "nancummax", "nancummin", "nancumprod",
     "nancumsum", "nanfirst", "nanlast", "nanlen", "nanmax", "nanmean",
@@ -192,7 +193,7 @@ FuncName: TypeAlias = Literal[
     "nanstd", "nansum", "nansumofsquares", "nantrapezoid", "nanvar", "or",
     "percentile", "plus", "prod", "product", "quantile",
     "rsorted", "sort", "sorted", "splice", "split", "std",
-    "sum", "sumofsquares", "times", "trapezoid", "var",
+    "sum", "sumofsquares", "times", "trapezoid", "var", "nunique",
 ]
 # fmt: on
 
@@ -217,6 +218,7 @@ _default_fill_values: dict[str, AFillValue] = {
     "allnan": False,
     "anynan": False,
     "len": 0,
+    "nunique": 0,
     "mean": nan,
     "median": nan,
     "quantile": nan,
@@ -583,6 +585,8 @@ _fixed_result_types: dict[str, type] = {
     "anynan": bool,
     "len": int,
     "nanlen": int,
+    "nunique": int,
+    "nannunique": int,
     "argmax": int,
     "argmin": int,
     "nanargmin": int,

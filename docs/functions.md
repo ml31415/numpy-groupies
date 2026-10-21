@@ -67,6 +67,7 @@ One value per group.
 | `sum`          | Sum of the items. (aliases: `add`, `plus`) |
 | `prod`         | Product. (aliases: `product`, `multiply`, `times`) |
 | `len`          | Number of items. (alias: `count`) Equivalent to `np.bincount(group_idx)` — which is how the NumPy implementation computes it. |
+| `nunique`      | Number of distinct items. The items that are equal count once — a zero and a minus zero are one item, an integer and the float of the same number as well. The NaNs of a group count once among themselves, like pandas counts them (and like polars, which counts the NaN as an item). |
 | `sumofsquares` | Sum of squares. |
 | `mean`         | Mean. |
 | `median`       | Median. |
@@ -81,7 +82,7 @@ One value per group.
 
 ### NaN-skipping variants
 
-Prefix with `nan` — `nansum`, `nanprod`, `nanlen`, `nansumofsquares`, `nanmean`, `nanmedian`, `nanquantile`, `nanpercentile`, `nanvar`, `nanstd`, `nanmin`, `nanmax`, `nanfirst`, `nanlast`, `nanargmin`, `nanargmax`, `nantrapezoid`, `nanall`, `nanany`, and the cumulative `nancumsum`, `nancumprod`, `nancummin`, `nancummax` — to skip NaNs instead of propagating them. `nanlen` counts the non-NaN items. For `nantrapezoid` this means integrating over the remaining items, bridging the gap a NaN leaves. For `nanargmin` / `nanargmax` the two forms differ not in the value they return but in whether they return one at all: an index cannot *be* a NaN, so the plain forms have no answer for a group holding a NaN and give `fill_value`, while the skipping ones name the index of the extreme among the items that are left.
+Prefix with `nan` — `nansum`, `nanprod`, `nanlen`, `nansumofsquares`, `nanmean`, `nanmedian`, `nanquantile`, `nanpercentile`, `nanvar`, `nanstd`, `nanmin`, `nanmax`, `nanfirst`, `nanlast`, `nanargmin`, `nanargmax`, `nantrapezoid`, `nanall`, `nanany`, `nannunique`, and the cumulative `nancumsum`, `nancumprod`, `nancummin`, `nancummax` — to skip NaNs instead of propagating them. `nanlen` counts the non-NaN items, and `nannunique` counts the distinct items among the ones that are not NaN — the plain `nunique` counts the NaNs of a group as one item of their own. For `nantrapezoid` this means integrating over the remaining items, bridging the gap a NaN leaves. For `nanargmin` / `nanargmax` the two forms differ not in the value they return but in whether they return one at all: an index cannot *be* a NaN, so the plain forms have no answer for a group holding a NaN and give `fill_value`, while the skipping ones name the index of the extreme among the items that are left.
 
 ### Boolean
 
@@ -119,6 +120,7 @@ The nan-variants are supported wherever the plain function is.
 | Function                       | numpy | numba | pure python |
 | ------------------------------ | :---: | :---: | :---------: |
 | `sum`, `prod`, `len`           |  x    |  x    |      x      |
+| `nunique`                      |  x    |  x    |      x      |
 | `min`, `max`                   |  x    |  x    |      x      |
 | `all`, `any`                   |  x    |  x    |      x      |
 | `allnan`, `anynan`             |  x    |  x    |      x      |
@@ -146,7 +148,7 @@ Groups without any item are filled with `fill_value`. By default this matches wh
 
 | Functions                                              | Default fill value |
 | ------------------------------------------------------ | ------------------ |
-| `sum`, `len`, `sumofsquares` (and `nan`-forms)         | `0`                |
+| `sum`, `len`, `nunique`, `sumofsquares` (and `nan`-forms) | `0`                |
 | `prod` (and `nanprod`)                                 | `1`                |
 | `all`, `any`, `allnan`, `anynan`                       | `False`            |
 | `mean`, `median`, `var`, `std` (and `nan`-forms)       | `nan`              |

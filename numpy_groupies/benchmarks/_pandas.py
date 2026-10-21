@@ -123,6 +123,11 @@ _op_dict.update(
     anynan=partial(_wrapper, func=anynan),
     len=partial(_wrapper, func="count"),
     nanlen=partial(_wrapper, func="count"),
+    # pandas counts the nans as a value of their own with dropna=False, and
+    # leaves them out with dropna=True - the plain function counts them, the
+    # nan variant does not
+    nunique=partial(_wrapper, func="nunique", dropna=False),
+    nannunique=partial(_wrapper, func="nunique", dropna=True),
     argmax=partial(_wrapper, func="idxmax"),
     argmin=partial(_wrapper, func="idxmin"),
     nanargmax=partial(_wrapper, func="idxmax"),

@@ -429,6 +429,7 @@ _TABLE = (
     ("cummax", cumulative.cummax),
     ("cummin", cumulative.cummin),
     ("sort", specials.sort),
+    ("nunique", specials.nunique),
     # the collecting function: its result is a sequence per group, which the
     # driver assembles into the object array the caller expects
     ("array", collect.array),
