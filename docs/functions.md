@@ -178,7 +178,7 @@ Complex input is supported wherever the result is well defined, following NumPy'
 
 - **Keep the complex dtype:** `sum`, `prod`, `mean`, `median`, `quantile`, `percentile`, `trapezoid`, `sort`, `first`, `last`, `array` and the `cumsum` functions. `median`, `quantile` and `sort` use NumPy's lexicographic ordering (real part first, then imaginary part) - the Numba implementation compares the two parts itself, since neither Python nor Numba orders complex numbers. (NumPy's own `np.quantile` takes real values only; the quantile of a complex group is the one of this package.)
 - **Return a real dtype:** `var`, `std` and `sumofsquares` measure squared magnitudes, like `np.var` on complex input.
-- **Not defined:** `skew` and `kurt` are moments of the deviations from the mean, and a complex deviation has no meaningful third or fourth moment — a complex input raises a `TypeError`.
+- **Not supported:** `skew` and `kurt` raise a `TypeError` on a complex input — the third and the fourth moment of the deviations from the mean have no meaning for a complex value.
 - **Order statistics** `min`, `max`, `argmin`, `argmax` and their `nan` counterparts follow the same lexicographic ordering everywhere — the real part decides, the imaginary part only breaks ties — including the Numba implementation, which compares the two parts itself since neither Python nor Numba orders complex numbers. As in NumPy, a value with a NaN in either part compares neither smaller nor greater.
 
 ## Helper functions
