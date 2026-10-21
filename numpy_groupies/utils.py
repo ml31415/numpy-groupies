@@ -79,8 +79,8 @@ def check_nton_shape(
     so a group without items leaves the output too short for the requested
     shape - which numpy would otherwise report as a plain reshape error.
     """
-    # np.prod and tuple take a plain int at runtime, the stubs spell out only arrays
-    prod = int(np.prod(cast("Any", size)))
+    # np.prod takes an int as it is, a tuple or an array of ints
+    prod = int(np.prod(size))
     if ret.size != prod:
         name = getattr(func, "__name__", func)
         raise ValueError(
@@ -171,7 +171,7 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
     def check_type(x: AFillValue, dtype: np.dtype) -> bool:
         try:
             with np.errstate(invalid="ignore"):
-                converted = np.array(cast("Any", x)).astype(dtype)
+                converted = np.array(x).astype(dtype)
         except (ValueError, OverflowError):
             return False
         # False if some overflow has happened

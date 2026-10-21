@@ -261,8 +261,8 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
                 ret[mask] = cast("AScalar", fill_value)
             check_nton_shape(ret, size, func)
             # numpy takes the shape as an int, a sequence of ints or an array
-            # of them - the stub admits only the first two
-            ret = cast("AResult", ret.reshape(cast("Any", size), order=order))
+            # of them
+            ret = cast("AResult", ret.reshape(size, order=order))
         return ret
 
     return aggregate
