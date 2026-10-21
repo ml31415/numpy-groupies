@@ -101,10 +101,18 @@ from numpy_groupies.aggregate_numba import kernels
 
 @nb.njit
 def zscore(group_idx, a):
-    mean = kernels.aggregate_mean(group_idx, a)
-    std = kernels.aggregate_std(group_idx, a)
+    mean = kernels.mean(group_idx, a)
+    std = kernels.std(group_idx, a)
     scale = np.where(std > 0, std, 1.0)
     return (a - mean[group_idx]) / scale[group_idx]
+```
+
+Every kernel carries the signature of its function, so the `ddof` of the variance and the `q` of the quantile sit where they belong:
+
+```python
+@nb.njit
+def spread(group_idx, a):
+    return kernels.std(group_idx, a, 1) / kernels.mean(group_idx, a)
 ```
 
 **Multi-dimensional output.** Give `group_idx` one row per output dimension — here, 1000 values binned into a 15×15×15 cube:
@@ -174,6 +182,17 @@ Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix 
 | Collect group members           | `array` |
 
 Not every implementation supports every function — the [function reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md) has the exact semantics, default fill values, complex-number behaviour and a function × implementation matrix.
+
+Every function is also an attribute of the backend, with the function in the name instead of in the `func` argument:
+
+```python
+npg.aggregate.mean(group_idx, a)          # the same as func="mean"
+npg.aggregate.quantile(group_idx, a, q=0.9)
+npg.aggregate_np.mean(group_idx, a)        # the numpy implementation
+npg.aggregate_py.mean(group_idx, a)        # the pure python one
+```
+
+The attribute of a backend is a plain function; the njit-callable kernels of the numba backend live in their own module (see above), since numba cannot reach the attributes of a python object from jitted code.
 
 ## Helper tools
 

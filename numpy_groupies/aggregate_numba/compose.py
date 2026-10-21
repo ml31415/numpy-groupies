@@ -213,13 +213,22 @@ def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
     return size
 
 
+# an argument an operation has of its own: the name it carries in the
+# signature, the annotation, the default and the slot of the driver the value
+# goes to ("ddof" or "q" - the two the driver knows)
+Extra = tuple[tuple[str, str, Any, str], ...]
+
+# the marker for an argument without a default - None is a default of its own
+_NO_DEFAULT = object()
+
+
 def _make_stub(
     stub_name: str,
     driver_getter: Callable[[], Any],
     rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
     fill_default: AScalar,
     doc: str | None,
-    ddof_default: int = 0,
+    extras: Extra = (),
     reject_fill: bool = False,
 ) -> Callable[..., Any]:
     """Create the njit-callable ``aggregate_*`` function of one variant.
@@ -230,29 +239,90 @@ def _make_stub(
     function default, which - like the python-level DEFAULT_FILL_VALUE -
     depends on the output dtype (nan only fits inexact results); the
     resolution happens in the overload builder, the choice itself is a
-    runtime branch on the typed-none argument.  The third argument is named
-    ``ddof`` for every operation - trapezoid receives the sample spacing
-    through it.
+    runtime branch on the typed-none argument.
+
+    The signature is the one of the operation: the arguments it has of its own
+    (the ``ddof`` of the variance, the ``q`` of the quantile, the ``dx`` of
+    the trapezoid, the ``reverse`` of the sort) come first, the ``size`` and
+    the ``fill_value`` last.  Numba compares the typing function of an
+    overload with the implementation it returns - argument names and
+    annotations included - so the three functions that carry the signature
+    are spelled out from one description of it.
     """
 
-    # the two shims below speak the numba overload protocol: numba hands them
-    # its own types at compile time (or the python defaults of the omitted
-    # arguments), so their parameters are honestly Any.  The three signatures
-    # below are one protocol: numba compares the typing function with the
-    # implementation it returns, argument names *and* annotations included, so
-    # they have to be spelled alike - see the note in ``averaging``
-    def stub(
-        group_idx: Any,
-        a: Any,
-        ddof: int = ddof_default,
-        q: float = 0.5,
-        size: int = -1,
-        fill_value: float | None = None,
-    ) -> Any:
-        raise NotImplementedError("only callable from jitted code - use aggregate() otherwise")
+    # the arguments of the signature, in order: the two that every operation
+    # takes, the ones it has of its own, and the two that come last
+    arguments: list[tuple[str, str, Any, str | None]] = [
+        ("group_idx", "Any", _NO_DEFAULT, None),
+        ("a", "Any", _NO_DEFAULT, None),
+    ]
+    arguments += [(name, annotation, default, slot) for name, annotation, default, slot in extras]
+    arguments += [("size", "int", -1, None), ("fill_value", "float | None", None, None)]
+    signature = ", ".join(
+        name + ": " + annotation + ("" if default is _NO_DEFAULT else f" = {default!r}")
+        for name, annotation, default, _ in arguments
+    )
+    # the two slots of the driver that carry an argument of its own: the
+    # value that goes into each of them, or the default of the slot
+    slot_values = {slot: next((name for name, _, _, s in extras if s == slot), None) or "" for slot in ("ddof", "q")}
+    driver_args = ", ".join(
+        slot_values[slot] if slot_values[slot] else repr(default) for slot, default in (("ddof", 0), ("q", 0.5))
+    )
+    # the driver of this operation cannot place a fill value - saying so
+    # beats ignoring the argument silently
+    fill_check = (
+        "        if fill_value is not None:\n"
+        "            raise nb.TypingError(\n"
+        '                f"aggregate_' + stub_name + ' has no fill_value - an absent group holds an empty sequence"\n'
+        "            )\n"
+        if reject_fill
+        else ""
+    )
+
+    # the three functions with the one signature: the stub that raises in
+    # python, the typing function of the overload and the implementation it
+    # returns - the latter two are built from one source, so they cannot
+    # drift apart
+    source = f"""
+def _stub({signature}):
+    raise NotImplementedError("only callable from jitted code - use aggregate() otherwise")
+
+
+def _typing({signature}):
+    a_type = a
+    out_dtype, aux_dtype = _rule(a_type)
+    default_fill = _resolve_default_fill(_fill_default, out_dtype)
+
+    def _impl({signature}):
+{fill_check}        if fill_value is None:
+            return _driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, {driver_args})
+        return _driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, {driver_args})
+
+    return _impl
+"""
+    namespace: dict[str, Any] = {
+        "Any": Any,
+        "nb": nb,
+        "_rule": rule,
+        "_fill_default": fill_default,
+        "_driver": driver_getter(),
+        "_resolve_default_fill": _resolve_default_fill,
+    }
+    # the signature is the one of the operation, spelled out in one place
+    exec(source, namespace)  # noqa: S102
+    stub: Callable[..., Any] = namespace["_stub"]
+    typing: Callable[..., Any] = namespace["_typing"]
 
     stub.__name__ = stub_name
     stub.__qualname__ = stub_name
+    stub.__module__ = __name__
+    # the typing function and the implementation it returns carry the name of
+    # the operation in their qualname - numba mangles the symbol of a
+    # function from its module and qualname, and two of them that share it
+    # would share the symbol
+    typing.__name__ = f"_typing_{stub_name}"
+    typing.__qualname__ = f"_typing_{stub_name}"
+    typing.__module__ = __name__
     stub.__doc__ = f"{doc or f'Njit-callable {stub_name} kernel'} - see ``numpy_groupies.aggregate_numba.kernels``."
 
     # no jit_options cache here: the impl shim is compiled by numba's
@@ -262,44 +332,11 @@ def _make_stub(
     # served (observed as a nanfirst running plain-first machine code).
     # The shim itself compiles in microseconds, the expensive compilation
     # (the driver) stays cached through ``njit_stable``.
-    @nb.extending.overload(stub)
-    def _overload(
-        group_idx: Any,
-        a: Any,
-        ddof: int = ddof_default,
-        q: float = 0.5,
-        size: int = -1,
-        fill_value: float | None = None,
-    ) -> Callable[..., Any]:
-        driver = driver_getter()
-        # here ``a`` is the numba *type* of the values (an ``Array`` of the
-        # input dtype), not the values - those only arrive in the impl below,
-        # which is why the shared signature can only call the parameter ``a``
-        a_type: nb.types.Type = a
-        out_dtype, aux_dtype = rule(a_type)
-        default_fill = _resolve_default_fill(fill_default, out_dtype)
-
-        def impl(
-            group_idx: Any,
-            a: Any,
-            ddof: int = ddof_default,
-            q: float = 0.5,
-            size: int = -1,
-            fill_value: float | None = None,
-        ) -> Any:
-            if reject_fill:
-                # the driver of this operation cannot place a fill value -
-                # saying so beats ignoring the argument silently
-                if fill_value is not None:
-                    raise nb.TypingError(
-                        f"aggregate_{stub_name} has no fill_value - an absent group holds an empty sequence"
-                    )
-                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof, q)
-            if fill_value is None:
-                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof, q)
-            return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, ddof, q)
-
-        return impl
+    # the overload speaks numba's protocol: it hands the typing function its
+    # own types at compile time, and the function returns the implementation
+    # it compiles - the two have to carry the same signature, which is why
+    # they come from one source above
+    nb.extending.overload(stub)(typing)
 
     return stub
 
@@ -379,7 +416,7 @@ def build_kernel(
     untouched: Callable[..., npt.NDArray[np.bool_]] | None = None,
     update_nan: Callable[..., None] | None = None,
     nans: bool = True,
-    ddof_default: int = 0,
+    extras: Extra = (),
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
@@ -550,7 +587,7 @@ def build_kernel(
             rule,
             fill_default,
             doc,
-            ddof_default,
+            extras,
         )
         return KernelHandle(
             name=op_name,
@@ -579,7 +616,7 @@ def build_custom_kernel(
     fill_default: AScalar = 0,
     forced_fill: float | None = None,
     nans: bool = True,
-    ddof_default: int = 0,
+    extras: Extra = (),
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
@@ -609,7 +646,7 @@ def build_custom_kernel(
             rule,
             fill_default,
             doc,
-            ddof_default,
+            extras,
             reject_fill,
         )
         return KernelHandle(

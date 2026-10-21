@@ -494,6 +494,7 @@ std = build_kernel(
     fill_default=np.nan,
     rule=rule_real_float,
     aux_widen=True,
+    extras=(("ddof", "int", 0, "ddof"),),
     doc="Standard deviation of the values of every group",
 )
 
@@ -517,5 +518,6 @@ var = build_kernel(
     fill_default=np.nan,
     rule=rule_real_float,
     aux_widen=True,
+    extras=(("ddof", "int", 0, "ddof"),),
     doc="Variance of the values of every group",
 )

@@ -35,6 +35,30 @@ aggregate(group_idx, a, func="sum", size=None, fill_value=DEFAULT_FILL_VALUE,
 
 Exceptions are raised in most cases where `fill_value` and `dtype` are incompatible, rather than silently coercing.
 
+### The function in the name
+
+Every function is an attribute of the backend as well, with the function in the name instead of in the `func` argument. The attribute takes the arguments of its function - the `ddof` of the variance, the `q` of the quantile, the `dx` of the trapezoid, the `reverse` of the sort - and the rest like `aggregate` itself:
+
+```python
+npg.aggregate.mean(group_idx, a)            # the same as func="mean"
+npg.aggregate.quantile(group_idx, a, q=0.9) # the same as func="quantile", q=0.9
+npg.aggregate_np.mean(group_idx, a)          # the numpy implementation
+npg.aggregate_py.mean(group_idx, a)          # the pure python one
+npg.aggregate_nb.mean(group_idx, a)          # the numba one
+```
+
+The attributes of a backend are plain python functions. The njit-callable kernels of the numba backend - the same functions, callable from jitted code - live in their own module, `numpy_groupies.aggregate_numba.kernels`, since numba cannot reach the attributes of a python object from jitted code:
+
+```python
+from numpy_groupies.aggregate_numba import kernels
+
+@numba.njit
+def zscore(group_idx, a):
+    mean = kernels.mean(group_idx, a)
+    std = kernels.std(group_idx, a)
+    return (a - mean[group_idx]) / std[group_idx]
+```
+
 ## Input forms in detail
 
 ![The five input forms](diagrams/aggregate_dims.png)

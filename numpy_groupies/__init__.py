@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from numpy_groupies.aggregate_purepy import aggregate as aggregate_py
+from numpy_groupies.aggregate_purepy import aggregate as aggregate_py_impl
+from numpy_groupies.common import Backend, bind_functions, function_names
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -51,6 +52,15 @@ def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
 # into a plain Any and lose its signature
 aggregate: Aggregate
 aggregate_np: Aggregate
+aggregate_py: Aggregate
+
+# the pure python backend is an object like the others: callable, and it
+# carries the entry point of every function as its attribute
+aggregate_py = Backend(
+    aggregate_py_impl,
+    bind_functions(aggregate_py_impl, function_names()),
+    doc="The pure python implementation of aggregate.",
+)
 
 aggregate = cast("Aggregate", aggregate_py)
 
@@ -69,8 +79,16 @@ else:
     step_count: Callable[[Any], Any] = step_count_np_impl
     step_indices: Callable[[Any], Any] = step_indices_np_impl
 
-    aggregate = cast("Aggregate", aggregate_np_impl)
-    aggregate_np = aggregate
+    # the backend is an object: it is callable like the function it
+    # replaces, and it carries the entry point of every function as its
+    # attribute - ``aggregate.mean(group_idx, a)`` is the mean of every
+    # group, with the function in the name
+    aggregate_np = Backend(
+        aggregate_np_impl,
+        bind_functions(aggregate_np_impl, function_names()),
+        doc="The pure numpy implementation of aggregate.",
+    )
+    aggregate = cast("Aggregate", aggregate_np)
     from numpy_groupies.common import default_fill_value
     from numpy_groupies.utils_np import (
         label_contiguous_1d,
@@ -91,7 +109,14 @@ else:
     from numpy_groupies.aggregate_numba import step_indices as step_indices_nb_impl
     from numpy_groupies.aggregate_numba import unpack_into
 
-    aggregate_nb = aggregate_nb_impl
+    # the attributes of a backend are the entry points of its functions -
+    # numba cannot reach them from jitted code (a plain python object is no
+    # numba type), so the njit-callable kernels live in their own module
+    aggregate_nb = Backend(
+        aggregate_nb_impl,
+        bind_functions(aggregate_nb_impl, function_names()),
+        doc="The numba implementation of aggregate.",
+    )
     step_count = step_count_nb_impl
     step_indices = step_indices_nb_impl
     aggregate = aggregate_nb

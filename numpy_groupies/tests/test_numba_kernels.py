@@ -15,6 +15,7 @@ import pytest
 
 from numpy_groupies import aggregate_numba, aggregate_numpy
 from numpy_groupies.aggregate_numba import kernels
+from numpy_groupies.common import func_extras
 from numpy_groupies.tests.reference import aggregate_ref
 
 GROUP_IDX = np.array([0, 0, 1, 1, 1, 3])  # group 2 stays empty
@@ -49,8 +50,8 @@ _FLOAT_OPS = [
     ("nanquantile", {}),
     ("quantile", {"q": 0.9}),
     ("nanquantile", {"q": 0.9}),
-    ("trapezoid", {"ddof": 1.0}),
-    ("nantrapezoid", {"ddof": 1.0}),
+    ("trapezoid", {"dx": 1.0}),
+    ("nantrapezoid", {"dx": 1.0}),
     ("sumofsquares", {}),
     ("nansumofsquares", {}),
     ("nunique", {}),
@@ -64,7 +65,7 @@ _FLOAT_OPS = [
     ("cummax", {}),
     ("nancummax", {}),
     ("sort", {}),
-    ("sort", {"ddof": 1}),
+    ("sort", {"reverse": True}),
 ]
 _INT_OPS = [
     ("sum", {}),
@@ -86,7 +87,7 @@ _INT_OPS = [
     ("cummax", {}),
     ("cummin", {}),
     ("sort", {}),
-    ("sort", {"ddof": 1}),
+    ("sort", {"reverse": True}),
 ]
 _BOOL_OPS = [
     ("all", {}),
@@ -94,32 +95,38 @@ _BOOL_OPS = [
     ("any", {}),
     ("nanany", {}),
     ("sort", {}),
-    ("sort", {"ddof": 1}),
+    ("sort", {"reverse": True}),
 ]
 
 
-def _kernel_result(name, values, ddof=0, q=0.5):
-    """Call the kernel of ``name`` from jitted code (fill default via None)."""
-    stub = getattr(kernels, "aggregate_" + name)
+def _kernel_result(name, values, **kwargs):
+    """Call the kernel of ``name`` from jitted code (fill default via None).
 
-    @nb.njit
-    def caller(group_idx, a, ddof, q, size, fill_value):
-        return stub(group_idx, a, ddof, q, size, fill_value)
+    Every kernel carries the signature of its function, so the arguments the
+    function has of its own are passed by their name.
+    """
+    stub = getattr(kernels, name)
+    # the argument the function has of its own comes first, the size and the
+    # fill value after it - the signature of the kernel.  It is always
+    # passed, with its default if the test does not ask for another one
+    extras = func_extras(name)
+    own = next(iter(kwargs.values()), None) if extras else None
+    if own is None and extras:
+        own = extras[0][2]
+    arguments = "" if own is None else f", {own!r}"
+    source = f"""
+def _caller(group_idx, a, size, fill_value):
+    return _stub(group_idx, a{arguments}, size, fill_value)
+"""
+    namespace = {"_stub": stub}
+    exec(source, namespace)  # noqa: S102 - the signature of the kernel is spelled out in one place
+    caller = nb.njit(namespace["_caller"])
+    return caller(GROUP_IDX, values, -1, None)
 
-    return caller(GROUP_IDX, values, ddof, q, -1, None)
 
-
-def _layer2_result(name, values, ddof=0, q=0.5):
-    if name in ("trapezoid", "nantrapezoid"):
-        # the python-level wrapper carries the sample spacing as dx
-        return aggregate_numba.aggregate(GROUP_IDX, values, func=name, dx=ddof)
-    if name == "sort":
-        # ... and the reverse flag of the sort kernel as its third argument
-        return aggregate_numba.aggregate(GROUP_IDX, values, func=name, reverse=bool(ddof))
-    if name in ("quantile", "nanquantile"):
-        # ... and the quantile of the quantile kernel in the slot of its own
-        return aggregate_numba.aggregate(GROUP_IDX, values, func=name, q=q)
-    return aggregate_numba.aggregate(GROUP_IDX, values, func=name, ddof=ddof)
+def _layer2_result(name, values, **kwargs):
+    """The python-level aggregate of the same function and the same arguments."""
+    return aggregate_numba.aggregate(GROUP_IDX, values, func=name, **kwargs)
 
 
 @pytest.mark.parametrize("name,kwargs", _FLOAT_OPS)
@@ -170,7 +177,7 @@ def test_collecting_kernel_refuses_a_fill_value():
 
     @nb.njit
     def caller(group_idx, a, fill_value):
-        return kernels.aggregate_array(group_idx, a, 0, 0.5, -1, fill_value)
+        return kernels.array(group_idx, a, -1, fill_value)
 
     with pytest.raises(nb.TypingError, match="has no fill_value"):
         caller(GROUP_IDX, FLOAT_A, 7.0)
@@ -181,8 +188,8 @@ def test_njit_composition():
 
     @nb.njit
     def zscore(group_idx, values):
-        m = kernels.aggregate_mean(group_idx, values)
-        s = kernels.aggregate_std(group_idx, values)
+        m = kernels.mean(group_idx, values)
+        s = kernels.std(group_idx, values)
         return (values - m[group_idx]) / s[group_idx]
 
     result = zscore(np.array([0, 0, 1, 1]), np.array([1.0, 3.0, 10.0, 14.0]))
@@ -191,14 +198,14 @@ def test_njit_composition():
 
 def test_pure_python_call_raises():
     with pytest.raises(NotImplementedError, match="jitted"):
-        kernels.aggregate_mean(GROUP_IDX, FLOAT_A)
+        kernels.mean(GROUP_IDX, FLOAT_A)
 
 
 def test_the_moments_answer_from_njit_like_the_reference():
     # the skewness and the kurtosis are available inside jitted code as well
     @nb.njit
     def wrapped(group_idx, a):
-        return kernels.aggregate_skew(group_idx, a), kernels.aggregate_kurt(group_idx, a)
+        return kernels.skew(group_idx, a), kernels.kurt(group_idx, a)
 
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([1.0, 2.0, 3.0, 10.0, 1.0, 2.0, 3.0, 4.0])
@@ -215,7 +222,7 @@ def test_median_orders_complex_from_njit_like_the_reference():
     # reference by the generic tests of the suite.
     @nb.njit
     def wrapped(group_idx, a):
-        return kernels.aggregate_median(group_idx, a)
+        return kernels.median(group_idx, a)
 
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
@@ -229,7 +236,7 @@ def test_quantile_orders_complex_from_njit_like_the_reference():
     # answers like the reference does.
     @nb.njit
     def wrapped(group_idx, a):
-        return kernels.aggregate_quantile(group_idx, a, 0, 0.5, 2, None)
+        return kernels.quantile(group_idx, a, 0.5, 2, None)
 
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
@@ -241,7 +248,7 @@ def test_quantile_of_a_complex_group_with_a_nan_poisons_it_from_njit():
     # the whole group answers with a nan - the plain quantile is contagious
     @nb.njit
     def wrapped(group_idx, a):
-        return kernels.aggregate_quantile(group_idx, a, 0, 0.5, 2, None)
+        return kernels.quantile(group_idx, a, 0.5, 2, None)
 
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, complex(np.nan, 4.0), 5 + 6j])
@@ -255,7 +262,7 @@ def test_nunique_counts_the_distinct_values_from_njit_like_the_reference():
     # uses, and the nans are one value among themselves
     @nb.njit
     def wrapped(group_idx, a):
-        return kernels.aggregate_nunique(group_idx, a)
+        return kernels.nunique(group_idx, a)
 
     group_idx = np.array([0, 0, 0, 1])
     a = np.array([1 + 2j, 1 + 2j, 3 + 4j, complex(np.nan, 1.0)])
@@ -265,7 +272,7 @@ def test_nunique_counts_the_distinct_values_from_njit_like_the_reference():
 def test_nannunique_leaves_the_nans_out_from_njit_like_the_reference():
     @nb.njit
     def wrapped(group_idx, a):
-        return kernels.aggregate_nannunique(group_idx, a)
+        return kernels.nannunique(group_idx, a)
 
     group_idx = np.array([0, 0, 0, 1])
     a = np.array([1.0, 1.0, 3.0, np.nan])
@@ -279,7 +286,7 @@ def test_sort_orders_complex_from_njit_like_numpy():
     # the real parts differ - behind everything it is reached by
     @nb.njit
     def wrapped(group_idx, a):
-        return kernels.aggregate_sort(group_idx, a)
+        return kernels.sort(group_idx, a)
 
     for a in (
         np.array([1 + 5j, 1 + complex(np.nan, 0), 3 + 0j, 1 + 2j]),
@@ -296,7 +303,7 @@ def test_sum_bool_widens_int64():
 
     @nb.njit
     def caller(group_idx, a):
-        return kernels.aggregate_sum(group_idx, a)
+        return kernels.sum(group_idx, a)
 
     assert caller(GROUP_IDX, BOOL_A).dtype == np.int64
 
@@ -307,7 +314,7 @@ def test_min_default_fill_depends_on_output_dtype():
 
     @nb.njit
     def caller(group_idx, a):
-        return kernels.aggregate_min(group_idx, a)
+        return kernels.min(group_idx, a)
 
     group_idx = np.array([0, 0, 2, 2])  # group 1 empty
     result = caller(group_idx, np.array([5.0, 2.0, 7.0, 3.0]))
@@ -321,7 +328,7 @@ def test_fill_value_passthrough():
 
     @nb.njit
     def caller(group_idx, a, fill_value):
-        return kernels.aggregate_sum(group_idx, a, 0, 0.5, -1, fill_value)
+        return kernels.sum(group_idx, a, -1, fill_value)
 
     result = caller(GROUP_IDX, INT_A, 42)
     assert result[2] == 42
@@ -331,7 +338,7 @@ def test_size_too_small_raises():
 
     @nb.njit
     def caller(group_idx, a, size):
-        return kernels.aggregate_sum(group_idx, a, 0, 0.5, size)
+        return kernels.sum(group_idx, a, size, None)
 
     with pytest.raises(ValueError, match="too large"):
         caller(GROUP_IDX, FLOAT_A, 1)
@@ -342,7 +349,7 @@ def test_integer_mean_overflow_from_njit():
 
     @nb.njit
     def caller(group_idx, a):
-        return kernels.aggregate_mean(group_idx, a)
+        return kernels.mean(group_idx, a)
 
     with pytest.raises(OverflowError, match="exact mean"):
         caller(np.array([0, 0]), np.array([2**60, 2**60 + 1], dtype=np.int64))
@@ -351,12 +358,12 @@ def test_integer_mean_overflow_from_njit():
 @pytest.mark.parametrize(
     "kernel_name, values, expected_dtype",
     [
-        ("aggregate_mean", FLOAT_A.astype(np.float32), np.float32),
-        ("aggregate_mean", INT_A, np.float64),
-        ("aggregate_var", (FLOAT_A + 1j * FLOAT_A).astype(np.complex64), np.float32),
-        ("aggregate_var", INT_A, np.float64),
-        ("aggregate_cumsum", INT_A.astype(np.int8), np.int64),
-        ("aggregate_min", INT_A, np.int64),
+        ("mean", FLOAT_A.astype(np.float32), np.float32),
+        ("mean", INT_A, np.float64),
+        ("var", (FLOAT_A + 1j * FLOAT_A).astype(np.complex64), np.float32),
+        ("var", INT_A, np.float64),
+        ("cumsum", INT_A.astype(np.int8), np.int64),
+        ("min", INT_A, np.int64),
     ],
 )
 def test_dtype_rules(kernel_name, values, expected_dtype):
