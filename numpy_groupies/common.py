@@ -768,7 +768,7 @@ class Backend:
         return sorted(self._functions)
 
     def __repr__(self) -> str:
-        return f"<{type(self).__name__} {self._name!r} with {len(self._functions)} functions>"
+        return f"<{type(self).__name__} {self._name} with {len(self._functions)} functions>"
 
 
 def bind_functions(
