@@ -100,6 +100,8 @@ _supported_funcs = [
     "quantile",
     "var",
     "std",
+    "skew",
+    "kurt",
     "first",
     "last",
     "cumsum",
@@ -118,6 +120,10 @@ _op_dict["nancumsum"] = partial(_wrapper, func="nancumsum")
 _op_dict["median"] = partial(_wrapper, func="median", _nan_poison=True)
 # the same for the quantile: GroupBy.quantile() skips the NaNs as well
 _op_dict["quantile"] = partial(_wrapper, func="quantile", _nan_poison=True)
+# the moments skip the NaNs as well - GroupBy.skew() and GroupBy.kurt() have
+# no skipna argument, so the plain functions poison their groups afterwards
+_op_dict["skew"] = partial(_wrapper, func="skew", _nan_poison=True)
+_op_dict["kurt"] = partial(_wrapper, func="kurt", _nan_poison=True)
 _op_dict.update(
     allnan=partial(_wrapper, func=allnan),
     anynan=partial(_wrapper, func=anynan),

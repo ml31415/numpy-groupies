@@ -180,6 +180,46 @@ def _nunique_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -
     return distinct
 
 
+def _skew_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> float:
+    """the skewness of the values of one group.
+
+    The third central moment over the second one to the three-halves power,
+    with the correction for the size of the group that pandas applies: the
+    factor sqrt(n(n-1))/(n-2) makes the estimator unbiased for a normal
+    distribution.  A group of fewer than three values has no skewness, and a
+    group whose values are all the same has none either - its spread is zero,
+    and the answer is zero as well.
+    """
+    n = len(values)
+    if n < 3:
+        return float("nan")
+    devs = values - values.mean()
+    s2 = float((devs**2).sum())
+    if s2 == 0:
+        return 0.0
+    s3 = float((devs**3).sum())
+    return n * (n - 1) ** 0.5 / (n - 2) * s3 / s2**1.5
+
+
+def _kurt_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> float:
+    """the excess kurtosis of the values of one group.
+
+    The fourth central moment over the square of the second one, minus the
+    three of a normal distribution, with the correction for the size of the
+    group that pandas applies.  A group of fewer than four values has no
+    kurtosis, and a group whose values are all the same has none either.
+    """
+    n = len(values)
+    if n < 4:
+        return float("nan")
+    devs = values - values.mean()
+    s2 = float((devs**2).sum())
+    if s2 == 0:
+        return 0.0
+    s4 = float((devs**4).sum())
+    return n * (n + 1) * (n - 1) * s4 / ((n - 2) * (n - 3) * s2**2) - 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
+
+
 def _sort_ref(values: npt.NDArray[np.number], reverse: bool = False) -> npt.NDArray[np.integer]:
     """one group, ordered the way numpy orders it."""
     ordered = np.sort(values)
@@ -229,6 +269,8 @@ _REF_ONE_PER_GROUP: dict[str, Callable[..., Any]] = {
     "sumofsquares": _sum_of_squares,
     "len": lambda v, pos: len(v),
     "nunique": _nunique_ref,
+    "skew": _skew_ref,
+    "kurt": _kurt_ref,
     "first": lambda v, pos: v[0],
     "last": lambda v, pos: v[-1],
     "anynan": lambda v, pos: bool(np.isnan(v).any()),
@@ -251,6 +293,8 @@ _REF_ONE_PER_GROUP: dict[str, Callable[..., Any]] = {
     "nansumofsquares": _skip_nans(_sum_of_squares),
     "nanlen": _skip_nans(lambda v, pos: len(v)),
     "nannunique": _skip_nans(_nunique_ref),
+    "nanskew": _skip_nans(_skew_ref),
+    "nankurt": _skip_nans(_kurt_ref),
     "nanfirst": _skip_nans(lambda v, pos: v[0]),
     "nanlast": _skip_nans(lambda v, pos: v[-1]),
     "nanargmin": _skip_nans(_at_a_position(np.argmin)),

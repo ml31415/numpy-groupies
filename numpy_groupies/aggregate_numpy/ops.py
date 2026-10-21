@@ -12,7 +12,15 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.argreductions import _argmax, _argmin
-from numpy_groupies.aggregate_numpy.averaging import _mean, _std, _sum_of_squres, _trapezoid, _var
+from numpy_groupies.aggregate_numpy.averaging import (
+    _kurt,
+    _mean,
+    _skew,
+    _std,
+    _sum_of_squres,
+    _trapezoid,
+    _var,
+)
 from numpy_groupies.aggregate_numpy.collect import _array, _generic_callable
 from numpy_groupies.aggregate_numpy.cumulative import _cumsum, _nancumsum
 from numpy_groupies.aggregate_numpy.reductions import (
@@ -52,6 +60,8 @@ _op_dict: dict[str, Callable[..., AResult]] = {
     "percentile": _percentile,
     "std": _std,
     "var": _var,
+    "skew": _skew,
+    "kurt": _kurt,
     "anynan": _anynan,
     "allnan": _allnan,
     "sort": _sort,

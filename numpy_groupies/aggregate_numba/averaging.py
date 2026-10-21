@@ -223,6 +223,165 @@ mean = build_kernel(
 )
 
 
+class MomentState(NamedTuple):
+    """The running central moments of the skewness and the kurtosis kernel.
+
+    ``out`` is the result the driver writes into, ``m1`` is the running mean, ``m2``/``m3``/``m4`` the sums of the squared,
+    cubed and fourth powers of the deviations from it, ``count`` the number of
+    values seen, and ``low``/``high`` the global extrema that feed the
+    exactness gate.  Kept flat like the other states - numba cannot type
+    inherited NamedTuples."""
+
+    out: npt.NDArray[np.floating]
+    m1: npt.NDArray[np.floating]
+    m2: npt.NDArray[np.floating]
+    m3: npt.NDArray[np.floating]
+    m4: npt.NDArray[np.floating]
+    count: npt.NDArray[np.int64]  # type: ignore[assignment]  # the field name shadows tuple.count, which numba does not see
+    low: npt.NDArray[np.number]
+    high: npt.NDArray[np.number]
+
+
+def _moment_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> MomentState:
+    return MomentState(
+        np.zeros(size, out_dtype),
+        np.zeros(size, out_dtype),
+        np.zeros(size, out_dtype),
+        np.zeros(size, out_dtype),
+        np.zeros(size, out_dtype),
+        np.zeros(size, np.int64),
+        np.empty(1, in_dtype),
+        np.empty(1, in_dtype),
+    )
+
+
+def _moment_seed(st: MomentState, a: npt.NDArray[np.number]) -> None:
+    # seed the global extrema scratch with the first value
+    if len(a) > 0:
+        st.low[0] = a[0]
+        st.high[0] = a[0]
+
+
+def _moment_update(st: MomentState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+    """Accumulate one value into the running central moments.
+
+    The update is the one of Welford (and the one pandas uses): the moments
+    are kept around the running mean, so that a large offset cannot erase
+    the small deviations the skewness and the kurtosis are made of.
+    """
+    if isinstance(val, complex):
+        # the moments of the deviations of a complex value would be complex,
+        # and their ratio meaningless
+        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+    st.count[ri] += 1
+    n = st.count[ri]
+    delta = val - st.m1[ri]
+    delta_n = delta / n
+    term1 = delta * delta_n * (n - 1)
+    st.m4[ri] += (
+        term1 * delta_n * delta_n * (n * n - 3 * n + 3) + 6 * delta_n * delta_n * st.m2[ri] - 4 * delta_n * st.m3[ri]
+    )
+    st.m3[ri] += term1 * delta_n * (n - 2) - 3 * delta_n * st.m2[ri]
+    st.m2[ri] += term1
+    st.m1[ri] += delta_n
+    _track_extrema(val, st.low, st.high)  # type: ignore[arg-type]  # low/high are 1-element arrays; body uses low[0]
+
+
+def _moment_update_nan(st: MomentState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+    """The same accumulation, with the nans left out.
+
+    The body is a copy of the one above: a call would make the loop of the
+    nan variant ten times slower than the one of the plain variant, and the
+    accumulation is a handful of lines.
+    """
+    if val != val:
+        return
+    if isinstance(val, complex):
+        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+    st.count[ri] += 1
+    n = st.count[ri]
+    delta = val - st.m1[ri]
+    delta_n = delta / n
+    term1 = delta * delta_n * (n - 1)
+    st.m4[ri] += (
+        term1 * delta_n * delta_n * (n * n - 3 * n + 3) + 6 * delta_n * delta_n * st.m2[ri] - 4 * delta_n * st.m3[ri]
+    )
+    st.m3[ri] += term1 * delta_n * (n - 2) - 3 * delta_n * st.m2[ri]
+    st.m2[ri] += term1
+    st.m1[ri] += delta_n
+    _track_extrema(val, st.low, st.high)  # type: ignore[arg-type]  # low/high are 1-element arrays; body uses low[0]
+
+
+def _moment_gate(st: MomentState, n_values: int) -> None:
+    _mean_limit_check(st.low[0], st.high[0], n_values)
+
+
+def _skew_finish(st: MomentState, g: int, fill_value: float, ddof: int) -> Any:
+    n = st.count[g]
+    if n == 0:
+        return fill_value
+    if n < 3:
+        # fewer than three values have no skewness
+        return np.nan
+    if st.m2[g] == 0:
+        # a group whose values are all the same has no spread - and no
+        # skewness either, which pandas answers with a zero
+        return 0.0
+    return n * np.sqrt(n - 1) / (n - 2) * st.m3[g] / st.m2[g] ** 1.5
+
+
+def _kurt_finish(st: MomentState, g: int, fill_value: float, ddof: int) -> Any:
+    n = st.count[g]
+    if n == 0:
+        return fill_value
+    if n < 4:
+        # fewer than four values have no kurtosis
+        return np.nan
+    if st.m2[g] == 0:
+        return 0.0
+    return n * (n + 1) * (n - 1) * st.m4[g] / ((n - 2) * (n - 3) * st.m2[g] ** 2) - 3 * (n - 1) ** 2 / (
+        (n - 2) * (n - 3)
+    )
+
+
+skew = build_kernel(
+    "skew",
+    init=_moment_init,
+    update=_moment_update,
+    update_nan=_moment_update_nan,
+    seed=_moment_seed,
+    gate=_moment_gate,
+    finish=_skew_finish,
+    forced_fill=0,
+    fill_default=np.nan,
+    rule=rule_float,
+    doc="Skewness of the values of every group",
+)
+
+
+kurt = build_kernel(
+    "kurt",
+    init=_moment_init,
+    update=_moment_update,
+    update_nan=_moment_update_nan,
+    seed=_moment_seed,
+    gate=_moment_gate,
+    finish=_kurt_finish,
+    forced_fill=0,
+    fill_default=np.nan,
+    rule=rule_float,
+    doc="Excess kurtosis of the values of every group",
+)
+
+
 class StdState(NamedTuple):
     """The running sums of the dispersion kernels: ``out`` accumulates the
     squared deviations in the real output dtype, ``dev`` the deviations

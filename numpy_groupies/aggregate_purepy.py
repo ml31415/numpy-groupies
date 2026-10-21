@@ -107,6 +107,52 @@ def _median(x: Sequence[Any]) -> Any:
     return (lo + hi) / 2
 
 
+def _skew(x: Sequence[Any]) -> Any:
+    """The skewness of the values of one group.
+
+    The third central moment over the second one to the three-halves power,
+    corrected for the size of the group the way pandas corrects it: fewer
+    than three values have no skewness, and a group whose values are all the
+    same has none either - its spread is zero, and the answer is zero too.
+    """
+    if any(isinstance(val, complex) for val in x):
+        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+    n = len(x)
+    if n < 3:
+        return float("nan")
+    values = [float(val) for val in x]
+    mean = sum(values) / n
+    devs = [val - mean for val in values]
+    s2 = sum(dev * dev for dev in devs)
+    if s2 == 0:
+        return 0.0
+    s3 = sum(dev**3 for dev in devs)
+    return n * math.sqrt(n - 1) / (n - 2) * s3 / s2**1.5
+
+
+def _kurt(x: Sequence[Any]) -> Any:
+    """The excess kurtosis of the values of one group.
+
+    The fourth central moment over the square of the second one, minus the
+    three of a normal distribution, corrected for the size of the group the
+    way pandas corrects it: fewer than four values have no kurtosis, and a
+    group whose values are all the same has none either.
+    """
+    if any(isinstance(val, complex) for val in x):
+        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+    n = len(x)
+    if n < 4:
+        return float("nan")
+    values = [float(val) for val in x]
+    mean = sum(values) / n
+    devs = [val - mean for val in values]
+    s2 = sum(dev * dev for dev in devs)
+    if s2 == 0:
+        return 0.0
+    s4 = sum(dev**4 for dev in devs)
+    return n * (n + 1) * (n - 1) * s4 / ((n - 2) * (n - 3) * s2**2) - 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
+
+
 def _trapezoid(x: Sequence[Any], dx: float = 1.0) -> float:
     # trapezoidal integration over the group, in array order; a group of a
     # single element (or none) integrates to zero
@@ -251,6 +297,8 @@ _op_dict: dict[str, Callable[..., Any]] = {
     "trapezoid": _trapezoid,
     "std": _std,
     "var": _var,
+    "skew": _propagate_nan(_skew),
+    "kurt": _propagate_nan(_kurt),
     "anynan": _anynan,
     "allnan": _allnan,
     "sort": _sort,

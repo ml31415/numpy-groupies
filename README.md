@@ -39,7 +39,7 @@ Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
 ## Why numpy-groupies?
 
 - **Fast.** With Numba installed, `aggregate` is the fastest group-by aggregation for plain NumPy arrays. See [Performance](#performance).
-- **One call, many functions.** The usual reductions plus `median`, `quantile`/`percentile`, `sort` (ascending or descending), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
+- **One call, many functions.** The usual reductions plus `median`, `quantile`/`percentile`, `skew`/`kurt`, `sort` (ascending or descending), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
 - **Array in, array out.** Plain NumPy arrays, no DataFrame and no index. The result is an array indexed by group label, with empty groups filled with the value you choose. Multi-dimensional output (N-D binning) and aggregation along an `axis` are built in.
 - **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops.
 - **Numerically careful.** Integer sums, means and variances accumulate in a dtype wide enough not to wrap around, NaN handling follows NumPy, and complex and `float16` input are supported.
@@ -165,7 +165,7 @@ Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix 
 
 | Category                        | Functions |
 | ------------------------------- | --------- |
-| Reductions                      | `sum` `prod` `mean` `median` `quantile` `percentile` `var` `std` `min` `max` `first` `last` `len` `nunique` `sumofsquares` `trapezoid` |
+| Reductions                      | `sum` `prod` `mean` `median` `quantile` `percentile` `var` `std` `skew` `kurt` `min` `max` `first` `last` `len` `nunique` `sumofsquares` `trapezoid` |
 | Index of extremes               | `argmin` `argmax` |
 | Boolean                         | `all` `any` `allnan` `anynan` |
 | NaN-skipping variants           | `nansum` `nanmean` `nanvar` `nanmax` … — a `nan` prefix on every reduction above except `allnan`/`anynan` |
@@ -221,18 +221,20 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 
 | function        | numpy  | numba  | numbagg | polars | pandas |
 | --------------- | -----: | -----: | ------: | -----: | -----: |
-| `sum`            |  0.943 |  0.473 |  0.466 |  2.658 |  6.969 |
-| `mean`           |  1.488 |  0.491 |  0.538 |  2.575 |  7.105 |
-| `max`            |  1.671 |  0.628 |  0.850 |  2.705 |  6.416 |
-| `std`            |  3.065 |  0.660 |  0.674 |  2.766 |  7.560 |
-| `nansum`         |  4.042 |  0.449 |  1.758 |  6.239 |  8.955 |
-| `median`         | 12.785 |  9.325 |   ---- |  4.037 | 15.632 |
-| `quantile`       | 13.997 |  9.274 |   ---- |  4.066 | 22.808 |
-| `nunique`        | 14.456 |  8.324 |   ---- | 10.596 | 58.380 |
-| `sort`           | 70.939 | 25.928 |   ---- |   ---- |   ---- |
-| `cumsum`         | 14.808 |  0.582 |   ---- |  8.518 |  7.454 |
-| `array`          |  7.047 |  1.949 |   ---- |   ---- |   ---- |
-| custom callable  | 112.127 |  5.991 |   ---- | 79.784 | 94.001 |
+| `sum`            |  0.886 |  0.428 |  0.459 |  2.253 |  7.133 |
+| `mean`           |  1.520 |  0.496 |  0.529 |  2.382 |  7.455 |
+| `max`            |  1.622 |  0.614 |  0.844 |  3.155 |  6.786 |
+| `std`            |  3.131 |  0.656 |  0.693 |  2.407 |  8.142 |
+| `nansum`         |  4.141 |  0.443 |  1.765 |  6.324 |  8.492 |
+| `median`         | 12.723 |  9.277 |   ---- |  3.782 | 15.696 |
+| `skew`            |  5.861 |  2.556 |   ---- |   ---- |  9.649 |
+| `kurt`            |  5.658 |  2.479 |   ---- |   ---- | 11.008 |
+| `quantile`       | 14.280 |  9.279 |   ---- |  4.229 | 23.648 |
+| `nunique`        | 14.594 |  8.208 |   ---- | 11.443 | 57.750 |
+| `sort`           | 69.947 | 24.451 |   ---- |   ---- |   ---- |
+| `cumsum`         | 14.926 |  0.561 |   ---- |  8.484 |  7.678 |
+| `array`          |  6.504 |  1.878 |   ---- |   ---- |   ---- |
+| custom callable  | 111.000 |  5.961 |   ---- | 79.490 | 95.918 |
 
 The `polars` column uses all the cores of the machine, the `numpy` and `numba` columns are single-threaded - the Numba kernels of this package do not use `prange`. That matters most for the order statistics: with a single thread polars needs 9.7ms for the quantile, against 4.0ms with six, which puts it level with the single-threaded Numba kernel (9.3ms).
 

@@ -73,6 +73,8 @@ One value per group.
 | `median`       | Median. |
 | `quantile`     | Quantile of the items; `q` says which one (0 to 1, 0.5 by default), `method` how to interpolate between the two values it falls between (`linear`, `lower`, `higher`, `midpoint` or `nearest`, as in `np.quantile`). |
 | `percentile`   | Percentile of the items; the quantile in percent (`q` from 0 to 100, 50 by default). |
+| `skew`         | Skewness of the items — the third central moment over the second one to the three-halves power, corrected for the size of the group the way pandas corrects it. A group of fewer than three items has no skewness, and a group whose items are all the same has none either (the answer is then 0). |
+| `kurt`         | Excess kurtosis of the items — the fourth central moment over the square of the second one, minus the three of a normal distribution, corrected for the size of the group the way pandas corrects it. A group of fewer than four items has no kurtosis. (alias: `kurtosis`) |
 | `var`          | Variance; the divisor is `N - ddof` (`ddof=0` by default). |
 | `std`          | Standard deviation; `ddof` as for `var`. |
 | `min`, `max`   | Minimum / maximum. (aliases: `amin`, `minimum`; `amax`, `maximum`) |
@@ -82,7 +84,7 @@ One value per group.
 
 ### NaN-skipping variants
 
-Prefix with `nan` — `nansum`, `nanprod`, `nanlen`, `nansumofsquares`, `nanmean`, `nanmedian`, `nanquantile`, `nanpercentile`, `nanvar`, `nanstd`, `nanmin`, `nanmax`, `nanfirst`, `nanlast`, `nanargmin`, `nanargmax`, `nantrapezoid`, `nanall`, `nanany`, `nannunique`, and the cumulative `nancumsum`, `nancumprod`, `nancummin`, `nancummax` — to skip NaNs instead of propagating them. `nanlen` counts the non-NaN items, and `nannunique` counts the distinct items among the ones that are not NaN — the plain `nunique` counts the NaNs of a group as one item of their own. For `nantrapezoid` this means integrating over the remaining items, bridging the gap a NaN leaves. For `nanargmin` / `nanargmax` the two forms differ not in the value they return but in whether they return one at all: an index cannot *be* a NaN, so the plain forms have no answer for a group holding a NaN and give `fill_value`, while the skipping ones name the index of the extreme among the items that are left.
+Prefix with `nan` — `nansum`, `nanprod`, `nanlen`, `nansumofsquares`, `nanmean`, `nanmedian`, `nanquantile`, `nanpercentile`, `nanvar`, `nanstd`, `nanskew`, `nankurt`, `nanmin`, `nanmax`, `nanfirst`, `nanlast`, `nanargmin`, `nanargmax`, `nantrapezoid`, `nanall`, `nanany`, `nannunique`, and the cumulative `nancumsum`, `nancumprod`, `nancummin`, `nancummax` — to skip NaNs instead of propagating them. `nanlen` counts the non-NaN items, and `nannunique` counts the distinct items among the ones that are not NaN — the plain `nunique` counts the NaNs of a group as one item of their own. For `nantrapezoid` this means integrating over the remaining items, bridging the gap a NaN leaves. For `nanargmin` / `nanargmax` the two forms differ not in the value they return but in whether they return one at all: an index cannot *be* a NaN, so the plain forms have no answer for a group holding a NaN and give `fill_value`, while the skipping ones name the index of the extreme among the items that are left.
 
 ### Boolean
 
@@ -125,6 +127,7 @@ The nan-variants are supported wherever the plain function is.
 | `all`, `any`                   |  x    |  x    |      x      |
 | `allnan`, `anynan`             |  x    |  x    |      x      |
 | `mean`, `median`, `var`, `std` |  x    |  x    |      x      |
+| `skew`, `kurt`                 |  x    |  x    |      x      |
 | `quantile`, `percentile`        |  x    |  x    |      -      |
 | `first`, `last`                |  x    |  x    |      x      |
 | `argmin`, `argmax`             |  x    |  x    |      x      |
@@ -151,7 +154,7 @@ Groups without any item are filled with `fill_value`. By default this matches wh
 | `sum`, `len`, `nunique`, `sumofsquares` (and `nan`-forms) | `0`                |
 | `prod` (and `nanprod`)                                 | `1`                |
 | `all`, `any`, `allnan`, `anynan`                       | `False`            |
-| `mean`, `median`, `var`, `std` (and `nan`-forms)       | `nan`              |
+| `mean`, `median`, `var`, `std`, `skew`, `kurt` (and `nan`-forms) | `nan`    |
 | `quantile`, `percentile` (and `nan`-forms)             | `nan`              |
 | `min`, `max`, `first`, `last` (and `nan`-forms)        | `nan` for floating input, `0` where the output is an integer type, which cannot hold `nan` |
 | `argmax`, `argmin` (and `nan`-forms)                   | `-1` — for a group without items, and for a group whose items include a NaN (an index cannot be a NaN, so there is nothing to name); `nanargmax` / `nanargmin` name an index for such a group |
@@ -175,6 +178,7 @@ Complex input is supported wherever the result is well defined, following NumPy'
 
 - **Keep the complex dtype:** `sum`, `prod`, `mean`, `median`, `quantile`, `percentile`, `trapezoid`, `sort`, `first`, `last`, `array` and the `cumsum` functions. `median`, `quantile` and `sort` use NumPy's lexicographic ordering (real part first, then imaginary part) - the Numba implementation compares the two parts itself, since neither Python nor Numba orders complex numbers. (NumPy's own `np.quantile` takes real values only; the quantile of a complex group is the one of this package.)
 - **Return a real dtype:** `var`, `std` and `sumofsquares` measure squared magnitudes, like `np.var` on complex input.
+- **Not defined:** `skew` and `kurt` are moments of the deviations from the mean, and a complex deviation has no meaningful third or fourth moment — a complex input raises a `TypeError`.
 - **Order statistics** `min`, `max`, `argmin`, `argmax` and their `nan` counterparts follow the same lexicographic ordering everywhere — the real part decides, the imaginary part only breaks ties — including the Numba implementation, which compares the two parts itself since neither Python nor Numba orders complex numbers. As in NumPy, a value with a NaN in either part compares neither smaller nor greater.
 
 ## Helper functions

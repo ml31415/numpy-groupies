@@ -253,6 +253,8 @@ _supported_funcs = [
     "quantile",
     "var",
     "std",
+    # no skew and no kurt: polars 2.0.0 answers a zero for both of them,
+    # whatever the values are - there is nothing to measure against
     "first",
     "last",
     "cumsum",
