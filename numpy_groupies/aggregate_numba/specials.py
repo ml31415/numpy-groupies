@@ -11,6 +11,7 @@ single pass - it composes like the streaming reductions, but carries the
 sample spacing ``dx`` in the ``ddof`` slot.
 """
 
+import math
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -512,43 +513,107 @@ sort = build_custom_kernel(
 )
 
 
+@njit_stable
+def _mix_hash(x: np.uint64) -> Any:
+    """spread the bits of a hash over the whole word (splitmix64).
+
+    The result is an unsigned integer - numba's stubs do not know the
+    arithmetic of them, so the type checker is told nothing here.
+    """
+    x = (x ^ (x >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+    x = (x ^ (x >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+    return x ^ (x >> np.uint64(31))
+
+
+@njit_stable
+def _hash_float(v: float) -> Any:
+    """the hash of a floating point value.
+
+    The mantissa of a double is exact in 53 bits, so the mantissa and the
+    exponent name the value - and no two different values have the same pair.
+    A zero of either sign has the same mantissa, so the two have the same
+    hash, as they are the same value.
+    """
+    m, e = math.frexp(v)
+    return _mix_hash(
+        np.uint64(int(m * 9007199254740992.0)) ^ (np.uint64(e & 0xFFFFFFFF) * np.uint64(0x9E3779B97F4A7C15))
+    )
+
+
+@njit_stable
+def _hash_value(v: Any) -> Any:
+    """the hash of a value - the values that are equal have the same hash.
+
+    A complex value mixes the hashes of its two parts, a floating point one
+    has a hash of its own, an integer its own value.
+    """
+    if isinstance(v, (complex, np.complex64, np.complex128)):
+        return _mix_hash(_hash_float(v.real) ^ (_hash_float(v.imag) * np.uint64(0x9E3779B97F4A7C15)))
+    if isinstance(v, (float, np.float32, np.float64)):
+        return _hash_float(v)
+    return _mix_hash(np.uint64(v))
+
+
+@njit_stable
+def _count_distinct(
+    values: npt.NDArray[np.number],
+    begin: int,
+    n: int,
+    slots: npt.NDArray[np.number],
+    gens: npt.NDArray[np.int32],
+    generation: int,
+    mask: int,
+) -> tuple[int, bool]:
+    """the number of distinct values of the block, and whether it holds a nan.
+
+    The values are counted in a hash table with open addressing: a slot that
+    holds the value already is a value seen before, a free one makes it a new
+    one.  The generation of the group says which of the slots are in use, so
+    that the table needs no clearing between the groups.
+
+    The nans are not counted at all - they are one value among themselves,
+    which the caller adds.
+    """
+    distinct = 0
+    has_nan = False
+    for i in range(begin, begin + n):
+        v = values[i]
+        if v != v:
+            # val != val - the nan of a complex value in either part
+            has_nan = True
+            continue
+        # the index is an int64: numba would widen a uint64 against the
+        # int64 of the mask to a float, which is no index
+        h = np.int64(_hash_value(v) & np.uint64(mask))
+        while True:
+            if gens[h] != generation:
+                # a free slot: the value is a new one
+                gens[h] = generation
+                slots[h] = v
+                distinct += 1
+                break
+            if slots[h] == v:
+                break  # a value seen before
+            h = (h + 1) & mask
+    return distinct, has_nan
+
+
 def _nunique_driver_factory(nans: bool) -> Any:
     """The driver of the number of distinct values of every group.
 
-    The values are placed group by group with a counting sort, and every
-    group is then ordered, so that the values that differ from their
-    predecessor are the distinct ones.  The nans are one value among
-    themselves: the plain variant counts them as one, the nan variant leaves
-    them out.
+    The values are placed group by group with a counting sort, and the
+    distinct ones of every group are then counted in a hash table - which
+    needs no ordering of the values and so is linear in the number of them.
+    The nans are one value among themselves: the plain variant counts them
+    as one, the nan variant leaves them out.
     """
     op_name = "nannunique" if nans else "nunique"
     _count = njit_stable(group_count)
     _starts = njit_stable(group_starts)
     _place = njit_stable(group_place)
-    # the same helper the median and the quantile use: it copies the usable
-    # values of a group into a buffer of their own, the nans left out
-    _valid_nan = njit_stable(_group_valid_nan)
-    # the ordering of a group-block: the same helper the sort uses, one
-    # compiled artifact for both
-    _order = _order_block
-
-    def _distinct(buf: npt.NDArray[np.number], begin: int, m: int) -> int:
-        """the number of distinct values of the block at ``buf[begin:begin+m]``
-
-        The block is ordered in place - the distinct values are the ones that
-        differ from their predecessor, and only an ordering brings the equal
-        values next to each other.
-        """
-        if m <= 1:
-            return m
-        _order(buf, begin, m, False)
-        distinct = 1
-        for i in range(begin + 1, begin + m):
-            if buf[i] != buf[i - 1]:
-                distinct += 1
-        return distinct
-
-    _distinct = njit_stable(_distinct, name=f"{op_name}_distinct")
+    # the counting of the distinct values: one function for both variants, the
+    # same source and the same signature, so one compiled artifact serves both
+    _distinct = _count_distinct
 
     def driver(
         group_idx: npt.NDArray[np.integer],
@@ -569,15 +634,29 @@ def _nunique_driver_factory(nans: bool) -> Any:
         # counting-sort placement into contiguous group-blocks
         a_sorted = np.empty(group_idx.size, a.dtype)
         _place(group_idx, a, starts.copy(), a_sorted)
-        # the usable values of a group, the nans left out, go into a buffer
-        buf = np.empty(group_idx.size, a.dtype)
+        # the hash table: two slots for every value of the largest group, so
+        # that it is never more than half full and the probing stays short
+        max_count = 0
+        for g in range(size):
+            max_count = max(max_count, counts[g])
+        capacity = 1
+        while capacity < 2 * max_count:
+            capacity *= 2
+        slots = np.empty(capacity, a.dtype)
+        # the generation of a group says which of the slots it uses
+        gens = np.full(capacity, -1, np.int32)
         for g in range(size):
             n = counts[g]
             if n == 0:
                 continue  # untouched group, keeps the fill value
-            m = _valid_nan(g, a_sorted, counts, starts, buf)
-            distinct = _distinct(buf, 0, m)
-            if not nans and m < n:
+            # the table of this group holds only as many slots as the group
+            # needs - the slots of the other groups are not touched
+            mask = 1
+            while mask < 2 * n:
+                mask *= 2
+            mask -= 1
+            distinct, has_nan = _distinct(a_sorted, starts[g], n, slots, gens, g, mask)
+            if has_nan and not nans:
                 # the plain variant counts the nans of the group as one value
                 distinct += 1
             out[g] = distinct
