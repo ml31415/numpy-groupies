@@ -133,7 +133,7 @@ def _central_moments(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
     size: int,
-) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.floating], npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.floating], npt.NDArray[np.floating], npt.NDArray[np.floating]]:
     """The counts and the sums of the squared, cubed and fourth powers of the
     deviations of the values of every group from their mean.
 
@@ -151,19 +151,31 @@ def _central_moments(
             / counts
         )
     devs = a - means[group_idx]
-    # bincount takes the weights as floats - the signature says generic
-    s2 = np.bincount(
-        group_idx, weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating]", devs * devs), minlength=size
+    # bincount takes the weights as floats - the signature says generic.  The
+    # casts say so as well: numpy 2.4 types the result of a bincount with
+    # weights as an integer array, numpy 2.5 as a float one - the array holds
+    # floats either way.
+    s2 = cast(
+        "npt.NDArray[np.floating]",
+        np.bincount(
+            group_idx, weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating]", devs * devs), minlength=size
+        ),
     )
-    s3 = np.bincount(
-        group_idx,
-        weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating]", devs * devs * devs),
-        minlength=size,
+    s3 = cast(
+        "npt.NDArray[np.floating]",
+        np.bincount(
+            group_idx,
+            weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating]", devs * devs * devs),
+            minlength=size,
+        ),
     )
-    s4 = np.bincount(
-        group_idx,
-        weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating]", devs * devs * devs * devs),
-        minlength=size,
+    s4 = cast(
+        "npt.NDArray[np.floating]",
+        np.bincount(
+            group_idx,
+            weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating]", devs * devs * devs * devs),
+            minlength=size,
+        ),
     )
     return counts, s2, s3, s4
 
