@@ -146,6 +146,53 @@ def _len(
     )
 
 
+def _nunique(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
+    size: int,
+    fill_value: AScalar,
+    dtype: npt.DTypeLike | None = None,
+) -> npt.NDArray[np.int64]:
+    """The number of distinct values of every group.
+
+    The values of a group are gathered and ordered, and the values that
+    differ from their predecessor are the distinct ones.  The nans are one
+    value among themselves - a nan in either part of a complex value makes
+    it one - so they are left out of the ordering and counted apart: the
+    plain function counts them, the nan variant never sees them.
+    """
+    if group_idx.size == 0:
+        return np.full(size, fill_value, dtype=dtype or np.int64)
+    if a.dtype.kind in "fc":
+        nans = np.isnan(a)
+    else:
+        nans = np.zeros(a.size, dtype=bool)
+    good = ~nans
+    ret = np.full(size, fill_value, dtype=dtype or np.int64)
+    if good.any():
+        # the values of every group in one row, the nans left out
+        sortidx = np.argsort(_sort_key(group_idx[good]), kind="stable")
+        group_idx_srt = group_idx[good][sortidx]
+        a_srt = a[good][sortidx]
+        new_group = np.empty(group_idx_srt.size, dtype=bool)
+        new_group[0] = True
+        np.not_equal(group_idx_srt[1:], group_idx_srt[:-1], out=new_group[1:])
+        starts = np.flatnonzero(new_group)
+        counts = np.diff(np.append(starts, group_idx_srt.size))
+        # the distinct values of every group: the values that differ from
+        # their predecessor in the ordered group
+        vals = np.empty(starts.size, dtype=np.int64)
+        for grp in range(starts.size):
+            start, count = starts[grp], counts[grp]
+            block = np.sort(a_srt[start : start + count])
+            vals[grp] = 1 + np.count_nonzero(block[1:] != block[:-1])
+        ret[group_idx_srt[starts]] = vals
+    if nans.any():
+        # the nans are one value of their own, in every group that holds one
+        ret += np.bincount(group_idx[nans], minlength=size) > 0
+    return ret
+
+
 def _last(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
@@ -877,6 +924,7 @@ _op_dict: dict[str, Callable[..., AResult]] = {
     "argmax": _argmax,
     "argmin": _argmin,
     "len": _len,
+    "nunique": _nunique,
     "cumsum": _cumsum,
     "sumofsquares": _sum_of_squres,
     "trapezoid": _trapezoid,

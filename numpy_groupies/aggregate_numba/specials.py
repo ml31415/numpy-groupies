@@ -22,6 +22,7 @@ from numpy_groupies.aggregate_numba.compose import (
     complex_less,
     output_size,
     rule_float,
+    rule_int64,
     rule_same,
 )
 from numpy_groupies.aggregate_numba.jit import njit_stable
@@ -508,6 +509,89 @@ sort = build_custom_kernel(
     nans=False,
     nton=True,
     doc="Values of every group in ascending, or with reverse=True in descending order",
+)
+
+
+def _nunique_driver_factory(nans: bool) -> Any:
+    """The driver of the number of distinct values of every group.
+
+    The values are placed group by group with a counting sort, and every
+    group is then ordered, so that the values that differ from their
+    predecessor are the distinct ones.  The nans are one value among
+    themselves: the plain variant counts them as one, the nan variant leaves
+    them out.
+    """
+    op_name = "nannunique" if nans else "nunique"
+    _count = njit_stable(group_count)
+    _starts = njit_stable(group_starts)
+    _place = njit_stable(group_place)
+    # the same helper the median and the quantile use: it copies the usable
+    # values of a group into a buffer of their own, the nans left out
+    _valid_nan = njit_stable(_group_valid_nan)
+    # the ordering of a group-block: the same helper the sort uses, one
+    # compiled artifact for both
+    _order = _order_block
+
+    def _distinct(buf: npt.NDArray[np.number], begin: int, m: int) -> int:
+        """the number of distinct values of the block at ``buf[begin:begin+m]``
+
+        The block is ordered in place - the distinct values are the ones that
+        differ from their predecessor, and only an ordering brings the equal
+        values next to each other.
+        """
+        if m <= 1:
+            return m
+        _order(buf, begin, m, False)
+        distinct = 1
+        for i in range(begin + 1, begin + m):
+            if buf[i] != buf[i - 1]:
+                distinct += 1
+        return distinct
+
+    _distinct = njit_stable(_distinct, name=f"{op_name}_distinct")
+
+    def driver(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        ddof: int,
+        q: float,
+    ) -> npt.NDArray[np.number]:
+        # the number of the distinct values takes neither ddof nor a quantile -
+        # both slots stay unused
+        size = output_size(group_idx, size_arg)
+        out = np.full(size, fill_value, out_dtype)
+        counts = _count(group_idx, size)
+        starts = _starts(counts)
+        # counting-sort placement into contiguous group-blocks
+        a_sorted = np.empty(group_idx.size, a.dtype)
+        _place(group_idx, a, starts.copy(), a_sorted)
+        # the usable values of a group, the nans left out, go into a buffer
+        buf = np.empty(group_idx.size, a.dtype)
+        for g in range(size):
+            n = counts[g]
+            if n == 0:
+                continue  # untouched group, keeps the fill value
+            m = _valid_nan(g, a_sorted, counts, starts, buf)
+            distinct = _distinct(buf, 0, m)
+            if not nans and m < n:
+                # the plain variant counts the nans of the group as one value
+                distinct += 1
+            out[g] = distinct
+        return out
+
+    return njit_stable(driver, name=f"{op_name}_driver")
+
+
+nunique = build_custom_kernel(
+    "nunique",
+    driver_factory=_nunique_driver_factory,
+    rule=rule_int64,
+    fill_default=0,
+    doc="Number of distinct values of every group",
 )
 
 

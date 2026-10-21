@@ -81,6 +81,17 @@ def _collecting_shape(size, axis):
     return tuple(shape)
 
 
+def _distinct_of(values, count_nans):
+    """the number of the distinct values of a slice of an axis.
+
+    The nans are one value among themselves, and the nan variant of the
+    function leaves them out.
+    """
+    nans = np.isnan(values)
+    distinct = len(np.unique(values[~nans]))
+    return distinct + (1 if count_nans and nans.any() else 0)
+
+
 @pytest.mark.parametrize(
     ("size", "axis"),
     [((12,), 0), ((12, 5), 0), ((12, 5), 1)],
@@ -126,6 +137,11 @@ def test_along_axis(impl, rng, func, size, axis):
         expected = np.percentile(a, 50.0, axis=axis)
     elif func == "nanpercentile":
         expected = np.nanpercentile(a, 50.0, axis=axis)
+    elif func in ("nunique", "nannunique"):
+        # numpy has no count of the distinct values along an axis, so the
+        # slices are counted one by one - the nans are one value among
+        # themselves, and the nan variant leaves them out
+        expected = np.apply_along_axis(lambda v: _distinct_of(v, func == "nunique"), axis, a)
     elif func in funcs_collecting:
         # the values of every group, along the axis: the labels are all zero,
         # so the one group holds the values of one position along the axis

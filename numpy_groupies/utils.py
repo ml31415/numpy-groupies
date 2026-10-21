@@ -213,7 +213,9 @@ _forced_types = {
     "nanall": bool,
     "nanany": bool,
     "len": np.int64,
+    "nunique": np.int64,
     "nanlen": np.int64,
+    "nannunique": np.int64,
     "allnan": bool,
     "anynan": bool,
     "argmax": np.int64,
@@ -229,7 +231,9 @@ if platform.architecture()[0] == "32bit":
         "nanall": bool,
         "nanany": bool,
         "len": np.int32,
+        "nunique": np.int32,
         "nanlen": np.int32,
+        "nannunique": np.int32,
         "allnan": bool,
         "anynan": bool,
         "argmax": np.int32,
@@ -299,7 +303,7 @@ def resolve_output_dtype(
             isinstance(func_str, str) and ("all" in func_str or "any" in func_str)
         ):
             raise TypeError(f"function {func_str} requires a more complex datatype than bool")
-        if not np.issubdtype(dtype, np.integer) and named and func_str in ("len", "nanlen"):
+        if not np.issubdtype(dtype, np.integer) and named and func_str in ("len", "nanlen", "nunique", "nannunique"):
             raise TypeError(f"function {func_str} requires an integer datatype")
         check_complex_dtype(a_dtype, dtype, func_str)
         # TODO: Maybe have some more checks here

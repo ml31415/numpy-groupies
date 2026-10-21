@@ -158,6 +158,28 @@ def _sum_of_squares(values: npt.NDArray[np.floating], pos: npt.NDArray[np.intege
     return np.sum(np.abs(values) ** 2)
 
 
+def _nunique_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> int:
+    """the number of distinct values of one group.
+
+    The values that are equal count once - a zero and a minus zero are one
+    value, an integer and the float of the same number are one value.  The
+    nans count once among themselves: a nan in either part of a complex value
+    is a nan, and the nans of a group are one value of their own (pandas
+    counts them that way, and so does polars, which counts the nan as a
+    value).
+    """
+    if values.dtype.kind in "fc":
+        nans = np.isnan(values)
+        usable = values[~nans]
+    else:
+        nans = None
+        usable = values
+    distinct = len(np.unique(usable))
+    if nans is not None and nans.any():
+        distinct += 1
+    return distinct
+
+
 def _sort_ref(values: npt.NDArray[np.number], reverse: bool = False) -> npt.NDArray[np.integer]:
     """one group, ordered the way numpy orders it."""
     ordered = np.sort(values)
@@ -206,6 +228,7 @@ _REF_ONE_PER_GROUP: dict[str, Callable[..., Any]] = {
     "trapezoid": _trapezoid_of,
     "sumofsquares": _sum_of_squares,
     "len": lambda v, pos: len(v),
+    "nunique": _nunique_ref,
     "first": lambda v, pos: v[0],
     "last": lambda v, pos: v[-1],
     "anynan": lambda v, pos: bool(np.isnan(v).any()),
@@ -227,6 +250,7 @@ _REF_ONE_PER_GROUP: dict[str, Callable[..., Any]] = {
     "nantrapezoid": _skip_nans(_trapezoid_of),
     "nansumofsquares": _skip_nans(_sum_of_squares),
     "nanlen": _skip_nans(lambda v, pos: len(v)),
+    "nannunique": _skip_nans(_nunique_ref),
     "nanfirst": _skip_nans(lambda v, pos: v[0]),
     "nanlast": _skip_nans(lambda v, pos: v[-1]),
     "nanargmin": _skip_nans(_at_a_position(np.argmin)),

@@ -78,6 +78,8 @@ aggregate_nanquantile = specials.quantile.nan.stub
 aggregate_trapezoid = specials.trapezoid.plain.stub
 aggregate_nantrapezoid = specials.trapezoid.nan.stub
 aggregate_sort = specials.sort.plain.stub
+aggregate_nunique = specials.nunique.plain.stub
+aggregate_nannunique = specials.nunique.nan.stub
 
 # the collecting function: its result is a sequence per group, so the kernel
 # hands out a list of the arrays of the groups - numba cannot hold an object
@@ -127,6 +129,7 @@ __all__ = [
     "aggregate_nanmean",
     "aggregate_nanmedian",
     "aggregate_nanmin",
+    "aggregate_nannunique",
     "aggregate_nanprod",
     "aggregate_nanquantile",
     "aggregate_nanstd",
@@ -134,6 +137,7 @@ __all__ = [
     "aggregate_nansumofsquares",
     "aggregate_nantrapezoid",
     "aggregate_nanvar",
+    "aggregate_nunique",
     "aggregate_prod",
     "aggregate_quantile",
     "aggregate_sort",
