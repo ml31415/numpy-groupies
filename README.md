@@ -223,19 +223,19 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 
 | function        | numpy  | numba  | numbagg | polars | pandas |
 | --------------- | -----: | -----: | ------: | -----: | -----: |
-| `sum`            |   0.91 |   0.43 |   0.45 |   2.67 |   7.22 |
-| `mean`           |   1.48 |   0.50 |   0.53 |   2.56 |   7.38 |
-| `max`            |   1.73 |   0.61 |   0.87 |   3.42 |   7.09 |
-| `std`            |   3.09 |   0.67 |   0.69 |   2.97 |   8.28 |
-| `nansum`         |   4.16 |   0.44 |   1.76 |   6.20 |   8.55 |
-| `median`         |  11.88 |   9.47 |    --- |   4.15 |  16.08 |
-| `quantile`       |  14.55 |   9.31 |    --- |   4.19 |  23.09 |
-| `sort`           |  70.60 |  25.78 |    --- |    --- |    --- |
-| `cumsum`         |  14.51 |   0.55 |    --- |   8.86 |   7.72 |
-| `array`          |   7.14 |   1.89 |    --- |    --- |    --- |
-| custom callable  | 110.93 |   5.97 |    --- |  78.98 |  94.13 |
+| `sum`            |   0.90 |   0.43 |   0.46 |   2.61 |   7.09 |
+| `mean`           |   1.49 |   0.48 |   0.53 |   2.64 |   7.79 |
+| `max`            |   1.65 |   0.62 |   0.86 |   2.87 |   6.72 |
+| `std`            |   3.10 |   0.65 |   0.68 |   2.79 |   8.27 |
+| `nansum`         |   4.11 |   0.45 |   1.76 |   6.09 |   8.70 |
+| `median`         |  11.38 |   9.30 |    --- |   4.15 |  15.80 |
+| `quantile`       |  13.80 |   9.27 |    --- |   4.05 |  23.93 |
+| `sort`           |  70.86 |  25.91 |    --- |    --- |    --- |
+| `cumsum`         |  14.40 |   0.57 |    --- |   8.64 |   7.38 |
+| `array`          |   6.88 |   1.89 |    --- |    --- |    --- |
+| custom callable  | 110.98 |   6.01 |    --- |  80.05 |  97.99 |
 
-The `polars` column uses all the cores of the machine, the `numpy` and `numba` columns are single-threaded - the Numba kernels of this package do not use `prange`. That matters most for the order statistics: with a single thread polars needs 9.7ms for the quantile, against 4.1ms with six, which puts it level with the single-threaded Numba kernel (9.3ms).
+The `polars` column uses all the cores of the machine, the `numpy` and `numba` columns are single-threaded - the Numba kernels of this package do not use `prange`. That matters most for the order statistics: with a single thread polars needs 9.7ms for the quantile, against 4.0ms with six, which puts it level with the single-threaded Numba kernel (9.3ms).
 
 Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 
