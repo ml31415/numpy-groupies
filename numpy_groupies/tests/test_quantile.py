@@ -42,6 +42,15 @@ def test_the_quantile_without_a_quantile_asked_for_is_the_median(impl, block):
     _compare(impl, block, "quantile")
 
 
+@pytest.mark.parametrize("func", ["quantile", "percentile"])
+def test_the_plain_quantile_poisons_the_group_of_a_nan(impl, block, func):
+    """A nan in a group makes the whole group answer with a nan, like the median does."""
+    kwargs = {"q": 0.5} if func == "quantile" else {"q": 50.0}
+    got = impl.aggregate(block.group_idx, block.a_nans, func=func, size=block.size, **kwargs)
+    want = aggregate_ref(block.group_idx, block.a_nans, func=func, size=block.size, **kwargs)
+    np.testing.assert_allclose(got, want, rtol=1e-12, equal_nan=True)
+
+
 def test_the_nanquantile_skips_the_nans(impl, block):
     """The nan variant leaves the nans out and answers for the values that are left."""
     got = impl.aggregate(block.group_idx, block.a_nans, func="nanquantile", q=0.5, size=block.size)

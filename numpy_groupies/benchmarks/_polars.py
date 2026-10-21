@@ -74,14 +74,14 @@ _EXPRESSIONS: dict[str, Callable[[], pl.Expr]] = {
 # holding a nan poisons: polars skips the nans in the extremes and in the
 # median, while the package counts a nan as a value that makes the whole group
 # answer with the nan
-_POISONED_BY_NAN = frozenset(["min", "max", "median", "quantile", "argmax", "argmin"])
+_POISONED_BY_NAN = frozenset(["min", "max", "median", "quantile", "percentile", "argmax", "argmin"])
 
 # the reductions whose aggregation is faster in the in-memory engine than in
 # the streaming one: the product multiplies over the whole group and the
 # median sorts it, and the streaming engine keeps neither in one piece
 # (measured 6.5ms against 4.8ms for the product, 4.4ms against 4.0ms for the
 # median, of 500k values in 1000 groups)
-_IN_MEMORY = frozenset(["prod", "median", "quantile"])
+_IN_MEMORY = frozenset(["prod", "median", "quantile", "percentile"])
 
 # the positions of the values in the input, per length: the arg-reductions
 # name them, and building them anew for every call costs 4MB of memory and
