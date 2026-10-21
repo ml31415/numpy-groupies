@@ -346,6 +346,10 @@ def resolve_output_dtype(
 
 def minval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
     dtype = minimum_dtype(fill_value, dtype)
+    if issubclass(dtype.type, np.bool_):
+        # a bool has no nan to mask, but the mask value has to be one of the
+        # dtype - np.finfo knows no bool
+        return cast("AScalar", np.False_)
     if issubclass(dtype.type, np.floating):
         return -np.inf
     if issubclass(dtype.type, np.complexfloating):
@@ -360,6 +364,9 @@ def minval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
 
 def maxval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
     dtype = minimum_dtype(fill_value, dtype)
+    if issubclass(dtype.type, np.bool_):
+        # see minval: the mask value has to be one of the dtype
+        return cast("AScalar", np.True_)
     if issubclass(dtype.type, np.floating):
         return cast("AScalar", np.inf)
     if issubclass(dtype.type, np.complexfloating):

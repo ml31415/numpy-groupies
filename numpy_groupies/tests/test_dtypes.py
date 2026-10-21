@@ -323,3 +323,14 @@ def test_integer_mean_small_values_exact(impl):
     values = np.array([1, 2, 3, 4, 5, 6], dtype=np.int64)
     actual = impl.aggregate(np.array([0, 0, 0, 1, 1, 1]), values, func="mean", size=2)
     np.testing.assert_array_equal(actual, [2.0, 5.0])
+
+
+@pytest.mark.parametrize("func", ["min", "max", "argmin", "argmax"])
+def test_bool_min_max_and_arg_reductions(impl, func):
+    # a bool input has a smallest and a largest value, and the arg reductions
+    # name their position - the numpy backend used to refuse the bool dtype
+    # with a ValueError from np.finfo
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array([True, False, False, True])
+    expected = {"min": [False, False], "max": [True, True], "argmin": [1, 2], "argmax": [0, 3]}[func]
+    np.testing.assert_array_equal(impl.aggregate(group_idx, a, func=func, size=2), expected)
