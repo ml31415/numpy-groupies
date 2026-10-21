@@ -70,7 +70,7 @@ def default_fill_value(func: FuncName | Callable[..., AScalar], dtype: npt.DType
 
 def check_nton_shape(
     ret: npt.NDArray[np.generic],
-    size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
+    size: int | tuple[int, ...] | npt.NDArray[np.integer],
     func: str | Callable[..., AScalar],
 ) -> None:
     """Complain early when a one-out-per-in function has to fill a hole.
@@ -79,8 +79,8 @@ def check_nton_shape(
     so a group without items leaves the output too short for the requested
     shape - which numpy would otherwise report as a plain reshape error.
     """
-    # np.prod and tuple take a plain int at runtime, the stubs spell out only arrays
-    prod = int(np.prod(cast("Any", size)))
+    # np.prod takes an int as it is, a tuple or an array of ints
+    prod = int(np.prod(size))
     if ret.size != prod:
         name = getattr(func, "__name__", func)
         raise ValueError(
@@ -89,10 +89,8 @@ def check_nton_shape(
         )
 
 
-def _size_tuple(size: int | tuple[int, ...] | npt.NDArray[np.integer] | None) -> tuple[int, ...]:
+def _size_tuple(size: int | tuple[int, ...] | npt.NDArray[np.integer]) -> tuple[int, ...]:
     """The size as a tuple of its dimensions - an int is one dimension."""
-    if size is None:
-        return ()
     if isinstance(size, tuple):
         return size
     if isinstance(size, int):
@@ -173,11 +171,11 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
     def check_type(x: AFillValue, dtype: np.dtype) -> bool:
         try:
             with np.errstate(invalid="ignore"):
-                converted = np.array(cast("Any", x)).astype(dtype)
+                converted = np.array(x).astype(dtype)
         except (ValueError, OverflowError):
             return False
         # False if some overflow has happened
-        return bool(converted == x) or (np.ndim(cast("Any", x)) == 0 and np.isnan(cast("Any", x)))
+        return bool(converted == x) or (np.ndim(cast(np.generic, x)) == 0 and np.isnan(cast(np.generic, x)))
 
     def type_loop(
         x: AFillValue, dtype: np.dtype, dtype_dict: Mapping[str, type], default: type | None = None
