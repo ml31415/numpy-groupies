@@ -52,7 +52,7 @@ def _track_extrema_overload(val: float, low: float, high: float) -> Callable[...
 
 @njit_stable
 def _mean_overflow_message(count: int, bound: int) -> str:
-    """The numba twin of ``raise_integer_mean_overflow`` - numba cannot call
+    """The numba twin of ``check_integer_mean_overflow`` - numba cannot call
     the python helper (common must stay numpy-free), so the text is
     mirrored here and must be kept in sync with it."""
     return (
@@ -69,7 +69,7 @@ def _mean_overflow_message(count: int, bound: int) -> str:
 
 @njit_stable
 def _span_overflow_message(low: int, high: int) -> str:
-    """The numba twin of ``raise_integer_variance_span_overflow``."""
+    """The numba twin of ``check_integer_variance_span_overflow``."""
     # numba's str() negates int64-min internally, wraps, and then fails to
     # size the string buffer - spell that one value out
     low_text = "-9223372036854775808" if low == INT64_MIN else str(low)
