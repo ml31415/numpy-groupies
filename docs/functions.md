@@ -84,7 +84,7 @@ One value per group.
 
 ### NaN-skipping variants
 
-Prefix with `nan` — `nansum`, `nanprod`, `nanlen`, `nansumofsquares`, `nanmean`, `nanmedian`, `nanquantile`, `nanpercentile`, `nanvar`, `nanstd`, `nanskew`, `nankurt`, `nanmin`, `nanmax`, `nanfirst`, `nanlast`, `nanargmin`, `nanargmax`, `nantrapezoid`, `nanall`, `nanany`, `nannunique`, and the cumulative `nancumsum`, `nancumprod`, `nancummin`, `nancummax` — to skip NaNs instead of propagating them. `nanlen` counts the non-NaN items, and `nannunique` counts the distinct items among the ones that are not NaN — the plain `nunique` counts the NaNs of a group as one item of their own. For `nantrapezoid` this means integrating over the remaining items, bridging the gap a NaN leaves. For `nanargmin` / `nanargmax` the two forms differ not in the value they return but in whether they return one at all: an index cannot *be* a NaN, so the plain forms have no answer for a group holding a NaN and give `fill_value`, while the skipping ones name the index of the extreme among the items that are left.
+Prefix with `nan` — `nansum`, `nanprod`, `nanlen`, `nansumofsquares`, `nanmean`, `nanmedian`, `nanquantile`, `nanpercentile`, `nanvar`, `nanstd`, `nanskew`, `nankurt`, `nanmin`, `nanmax`, `nanfirst`, `nanlast`, `nanargmin`, `nanargmax`, `nantrapezoid`, `nanall`, `nanany`, `nannunique`, and the cumulative `nancumsum`, `nancumprod`, `nancummin`, `nancummax` — to skip NaNs instead of propagating them. `nanlen` counts the non-NaN items, and `nannunique` counts the distinct items among the ones that are not NaN — the plain `nunique` counts the NaNs of a group as one item of their own. For `nantrapezoid` this means integrating over the remaining items, bridging the gap a NaN leaves. For `nanargmin` / `nanargmax` the two forms differ not in the value they return but in whether they return one at all: an index cannot *be* a NaN, so the plain forms have no answer for a group holding a NaN and give `fill_value`, while the skipping ones name the index of the extreme among the items that are left - unless every item of the group is a NaN, then nothing is left to name and the answer is the `fill_value` as well.
 
 ### Boolean
 
@@ -157,7 +157,7 @@ Groups without any item are filled with `fill_value`. By default this matches wh
 | `mean`, `median`, `var`, `std`, `skew`, `kurt` (and `nan`-forms) | `nan`    |
 | `quantile`, `percentile` (and `nan`-forms)             | `nan`              |
 | `min`, `max`, `first`, `last` (and `nan`-forms)        | `nan` for floating input, `0` where the output is an integer type, which cannot hold `nan` |
-| `argmax`, `argmin` (and `nan`-forms)                   | `-1` — for a group without items, and for a group whose items include a NaN (an index cannot be a NaN, so there is nothing to name); `nanargmax` / `nanargmin` name an index for such a group |
+| `argmax`, `argmin` (and `nan`-forms)                   | `-1` — for a group without items, and for a group whose items include a NaN (an index cannot be a NaN, so there is nothing to name); `nanargmax` / `nanargmin` name an index for such a group, unless all of its items are NaN |
 | `trapezoid`, `nantrapezoid`                            | `0`, as for a single sample |
 | `array`, `sort`                                        | an empty sequence  |
 | a custom `func`                                        | `nan` for floating input, `0` otherwise |
