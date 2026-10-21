@@ -259,8 +259,6 @@ pytest
 
 The repository uses [pre-commit](https://pre-commit.com/) (`pre-commit install`). Release notes are on the [releases page](https://github.com/ml31415/numpy-groupies/releases).
 
-**Credits.** Started by [@ml31415](https://github.com/ml31415), who wrote the Numba implementation; the pure-Python and NumPy implementations were written by [@d1manson](https://github.com/d1manson). Currently maintained by Deepak Cherian ([@dcherian](https://github.com/dcherian)).
-
 ## License
 
 BSD 2-Clause — see [LICENSE.txt](LICENSE.txt).
