@@ -88,13 +88,12 @@ def test_the_pure_python_backend_says_that_it_does_not_know_the_quantile(block):
 def test_the_quantile_of_a_complex_group_keeps_the_complex_dtype(impl, block):
     """The complex groups are ordered lexicographically, like the median orders them.
 
-    numpy's own quantile takes real values only, so the complex case is
-    measured against the numpy implementation of this package.
+    numpy's own quantile takes real values only, so the reference computes
+    the quantile of a complex group the way numpy orders the complex values
+    in its median.
     """
-    from numpy_groupies.aggregate_numpy import aggregate as aggregate_np
-
     got = impl.aggregate(block.group_idx, block.a_complex, func="quantile", q=0.5, size=block.size)
-    want = aggregate_np(block.group_idx, block.a_complex, func="quantile", q=0.5, size=block.size)
+    want = aggregate_ref(block.group_idx, block.a_complex, func="quantile", q=0.5, size=block.size)
     np.testing.assert_allclose(got, want, rtol=1e-12, equal_nan=True)
 
 

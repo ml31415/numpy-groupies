@@ -11,7 +11,7 @@ import warnings
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_np, aggregate_purepy
+from numpy_groupies import aggregate_purepy
 from numpy_groupies.tests.helpers import (
     assert_same_result,
     func_list,
@@ -78,7 +78,7 @@ def test_nan_form_of_a_group_of_only_nan():
         for group_idx, a in cases:
             for func in funcs:
                 res = np.asarray(aggregate_purepy.aggregate(group_idx, a, func=func, size=2))
-                expected = np.asarray(aggregate_np(group_idx, a, func=func, size=2))
+                expected = np.asarray(aggregate_ref(group_idx, a, func=func, size=2))
                 # only the group of nothing but nans - in a group with values the
                 # pure python implementation reports the index inside the group
                 np.testing.assert_array_equal(res[:1], expected[:1])

@@ -540,7 +540,7 @@ def test_order_functions_are_not_rejected_by_numba(func):
     a = np.array([1 + 9j, 1 - 1j, 3 + 0j, 2 + 5j, -0.0 + 0j, 0.0 - 0j])
 
     res = np.asarray(aggregate_numba.aggregate(group_idx, a, func=func, size=3))
-    expected = np.asarray(aggregate_np(group_idx, a, func=func, size=3))
+    expected = np.asarray(aggregate_ref(group_idx, a, func=func, size=3))
     np.testing.assert_array_equal(res, expected)
 
 
@@ -570,9 +570,9 @@ def test_order_functions_use_the_extreme_value_of_the_order():
     a = np.array([complex(np.inf, np.inf), complex(-np.inf, -np.inf)])
     # each group holds one value, so min, max and the indices are all determined
     for func in ("min", "max", "nanmin", "nanmax"):
-        np.testing.assert_array_equal(np.asarray(aggregate_np(group_idx, a, func=func, size=2)), a)
+        np.testing.assert_array_equal(np.asarray(aggregate_ref(group_idx, a, func=func, size=2)), a)
     for func in ("argmin", "argmax", "nanargmin", "nanargmax"):
-        np.testing.assert_array_equal(np.asarray(aggregate_np(group_idx, a, func=func, size=2)), [0, 1])
+        np.testing.assert_array_equal(np.asarray(aggregate_ref(group_idx, a, func=func, size=2)), [0, 1])
 
     # masking with inf+0j would leave no value equal to the found minimum
     impls = [aggregate_np] + ([aggregate_numba.aggregate] if aggregate_numba is not None else [])
