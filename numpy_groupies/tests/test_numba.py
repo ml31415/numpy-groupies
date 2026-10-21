@@ -8,9 +8,11 @@ from threading import Thread
 
 import numpy as np
 import pytest
+from numba.core.dispatcher import Dispatcher
 
 from numpy_groupies import uaggregate
 from numpy_groupies.aggregate_numba import aggregate
+from numpy_groupies.aggregate_numba.gather import _gather_1d
 from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile
 from numpy_groupies.aggregate_numba.ops import _dispatch
 from numpy_groupies.utils_np import resolve_output_dtype
@@ -196,7 +198,6 @@ def test_slow_path_still_reachable(rng):
 
 
 def test_numba_callable_cache_construction(monkeypatch):
-    pytest.importorskip("numba")
     from numpy_groupies import aggregate_numba
     from numpy_groupies.aggregate_numba import ops
 
@@ -273,11 +274,6 @@ def test_gather_is_jitted():
     A plain python loop needs 220ms for a million values, the jitted one
     0.8ms - and the docstring of ``unpack_into`` promises the latter.
     """
-    pytest.importorskip("numba")
-    from numba.core.dispatcher import Dispatcher
-
-    from numpy_groupies.aggregate_numba.gather import _gather_1d
-
     assert isinstance(_gather_1d, Dispatcher)
 
 
