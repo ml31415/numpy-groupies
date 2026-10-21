@@ -59,6 +59,7 @@ aggregate_py: Aggregate
 aggregate_py = Backend(
     aggregate_py_impl,
     bind_functions(aggregate_py_impl, function_names()),
+    name="purepy",
     doc="The pure python implementation of aggregate.",
 )
 
@@ -67,7 +68,14 @@ aggregate = cast("Aggregate", aggregate_py)
 try:
     import numpy as np
 except ImportError:
-    aggregate_np = dummy_no_impl
+    # the numpy implementation needs numpy - without it every entry point
+    # says so, the way the function itself does
+    aggregate_np = Backend(
+        dummy_no_impl,
+        {name: dummy_no_impl for name in function_names()},
+        name="numpy",
+        doc="The pure numpy implementation of aggregate.",
+    )
     multi_arange = label_contiguous_1d = dummy_no_impl
 else:
     from numpy_groupies.aggregate_numpy import aggregate as aggregate_np_impl
@@ -86,6 +94,7 @@ else:
     aggregate_np = Backend(
         aggregate_np_impl,
         bind_functions(aggregate_np_impl, function_names()),
+        name="numpy",
         doc="The pure numpy implementation of aggregate.",
     )
     aggregate = cast("Aggregate", aggregate_np)
@@ -115,6 +124,7 @@ else:
     aggregate_nb = Backend(
         aggregate_nb_impl,
         bind_functions(aggregate_nb_impl, function_names()),
+        name="numba",
         doc="The numba implementation of aggregate.",
     )
     step_count = step_count_nb_impl

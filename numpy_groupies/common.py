@@ -743,10 +743,12 @@ class Backend:
         self,
         func: Callable[..., Any],
         functions: Mapping[str, Callable[..., Any]],
+        name: str = "",
         doc: str | None = None,
     ) -> None:
         self._func = func
         self._functions = dict(functions)
+        self._name = name
         if doc is not None:
             self.__doc__ = doc
 
@@ -766,7 +768,7 @@ class Backend:
         return sorted(self._functions)
 
     def __repr__(self) -> str:
-        return f"<{type(self).__name__} with {len(self._functions)} functions>"
+        return f"<{type(self).__name__} {self._name!r} with {len(self._functions)} functions>"
 
 
 def bind_functions(
