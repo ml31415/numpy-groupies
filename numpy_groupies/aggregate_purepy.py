@@ -15,8 +15,6 @@ from numpy_groupies.common import (
     aggregate_common_doc,
     check_complex_dtype,
     check_fixed_fill_value,
-    check_integer_mean_overflow,
-    check_integer_variance_span_overflow,
     custom_callable,
     funcs_no_separate_nan,
     missing_impl_error,
@@ -25,7 +23,13 @@ from numpy_groupies.common import (
 from numpy_groupies.common import (
     aliasing_py as aliasing,
 )
-from numpy_groupies.validation import EMPTY_GROUP_IDX, LENGTH_MISMATCH, is_scalar_input
+from numpy_groupies.validation import (
+    EMPTY_GROUP_IDX,
+    LENGTH_MISMATCH,
+    check_integer_mean_overflow,
+    check_integer_variance_span_overflow,
+    is_scalar_input,
+)
 
 if TYPE_CHECKING:
     import numpy as np

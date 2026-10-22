@@ -15,7 +15,13 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import build_kernel, rule_float, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.common import EXACT_FLOAT64_INTEGER_LIMIT, INT64_DEVIATION_LIMIT, INT64_MIN
+from numpy_groupies.validation import (
+    EXACT_FLOAT64_INTEGER_LIMIT,
+    INT64_DEVIATION_LIMIT,
+    INT64_MIN,
+    mean_overflow_message,
+    variance_span_overflow_message,
+)
 
 
 # the building blocks and overload shims of this file are jitted: numba
@@ -53,18 +59,10 @@ def _track_extrema_overload(val: float, low: float, high: float) -> Callable[...
 @njit_stable
 def _mean_overflow_message(count: int, bound: int) -> str:
     """The numba twin of ``check_integer_mean_overflow`` - numba cannot call
-    the python helper (common must stay numpy-free), so the text is
-    mirrored here and must be kept in sync with it."""
-    return (
-        "cannot compute an exact mean of "
-        + str(count)
-        + " integer values with magnitude up to "
-        + str(bound)
-        + ": their sums can exceed +/-"
-        + str(EXACT_FLOAT64_INTEGER_LIMIT)
-        + ", the range float64 represents exactly - cast the input to a float dtype to accept "
-        + "rounding, or use sum and len"
-    )
+    the python helper, but it can compile the message builder of
+    ``validation`` (a concatenation of strings and numbers), so the text
+    exists once."""
+    return mean_overflow_message(count, bound)
 
 
 @njit_stable
@@ -73,16 +71,7 @@ def _span_overflow_message(low: int, high: int) -> str:
     # numba's str() negates int64-min internally, wraps, and then fails to
     # size the string buffer - spell that one value out
     low_text = "-9223372036854775808" if low == INT64_MIN else str(low)
-    return (
-        "cannot compute an exact variance: the integer values span ["
-        + low_text
-        + ", "
-        + str(high)
-        + "], wider than +/-"
-        + str(INT64_DEVIATION_LIMIT)
-        + ", so centering each group on its first value would overflow the signed 64-bit "
-        + "deviation - cast the input to a float dtype first"
-    )
+    return variance_span_overflow_message(low_text, high)
 
 
 def _mean_limit_check(low: float, high: float, count: int) -> None:

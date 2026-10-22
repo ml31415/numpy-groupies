@@ -162,6 +162,77 @@ def check_filling_with_none(key: str) -> None:
         raise TypeError(FILL_NONE_NOT_HELD)
 
 
+# integers beyond this magnitude are not exactly representable in float64, so
+# once an exact integer sum can leave this window, a float64-accumulated mean
+# silently rounds (2**53 itself is still exact, hence the inclusive limit)
+EXACT_FLOAT64_INTEGER_LIMIT = 2**53
+# largest magnitude a two's-complement signed 64-bit deviation represents
+# exactly; integer variance centers each group on its first value and needs
+# every deviation to stay within this bound
+INT64_DEVIATION_LIMIT = 2**63 - 1
+INT64_MIN = -(2**63)
+
+
+def mean_overflow_message(count: int, bound: int) -> str:
+    """The complaint about an integer mean float64 cannot compute exactly.
+
+    Numba cannot call a python function, so the compiled twin of the check
+    below needs the text of the complaint as something it can build - and
+    this is it: a concatenation of strings and numbers, which numba knows.
+    """
+    return (
+        "cannot compute an exact mean of "
+        + str(count)
+        + " integer values with magnitude up to "
+        + str(bound)
+        + ": their sums can exceed +/-"
+        + str(EXACT_FLOAT64_INTEGER_LIMIT)
+        + ", the range float64 represents exactly - cast the input to a float dtype to accept "
+        + "rounding, or use sum and len"
+    )
+
+
+def variance_span_overflow_message(low_text: str, high: int) -> str:
+    """The complaint about an integer variance int64 cannot center exactly.
+
+    The lower bound comes as a text: numba's ``str()`` of the smallest
+    int64 wraps and fails to size the string buffer, so the compiled twin
+    spells that one value out.
+    """
+    return (
+        "cannot compute an exact variance: the integer values span ["
+        + low_text
+        + ", "
+        + str(high)
+        + "], wider than +/-"
+        + str(INT64_DEVIATION_LIMIT)
+        + ", so centering each group on its first value would overflow the signed 64-bit "
+        + "deviation - cast the input to a float dtype first"
+    )
+
+
+def check_integer_mean_overflow(count: int, bound: int) -> None:
+    """Refuse integer means that float64 cannot compute exactly.
+
+    The mean of ``count`` integers of magnitude up to ``bound`` is exact in
+    float64 only while their sums stay inside the window float64 represents
+    exactly.  Every implementation applies this rule, so the backends never
+    disagree silently on inexact integer means.
+    """
+    if count * bound > EXACT_FLOAT64_INTEGER_LIMIT:
+        raise OverflowError(mean_overflow_message(count, bound))
+
+
+def check_integer_variance_span_overflow(low: int, high: int) -> None:
+    """Refuse integer variances whose exact centering would overflow int64.
+
+    The deviations of the values of a group from its first value have to stay
+    inside the signed 64-bit range for the variance to be exact.
+    """
+    if high - low > INT64_DEVIATION_LIMIT:
+        raise OverflowError(variance_span_overflow_message(str(low), high))
+
+
 def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
     """Refuse a ``fill_value`` that the result type of a function cannot hold.
 
