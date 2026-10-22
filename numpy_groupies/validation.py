@@ -58,6 +58,18 @@ NUMERIC_KINDS = "iufcb"
 # a group, and none of them holds a None
 NONE_RESULT_FUNCTIONS = frozenset({"array"})
 
+# the bounds of the exactness of the reductions
+#
+# integers beyond this magnitude are not exactly representable in float64, so
+# once an exact integer sum can leave this window, a float64-accumulated mean
+# silently rounds (2**53 itself is still exact, hence the inclusive limit)
+EXACT_FLOAT64_INTEGER_LIMIT = 2**53
+# largest magnitude a two's-complement signed 64-bit deviation represents
+# exactly; integer variance centers each group on its first value and needs
+# every deviation to stay within this bound
+INT64_DEVIATION_LIMIT = 2**63 - 1
+INT64_MIN = -(2**63)
+
 
 # ---------------------------------------------------------------------------
 # the predicates that go with the words
@@ -126,10 +138,6 @@ def is_complex_dtype(dtype: Any) -> bool:
     )
 
 
-# ---------------------------------------------------------------------------
-# the checks of the input of a call
-
-
 def is_scalar_input(a: Any) -> bool:
     """Whether the aggregated data is a single value instead of a sequence.
 
@@ -140,6 +148,14 @@ def is_scalar_input(a: Any) -> bool:
     ``np.bool_``, ``np.complex64``).
     """
     return getattr(a, "ndim", None) == 0 or isinstance(a, (int, float, complex))
+
+
+# ---------------------------------------------------------------------------
+# the checks of the fill value of a call
+#
+# A fill value is the one argument every function takes and every function
+# answers differently: the checks below say what the result of a function can
+# hold, without knowing the result itself.
 
 
 def check_boolean(x: AFillValue) -> None:
@@ -167,15 +183,44 @@ def check_filling_with_none(key: str) -> None:
         raise TypeError(FILL_NONE_NOT_HELD)
 
 
-# integers beyond this magnitude are not exactly representable in float64, so
-# once an exact integer sum can leave this window, a float64-accumulated mean
-# silently rounds (2**53 itself is still exact, hence the inclusive limit)
-EXACT_FLOAT64_INTEGER_LIMIT = 2**53
-# largest magnitude a two's-complement signed 64-bit deviation represents
-# exactly; integer variance centers each group on its first value and needs
-# every deviation to stay within this bound
-INT64_DEVIATION_LIMIT = 2**63 - 1
-INT64_MIN = -(2**63)
+def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
+    """Refuse a ``fill_value`` that the result type of a function cannot hold.
+
+    This is the rule ``utils_np.check_fill_value`` tells against a numpy
+    dtype, told without one: a boolean answer is filled with 0 or 1 - a nan
+    would pass for ``bool``, which is why the two values are asked for
+    themselves - and a count or a position with whatever turns into an integer,
+    which a nan does not.
+    """
+    if target is bool:
+        check_boolean(fill_value)
+    elif target is int:
+        try:
+            int(cast("SupportsInt", fill_value))
+        except ValueError:
+            raise ValueError(FILL_NOT_INTEGER)
+
+
+def check_fixed_fill_value(func: str | Callable[..., AScalar], fill_value: AFillValue) -> None:
+    """Refuse a ``fill_value`` that the result type of ``func`` cannot hold, for
+    those functions whose result type the function itself settles.
+
+    This is the rule ``check_fill_value`` tells against a numpy dtype, told
+    without one: a boolean answer is filled with 0 or 1 - a nan would pass for
+    ``bool``, which is why the two values are asked for themselves - and a count
+    or a position with whatever turns into an integer, which a nan does not.
+    """
+    target = fixed_result_types.get(fill_value_key(func))
+    if target is not None:
+        check_fill_value_for_type(fill_value, target)
+
+
+# ---------------------------------------------------------------------------
+# the checks of the exactness of the reductions
+#
+# The mean and the variance of integers can be exact, and the ways to compute
+# them are not exact as well: the checks below refuse the inputs where a
+# float64 or an int64 would round silently.
 
 
 def mean_overflow_message(count: int, bound: int) -> str:
@@ -238,36 +283,8 @@ def check_integer_variance_span_overflow(low: int, high: int) -> None:
         raise OverflowError(variance_span_overflow_message(str(low), high))
 
 
-def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
-    """Refuse a ``fill_value`` that the result type of a function cannot hold.
-
-    This is the rule ``utils_np.check_fill_value`` tells against a numpy
-    dtype, told without one: a boolean answer is filled with 0 or 1 - a nan
-    would pass for ``bool``, which is why the two values are asked for
-    themselves - and a count or a position with whatever turns into an integer,
-    which a nan does not.
-    """
-    if target is bool:
-        check_boolean(fill_value)
-    elif target is int:
-        try:
-            int(cast("SupportsInt", fill_value))
-        except ValueError:
-            raise ValueError(FILL_NOT_INTEGER)
-
-
-def check_fixed_fill_value(func: str | Callable[..., AScalar], fill_value: AFillValue) -> None:
-    """Refuse a ``fill_value`` that the result type of ``func`` cannot hold, for
-    those functions whose result type the function itself settles.
-
-    This is the rule ``check_fill_value`` tells against a numpy dtype, told
-    without one: a boolean answer is filled with 0 or 1 - a nan would pass for
-    ``bool``, which is why the two values are asked for themselves - and a count
-    or a position with whatever turns into an integer, which a nan does not.
-    """
-    target = fixed_result_types.get(fill_value_key(func))
-    if target is not None:
-        check_fill_value_for_type(fill_value, target)
+# ---------------------------------------------------------------------------
+# the checks of the requested dtype of a call
 
 
 def check_complex_dtype(
