@@ -735,8 +735,10 @@ class Backend:
 
     ``backend(group_idx, a, func="mean")`` does what it always did, and
     ``backend.mean(group_idx, a)`` is the same thing with the function in
-    the name - for the numba backend that is the njit-callable kernel, for
-    the others a plain python function.
+    the name - a plain python function of the backend, in every backend.  The
+    kernels of the numba implementation are the attributes of its module
+    (``numpy_groupies.aggregate_numba``), which is the one place jitted code
+    can reach them.
     """
 
     def __init__(

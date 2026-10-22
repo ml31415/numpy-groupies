@@ -120,7 +120,9 @@ else:
 
     # the attributes of a backend are the entry points of its functions -
     # numba cannot reach them from jitted code (a plain python object is no
-    # numba type), so the njit-callable kernels live in their own module
+    # numba type), so the kernels - the same functions, compiled once per
+    # dtype - are the attributes of the module of the implementation, which is
+    # what jitted code imports
     aggregate_nb = Backend(
         aggregate_nb_impl,
         bind_functions(aggregate_nb_impl, function_names()),
