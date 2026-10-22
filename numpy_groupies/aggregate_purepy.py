@@ -386,7 +386,6 @@ def aggregate(
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     out: AResult | None = None,
-    cache: bool = True,
     **kwargs: Any,
 ) -> list[Any]:
     # the pure python path reads both arguments purely as sized iterables of the

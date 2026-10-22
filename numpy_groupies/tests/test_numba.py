@@ -233,14 +233,11 @@ def test_numba_callable_cache_construction(monkeypatch):
 
     monkeypatch.setattr(ops, "build_generic_aggregate", counting)
 
-    cache = {}
-    aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
     for _ in range(3):
-        aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
+        aggregate_numba.aggregate(group_idx, a, func=func)
 
-    # one cache entry, and the cached op is reused instead of being
-    # re-constructed on every call (dict.setdefault used to do exactly that)
-    assert len(cache) == 1
+    # the loop is built once and reused - the cache of the backend is bounded
+    # and holds it (dict.setdefault used to build it on every call)
     assert len(constructed) == 1
 
 

@@ -87,7 +87,6 @@ def aggregate(
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     out: AResult | None = None,
-    cache: bool = True,
     **kwargs: Any,
 ) -> AResult:
     try:
@@ -116,12 +115,12 @@ def aggregate(
         ret = cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
     else:
         # a callable of the caller's own: it has no output array of its own,
-        # and its compiled loop is memoized where the cache policy says
+        # and its compiled loop is memoized in the bounded LRU of this backend
         if out is not None:
             raise NotImplementedError("out= is only supported for named functions") from None
         ret = cast(
             "AResult",
-            op(group_idx, a, size, fill_value, order, dtype, axis, cache=cache, **kwargs),
+            op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs),
         )
     if is16 and dtype is None and ret.dtype.kind == "f":
         ret = ret.astype(np.float16)
@@ -139,18 +138,11 @@ aggregate.__doc__ = (
     """
     This is the numba implementation of aggregate.
 
-    This implementation accepts two additional keyword arguments:
+    This implementation accepts one additional keyword argument:
 
     out: default=None
         an array the packed result is copied into (matching shape and dtype
         are required).  The array is returned, so calls can be chained.
-    cache: default=True
-        when aggregating with a custom callable ``func``, the compiled
-        implementation is cached so that subsequent calls with the same
-        function are fast.  Set to ``False`` to disable caching, or pass
-        your own dictionary to control the caching manually.  With caching
-        enabled (the default), callables are kept in a bounded LRU cache of
-        128 entries.
     """
     + aggregate_common_doc
 )

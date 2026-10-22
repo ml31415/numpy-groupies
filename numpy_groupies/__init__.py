@@ -58,9 +58,9 @@ if TYPE_CHECKING:
         The public name is bound to the best implementation available at
         import time (numba, else numpy, else pure python) - they agree on
         everything but the most restrictive ``size`` of the pure python
-        fallback, which does not take a sequence, and on the ``out`` and
-        ``cache`` keyword arguments, which only the numba implementation
-        honours (the others raise or ignore them).
+        fallback, which does not take a sequence, and on the ``out`` keyword
+        argument, which only the numba implementation honours (the others
+        raise it).
         """
 
         def __call__(
@@ -74,7 +74,6 @@ if TYPE_CHECKING:
             dtype: npt.DTypeLike | None = None,
             axis: int | None = None,
             out: npt.NDArray[np.number] | None = None,
-            cache: bool = True,
             **kwargs: Any,
         ) -> AResult: ...
 

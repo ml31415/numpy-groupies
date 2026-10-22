@@ -35,14 +35,12 @@ def aggregate(
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
     out: AResult | None = None,
-    cache: bool = True,
     **kwargs: Any,
 ) -> AResult:
-    # the two arguments the numba implementation honours and this one does
-    # not: there is no compiled loop here to write into an array of the
-    # caller, and nothing to cache either - the argument is taken, so that
-    # the signature of every backend is the same, and it says what it cannot
-    # do
+    # the argument the numba implementation honours and this one does not:
+    # there is no compiled loop here to write into an array of the caller -
+    # the argument is taken, so that the signature of every backend is the
+    # same, and it says what it cannot do
     if out is not None:
         raise NotImplementedError("out= is only supported by the numba implementation")
     return _aggregate_base(
