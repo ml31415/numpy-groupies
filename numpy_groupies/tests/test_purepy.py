@@ -38,15 +38,15 @@ _SCRIPT = textwrap.dedent(
     else:
         raise AssertionError("numpy should have been blocked")
 
-    assert npg.aggregate_py.aggregate([0, 0, 1], [1, 2, 3], func="sum") == [3, 3]
+    assert npg.aggregate_purepy.aggregate([0, 0, 1], [1, 2, 3], func="sum") == [3, 3]
     # aliases and the dispatch table work without numpy
-    assert npg.aggregate_py.aggregate([0, 0, 1], [1, 2, 3], func="add") == [3, 3]
+    assert npg.aggregate_purepy.aggregate([0, 0, 1], [1, 2, 3], func="add") == [3, 3]
     # a float group missing from group_idx takes the nan default, an integer one takes 0
-    assert math.isnan(npg.aggregate_py.aggregate([0], [1.5], func="min", size=2)[1])
-    assert npg.aggregate_py.aggregate([0], [1], func="min", size=2)[1] == 0
+    assert math.isnan(npg.aggregate_purepy.aggregate([0], [1.5], func="min", size=2)[1])
+    assert npg.aggregate_purepy.aggregate([0], [1], func="min", size=2)[1] == 0
     # complex input refuses a non-complex output dtype
     try:
-        npg.aggregate_py.aggregate([0, 0], [1 + 2j, 3 + 4j], func="sum", dtype=float)
+        npg.aggregate_purepy.aggregate([0, 0], [1 + 2j, 3 + 4j], func="sum", dtype=float)
     except TypeError:
         pass
     else:

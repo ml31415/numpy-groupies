@@ -161,10 +161,10 @@ def test_every_function_of_the_package_has_an_entry_point_on_every_backend():
     their nan-variants - so the list has to name every function of the
     package, or a function is reachable only through the ``func`` argument.
     """
-    from numpy_groupies import aggregate_nb, aggregate_np, aggregate_py
+    from numpy_groupies import aggregate_numba, aggregate_numpy, aggregate_purepy
     from numpy_groupies.aggregate_numpy.ops import _op_dict
 
-    for backend in (aggregate_np, aggregate_nb, aggregate_py):
+    for backend in (aggregate_numpy, aggregate_numba, aggregate_purepy):
         for name in _op_dict:
             assert hasattr(backend, name), f"{backend!r} has no entry point for {name}"
 
@@ -194,9 +194,9 @@ def test_the_package_carries_the_functions_of_the_best_implementation():
     so that the implementation can be chosen explicitly.
     """
     import numpy_groupies as npg
-    from numpy_groupies import aggregate_np, aggregate_py
+    from numpy_groupies import aggregate_numpy, aggregate_purepy
 
     for name in funcs_common:
         assert hasattr(npg, name), f"the package has no {name}"
-        assert hasattr(aggregate_np, name), f"the numpy backend has no {name}"
-        assert hasattr(aggregate_py, name), f"the pure python backend has no {name}"
+        assert hasattr(aggregate_numpy, name), f"the numpy backend has no {name}"
+        assert hasattr(aggregate_purepy, name), f"the pure python backend has no {name}"

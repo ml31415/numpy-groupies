@@ -15,7 +15,7 @@ never depends on which backend computed it.
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_np, aggregate_purepy
+from numpy_groupies import aggregate_numpy, aggregate_purepy
 from numpy_groupies.utils_np import minimum_dtype
 
 float_funcs = [np.std, np.var, np.mean, np.median, np.nanmedian]
@@ -30,7 +30,7 @@ def test_numpy_integer_sumofsquares(func, dtype):
     a = np.array([maximum, maximum - 1, maximum // 2, 1], dtype=dtype)
     group_idx = np.array([0, 0, 1, 1])
     expected = [sum(int(value) ** 2 for value in a[:2]), sum(int(value) ** 2 for value in a[2:]), -1]
-    result = aggregate_np.aggregate(group_idx, a, func=func, size=3, fill_value=-1)
+    result = aggregate_numpy.aggregate(group_idx, a, func=func, size=3, fill_value=-1)
     assert result.dtype == np.int64
     np.testing.assert_array_equal(result, expected)
 
@@ -38,7 +38,7 @@ def test_numpy_integer_sumofsquares(func, dtype):
 @pytest.mark.parametrize("func", ["sumofsquares", "nansumofsquares"])
 def test_numpy_integer_sumofsquares_float_output(func):
     a = np.array([[20000, -20000], [10000, -10000]], dtype=np.int16)
-    result = aggregate_np.aggregate(np.array([0, 0]), a, func=func, axis=1, dtype=np.float64)
+    result = aggregate_numpy.aggregate(np.array([0, 0]), a, func=func, axis=1, dtype=np.float64)
     assert result.dtype == np.float64
     np.testing.assert_array_equal(result, [[800000000], [200000000]])
 

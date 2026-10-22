@@ -13,67 +13,6 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    # the functions of the package - the names are the ones of the best
-    # implementation available at runtime, the type of them the one of the
-    # numpy implementation (every backend has them all)
-    from numpy_groupies.aggregate_numpy import (
-        all,
-        allnan,
-        any,
-        anynan,
-        argmax,
-        argmin,
-        array,
-        cummax,
-        cummin,
-        cumprod,
-        cumsum,
-        first,
-        kurt,
-        last,
-        len,
-        max,
-        mean,
-        median,
-        min,
-        nanall,
-        nanany,
-        nanargmax,
-        nanargmin,
-        nancummax,
-        nancummin,
-        nancumprod,
-        nancumsum,
-        nanfirst,
-        nankurt,
-        nanlast,
-        nanlen,
-        nanmax,
-        nanmean,
-        nanmedian,
-        nanmin,
-        nannunique,
-        nanpercentile,
-        nanprod,
-        nanquantile,
-        nanskew,
-        nanstd,
-        nansum,
-        nansumofsquares,
-        nantrapezoid,
-        nanvar,
-        nunique,
-        percentile,
-        prod,
-        quantile,
-        skew,
-        sort,
-        std,
-        sum,
-        sumofsquares,
-        trapezoid,
-        var,
-    )
     from numpy_groupies.registry import FuncName
     from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
 
@@ -139,32 +78,30 @@ def _missing_backend(name: str, package: str) -> ModuleType:
 
 # the pure python backend is always there - it is the one that works without
 # numpy
-aggregate_py = aggregate_purepy
-
+#
 # the module of the best implementation available - the functions of the
 # package below are the ones of this one
-_backend: ModuleType = aggregate_py
+_backend: ModuleType = aggregate_purepy
 
 # declared with the type of the protocol, or the branches below would join
 # into a plain Any and lose its signature
 aggregate: Aggregate
 
-aggregate_np: ModuleType
-aggregate_nb: ModuleType | None
+aggregate_numpy: ModuleType
+aggregate_numba: ModuleType | None
 
 try:
     import numpy as np
 except ImportError:
     # the numpy implementation needs numpy - without it every entry point
     # says so, the way the function itself does
-    aggregate_np = _missing_backend("numpy_groupies.aggregate_numpy", "numpy")
+    aggregate_numpy = _missing_backend("numpy_groupies.aggregate_numpy", "numpy")
     multi_arange = label_contiguous_1d = dummy_no_impl
 else:
     from numpy_groupies import aggregate_numpy
     from numpy_groupies.aggregate_numpy import step_count as step_count_np_impl
     from numpy_groupies.aggregate_numpy import step_indices as step_indices_np_impl
 
-    aggregate_np = aggregate_numpy
     _backend = aggregate_numpy
 
     # the numba branch below may rebind both, onto other signatures -
@@ -184,15 +121,15 @@ else:
 try:
     import numba
 except ImportError:
-    aggregate_nb = None
+    aggregate_numba = None
 else:
-    from numpy_groupies import aggregate_numba
+    from numpy_groupies import aggregate_numba as _aggregate_numba
     from numpy_groupies.aggregate_numba import step_count as step_count_nb_impl
     from numpy_groupies.aggregate_numba import step_indices as step_indices_nb_impl
     from numpy_groupies.aggregate_numba import unpack_into
 
-    aggregate_nb = aggregate_numba
-    _backend = aggregate_numba
+    aggregate_numba = _aggregate_numba
+    _backend = _aggregate_numba
     step_count = step_count_nb_impl
     step_indices = step_indices_nb_impl
 
@@ -218,8 +155,8 @@ def uaggregate(
     By example:
 
         group_idx = [3, 0, 0, 1, 0, 3, 5, 5, 0, 4]
-        a         = [13.2, 3.5, 3.5, -8.2, 3.0, 4.0, 13.4, 99.2, -7.1, 0.0, 53.7]
-        ret       = [13.3, 2.5, 2.5, -8.2, 2.5, 13.3, 46.05, 46.05, 2.5, 53.7]
+        a         = [13.2, 3.5, 3.5, -8.2, 3.0, 13.4, 99.2, -7.1, 0.0, 53.7]
+        ret       = [13.3, 2.5, 2.5, -8.2, 2.5, 13.3, 46.05, 46.05,  2.5 , 53.7]
 
     with ``func='mean'``. A typical use is demeaning within each group, as in
     ``a - uaggregate(group_idx, a, func='mean')``.
@@ -233,7 +170,7 @@ def uaggregate(
     ret = aggregate(group_idx, a, **kwargs)
     if out is None:
         return unpack(group_idx, ret)
-    if aggregate_nb is None or aggregate is not aggregate_nb.aggregate:
+    if aggregate_numba is None or aggregate is not aggregate_numba.aggregate:
         raise NotImplementedError("out= is only supported by the numba implementation")
     return unpack_into(group_idx, ret, out)
 

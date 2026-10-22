@@ -88,7 +88,7 @@ npg.aggregate(np.array([0, 1, 0, 1, 0]), np.array([1, 2, 3, 4, 5]), func="cumsum
 ```python
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
-npg.aggregate_np.aggregate(group_idx, a, func=lambda x: " or ".join(map(str, x)), fill_value="", dtype=object)
+npg.aggregate_numpy.aggregate(group_idx, a, func=lambda x: " or ".join(map(str, x)), fill_value="", dtype=object)
 # array(['3.2', '12.0 or -15.0 or 12.9', '', '', '88.0'], dtype=object)
 ```
 
@@ -196,15 +196,15 @@ Every function is also a name of its own, with the function in the name instead 
 ```python
 npg.mean(group_idx, a)                     # the best implementation there is
 npg.quantile(group_idx, a, q=0.9)
-npg.aggregate_np.mean(group_idx, a)        # the numpy implementation
-npg.aggregate_py.mean(group_idx, a)        # the pure python one
+npg.aggregate_numpy.mean(group_idx, a)        # the numpy implementation
+npg.aggregate_purepy.mean(group_idx, a)        # the pure python one
 ```
 
 The same names are the attributes of the module of every backend - `from numpy_groupies import aggregate_numpy as npg; npg.mean(group_idx, a)` is the numpy implementation of the mean, `from numpy_groupies import aggregate_numba as npg; npg.mean(group_idx, a)` the compiled one.
 
 The name of a function is a plain function; the kernels of the numba implementation are the attributes of its module, `numpy_groupies.aggregate_numba` (see above) - the one place jitted code can reach them, since numba cannot reach the attributes of a python object. A kernel is a plain function too, and calling it from python reaches the same compiled driver as the name of the numba backend does - only under the leaner rules of the kernels, with none of the validation and the dtype resolution of `aggregate()`.
 
-A backend is the module of its implementation: `npg.aggregate_np` is `numpy_groupies.aggregate_numpy`, and its `aggregate` is the dispatch of that implementation - `npg.aggregate_np.aggregate(group_idx, a, func="mean")`.
+A backend is the module of its implementation: `npg.aggregate_numpy` is `numpy_groupies.aggregate_numpy`, and its `aggregate` is the dispatch of that implementation - `npg.aggregate_numpy.aggregate(group_idx, a, func="mean")` - the way the pure python and the numba one are called.
 
 ## Helper tools
 
@@ -227,13 +227,12 @@ The rest of the exports are small and situational: `unpack` and `unpack_into` (b
 `from numpy_groupies import aggregate` picks the best available implementation: **numba** if installed, otherwise **numpy**. To choose explicitly:
 
 ```python
-from numpy_groupies import aggregate_nb as aggregate  # numba
-from numpy_groupies import aggregate_np as aggregate  # numpy
-from numpy_groupies import aggregate_py as aggregate  # pure python
-from numpy_groupies.aggregate_numpy import aggregate  # same, via the module
+from numpy_groupies.aggregate_numba import aggregate  # numba
+from numpy_groupies.aggregate_numpy import aggregate  # numpy
+from numpy_groupies.aggregate_purepy import aggregate  # pure python
 ```
 
-A backend is a module, so it is called through its `aggregate`: `aggregate_nb.aggregate(group_idx, a, func="mean")`. The functions of the package itself are the ones of the best implementation available - `npg.mean(group_idx, a)`.
+A backend is the module of its implementation, so it is called through its `aggregate`: `aggregate_numba.aggregate(group_idx, a, func="mean")` - and its functions are its attributes: `aggregate_numba.mean(group_idx, a)`. The functions of the package itself are the ones of the best implementation available - `npg.mean(group_idx, a)`.
 
 All implementations share the calling syntax and produce the same results up to floating-point error, but some support only a subset of functions and raise `NotImplementedError` otherwise.
 
@@ -246,7 +245,7 @@ All implementations share the calling syntax and produce the same results up to 
 | pandas         | numpy, pandas | For benchmarking only: wraps `groupby` (in `numpy_groupies.benchmarks`). Skips NaN even in the plain functions (except `median`, `quantile`, `cumsum`). |
 | polars         | numpy, polars | For benchmarking only: wraps `group_by` (in `numpy_groupies.benchmarks`). |
 
-> **Gotchas:** with Numba installed, custom callables must be Numba-compilable (numeric code). For the cases that are not, call the NumPy implementation: `npg.aggregate_np.aggregate(group_idx, a, func=my_callable)`.
+> **Gotchas:** with Numba installed, custom callables must be Numba-compilable (numeric code). For the cases that are not, call the NumPy implementation: `npg.aggregate_numpy.aggregate(group_idx, a, func=my_callable)`.
 
 ## Performance
 

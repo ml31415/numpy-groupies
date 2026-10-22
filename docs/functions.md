@@ -42,9 +42,9 @@ Every function has a name of its own, with the function in the name instead of i
 ```python
 npg.mean(group_idx, a)                       # the best implementation available
 npg.quantile(group_idx, a, q=0.9)            # the same as func="quantile", q=0.9
-npg.aggregate_np.mean(group_idx, a)          # the numpy implementation
-npg.aggregate_py.mean(group_idx, a)          # the pure python one
-npg.aggregate_nb.mean(group_idx, a)          # the numba one
+npg.aggregate_numpy.mean(group_idx, a)          # the numpy implementation
+npg.aggregate_purepy.mean(group_idx, a)          # the pure python one
+npg.aggregate_numba.mean(group_idx, a)          # the numba one
 ```
 
 The functions of the package are plain python functions of their own name - `npg.mean(group_idx, a)` is the mean of every group, computed by the best implementation available. A backend is the module of its implementation, and carries the functions of the package as its attributes: `numpy_groupies.aggregate_numpy.mean(group_idx, a)`. The kernels of the numba implementation - the compiled functions behind them, callable from jitted code and from python - are the attributes of its module, `numpy_groupies.aggregate_numba`, which is the one place jitted code can reach them (numba cannot reach the attributes of a python object):
@@ -178,9 +178,9 @@ The nan-variants are supported wherever the plain function is.
 | custom callables               |  x    |  x²   |      x      |
 
 ¹ For the same functions as in the plain row.
-² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use `aggregate_np` instead.
+² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use `aggregate_numpy` instead.
 
-Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call `aggregate_np` or `aggregate_py` for the functions the default implementation lacks.
+Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call `aggregate_numpy` or `aggregate_purepy` for the functions the default implementation lacks.
 
 ## Fill values
 
@@ -316,7 +316,7 @@ Custom function producing strings (NumPy implementation; Numba cannot compile th
 ```python
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
-npg.aggregate_np.aggregate(group_idx, a, func=lambda x: " or maybe ".join(str(item) for item in x),
+npg.aggregate_numpy.aggregate(group_idx, a, func=lambda x: " or maybe ".join(str(item) for item in x),
                  fill_value="", dtype=object)
 # ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
