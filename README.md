@@ -41,7 +41,7 @@ Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
 - **Fast.** With Numba installed, `aggregate` is the fastest group-by aggregation for plain NumPy arrays. See [Performance](#performance).
 - **One call, many functions.** The usual reductions plus `median`, `quantile`/`percentile`, `skew`/`kurt`, `sort` (ascending or descending), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
 - **Array in, array out.** Plain NumPy arrays, no DataFrame and no index. The result is an array indexed by group label, with empty groups filled with the value you choose. Multi-dimensional output (N-D binning) and aggregation along an `axis` are built in.
-- **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops - and the same call from python runs the same compiled driver.
+- **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops.
 - **Numerically careful.** Integer sums, means and variances accumulate in a dtype wide enough not to wrap around, NaN handling follows NumPy, and complex and `float16` input are supported.
 - **Light on dependencies.** NumPy is the only requirement; Numba is optional and only makes things faster. A pure-Python implementation is included as a fallback.
 
@@ -86,42 +86,37 @@ npg.aggregate(np.array([0, 1, 0, 1, 0]), np.array([1, 2, 3, 4, 5]), func="cumsum
 **Custom functions.** Any callable works. Non-numeric output needs `dtype=object`, and since the default fill value of a custom function cannot be guessed, give one explicitly. Use the NumPy implementation for this: Numba can only compile numeric functions, so with Numba installed the plain `aggregate` fails on the string example below — and it compiles *functions*, so a callable object (a `functools.partial`, a dataclass with `__call__`) is for the NumPy implementation as well.
 
 ```python
+import numpy_groupies.aggregate_numpy as npg
+
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
-npg.aggregate_numpy.aggregate(group_idx, a, func=lambda x: " or ".join(map(str, x)), fill_value="", dtype=object)
+npg.aggregate(group_idx, a, func=lambda x: " or ".join(map(str, x)), fill_value="", dtype=object)
 # array(['3.2', '12.0 or -15.0 or 12.9', '', '', '88.0'], dtype=object)
 ```
 
-**Integration into own jitted functions.** The numba module carries every function of the package as an attribute of its own - the compiled kernel - and a kernel can be called from inside a jitted function of your own:
+**Integration into own jitted functions.** Every kernel is `@njit`-callable, so group statistics can sit inside a compiled loop of your own. The Numba module carries the kernels as its attributes — they are the one thing jitted code can reach, since Numba cannot reach the attributes of a Python object:
 
 ```python
 import numba as nb
 import numpy as np
-from numpy_groupies import aggregate_numba as aggregate
+import numpy_groupies.aggregate_numba as npg
 
 @nb.njit
 def zscore(group_idx, a):
-    mean = aggregate.mean(group_idx, a)
-    std = aggregate.std(group_idx, a)
+    mean = npg.mean(group_idx, a)
+    std = npg.std(group_idx, a)
     scale = np.where(std > 0, std, 1.0)
     return (a - mean[group_idx]) / scale[group_idx]
 ```
 
-Every kernel carries the signature of its function, so the `ddof` of the variance and the `q` of the quantile sit where they belong:
+The same call from Python reaches the very same compiled driver — the same arguments, the same result, only no jitted caller around it:
 
 ```python
-@nb.njit
-def spread(group_idx, a):
-    return aggregate.std(group_idx, a, 1) / aggregate.mean(group_idx, a)
+npg.mean(group_idx, a)              # the mean of every group
+npg.std(group_idx, a, ddof=1)       # the argument the function has of its own, by its own name
 ```
 
-The same call from python reaches the very same compiled driver - the same arguments, the same result, only no jitted caller around it:
-
-```python
-aggregate.std(group_idx, a, 1) / aggregate.mean(group_idx, a)
-```
-
-A kernel is a lean thing: it takes flat 1d input with integer indices and runs none of the validation and dtype resolution of `aggregate()` - the narrow integer sum always widens to `int64`, `dtype`/`order`/`axis`/`out` are not its business. `aggregate()` - `aggregate_numba.aggregate`, or `npg.aggregate` once Numba is installed - is the one that knows all of that.
+A kernel is a lean thing: it takes flat 1-D input with integer indices and runs none of the validation and dtype resolution of `aggregate()` — the narrow integer sum always widens to `int64`, and `dtype`/`order`/`axis`/`out` are not its business. `aggregate()` — `npg.aggregate` of the Numba module, or `npg.aggregate` of the package once Numba is installed — is the one that knows all of that.
 
 **Multi-dimensional output.** Give `group_idx` one row per output dimension — here, 1000 values binned into a 15×15×15 cube:
 
@@ -191,20 +186,19 @@ Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix 
 
 Not every implementation supports every function — the [function reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md) has the exact semantics, default fill values, complex-number behaviour and a function × implementation matrix.
 
-Every function is also a name of its own, with the function in the name instead of in the `func` argument:
+Every function is also a name of its own, with the function in the name instead of in the `func` argument. The name takes the arguments of its function — the `ddof` of the variance, the `q` of the quantile, the `dx` of the trapezoid, the `reverse` of the sort — and the rest like `aggregate` itself:
 
 ```python
-npg.mean(group_idx, a)                     # the best implementation there is
-npg.quantile(group_idx, a, q=0.9)
-npg.aggregate_numpy.mean(group_idx, a)        # the numpy implementation
-npg.aggregate_purepy.mean(group_idx, a)        # the pure python one
+npg.mean(group_idx, a)              # the best implementation available
+npg.quantile(group_idx, a, q=0.9)   # the same as func="quantile", q=0.9
 ```
 
-The same names are the attributes of the module of every backend - `from numpy_groupies import aggregate_numpy as npg; npg.mean(group_idx, a)` is the numpy implementation of the mean, `from numpy_groupies import aggregate_numba as npg; npg.mean(group_idx, a)` the compiled one.
+The same names are the attributes of the module of every implementation, so an implementation can be chosen and used the same way:
 
-The name of a function is a plain function; the kernels of the numba implementation are the attributes of its module, `numpy_groupies.aggregate_numba` (see above) - the one place jitted code can reach them, since numba cannot reach the attributes of a python object. A kernel is a plain function too, and calling it from python reaches the same compiled driver as the name of the numba backend does - only under the leaner rules of the kernels, with none of the validation and the dtype resolution of `aggregate()`.
-
-A backend is the module of its implementation: `npg.aggregate_numpy` is `numpy_groupies.aggregate_numpy`, and its `aggregate` is the dispatch of that implementation - `npg.aggregate_numpy.aggregate(group_idx, a, func="mean")` - the way the pure python and the numba one are called.
+```python
+import numpy_groupies.aggregate_numpy as npg
+npg.mean(group_idx, a)              # the numpy implementation
+```
 
 ## Helper tools
 
@@ -220,19 +214,28 @@ npg.uaggregate(group_idx, a, func="mean")
 a - npg.uaggregate(group_idx, a, func="mean")  # demean within each group
 ```
 
-The rest of the exports are small and situational: `unpack` and `unpack_into` (broadcast a per-group result back, optionally into a preallocated array), `step_count` and `step_indices` (runs of equal labels, Numba only), `multi_arange`, `label_contiguous_1d`, `relabel_groups_unique` and `relabel_groups_masked` (close gaps in sparse labels), and `default_fill_value`. All of them are described in the [reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md#helper-functions).
+The rest of the exports are small and situational: `unpack` and `unpack_into` (broadcast a per-group result back, optionally into a preallocated array), `step_count` and `step_indices` (runs of equal labels), `multi_arange`, `label_contiguous_1d`, `relabel_groups_unique` and `relabel_groups_masked` (close gaps in sparse labels), and `default_fill_value`. All of them are described in the [reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md#helper-functions).
 
 ## Implementations
 
-`from numpy_groupies import aggregate` picks the best available implementation: **numba** if installed, otherwise **numpy**. To choose explicitly:
+`from numpy_groupies import aggregate` picks the best available implementation: **numba** if installed, otherwise **numpy**. Every implementation is a module of its own, and it is called through its `aggregate` — its functions are its attributes as well:
 
 ```python
-from numpy_groupies.aggregate_numba import aggregate  # numba
-from numpy_groupies.aggregate_numpy import aggregate  # numpy
-from numpy_groupies.aggregate_purepy import aggregate  # pure python
+import numpy_groupies.aggregate_numba as npg   # numba
+import numpy_groupies.aggregate_numpy as npg   # numpy
+import numpy_groupies.aggregate_purepy as npg  # pure python
+
+npg.aggregate(group_idx, a, func="mean")  # the aggregate of that implementation
+npg.mean(group_idx, a)                    # one of its functions
 ```
 
-A backend is the module of its implementation, so it is called through its `aggregate`: `aggregate_numba.aggregate(group_idx, a, func="mean")` - and its functions are its attributes: `aggregate_numba.mean(group_idx, a)`. The functions of the package itself are the ones of the best implementation available - `npg.mean(group_idx, a)`.
+The names the package has always carried name the same implementations directly: `aggregate_np` is the aggregate of the numpy implementation, `aggregate_nb` the one of the numba implementation (`None` where numba is not installed) and `aggregate_py` the one of the pure python implementation.
+
+```python
+from numpy_groupies import aggregate_nb as aggregate  # numba
+from numpy_groupies import aggregate_np as aggregate  # numpy
+from numpy_groupies import aggregate_py as aggregate  # pure python
+```
 
 All implementations share the calling syntax and produce the same results up to floating-point error, but some support only a subset of functions and raise `NotImplementedError` otherwise.
 
