@@ -10,7 +10,7 @@ computes one group at a time.
 import numpy as np
 import pytest
 
-from numpy_groupies.aggregate_purepy import aggregate as aggregate_py
+from numpy_groupies.aggregate_purepy import aggregate as aggregate_purepy
 from numpy_groupies.tests.reference import aggregate_ref
 
 _QUANTILES = (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)
@@ -82,7 +82,7 @@ def test_an_unknown_interpolation_method_is_refused(impl, block):
 def test_the_pure_python_backend_says_that_it_does_not_know_the_quantile(block):
     """The pure python implementation does not do the quantile, and says so."""
     with pytest.raises(NotImplementedError, match="quantile"):
-        aggregate_py(block.group_idx, block.a, func="quantile", q=0.5, size=block.size)
+        aggregate_purepy(block.group_idx, block.a, func="quantile", q=0.5, size=block.size)
 
 
 def test_the_quantile_of_a_complex_group_keeps_the_complex_dtype(impl, block):

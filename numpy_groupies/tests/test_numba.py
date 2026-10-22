@@ -128,28 +128,50 @@ def test_integer_argreductions_along_axis(rng, func):
     np.testing.assert_array_equal(result, expected)
 
 
-def test_errors_match_slow_path(rng):
-    group_idx = rng.integers(0, 5, 100)
-    a = rng.random(100)
-    # index too large for a given size
-    with pytest.raises(ValueError, match="too large"):
-        aggregate(group_idx, a, func="sum", size=3)
-    with pytest.raises(ValueError, match="too large"):
-        aggregate(group_idx, a, func="sum", size=np.int64(3))
-    # negative indices
-    with pytest.raises(ValueError, match="negative"):
-        aggregate(group_idx - 1, a, func="sum")
-    with pytest.raises(ValueError, match="negative"):
-        aggregate(group_idx - 1, a, func="sum", size=np.int64(5))
-    # empty group_idx
-    with pytest.raises(ValueError, match="empty"):
-        aggregate(group_idx[:0], a[:0], func="sum")
-    # non-integer group_idx
-    with pytest.raises(TypeError, match="integer"):
-        aggregate(group_idx.astype(float), a, func="sum")
-    # length mismatch
-    with pytest.raises(ValueError, match="same length"):
-        aggregate(group_idx, a[:-1], func="sum")
+# the input the fast path of the wrapper refuses to take and hands to the slow
+# one, which names it: the shape and the dtype are what a call may be refused
+# for without looking at a single value, and the size is what the labels of the
+# call have to fit in.  A multidimensional group_idx is not one of them - that
+# is the indexed input the wrapper documents, and the deviation of the kernels
+# from it.  The values of group_idx the wrapper never looks at, and the two
+# lengths it only compares for routing: the tests of the kernels ask those of
+# both entry points of the one driver, so this one does not ask twice
+@pytest.mark.parametrize(
+    "args,kwargs",
+    [
+        # 1D group_idx and 2D a with mismatched trailing dim
+        ((np.array([0, 1, 2]), np.array([[10.0, 20.0, 30.0]])), {"func": "sum"}),
+        # non-integer group_idx dtype
+        ((np.array([0.5, 1.2]), np.array([10.0, 20.0])), {"func": "sum"}),
+        # datetime64 values
+        ((np.array([0, 1]), np.array(["2000-01-01", "2000-01-02"], dtype="datetime64[D]")), {"func": "sum"}),
+        # object values
+        ((np.array([0, 1]), np.array(["a", "b"])), {"func": "sum"}),
+        # labels that do not fit the size the caller asked for, python int and
+        # numpy int64 alike
+        ((np.arange(5), np.arange(5.0)), {"func": "sum", "size": 3}),
+        ((np.arange(5), np.arange(5.0)), {"func": "sum", "size": np.int64(3)}),
+    ],
+)
+def test_errors_match_slow_path(args, kwargs):
+    """Both paths of the wrapper answer a refused input in the same words.
+
+    The fast path is a shortcut around the checks of the slow one, not around
+    their outcome: an input it cannot take it hands on, and the answer that comes
+    back is the one the slow path would have written - not one less, and never
+    two.
+    """
+    group_idx, a = args
+    func = kwargs.get("func", "sum")
+    kwargs = {**kwargs, "func": func}
+
+    with pytest.raises(Exception) as fast_exc:
+        aggregate(group_idx, a, **kwargs)
+    with pytest.raises(Exception) as slow_exc:
+        aggregate_numba.aggregate(group_idx, a, **kwargs)
+
+    assert type(fast_exc.value) is type(slow_exc.value)
+    assert str(fast_exc.value) == str(slow_exc.value)
 
 
 def test_custom_callable_checks_the_indices():
@@ -211,14 +233,11 @@ def test_numba_callable_cache_construction(monkeypatch):
 
     monkeypatch.setattr(ops, "build_generic_aggregate", counting)
 
-    cache = {}
-    aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
     for _ in range(3):
-        aggregate_numba.aggregate(group_idx, a, func=func, cache=cache)
+        aggregate_numba.aggregate(group_idx, a, func=func)
 
-    # one cache entry, and the cached op is reused instead of being
-    # re-constructed on every call (dict.setdefault used to do exactly that)
-    assert len(cache) == 1
+    # the loop is built once and reused - the cache of the backend is bounded
+    # and holds it (dict.setdefault used to build it on every call)
     assert len(constructed) == 1
 
 

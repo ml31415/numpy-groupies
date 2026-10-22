@@ -11,6 +11,8 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
+from numpy_groupies.validation import NEGATIVE_INDICES, TOO_LARGE
+
 
 # the annotations of the jitted functions below are documentation only - numba
 # compiles from the argument types and ignores them, the type checker needs them
@@ -29,10 +31,10 @@ def step_count(group_idx: npt.NDArray[np.integer]) -> int:
 
 
 @nb.njit(cache=True)
-def step_indices(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.int64]:
+def step_indices(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
     """Return the edges of areas within group_idx, which are filled with the same value."""
     ilen = step_count(group_idx) + 1
-    indices = np.empty(ilen, np.int64)
+    indices = np.empty(ilen, np.intp)
     indices[0] = 0
     indices[-1] = group_idx.size
     cmp_pos = 0
@@ -57,9 +59,9 @@ def group_count(group_idx: npt.NDArray[np.integer], size: int) -> npt.NDArray[np
     for i in range(len(group_idx)):
         g = group_idx[i]
         if g < 0:
-            raise ValueError("negative indices not supported")
+            raise ValueError(NEGATIVE_INDICES)
         if g >= size:
-            raise ValueError("one or more indices in group_idx are too large")
+            raise ValueError(TOO_LARGE)
         counts[g] += 1
     return counts
 

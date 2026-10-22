@@ -1,6 +1,6 @@
 """The vocabulary of the package: the names, the aliases and the registry.
 
-``common`` holds what every implementation shares - and it must not import
+``registry`` holds what every implementation shares - and it must not import
 numpy, because the pure python implementation is loaded before numpy is
 known to be available.
 """
@@ -11,13 +11,15 @@ from typing import get_args
 import numpy as np
 import pytest
 
-from numpy_groupies.common import (
+from numpy_groupies.registry import (
     FuncName,
     Registry,
     Resolved,
     aliasing_py,
     build_dispatch,
     custom_callable,
+    funcs_common,
+    function_names,
     resolve_name,
 )
 from numpy_groupies.utils_np import aliasing
@@ -137,3 +139,92 @@ def test_a_func_that_named_nothing_is_said_so_by_the_factory():
     registry = _registry()
     with pytest.raises(ValueError, match="neither a valid function string nor a callable object"):
         registry[42]
+
+
+def test_the_functions_that_hold_a_none_match_the_registry():
+    """The one function whose result holds a None is the object array.
+
+    ``validation`` states which functions may be filled with a None - the
+    object array of ``array`` and nothing else - while the registry of the
+    fill values knows every function of the package.  The two have to agree,
+    or a function would be filled with a None its result cannot hold.
+    """
+    from numpy_groupies import common, validation
+
+    assert validation.NONE_RESULT_FUNCTIONS == frozenset({"array"})
+    assert frozenset(common.default_fill_values) - validation.NONE_RESULT_FUNCTIONS
+
+
+def test_every_function_of_the_package_has_an_entry_point_on_every_backend():
+    """Every function is reachable by its name, on every backend.
+
+    The entry points of a backend are the functions of ``funcs_common`` and
+    their nan-variants - so the list has to name every function of the
+    package, or a function is reachable only through the ``func`` argument.
+    """
+    from numpy_groupies import aggregate_numba, aggregate_numpy, aggregate_purepy
+    from numpy_groupies.aggregate_numpy.ops import _op_dict
+
+    for backend in (aggregate_numpy, aggregate_numba, aggregate_purepy):
+        for name in _op_dict:
+            assert hasattr(backend, name), f"{backend!r} has no entry point for {name}"
+
+
+def test_the_list_of_the_functions_names_every_function_of_the_package():
+    """The list the entry points are built from names every function.
+
+    ``funcs_common`` is the list of the functions of the package - the
+    nan-variants are added to it, so a function is named by the one it skips
+    the nans of.
+    """
+    from numpy_groupies.aggregate_numpy.ops import _op_dict
+
+    names = set(funcs_common)
+    for name in _op_dict:
+        assert name in names or name.removeprefix("nan") in names, name
+    # the functions that are implemented by the numba backend alone are named
+    # as well - they are functions of the package, too
+    assert {"cumprod", "cummax", "cummin"} <= names
+
+
+def test_the_package_carries_the_functions_of_the_best_implementation():
+    """Every function of the package is a name of the package itself.
+
+    ``npg.mean(group_idx, a)`` is the mean of every group, computed by the
+    best implementation available - and every backend has a name of its own,
+    so that the implementation can be chosen explicitly.
+    """
+    import numpy_groupies as npg
+    from numpy_groupies import aggregate_numpy, aggregate_purepy
+
+    for name in funcs_common:
+        assert hasattr(npg, name), f"the package has no {name}"
+        assert hasattr(aggregate_numpy, name), f"the numpy backend has no {name}"
+        assert hasattr(aggregate_purepy, name), f"the pure python backend has no {name}"
+
+
+def test_every_function_of_the_package_is_declared_for_the_type_checker():
+    """The names the package hands out are the names the type checker knows.
+
+    The functions of the package are built at runtime, out of the table of
+    the entry points - and the type checker cannot see that table.  So the
+    names are declared for it in the package itself, and the two have to be
+    the same: a function the type checker does not know is one the caller
+    cannot use without an error.
+    """
+    import ast
+    import inspect
+
+    import numpy_groupies
+
+    tree = ast.parse(inspect.getsource(numpy_groupies))
+    declared = {
+        node.target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and isinstance(node.annotation, ast.Name)
+        and node.annotation.id == "EntryPoint"
+    }
+
+    assert declared == set(function_names())

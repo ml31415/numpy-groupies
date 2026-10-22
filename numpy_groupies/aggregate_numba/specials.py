@@ -367,6 +367,7 @@ quantile = build_custom_kernel(
     driver_factory=_quantile_driver_factory,
     rule=rule_float,
     fill_default=np.nan,
+    extras=(("q", "float", 0.5, "q"),),
     doc="Quantile of the values of every group",
 )
 
@@ -509,6 +510,7 @@ sort = build_custom_kernel(
     rule=rule_same,
     nans=False,
     nton=True,
+    extras=(("reverse", "bool", False, "ddof"),),
     doc="Values of every group in ascending, or with reverse=True in descending order",
 )
 
@@ -731,6 +733,6 @@ trapezoid = build_kernel(
     forced_fill=0,
     fill_default=0,
     rule=rule_float,
-    ddof_default=1,
+    extras=(("dx", "float", 1.0, "ddof"),),
     doc="Trapezoidal integration of the samples of every group",
 )

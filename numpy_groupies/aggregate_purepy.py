@@ -9,29 +9,47 @@ from typing import TYPE_CHECKING, Any, cast
 
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
+    aggregate_common_doc,
+    resolve_fill_value,
+)
+from numpy_groupies.registry import (
     FuncName,
     Registry,
     Resolved,
-    aggregate_common_doc,
+    bind_functions,
+    custom_callable,
+    funcs_no_separate_nan,
+    function_names,
+    missing_impl_error,
+)
+from numpy_groupies.registry import (
+    aliasing_py as aliasing,
+)
+from numpy_groupies.validation import (
+    EMPTY_GROUP_IDX,
+    LENGTH_MISMATCH,
     check_complex_dtype,
     check_fixed_fill_value,
     check_integer_mean_overflow,
     check_integer_variance_span_overflow,
-    custom_callable,
-    funcs_no_separate_nan,
     is_scalar_input,
-    missing_impl_error,
-    resolve_fill_value,
-)
-from numpy_groupies.common import (
-    aliasing_py as aliasing,
 )
 
 if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.utils_np import AFillValue, AScalar, AValue, RavelOrder
+    from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
+
+
+def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> list[Any]:
+    """The gather of a result: the result of the group of every value.
+
+    The numpy implementation of the gather is a fancy index of an array; this
+    one is the plain python loop, and it needs no numpy - the result of the
+    pure python implementation is a list, and this is the gather of a list.
+    """
+    return [ret[int(ix)] for ix in group_idx]
 
 
 # min, max, all, any - builtin
@@ -362,11 +380,12 @@ def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
     func: FuncName | Callable[..., AScalar] = "sum",
-    size: int | None = None,
+    size: int | Sequence[int] | None = None,
     fill_value: AFillValue = DEFAULT_FILL_VALUE,
     order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
+    out: AResult | None = None,
     **kwargs: Any,
 ) -> list[Any]:
     # the pure python path reads both arguments purely as sized iterables of the
@@ -377,8 +396,10 @@ def aggregate(
     vals: Sequence[Any] = cast(Sequence[Any], a)
     if axis is not None:
         raise NotImplementedError("axis arg not supported in purepy implementation.")
+    if out is not None:
+        raise NotImplementedError("out= is only supported by the numba implementation")
     if len(idx) == 0:
-        raise ValueError("group_idx must not be empty")
+        raise ValueError(EMPTY_GROUP_IDX)
 
     # Check for 2d group_idx
     if size is None:
@@ -386,6 +407,13 @@ def aggregate(
             size = 1 + int(max(idx))
         except (TypeError, ValueError):
             raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
+    else:
+        if isinstance(size, Sequence):
+            # a sequence of sizes is a multidimensional result, which this
+            # implementation does not do
+            raise NotImplementedError("pure python implementation doesn't accept a sequence of sizes.")
+        # a size is a number of groups - anything that counts is one
+        size = operator.index(size)
 
     for i in idx:
         try:
@@ -424,7 +452,7 @@ def aggregate(
         # have no shape to index at all
         vals = [cast(Any, vals)[()] if hasattr(vals, "shape") else vals] * len(idx)
     elif len(idx) != len(vals):
-        raise ValueError("group_idx and a must be of the same length")
+        raise ValueError(LENGTH_MISMATCH)
 
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it
@@ -486,3 +514,31 @@ aggregate.__doc__ = (
     """
     + aggregate_common_doc
 )
+
+
+# ---------------------------------------------------------------------------
+# the functions of the backend, by their name
+#
+# One entry point per function of the package, calling the implementation
+# above with the name of its function - the same thing the numba module
+# offers with its kernels, and the same thing the package itself offers with
+# the functions of the best implementation available.
+
+_functions = bind_functions(aggregate, function_names())
+
+
+def __getattr__(name: str) -> Any:
+    """The function of the backend, by its name.
+
+    The names of the functions are not set one by one - they are looked up
+    in the table of the entry points, so that they cannot drift from it.
+    """
+    try:
+        return _functions[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+
+
+def __dir__() -> list[str]:
+    """The names of the functions of the backend, among the module's own."""
+    return sorted(set(globals()) | set(_functions))

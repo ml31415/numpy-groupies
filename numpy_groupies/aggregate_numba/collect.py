@@ -21,7 +21,9 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.aggregate_numpy.collect import blocks_to_object_array
-from numpy_groupies.common import FuncName
+from numpy_groupies.registry import (
+    FuncName,
+)
 from numpy_groupies.utils_np import AFillValue, AValue, RavelOrder
 
 # the dtypes the compiled driver can place - the numeric ones the drivers of
@@ -135,8 +137,8 @@ array = build_custom_kernel(
     post=blocks_to_object_array,
     assembles=True,
     # the driver hands out the values of the groups and cannot place a fill
-    # value in an absent one - the njit-callable stub says so instead of
-    # ignoring the argument
+    # value in an absent one - the kernel says so instead of ignoring the
+    # argument
     reject_fill=True,
     doc="The values of every group, one sequence per group",
 )

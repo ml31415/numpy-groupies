@@ -3,7 +3,7 @@
 Integer input is centered on the first value of each group and the global
 min/max is tracked in the same accumulation pass; the exactness gates run
 between the passes and raise ``OverflowError`` for the same inputs in every
-backend (see ``common`` for the policy constants).
+backend (see ``validation`` for the policy constants).
 """
 
 from collections.abc import Callable
@@ -15,7 +15,13 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import build_kernel, rule_float, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.common import EXACT_FLOAT64_INTEGER_LIMIT, INT64_DEVIATION_LIMIT, INT64_MIN
+from numpy_groupies.validation import (
+    EXACT_FLOAT64_INTEGER_LIMIT,
+    INT64_DEVIATION_LIMIT,
+    INT64_MIN,
+    mean_overflow_message,
+    variance_span_overflow_message,
+)
 
 
 # the building blocks and overload shims of this file are jitted: numba
@@ -50,21 +56,13 @@ def _track_extrema_overload(val: float, low: float, high: float) -> Callable[...
     return _impl
 
 
-@njit_stable
-def _mean_overflow_message(count: int, bound: int) -> str:
-    """The numba twin of ``check_integer_mean_overflow`` - numba cannot call
-    the python helper (common must stay numpy-free), so the text is
-    mirrored here and must be kept in sync with it."""
-    return (
-        "cannot compute an exact mean of "
-        + str(count)
-        + " integer values with magnitude up to "
-        + str(bound)
-        + ": their sums can exceed +/-"
-        + str(EXACT_FLOAT64_INTEGER_LIMIT)
-        + ", the range float64 represents exactly - cast the input to a float dtype to accept "
-        + "rounding, or use sum and len"
-    )
+# the compiled twins of the message builders of ``validation`` - numba cannot
+# call a python function, but it can compile one, so the text of the
+# complaint exists once
+_mean_overflow_message: Callable[[int, int], str] = njit_stable(mean_overflow_message, name="mean_overflow_message")
+_span_message: Callable[[str, int], str] = njit_stable(
+    variance_span_overflow_message, name="variance_span_overflow_message"
+)
 
 
 @njit_stable
@@ -73,16 +71,7 @@ def _span_overflow_message(low: int, high: int) -> str:
     # numba's str() negates int64-min internally, wraps, and then fails to
     # size the string buffer - spell that one value out
     low_text = "-9223372036854775808" if low == INT64_MIN else str(low)
-    return (
-        "cannot compute an exact variance: the integer values span ["
-        + low_text
-        + ", "
-        + str(high)
-        + "], wider than +/-"
-        + str(INT64_DEVIATION_LIMIT)
-        + ", so centering each group on its first value would overflow the signed 64-bit "
-        + "deviation - cast the input to a float dtype first"
-    )
+    return _span_message(low_text, high)
 
 
 def _mean_limit_check(low: float, high: float, count: int) -> None:
@@ -494,6 +483,7 @@ std = build_kernel(
     fill_default=np.nan,
     rule=rule_real_float,
     aux_widen=True,
+    extras=(("ddof", "int", 0, "ddof"),),
     doc="Standard deviation of the values of every group",
 )
 
@@ -517,5 +507,6 @@ var = build_kernel(
     fill_default=np.nan,
     rule=rule_real_float,
     aux_widen=True,
+    extras=(("ddof", "int", 0, "ddof"),),
     doc="Variance of the values of every group",
 )

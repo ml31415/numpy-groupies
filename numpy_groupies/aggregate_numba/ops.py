@@ -11,7 +11,7 @@ registered operation, so that ``aggregate()`` resolves with a single lookup.
 """
 
 import functools
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable
 from functools import partial
 from typing import Any, TypeAlias, cast
 
@@ -24,16 +24,17 @@ from numpy_groupies.aggregate_numba.compose import KernelHandle
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.common import (
+    resolve_fill_value,
+)
+from numpy_groupies.registry import (
     DEFAULT_FILL_VALUE,
+    DefaultFillValue,
     FuncName,
     Registry,
     Resolved,
-    _DefaultFillValue,
     can_name_a_function,
     custom_callable,
     funcs_no_separate_nan,
-    is_scalar_input,
-    resolve_fill_value,
 )
 from numpy_groupies.utils_np import (
     AFillValue,
@@ -49,6 +50,7 @@ from numpy_groupies.utils_np import (
     resolve_output_dtype,
     scalar_dtype,
 )
+from numpy_groupies.validation import is_scalar_input
 
 # input dtypes for which the 'sum' output dtype depends on the input length
 # (the overflow guesses in resolve_output_dtype)
@@ -59,7 +61,7 @@ _N_DEPENDENT_ADTYPES = frozenset(
 # the dtypes and fill values that can be a key of the dtype plan cache:
 # the hashable ones - a list is not, and the cache raises a TypeError for it
 _KeyedDType: TypeAlias = str | type | np.dtype | None
-_HashableFillValue: TypeAlias = AScalar | None | tuple[AScalar, ...] | _DefaultFillValue
+_HashableFillValue: TypeAlias = AScalar | None | tuple[AScalar, ...] | DefaultFillValue
 
 
 @functools.lru_cache(maxsize=256)
@@ -347,32 +349,13 @@ def _get_cached_generic(func: Callable[..., AScalar]) -> Callable[..., AResult]:
     return build_generic_aggregate(func)
 
 
-def _compiled_loop(func: Callable[..., AScalar], cache: Any) -> Callable[..., AResult]:
-    """The compiled loop of a callable, memoized where the cache policy says.
-
-    The policy is a parameter of the call, so that one operation serves every
-    policy: the bounded LRU of this backend, the caller's own dictionary, or
-    nowhere at all.
-    """
-    if cache in (None, False):
-        # Keep None and False in order to accept empty dictionaries
-        return build_generic_aggregate(func)
-    if cache is True:
-        return _get_cached_generic(func)
-    cache_map = cast("MutableMapping[Callable[..., AScalar], Callable[..., AResult]]", cache)
-    op = cache_map.get(func)
-    if op is None:
-        op = build_generic_aggregate(func)
-        cache_map[func] = op
-    return op
-
-
 def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     """The operation of a callable of the caller's own.
 
     The callable is compiled into a loop over the groups.  The compilation is
-    the expensive part, and where its result is memoized is the caller's
-    choice - the operation takes the policy as a parameter of the call.
+    the expensive part, so the loop is memoized in the bounded LRU of this
+    backend - the policy is not a parameter of the call, it is the business
+    of the backend.
     """
     callable_ = custom_callable(func)
     if not can_name_a_function(callable_):
@@ -388,10 +371,9 @@ def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
         order: RavelOrder = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
-        cache: bool | MutableMapping[Callable[..., AScalar], Callable[..., AResult]] | None = True,
         **kwargs: Any,
     ) -> AResult:
-        loop = _compiled_loop(callable_, cache)
+        loop = _get_cached_generic(callable_)
         return loop(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
 
     return Resolved(callable_, op)

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_np
+from numpy_groupies import aggregate_numpy
 from numpy_groupies.tests.helpers import (
     aggregate_numba,
     impl_name,
@@ -575,7 +575,7 @@ def test_order_functions_use_the_extreme_value_of_the_order():
         np.testing.assert_array_equal(np.asarray(aggregate_ref(group_idx, a, func=func, size=2)), [0, 1])
 
     # masking with inf+0j would leave no value equal to the found minimum
-    impls = [aggregate_np] + ([aggregate_numba.aggregate] if aggregate_numba is not None else [])
+    impls = [aggregate_numpy.aggregate] + ([aggregate_numba.aggregate] if aggregate_numba is not None else [])
     both_in_one_group = np.array([0, 0])
     for impl in impls:
         for values, func in (

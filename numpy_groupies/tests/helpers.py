@@ -17,7 +17,9 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
-from numpy_groupies.common import funcs_collecting
+from numpy_groupies.registry import (
+    funcs_collecting,
+)
 
 aggregate_numba: Any
 

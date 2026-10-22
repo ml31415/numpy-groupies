@@ -15,7 +15,9 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from numpy_groupies.common import funcs_collecting
+from numpy_groupies.registry import (
+    funcs_collecting,
+)
 from numpy_groupies.tests.helpers import (
     assert_same_result,
     func_list,

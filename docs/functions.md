@@ -23,17 +23,59 @@ aggregate(group_idx, a, func="sum", size=None, fill_value=DEFAULT_FILL_VALUE,
 | ------------ | ----------- |
 | `group_idx`  | Array of non-negative integers used as labels to group the values in `a`. Normally 1-D with the same length as `a`. It may also be 2-D (or nested sequences convertible to 2-D): then the size of the 0th dimension is the number of output dimensions, and `group_idx[i, j]` is the index into the *i*-th output dimension for `a[j]`. |
 | `a`          | Array of values to aggregate. Normally 1-D; can be a scalar in some cases (see [forms](#input-forms-in-detail)). |
-| `func`       | Aggregation function. Default `'sum'`. A name from [Available functions](#available-functions), an alias, a NumPy function or builtin (`np.max`, `max`, `len`, …), or any callable. The aliases are defined in `utils.py`. The NumPy and the pure Python implementation call whatever callable they are given; the Numba one compiles its `func`, and a callable *object* (a `functools.partial`, a class instance with a `__call__`) is no function to a compiler, so those go to the NumPy implementation. |
+| `func`       | Aggregation function. Default `'sum'`. A name from [Available functions](#available-functions), an alias, a NumPy function or builtin (`np.max`, `max`, `len`, …), or any callable. The aliases are defined in `registry.py`. The NumPy and the pure Python implementation call whatever callable they are given; the Numba one compiles its `func`, and a callable *object* (a `functools.partial`, a class instance with a `__call__`) is no function to a compiler, so those go to the NumPy implementation. |
 | `size`       | Shape of the output. `None` means: the maximum of `group_idx` (plus one) determines the size. For multi-dimensional output, give the size of every dimension (or `None`). |
 | `fill_value` | Value for output groups that never occur in `group_idx`. By default chosen per function, see [Fill values](#fill-values). The sentinel `DEFAULT_FILL_VALUE` stands for "use that default". `None` is a fill value of its own, taken for the object result of `array` and refused for every other function. |
 | `order`      | `'C'` (default) or `'F'`. Memory layout of multi-dimensional output. Hardly affects the speed of `aggregate`, but may matter for your downstream use of the result. |
 | `dtype`      | Output dtype. `None` chooses something sensible from `a`, `func` and `fill_value`. Non-numeric output of custom functions needs `dtype=object`. |
 | `axis`       | Aggregate along one axis of a multi-dimensional `a`. See form 3 below. Not supported by the pure-Python implementation. |
+| `out`        | An array the result is copied into, which has to match its shape and its dtype. Only the Numba implementation supports it, the others raise `NotImplementedError`. |
 | `ddof`       | Delta degrees of freedom for `var` and `std`; the divisor is `N - ddof`. Default 0. |
 | `dx`         | Sample spacing for `trapezoid`. Default 1.0. |
 | `reverse`    | Only for `sort`: sort descending instead of ascending. |
 
 Exceptions are raised in most cases where `fill_value` and `dtype` are incompatible, rather than silently coercing.
+
+### The function in the name
+
+Every function has a name of its own, with the function in the name instead of in the `func` argument. The name takes the arguments of its function - the `ddof` of the variance, the `q` of the quantile, the `dx` of the trapezoid, the `reverse` of the sort - and the rest like `aggregate` itself:
+
+```python
+npg.mean(group_idx, a)                       # the best implementation available
+npg.quantile(group_idx, a, q=0.9)            # the same as func="quantile", q=0.9
+```
+
+The same names are the attributes of the module of every implementation, so an implementation can be chosen and used the same way:
+
+```python
+import numpy_groupies.aggregate_numpy as npg
+npg.mean(group_idx, a)                       # the numpy implementation
+```
+
+The kernels of the numba implementation - the compiled functions behind them, callable from jitted code and from python - are the attributes of its module, `numpy_groupies.aggregate_numba`, which is the one place jitted code can reach them (numba cannot reach the attributes of a python object):
+
+```python
+import numba as nb
+import numpy_groupies.aggregate_numba as npg
+
+@nb.njit
+def zscore(group_idx, a):
+    mean = npg.mean(group_idx, a)
+    std = npg.std(group_idx, a)
+    return (a - mean[group_idx]) / std[group_idx]
+```
+
+Calling a kernel from python is the very same call - the same arguments, the same compiled driver, only no jitted caller around it:
+
+```python
+npg.mean(group_idx, a)          # the mean of every group
+npg.var(group_idx, a, ddof=1)   # the argument the function has of its own, by its own name
+npg.array(group_idx, a)         # a list of the arrays of the groups
+```
+
+What the kernels gain by being lean they pay back in rules they do not question: they take two flat 1-D arrays of one length, of integer indices and of numeric values, the narrow integer sum always widens to `int64`, and `dtype`, `axis`, `order` and `out` are not their business. `aggregate()` is the entry point that knows all of that - a multidimensional `group_idx` is form 4 below rather than an error, and a scalar `a` is repeated over every label.
+
+An input a kernel cannot take is refused before its driver runs, once per call and in the words of the same sentence: jitted code by the typing function of the kernel, which knows the shape and the dtype and answers with a `TypingError`, a python call by the body of the kernel, which answers with a `ValueError` - a `TypeError` for labels that are not integers, which is the complaint the python-level call makes as well. The `fill_value` is checked against the output it fills in both worlds, in the words of the python-level call: a nan does not fit an integer output, and a boolean output takes the two booleans. A `float16` value array is the one input the typing function cannot name at all - numba has no type for it, so both worlds answer with a `NotImplementedError`.
 
 ## Input forms in detail
 
@@ -141,9 +183,9 @@ The nan-variants are supported wherever the plain function is.
 | custom callables               |  x    |  x²   |      x      |
 
 ¹ For the same functions as in the plain row.
-² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use `aggregate_np` instead.
+² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use the NumPy implementation (`numpy_groupies.aggregate_numpy`) instead.
 
-Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call `aggregate_np` or `aggregate_py` for the functions the default implementation lacks.
+Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call the NumPy or the pure Python implementation for the functions the default implementation lacks.
 
 ## Fill values
 
@@ -190,8 +232,8 @@ Small tools around `aggregate`, all exported from the package root. They need Nu
 | `uaggregate(group_idx, a, ...)`              | Same arguments as `aggregate`, but the result is broadcast back to the size of `a`, so every element carries the result of its own group. Equivalent to `unpack(group_idx, aggregate(...))`. |
 | `unpack(group_idx, ret)`                     | `ret[group_idx]` — expand a per-group result back to input length. |
 | `unpack_into(group_idx, ret, out)` *(Numba only)* | Same, but gathered into a caller-provided `out`, which has to match the shape of `ret[group_idx]` and the dtype of `ret`. A jitted loop, noticeably faster than fancy indexing for large contiguous 1-D inputs. |
-| `step_count(group_idx)` *(Numba only)*       | Number of runs of equal, contiguous labels in `group_idx`. |
-| `step_indices(group_idx)` *(Numba only)*     | The edges of those runs, `step_count(group_idx) + 1` values including the start and the end. |
+| `step_count(group_idx)`                       | Number of runs of equal, contiguous labels in `group_idx`. |
+| `step_indices(group_idx)`                     | The edges of those runs, `step_count(group_idx) + 1` values including the start and the end. |
 | `multi_arange(n)`                            | The concatenation of `arange(k)` for every `k` in `n` — a vectorised `np.hstack([np.arange(k) for k in n])`. |
 | `label_contiguous_1d(X)`                     | Labels consecutive blocks 1, 2, 3, …, leaving `0` or `False` as 0. |
 | `relabel_groups_unique(group_idx)`           | Closes gaps in sparse labels while keeping their order. |
@@ -277,9 +319,11 @@ npg.aggregate(group_idx, a, func="cumsum")
 Custom function producing strings (NumPy implementation; Numba cannot compile this):
 
 ```python
+import numpy_groupies.aggregate_numpy as npg
+
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
-npg.aggregate_np(group_idx, a, func=lambda x: " or maybe ".join(str(item) for item in x),
-                 fill_value="", dtype=object)
+npg.aggregate(group_idx, a, func=lambda x: " or maybe ".join(str(item) for item in x),
+              fill_value="", dtype=object)
 # ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
