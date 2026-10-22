@@ -1,17 +1,22 @@
 """The input checks of the package, in one place.
 
 Every path into a computation checks its input and says the same words about
-what is wrong with it: the python-level ``aggregate()`` and the compiled
-kernels of the numba backend share the messages below and the predicates
-that go with them.  The checks that need numpy live in ``utils_np``, the ones
-that have to run inside compiled code are written where they are compiled -
-but they speak the words of this module.
+what is wrong with it: the python-level ``aggregate()``, the pure python one
+and the compiled kernels of the numba backend share the messages below and the
+checks that go with them.  The checks that need numpy live in ``utils_np``,
+the ones that have to run inside compiled code are written where they are
+compiled - but they speak the words of this module.
 
 This module must not import numpy: the pure python implementation is loaded
-before numpy is known to be available.
+before numpy is known to be available, and has to work without it.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, SupportsInt, cast
+
+if TYPE_CHECKING:
+    from numpy_groupies.utils_np import AFillValue
 
 # ---------------------------------------------------------------------------
 # the words of the complaints - one spelling for every path of the package
@@ -33,25 +38,47 @@ LENGTH_MISMATCH_OR_SCALAR = f"{LENGTH_MISMATCH}, or a can be scalar"
 # the fill value of a call
 FILL_NOT_BOOLEAN = "Value not boolean"
 FILL_NOT_CONVERTIBLE = "fill_value must be convertible into {dtype}"
+FILL_NOT_INTEGER = "fill_value must be convertible into an integer"
+FILL_NONE_NOT_HELD = (
+    "fill_value=None fills an object result, which is what func='array' returns and no other function does "
+    "(the default of a function is asked for with DEFAULT_FILL_VALUE)"
+)
 
 # the dtypes a call may have: the labels are integers, the values are numbers
 INTEGER_KINDS = "iu"
 NUMERIC_KINDS = "iufcb"
 
+# the functions whose result holds a None: the object array of ``array`` -
+# every other result is a number, a flag, a count, a position or the values of
+# a group, and none of them holds a None
+NONE_RESULT_FUNCTIONS = frozenset({"array"})
+
 
 # ---------------------------------------------------------------------------
 # the predicates that go with the words
+#
+# Every predicate of this module answers its question about a dtype in any of
+# its spellings: a numpy dtype (the kind of it is a one letter string), the
+# name of one or the python type behind it.
+
+
+def _dtype_kind(dtype: Any) -> str | None:
+    """The kind of a numpy dtype, or None for what is not one."""
+    return getattr(dtype, "kind", None)
 
 
 def is_integer_dtype(dtype: Any) -> bool:
     """Whether the labels of a call are of an integer dtype.
 
-    The argument is a numpy dtype: the one of the array of a python call, and
-    the one the numba type of an array carries (``as_dtype`` of it).  Both
-    worlds ask the same question and answer it the same way.
+    A bool is not an integer dtype here: the labels of a call index the
+    groups, and a bool is not an index.
     """
-    kind = getattr(dtype, "kind", None)
-    return isinstance(kind, str) and kind in INTEGER_KINDS
+    kind = _dtype_kind(dtype)
+    if kind is not None:
+        return kind in INTEGER_KINDS
+    if isinstance(dtype, str):
+        return dtype.startswith(("int", "uint"))
+    return isinstance(dtype, type) and issubclass(dtype, int) and not issubclass(dtype, bool)
 
 
 def is_numeric_dtype(dtype: Any) -> bool:
@@ -62,5 +89,92 @@ def is_numeric_dtype(dtype: Any) -> bool:
     make numba refuse the call, which is a harder error to read than this
     one.
     """
-    kind = getattr(dtype, "kind", None)
-    return isinstance(kind, str) and kind in NUMERIC_KINDS
+    kind = _dtype_kind(dtype)
+    if kind is not None:
+        return kind in NUMERIC_KINDS
+    if isinstance(dtype, str):
+        return dtype.startswith(("int", "uint", "float", "complex", "bool"))
+    return isinstance(dtype, type) and issubclass(dtype, (int, float, complex))
+
+
+def is_inexact_dtype(dtype: Any) -> bool:
+    """True for everything that can hold nan - numpy dtypes by kind, python types by identity."""
+    kind = _dtype_kind(dtype)
+    if kind is not None:  # a numpy dtype
+        return kind in "fc"
+    if isinstance(dtype, str):
+        return dtype.startswith(("float", "complex"))
+    return isinstance(dtype, type) and issubclass(dtype, (float, complex))
+
+
+def is_complex_dtype(dtype: Any) -> bool:
+    """True for complex numpy dtypes, the complex builtin and complex dtype strings."""
+    kind = _dtype_kind(dtype)
+    if kind is not None:  # a numpy dtype
+        return kind == "c"
+    if isinstance(dtype, str):
+        return dtype.startswith("complex")
+    # NumPy's complex64 and clongdouble do not inherit from Python's complex.
+    # Inspect the public scalar base without importing the optional dependency.
+    return isinstance(dtype, type) and any(
+        base is complex or (base.__module__ == "numpy" and base.__name__ == "complexfloating") for base in dtype.__mro__
+    )
+
+
+# ---------------------------------------------------------------------------
+# the checks of the input of a call
+
+
+def is_scalar_input(a: Any) -> bool:
+    """Whether the aggregated data is a single value instead of a sequence.
+
+    Kept numpy free on purpose, since the pure python implementation uses it
+    too: a python number has no ``ndim`` at all, while a numpy scalar and a 0d
+    array both report 0 - ``isinstance(a, (int, float, complex))`` alone misses
+    every numpy scalar that is not a python number (``np.float32``, ``np.int64``,
+    ``np.bool_``, ``np.complex64``).
+    """
+    return getattr(a, "ndim", None) == 0 or isinstance(a, (int, float, complex))
+
+
+def check_boolean(x: AFillValue) -> None:
+    """Refuse a fill value that is not one of the two booleans."""
+    if x not in (0, 1):
+        raise ValueError(FILL_NOT_BOOLEAN)
+
+
+def check_filling_with_none(key: str) -> None:
+    """Refuse to fill with ``None`` where no result can hold it.
+
+    ``None`` is a value and not a request: the request for the default of a
+    function is made with ``DEFAULT_FILL_VALUE``, and ``None`` is what an object
+    result - the sequence of ``func='array'`` - is filled with, nothing else.  A
+    number, a flag, a count, a position and the values a sort returns cannot hold
+    a ``None``, and the three implementations answered the request three
+    different ways: the numpy one complained about an ``isnan`` of an object, the
+    numba one failed to type a kernel, and the pure python one wrote the ``None``
+    into a column of floats, which turned the result into an object array.
+
+    ``key`` is the name of the function in the registry of the fill values -
+    the caller resolves it, this module knows nothing of the registry.
+    """
+    if key not in NONE_RESULT_FUNCTIONS:
+        raise TypeError(FILL_NONE_NOT_HELD)
+
+
+def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
+    """Refuse a ``fill_value`` that the result type of a function cannot hold.
+
+    This is the rule ``utils_np.check_fill_value`` tells against a numpy
+    dtype, told without one: a boolean answer is filled with 0 or 1 - a nan
+    would pass for ``bool``, which is why the two values are asked for
+    themselves - and a count or a position with whatever turns into an integer,
+    which a nan does not.
+    """
+    if target is bool:
+        check_boolean(fill_value)
+    elif target is int:
+        try:
+            int(cast("SupportsInt", fill_value))
+        except ValueError:
+            raise ValueError(FILL_NOT_INTEGER)

@@ -11,10 +11,8 @@ from numpy_groupies.common import (
     _DefaultFillValue,
     _forced_float_types,
     _forced_real_float_types,
-    check_boolean,
     check_complex_dtype,
     get_aliasing,
-    is_scalar_input,
     resolve_name,
 )
 from numpy_groupies.validation import (
@@ -24,7 +22,9 @@ from numpy_groupies.validation import (
     NEGATIVE_INDICES,
     NON_INTEGER_GROUP_IDX,
     TOO_LARGE_FOR_SIZE,
+    check_boolean,
     is_integer_dtype,
+    is_scalar_input,
 )
 
 # the values as the dispatchers carry them on: an array of any dtype, or

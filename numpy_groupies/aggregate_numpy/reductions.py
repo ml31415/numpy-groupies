@@ -10,16 +10,15 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.steps import fill_untouched
-from numpy_groupies.common import is_scalar_input
 from numpy_groupies.utils_np import (
     AScalar,
-    check_boolean,
     iscomplexobj,
     maxval,
     minimum_dtype,
     minimum_dtype_scalar,
     minval,
 )
+from numpy_groupies.validation import check_boolean, is_scalar_input
 
 
 def _sum(

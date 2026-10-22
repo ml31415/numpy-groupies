@@ -32,7 +32,6 @@ from numpy_groupies.common import (
     can_name_a_function,
     custom_callable,
     funcs_no_separate_nan,
-    is_scalar_input,
     resolve_fill_value,
 )
 from numpy_groupies.utils_np import (
@@ -49,6 +48,7 @@ from numpy_groupies.utils_np import (
     resolve_output_dtype,
     scalar_dtype,
 )
+from numpy_groupies.validation import is_scalar_input
 
 # input dtypes for which the 'sum' output dtype depends on the input length
 # (the overflow guesses in resolve_output_dtype)

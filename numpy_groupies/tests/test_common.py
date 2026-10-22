@@ -137,3 +137,17 @@ def test_a_func_that_named_nothing_is_said_so_by_the_factory():
     registry = _registry()
     with pytest.raises(ValueError, match="neither a valid function string nor a callable object"):
         registry[42]
+
+
+def test_the_functions_that_hold_a_none_match_the_registry():
+    """The one function whose result holds a None is the object array.
+
+    ``validation`` states which functions may be filled with a None - the
+    object array of ``array`` and nothing else - while the registry of the
+    fill values knows every function of the package.  The two have to agree,
+    or a function would be filled with a None its result cannot hold.
+    """
+    from numpy_groupies import common, validation
+
+    assert validation.NONE_RESULT_FUNCTIONS == frozenset({"array"})
+    assert frozenset(common._default_fill_values) - validation.NONE_RESULT_FUNCTIONS

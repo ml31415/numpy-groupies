@@ -13,7 +13,6 @@ from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     FuncName,
     Registry,
-    is_scalar_input,
     missing_impl_error,
     resolve_fill_value,
 )
@@ -28,6 +27,7 @@ from numpy_groupies.utils_np import (
     check_nton_shape,
     input_validation,
 )
+from numpy_groupies.validation import is_scalar_input
 
 
 def _aggregate_base(

@@ -296,7 +296,7 @@ def test_every_call_refuses_the_input_the_driver_cannot_read(kernel_name, style,
 
 
 # the faults the three ways of calling a kernel share - the words of them live
-# in numpy_groupies.validation, so all of them answer in exactly the same
+# in numpy_groupies.common, so all of them answer in exactly the same
 # sentence
 _SHARED_FAULTS = [
     (GROUP_IDX[:0], FLOAT_A[:0], -1),
@@ -311,7 +311,7 @@ _SHARED_FAULTS = [
 def test_the_shared_faults_are_answered_in_the_same_words(kernel_name, style, group_idx, values, size):
     """The three ways of calling a kernel say the same thing about a fault.
 
-    The words of the complaints live in one place (numpy_groupies.validation),
+    The words of the complaints live in one place (numpy_groupies.common),
     so the python call of a kernel, the jitted one and the python-level
     aggregate() answer a fault they share with the very same sentence.
     """

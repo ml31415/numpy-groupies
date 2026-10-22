@@ -18,12 +18,12 @@ from numpy_groupies.utils_np import (
     AScalar,
     RavelOrder,
     aliasing,
-    check_boolean,
     maxval,
     minimum_dtype,
     minimum_dtype_scalar,
     minval,
 )
+from numpy_groupies.validation import check_boolean
 
 
 def _anynan(

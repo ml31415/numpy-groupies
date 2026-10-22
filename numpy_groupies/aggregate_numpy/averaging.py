@@ -15,9 +15,9 @@ from numpy_groupies.common import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     check_integer_mean_overflow,
     check_integer_variance_span_overflow,
-    is_scalar_input,
 )
 from numpy_groupies.utils_np import AScalar, iscomplexobj
+from numpy_groupies.validation import is_scalar_input
 
 
 def _mean(

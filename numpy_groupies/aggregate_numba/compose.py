@@ -222,7 +222,7 @@ def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar
 # ``utils_np.input_validation`` before a driver sees anything - no call of a
 # driver ever validates twice.
 #
-# The words of the complaints live in ``numpy_groupies.validation``: the
+# The words of the complaints live in ``numpy_groupies.common``: the
 # python-level call and the kernels say the same things about the same
 # faults.  What is left here is what only a kernel has to say - the flatness
 # of its input and the numeric dtypes of its values.
@@ -273,7 +273,7 @@ def _numpy_dtype(dtype: Any) -> np.dtype | None:
 
     The python path has numpy dtypes, the typing function of a kernel has the
     numba types of the elements of its array - numba knows how to translate
-    them, and the predicates of ``numpy_groupies.validation`` ask the
+    them, and the predicates of ``numpy_groupies.common`` ask the
     translated one.
     """
     if dtype is None:

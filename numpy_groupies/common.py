@@ -2,14 +2,23 @@
 
 This module must not import numpy - the pure python implementation is loaded
 before numpy is known to be available, and has to work without it.
+
+The checks of the input of a call live in ``numpy_groupies.validation``, where
+the words of the complaints are; the registry of the functions and the
+resolution of their fill values are here.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, SupportsInt, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias, cast
 
-from numpy_groupies.validation import FILL_NOT_BOOLEAN
+from numpy_groupies.validation import (
+    check_fill_value_for_type,
+    check_filling_with_none,
+    is_complex_dtype,
+    is_inexact_dtype,
+)
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -17,6 +26,7 @@ if TYPE_CHECKING:
     from numpy_groupies.utils_np import AFillValue, AScalar
 
 nan = float("nan")  # nan is just this float
+
 
 # integers beyond this magnitude are not exactly representable in float64, so
 # once an exact integer sum can leave this window, a float64-accumulated mean
@@ -274,30 +284,6 @@ def _fill_value_key(func: str | Callable[..., AScalar]) -> str:
     return name
 
 
-def _is_inexact_dtype(dtype: npt.DTypeLike | None) -> bool:
-    """True for everything that can hold nan - numpy dtypes by kind, python types by identity."""
-    kind = getattr(dtype, "kind", None)
-    if kind is not None:  # a numpy dtype
-        return kind in "fc"
-    if isinstance(dtype, str):
-        return dtype.startswith(("float", "complex"))
-    return isinstance(dtype, type) and issubclass(dtype, (float, complex))
-
-
-def _is_complex_dtype(dtype: npt.DTypeLike | None) -> bool:
-    """True for complex numpy dtypes, the complex builtin and complex dtype strings."""
-    kind: str | None = getattr(dtype, "kind", None)  # the kind of a numpy dtype is a one letter string
-    if kind is not None:  # a numpy dtype
-        return kind == "c"
-    if isinstance(dtype, str):
-        return dtype.startswith("complex")
-    # NumPy's complex64 and clongdouble do not inherit from Python's complex.
-    # Inspect the public scalar base without importing the optional dependency.
-    return isinstance(dtype, type) and any(
-        base is complex or (base.__module__ == "numpy" and base.__name__ == "complexfloating") for base in dtype.__mro__
-    )
-
-
 def nan_of(dtype: npt.DTypeLike | None) -> AScalar:
     """A nan shaped like ``dtype``: a nan in every part it has.
 
@@ -307,32 +293,7 @@ def nan_of(dtype: npt.DTypeLike | None) -> AScalar:
     The default of a function for a complex result takes this shape, and so does
     the poisoning of a group, for the same reason.
     """
-    return nan + nan * 1j if _is_complex_dtype(dtype) else nan
-
-
-# the functions whose result is settled by the function and holds no ``None``:
-# everything the table of defaults names, except the one function that returns
-# an object array - a sort returns the values of a group, so it takes their
-# dtype, and a count or a flag holds no ``None`` either
-_no_none_result_functions = frozenset(_default_fill_values) - {"array"}
-
-
-def check_filling_with_none(func: str | Callable[..., AScalar]) -> None:
-    """Refuse to fill with ``None`` where no result can hold it.
-
-    ``None`` is a value and not a request: the request for the default of a
-    function is made with ``DEFAULT_FILL_VALUE``, and ``None`` is what an object
-    result - the sequence of ``func='array'`` - is filled with, nothing else.  A
-    number, a flag, a count, a position and the values a sort returns cannot hold
-    a ``None``, and the three implementations answered the request three
-    different ways: the numpy one complained about an ``isnan`` of an object, the
-    numba one failed to type a kernel, and the pure python one wrote the ``None``
-    into a column of floats, which turned the result into an object array.
-    """
-    if _fill_value_key(func) in _no_none_result_functions:
-        raise TypeError(
-            "fill_value=None fills an object result, which is what func='array' returns and no other function does (the default of a function is asked for with DEFAULT_FILL_VALUE)"
-        )
+    return nan + nan * 1j if is_complex_dtype(dtype) else nan
 
 
 def default_fill_value(func: FuncName | Callable[..., AScalar], dtype: npt.DTypeLike | None = None) -> AFillValue:
@@ -357,13 +318,13 @@ def resolve_fill_value(
     worse surprise than an unspectacular filling value.
     """
     if fill_value is None:
-        check_filling_with_none(func)
+        check_filling_with_none(_fill_value_key(func))
     if fill_value is not DEFAULT_FILL_VALUE:
         return fill_value
     key = _fill_value_key(func)
     # nan only fits where the output can hold it - the averaging and
     # dispersion functions coerce their result to a float type anyway
-    fits = dtype is None or key in _forced_float_types or key in _forced_real_float_types or _is_inexact_dtype(dtype)
+    fits = dtype is None or key in _forced_float_types or key in _forced_real_float_types or is_inexact_dtype(dtype)
     value = _default_fill_values.get(key)
     if value is None:
         # a custom callable has no function specific default
@@ -374,7 +335,7 @@ def resolve_fill_value(
         isinstance(value, float)
         and value != value
         and dtype is not None
-        and _is_complex_dtype(dtype)
+        and is_complex_dtype(dtype)
         and key not in _forced_real_float_types
     ):
         # a nan of a complex output has to be a nan in both parts - the numpy
@@ -595,11 +556,6 @@ _forced_real_float_types = {
 }
 
 
-def check_boolean(x: AFillValue) -> None:
-    if x not in (0, 1):
-        raise ValueError(FILL_NOT_BOOLEAN)
-
-
 # functions whose result type the function settles rather than taking it from
 # the values aggregated: a boolean answer, a count, a position, and the object
 # array of ``array``.  The python counterpart of each result type is here, where
@@ -634,13 +590,8 @@ def check_fixed_fill_value(func: str | Callable[..., AScalar], fill_value: AFill
     or a position with whatever turns into an integer, which a nan does not.
     """
     target = _fixed_result_types.get(_fill_value_key(func))
-    if target is bool:
-        check_boolean(fill_value)
-    elif target is int:
-        try:
-            int(cast("SupportsInt", fill_value))
-        except ValueError:
-            raise ValueError("fill_value must be convertible into an integer")
+    if target is not None:
+        check_fill_value_for_type(fill_value, target)
 
 
 # functions whose result is not complex even for complex input - only these may
@@ -682,26 +633,14 @@ def check_complex_dtype(
     """
     if (
         dtype is not None
-        and _is_complex_dtype(a_dtype)
-        and not _is_complex_dtype(dtype)
+        and is_complex_dtype(a_dtype)
+        and not is_complex_dtype(dtype)
         and func_str not in _complex_real_result
     ):
         raise TypeError(
             f"function {func_str} cannot aggregate complex values into the non-complex dtype "
             f"{dtype} - pass a complex dtype to keep the imaginary part"
         )
-
-
-def is_scalar_input(a: Any) -> bool:
-    """Whether the aggregated data is a single value instead of a sequence.
-
-    Kept numpy free on purpose, since the pure python implementation uses it
-    too: a python number has no ``ndim`` at all, while a numpy scalar and a 0d
-    array both report 0 - ``isinstance(a, (int, float, complex))`` alone misses
-    every numpy scalar that is not a python number (``np.float32``, ``np.int64``,
-    ``np.bool_``, ``np.complex64``).
-    """
-    return getattr(a, "ndim", None) == 0 or isinstance(a, (int, float, complex))
 
 
 # the arguments a function has of its own, beyond the size and the fill value

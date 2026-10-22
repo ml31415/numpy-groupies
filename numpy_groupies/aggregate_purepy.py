@@ -19,14 +19,13 @@ from numpy_groupies.common import (
     check_integer_variance_span_overflow,
     custom_callable,
     funcs_no_separate_nan,
-    is_scalar_input,
     missing_impl_error,
     resolve_fill_value,
 )
 from numpy_groupies.common import (
     aliasing_py as aliasing,
 )
-from numpy_groupies.validation import EMPTY_GROUP_IDX, LENGTH_MISMATCH
+from numpy_groupies.validation import EMPTY_GROUP_IDX, LENGTH_MISMATCH, is_scalar_input
 
 if TYPE_CHECKING:
     import numpy as np
