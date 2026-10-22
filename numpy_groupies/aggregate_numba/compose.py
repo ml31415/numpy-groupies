@@ -199,11 +199,21 @@ def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar
     return fill_default
 
 
-# the input the drivers of this package are written for: two flat 1d arrays.
-# Jitted code is answered by the overload of the kernel, a python call by its
-# body, and both of them say this sentence - the python one with the advice
-# that only a python caller can follow
+# What the drivers of this package are written for and never look at twice:
+# two flat 1d arrays, of integer labels and of numeric values, of the same
+# length and not empty.  The shape and the dtype are what a type knows,
+# jitted code is answered for them by the typing function of the kernel and a
+# python call by its body, and the two remaining value checks go into both of
+# those entry points as well (see ``_make_stub``).  ``aggregate()`` is the entry
+# point that knows an axis, an indexed ``group_idx`` and a single value
+# repeated over every label, and it validates all of that in
+# ``utils_np.input_validation`` before a driver sees anything - no call of a
+# driver ever validates twice.
 _FLAT_INPUT = "the kernels take flat one-dimensional input"
+_INTEGER_INDEX = "group_idx must be of an integer dtype"
+_NUMERIC_VALUES = "the kernels take numeric values"
+_EMPTY_INDEX = "group_idx must not be empty"
+_LENGTH_MISMATCH = "group_idx and a must be of the same length"
 
 # the input dtypes a compiled driver of this package can be given at all: the
 # numeric ones (the complex drivers of the reductions, the median and the
@@ -215,21 +225,19 @@ _NUMERIC_KINDS = "iufcb"
 def _kernel_inputs(group_idx: Any, a: Any) -> tuple[Any, Any]:
     """The two arrays of a python call of a kernel, contiguous and checked.
 
-    The kernel refuses multidimensional input to jitted code in the typing
-    function of its overload (see ``_make_stub``) - a python call never reaches
-    that one, so its body asks the same question here, and adds the integer
-    ``group_idx`` and the numeric values that the drivers trust without
-    looking at them.  ``aggregate()`` is the entry point that knows an axis and
-    an indexed ``group_idx``.
+    What the typing function of the kernel answers for jitted code - a shape it
+    can see and a dtype it can name - the python call answers here, where the
+    arrays are values again and the answer can name the entry point that does
+    know an axis and an indexed ``group_idx``.
     """
     group_idx = np.ascontiguousarray(group_idx)
     a = np.ascontiguousarray(a)
     if group_idx.ndim != 1 or a.ndim != 1:
         raise ValueError(f"{_FLAT_INPUT} - use aggregate() for an axis or an indexed group_idx")
     if group_idx.dtype.kind not in "iu":
-        raise ValueError(f"group_idx must be of an integer dtype, not {group_idx.dtype}")
+        raise ValueError(f"{_INTEGER_INDEX}, not {group_idx.dtype}")
     if a.dtype.kind not in _NUMERIC_KINDS:
-        raise ValueError(f"the kernels take numeric values, not {a.dtype}")
+        raise ValueError(f"{_NUMERIC_VALUES}, not {a.dtype}")
     return group_idx, a
 
 
@@ -288,10 +296,11 @@ def _make_stub(
     The stub is one function with two ways in, and both of them end at the
     same compiled driver with the same arguments: from python it resolves the
     dtypes itself and calls the driver, from jitted code the ``@overload``
-    resolves the dtype rule at compile time, refuses anything but flat 1d input
-    and returns the call.  The python path therefore answers exactly what the
-    jitted one does - the same (approximated, 1d-only) dtype rules of the
-    kernels and nothing of the validation machinery of ``aggregate()``.
+    resolves the dtype rule at compile time and returns the call.  Both of them
+    first say no to the input the drivers were not written for, in the words of
+    the same sentences - which is a fraction of what ``aggregate()`` asks, since
+    a kernel has no axis to know, no indexed ``group_idx`` and no single value
+    repeated over every label.
 
     ``fill_value=None`` asks for the function default, which - like the
     python-level DEFAULT_FILL_VALUE - depends on the output dtype (nan only
@@ -334,6 +343,22 @@ def _make_stub(
         "        if fill_value is not None:\n            raise nb.TypingError(_refusal)\n" if reject_fill else ""
     )
 
+    # the two value checks a call of a kernel cannot be trusted to skip: an
+    # empty group_idx leaves the driver with nothing to reduce, and a short ``a``
+    # has it read a value past the end of the array, which numba never catches.
+    # Both entry points of every kernel run them - the body of the stub and the
+    # compiled implementation of its overload - from this one spelling, each with
+    # the indentation of the function it lands in.  The driver runs neither:
+    # aggregate() has validated by hand on its way in, and validation of the same
+    # call twice is what the fast path of the wrapper exists to avoid.
+    def value_checks(indent: str) -> str:
+        return (
+            f"{indent}if len(group_idx) == 0:\n"
+            f"{indent}    raise ValueError(_empty_index)\n"
+            f"{indent}if len(a) != len(group_idx):\n"
+            f"{indent}    raise ValueError(_length_mismatch)\n"
+        )
+
     # the three functions with the one signature: the stub, the typing function
     # of the overload and the implementation it returns - built from one
     # source, so that they cannot drift apart.  The stub is the python entry
@@ -344,7 +369,7 @@ def _make_stub(
     source = f"""
 def _stub({signature}):
     group_idx, a = _kernel_inputs(group_idx, a)
-{python_fill_check}    out_dtype, aux_dtype = _rule(_array_type(a.dtype))
+{python_fill_check}{value_checks("    ")}    out_dtype, aux_dtype = _rule(_array_type(a.dtype))
     if fill_value is None:
         fill_value = _resolve_default_fill(_fill_default, out_dtype)
     return _driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, {driver_args})
@@ -355,12 +380,18 @@ def _typing({signature}):
         # the drivers read one label per value: a multidimensional group_idx
         # they walk by row and answer with a result that is quietly wrong
         raise nb.TypingError(_flat_input)
+    if not isinstance(group_idx.dtype, nb.types.Integer):
+        # an index numba does not know as an index: a float one is rounded by
+        # the caller, a bool one is not an index at all
+        raise nb.TypingError(_integer_index)
+    if not isinstance(a.dtype, (nb.types.Number, nb.types.Boolean)):
+        raise nb.TypingError(_numeric_values)
     a_type = a
     out_dtype, aux_dtype = _rule(a_type)
     default_fill = _resolve_default_fill(_fill_default, out_dtype)
 
     def _impl({signature}):
-{typing_fill_check}        if fill_value is None:
+{typing_fill_check}{value_checks("        ")}        if fill_value is None:
             return _driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, {driver_args})
         return _driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, {driver_args})
 
@@ -376,6 +407,10 @@ def _typing({signature}):
         "_kernel_inputs": _kernel_inputs,
         "_array_type": _array_type,
         "_flat_input": _FLAT_INPUT,
+        "_integer_index": _INTEGER_INDEX,
+        "_numeric_values": _NUMERIC_VALUES,
+        "_empty_index": _EMPTY_INDEX,
+        "_length_mismatch": _LENGTH_MISMATCH,
         "_refusal": refusal,
     }
     # the signature is the one of the operation, spelled out in one place

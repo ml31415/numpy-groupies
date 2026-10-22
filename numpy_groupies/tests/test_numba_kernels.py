@@ -14,7 +14,7 @@ import numba as nb
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_numba, aggregate_numpy
+from numpy_groupies import aggregate, aggregate_numba, aggregate_numpy
 from numpy_groupies.common import func_extras
 from numpy_groupies.tests.reference import aggregate_ref
 
@@ -22,6 +22,15 @@ GROUP_IDX = np.array([0, 0, 1, 1, 1, 3])  # group 2 stays empty
 FLOAT_A = np.array([3.0, 1.0, np.nan, 2.0, 5.0, 4.0])
 INT_A = np.array([3, 1, 7, 2, 5, 4], dtype=np.int64)
 BOOL_A = np.array([True, False, True, True, False, True])
+
+# the kernels of ``make_stub``, which is where the input checks are written - as
+# many of the tests below ask them all.  ``step_count`` and ``step_indices`` are
+# jitted functions with a signature of their own, ``unpack_into`` writes into an
+# output buffer the caller provides, and ``aggregate`` is the python-level
+# dispatcher of the module: none of them is such an entry point
+_ALL_KERNELS = [
+    name for name in aggregate_numba.__all__ if name not in ("aggregate", "step_count", "step_indices", "unpack_into")
+]
 
 # (kernel name, kwargs, values) - the kernels run inside a jitted caller and as a
 # plain python call, and both are compared against the python-level
@@ -221,52 +230,86 @@ def test_pure_python_call_refuses_a_fill_value_as_jitted_code_does():
         aggregate_numba.array(GROUP_IDX, FLOAT_A, -1, 7.0)
 
 
-@pytest.mark.parametrize(
-    ("group_idx", "values", "message"),
-    [
-        (np.tile(GROUP_IDX, (2, 1)), FLOAT_A, "flat one-dimensional"),
-        (GROUP_IDX, np.tile(FLOAT_A, (2, 1)), "flat one-dimensional"),
-        (GROUP_IDX.astype(np.float64), FLOAT_A, "integer dtype"),
-        (GROUP_IDX, FLOAT_A.astype(np.str_), "numeric values"),
-    ],
-)
-def test_a_python_call_names_the_input_the_driver_cannot_take(group_idx, values, message):
-    """The python call says what the drivers were written not to expect.
-
-    Jitted code is answered for the one-dimensional case by the typing function
-    of the kernel, which knows the shapes at compile time; the dtype of the
-    indices and of the values is what only the python call can name in one
-    sentence - the driver would answer both with a numba error it did not
-    write.
-    """
-    with pytest.raises(ValueError, match=message):
-        aggregate_numba.mean(group_idx, values)
-
-
-@pytest.mark.parametrize(
-    ("group_idx", "values"),
-    [
-        (np.tile(GROUP_IDX, (2, 1)), FLOAT_A),
-        (np.tile(GROUP_IDX, (1, 2)), FLOAT_A),
-        (GROUP_IDX, np.tile(FLOAT_A, (2, 1))),
-    ],
-)
-def test_multidimensional_input_is_refused_from_jitted_code(group_idx, values):
-    """A kernel refuses what its driver cannot read, jitted code included.
-
-    The driver takes one label per value, so a two-dimensional ``group_idx`` it
-    walks by row: a one-column one it answers with a quietly wrong result (the
-    labels of one dimension happen to index as well as the flat ones), any
-    other shape with the truth value of an array.  The typing function of the
-    kernel therefore asks the shapes, which are known at compile time.
-    """
+# the three ways a caller reaches a kernel: as a python call, from jitted code,
+# and through the python-level aggregate() that shares the driver with them.
+# The input checks run once per call in each of them - at the entry point of the
+# kernel for the first two (the body of the stub and the implementation of its
+# overload), in utils_np.input_validation for the third - and no call ever runs
+# them twice, which is what the fast path of the wrapper exists to avoid.  Each
+# style is a function of the kernel it is asked of: a kernel is an overload, and
+# an overload cannot be passed into jitted code as an argument.
+def _styles(kernel):
+    def call_python(group_idx, values, size):
+        return kernel(group_idx, values, size=size, fill_value=None)
 
     @nb.njit
-    def caller(group_idx, a):
-        return aggregate_numba.sum(group_idx, a)
+    def call_jitted(group_idx, values, size):
+        return kernel(group_idx, values, size=size, fill_value=None)
 
-    with pytest.raises(nb.TypingError, match="flat one-dimensional"):
-        caller(group_idx, values)
+    def call_aggregate(group_idx, values, size):
+        return aggregate(group_idx, values, func=kernel.__name__, size=size)
+
+    return [call_python, call_jitted, call_aggregate]
+
+
+_SAME_WORDS = [
+    (GROUP_IDX[:0], FLOAT_A[:0], "group_idx must not be empty", -1),
+    (np.array([0, 1, 2]), FLOAT_A[:2], "of the same length", -1),
+    (GROUP_IDX, np.append(FLOAT_A, 1.0), "of the same length", -1),
+    (np.array([0, -1]), FLOAT_A[:2], "negative indices", -1),
+    (GROUP_IDX, FLOAT_A, "too large", 1),
+]
+
+# what only a kernel is strict about: aggregate() spreads a multidimensional a
+# over an axis, coerces a dtype it can not index with and repeats a single value
+# over every label, and a kernel has none of those freedoms.  Jitted code is
+# answered by the typing function of the kernel, which knows the shape and the
+# dtype at compile time and answers with a TypingError.
+_STRICT_ONLY = [
+    (np.tile(GROUP_IDX, (2, 1)), FLOAT_A, "flat one-dimensional", -1),
+    (GROUP_IDX, np.tile(FLOAT_A, (2, 1)), "flat one-dimensional", -1),
+    (GROUP_IDX.astype(np.float64), FLOAT_A, "integer dtype", -1),
+    (GROUP_IDX.astype(bool), FLOAT_A, "integer dtype", -1),
+    (GROUP_IDX, FLOAT_A.astype(np.str_), "numeric values", -1),
+    (GROUP_IDX, np.array(["2000-01-01", "2000-01-02"], dtype="datetime64[D]"), "numeric values", -1),
+]
+
+
+@pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
+@pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
+@pytest.mark.parametrize("group_idx, values, message, size", _SAME_WORDS)
+def test_every_call_refuses_the_input_the_driver_cannot_read(kernel_name, style, group_idx, values, message, size):
+    """The value checks of a kernel call, in both worlds and through aggregate().
+
+    The drivers take one value per label and numba never looks at the bounds of
+    what it reads: a short ``a`` is answered with the values behind the end of
+    the array, an empty one with nothing at all.  The entry points of the kernel
+    therefore ask the two lengths and the bounds of the labels before the driver
+    runs - the same questions ``input_validation`` asks the python-level call.
+    """
+    call = _styles(getattr(aggregate_numba, kernel_name))[style]
+    with pytest.raises(ValueError, match=message):
+        call(group_idx, values, size)
+
+
+@pytest.mark.parametrize("style", [0, 1], ids=["python", "jitted"])
+@pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
+@pytest.mark.parametrize("group_idx, values, message, size", _STRICT_ONLY)
+def test_every_kernel_refuses_the_input_it_cannot_take(kernel_name, style, group_idx, values, message, size):
+    """The shape and dtype checks, as a python call and as a jitted one.
+
+    A two-dimensional ``group_idx`` the driver walks by row is answered with a
+    quietly wrong result (the labels of one dimension index as well as the flat
+    ones), a float or a bool dtype with labels that are not labels, and a dtype
+    the drivers were never written for with a numba error that is harder to read
+    than this one.
+    """
+    call = _styles(getattr(aggregate_numba, kernel_name))[style]
+    # the jitted style is answered before anything runs, by the typing function
+    # of the kernel, which knows the shape and the dtype at compile time
+    error = nb.TypingError if style == 1 else ValueError
+    with pytest.raises(error, match=message):
+        call(group_idx, values, size)
 
 
 def test_the_python_call_answers_in_the_dtype_of_the_jitted_one():
@@ -456,6 +499,27 @@ def test_dtype_rules(kernel_name, values, expected_dtype):
         return stub(group_idx, a)
 
     assert caller(GROUP_IDX, values).dtype == expected_dtype
+
+
+def test_a_float16_input_is_the_one_refusal_the_typing_function_cannot_name():
+    """The dtype no world of a kernel can be asked about.
+
+    ``aggregate()`` widens float16 values to float32 on the way to the driver,
+    a kernel has no such step in front of it: the numba type of the values is
+    what the entry point of both of its worlds starts from, and numba answers
+    float16 - the one numeric dtype it has no type for - with a
+    NotImplementedError of its own.
+    """
+    values = FLOAT_A.astype(np.float16)
+    with pytest.raises(NotImplementedError, match="float16"):
+        aggregate_numba.mean(GROUP_IDX, values)
+
+    @nb.njit
+    def caller(group_idx, a):
+        return aggregate_numba.mean(group_idx, a)
+
+    with pytest.raises(NotImplementedError, match="float16"):
+        caller(GROUP_IDX, values)
 
 
 def test_layer1_layer2_share_the_driver():

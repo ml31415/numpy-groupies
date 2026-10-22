@@ -68,7 +68,9 @@ aggregate.var(group_idx, a, ddof=1)   # the argument the function has of its own
 aggregate.array(group_idx, a)         # a list of the arrays of the groups
 ```
 
-What the kernels gain by being lean they pay back in rules they do not question: they take flat 1d input with integer indices, the narrow integer sum always widens to `int64`, and `dtype`, `axis`, `order` and `out` are not their business. `aggregate()` is the entry point that knows all of that.
+What the kernels gain by being lean they pay back in rules they do not question: they take two flat 1-D arrays of one length, of integer indices and of numeric values, the narrow integer sum always widens to `int64`, and `dtype`, `axis`, `order` and `out` are not their business. `aggregate()` is the entry point that knows all of that - a multidimensional `group_idx` is form 4 below rather than an error, and a scalar `a` is repeated over every label.
+
+An input a kernel cannot take is refused before its driver runs, once per call and in the words of the same sentence: jitted code by the typing function of the kernel, which knows the shape and the dtype and answers with a `TypingError`, a python call by the body of the kernel, which answers with a `ValueError`. A `float16` value array is the one input the typing function cannot name at all - numba has no type for it, so both worlds answer with a `NotImplementedError`.
 
 ## Input forms in detail
 
