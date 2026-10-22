@@ -483,6 +483,11 @@ def _signature_of(func: Callable[..., Any], name: str) -> inspect.Signature:
             # the name of the function is in the entry point, not in a
             # parameter of it
             continue
+        if parameter.name == "cache":
+            # the cache is the policy of the compiled loop of a callable of
+            # the caller - a named function has a kernel of its own and no
+            # loop to cache
+            continue
         if parameter.kind is inspect.Parameter.VAR_KEYWORD:
             parameters.append(parameter)
             continue
