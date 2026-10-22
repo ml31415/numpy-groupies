@@ -71,7 +71,9 @@ from numpy_groupies.common import (
 )
 from numpy_groupies.registry import (
     FuncName,
+    bind_functions,
     funcs_collecting,
+    function_names,
     missing_impl_error,
 )
 from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
@@ -230,6 +232,30 @@ cummax = cumulative.cummax.plain.stub
 nancummax = cumulative.cummax.nan.stub
 cummin = cumulative.cummin.plain.stub
 nancummin = cumulative.cummin.nan.stub
+
+
+# The few functions the kernels do not cover - the percentile is the quantile
+# in percent, and the backend has it as an entry point of its own.
+_entry_points = bind_functions(aggregate, [name for name in function_names() if name not in globals()])
+
+
+def __getattr__(name: str) -> Any:
+    """The function of the backend, by its name.
+
+    The kernels are the attributes of this module - jitted code reaches them
+    here, and python code calls them like any other function.  The few
+    functions the kernels do not cover are the entry points of the backend.
+    """
+    try:
+        return _entry_points[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+
+
+def __dir__() -> list[str]:
+    """The names of the functions of the backend, among the module's own."""
+    return sorted(set(globals()) | set(_entry_points))
+
 
 __all__ = [
     "aggregate",

@@ -37,17 +37,17 @@ Exceptions are raised in most cases where `fill_value` and `dtype` are incompati
 
 ### The function in the name
 
-Every function is an attribute of the backend as well, with the function in the name instead of in the `func` argument. The attribute takes the arguments of its function - the `ddof` of the variance, the `q` of the quantile, the `dx` of the trapezoid, the `reverse` of the sort - and the rest like `aggregate` itself:
+Every function has a name of its own, with the function in the name instead of in the `func` argument. The name takes the arguments of its function - the `ddof` of the variance, the `q` of the quantile, the `dx` of the trapezoid, the `reverse` of the sort - and the rest like `aggregate` itself:
 
 ```python
-npg.aggregate.mean(group_idx, a)            # the same as func="mean"
-npg.aggregate.quantile(group_idx, a, q=0.9) # the same as func="quantile", q=0.9
+npg.mean(group_idx, a)                       # the best implementation available
+npg.quantile(group_idx, a, q=0.9)            # the same as func="quantile", q=0.9
 npg.aggregate_np.mean(group_idx, a)          # the numpy implementation
 npg.aggregate_py.mean(group_idx, a)          # the pure python one
 npg.aggregate_nb.mean(group_idx, a)          # the numba one
 ```
 
-The attributes of a backend are plain python functions. The kernels of the numba implementation - the compiled functions behind them, callable from jitted code and from python - are the attributes of its module, `numpy_groupies.aggregate_numba`, which is the one place jitted code can reach them (numba cannot reach the attributes of a python object):
+The functions of the package are plain python functions of their own name - `npg.mean(group_idx, a)` is the mean of every group, computed by the best implementation available. A backend is the module of its implementation, and carries the functions of the package as its attributes: `numpy_groupies.aggregate_numpy.mean(group_idx, a)`. The kernels of the numba implementation - the compiled functions behind them, callable from jitted code and from python - are the attributes of its module, `numpy_groupies.aggregate_numba`, which is the one place jitted code can reach them (numba cannot reach the attributes of a python object):
 
 ```python
 import numba as nb
@@ -316,7 +316,7 @@ Custom function producing strings (NumPy implementation; Numba cannot compile th
 ```python
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
-npg.aggregate_np(group_idx, a, func=lambda x: " or maybe ".join(str(item) for item in x),
+npg.aggregate_np.aggregate(group_idx, a, func=lambda x: " or maybe ".join(str(item) for item in x),
                  fill_value="", dtype=object)
 # ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```

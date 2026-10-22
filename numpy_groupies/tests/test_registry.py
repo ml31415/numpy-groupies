@@ -184,3 +184,19 @@ def test_the_list_of_the_functions_names_every_function_of_the_package():
     # the functions that are implemented by the numba backend alone are named
     # as well - they are functions of the package, too
     assert {"cumprod", "cummax", "cummin"} <= names
+
+
+def test_the_package_carries_the_functions_of_the_best_implementation():
+    """Every function of the package is a name of the package itself.
+
+    ``npg.mean(group_idx, a)`` is the mean of every group, computed by the
+    best implementation available - and every backend has a name of its own,
+    so that the implementation can be chosen explicitly.
+    """
+    import numpy_groupies as npg
+    from numpy_groupies import aggregate_np, aggregate_py
+
+    for name in funcs_common:
+        assert hasattr(npg, name), f"the package has no {name}"
+        assert hasattr(aggregate_np, name), f"the numpy backend has no {name}"
+        assert hasattr(aggregate_py, name), f"the pure python backend has no {name}"

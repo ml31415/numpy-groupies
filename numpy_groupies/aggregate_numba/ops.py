@@ -24,11 +24,11 @@ from numpy_groupies.aggregate_numba.compose import KernelHandle
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.common import (
-    DEFAULT_FILL_VALUE,
-    DefaultFillValue,
     resolve_fill_value,
 )
 from numpy_groupies.registry import (
+    DEFAULT_FILL_VALUE,
+    DefaultFillValue,
     FuncName,
     Registry,
     Resolved,

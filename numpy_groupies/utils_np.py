@@ -7,10 +7,8 @@ from typing import Any, Literal, TypeAlias, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.common import (
-    DefaultFillValue,
-)
 from numpy_groupies.registry import (
+    DefaultFillValue,
     forced_float_types,
     forced_real_float_types,
     get_aliasing,

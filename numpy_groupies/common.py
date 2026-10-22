@@ -13,18 +13,16 @@ the input of a call in ``numpy_groupies.validation``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from numpy_groupies.registry import (
-    FUNC_EXTRAS,
+    DEFAULT_FILL_VALUE,
     FuncName,
     default_fill_values,
     fill_value_key,
     forced_float_types,
     forced_real_float_types,
-    funcs_common,
-    funcs_no_separate_nan,
 )
 from numpy_groupies.validation import (
     check_filling_with_none,
@@ -38,10 +36,6 @@ if TYPE_CHECKING:
     from numpy_groupies.utils_np import AFillValue, AScalar
 
 nan = float("nan")  # nan is just this float
-
-
-# the marker for an argument without a default - None is a default of its own
-_NO_DEFAULT = object()
 
 
 aggregate_common_doc = """
@@ -142,16 +136,6 @@ aggregate_common_doc = """
 """
 
 
-class DefaultFillValue:
-    """Sentinel for ``fill_value``, asking for the function specific default."""
-
-    def __repr__(self) -> str:
-        return "DEFAULT_FILL_VALUE"
-
-
-DEFAULT_FILL_VALUE = DefaultFillValue()
-
-
 # The value an absent group gets, per aggregation function, following the
 # convention that it is whatever numpy returns for an empty slice - where the
 # output datatype can represent it (see ``resolve_fill_value``).
@@ -214,113 +198,3 @@ def resolve_fill_value(
         # and filling with nan+0j would make the backends disagree
         value = nan_of(dtype)
     return list(value) if isinstance(value, list) else value
-
-
-class Backend:
-    """The aggregate of one backend: callable like the function it replaces,
-    with the entry point of every function as its attribute.
-
-    ``backend(group_idx, a, func="mean")`` does what it always did, and
-    ``backend.mean(group_idx, a)`` is the same thing with the function in
-    the name - a plain python function of the backend, in every backend.  The
-    kernels of the numba implementation are the attributes of its module
-    (``numpy_groupies.aggregate_numba``), which is the one place jitted code
-    can reach them.
-    """
-
-    def __init__(
-        self,
-        func: Callable[..., Any],
-        functions: Mapping[str, Callable[..., Any]],
-        name: str = "",
-        doc: str | None = None,
-    ) -> None:
-        self._func = func
-        self._functions = dict(functions)
-        self._name = name
-        if doc is not None:
-            self.__doc__ = doc
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        return self._func(*args, **kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        # the attributes are the functions of the backend - they are looked
-        # up in the dict instead of being set one by one, so that the object
-        # stays small and the names cannot drift from the dict
-        try:
-            return self._functions[name]
-        except KeyError:
-            raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}") from None
-
-    def __dir__(self) -> list[str]:
-        return sorted(self._functions)
-
-    def __repr__(self) -> str:
-        return f"<{type(self).__name__} {self._name} with {len(self._functions)} functions>"
-
-
-def bind_functions(
-    func: Callable[..., Any],
-    names: Iterable[str],
-    doc: str | None = None,
-) -> dict[str, Callable[..., Any]]:
-    """One entry point per function name, with the function in the name.
-
-    The entry points call the backend's ``aggregate`` with the name of their
-    function, and each of them carries the arguments its function has of its
-    own - the ``ddof`` of the variance, the ``q`` of the quantile, the ``dx``
-    of the trapezoid, the ``reverse`` of the sort.
-    """
-    return {name: _bind_one(func, name, doc) for name in names}
-
-
-def _bind_one(func: Callable[..., Any], name: str, doc: str | None) -> Callable[..., Any]:
-    """The entry point of one function of a backend.
-
-    The signature is spelled out from the description of the function's own
-    arguments, so that the entry point of the quantile takes its ``q`` and
-    the entry point of the variance its ``ddof``.
-    """
-    arguments: list[tuple[str, str, Any]] = [
-        ("group_idx", "npt.NDArray[np.integer]", _NO_DEFAULT),
-        ("a", "AValue", _NO_DEFAULT),
-    ]
-    arguments += [(extra, annotation, default) for extra, annotation, default in FUNC_EXTRAS.get(name, ())]
-    arguments += [
-        ("size", "int | Sequence[int] | None", None),
-        ("fill_value", "AFillValue", DEFAULT_FILL_VALUE),
-        ("order", "RavelOrder", '"C"'),
-        ("dtype", "npt.DTypeLike | None", None),
-        ("axis", "int | None", None),
-    ]
-    signature = ", ".join(
-        n + ": " + ann + ("" if default is _NO_DEFAULT else f" = {default}") for n, ann, default in arguments
-    )
-    # the arguments of their own go to the call of the backend
-    own = "".join(f", {n}={n}" for n, _, _ in FUNC_EXTRAS.get(name, ()))
-    source = f"""
-def _entry_point({signature}):
-    return _func(group_idx, a, func=_name, size=size, fill_value=fill_value,
-                 order=order, dtype=dtype, axis=axis{own})
-"""
-    namespace: dict[str, Any] = {"_func": func, "_name": name, "DEFAULT_FILL_VALUE": DEFAULT_FILL_VALUE}
-    exec(source, namespace)  # noqa: S102 - the signature is spelled out in one place
-    entry_point: Callable[..., Any] = namespace["_entry_point"]
-    entry_point.__name__ = name
-    entry_point.__qualname__ = name
-    entry_point.__module__ = __name__
-    entry_point.__doc__ = doc or f"The {name} of every group - see the documentation of the package."
-    return entry_point
-
-
-def function_names() -> list[str]:
-    """The names of the functions of the package: the plain ones and the
-    nan-skipping ones beside them.
-
-    The four functions that do not skip nans have no nan variant of their
-    own, so they appear once.
-    """
-    names = list(funcs_common)
-    names += ["nan" + name for name in funcs_common if name not in funcs_no_separate_nan]
-    return names

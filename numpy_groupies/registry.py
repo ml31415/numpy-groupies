@@ -11,7 +11,7 @@ before numpy is known to be available, and has to work without it.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias, cast
 
 if TYPE_CHECKING:
@@ -420,3 +420,82 @@ def func_extras(name: str) -> tuple[tuple[str, str, Any], ...]:
     plain one, so the name is stripped of its prefix before the lookup.
     """
     return FUNC_EXTRAS.get(name.removeprefix("nan"), ())
+
+
+class DefaultFillValue:
+    """Sentinel for ``fill_value``, asking for the function specific default."""
+
+    def __repr__(self) -> str:
+        return "DEFAULT_FILL_VALUE"
+
+
+DEFAULT_FILL_VALUE = DefaultFillValue()
+
+# the marker for an argument without a default - None is a default of its own
+_NO_DEFAULT = object()
+
+
+def bind_functions(
+    func: Callable[..., Any],
+    names: Iterable[str],
+    doc: str | None = None,
+) -> dict[str, Callable[..., Any]]:
+    """One entry point per function name, with the function in the name.
+
+    The entry points call the backend's ``aggregate`` with the name of their
+    function, and each of them carries the arguments its function has of its
+    own - the ``ddof`` of the variance, the ``q`` of the quantile, the ``dx``
+    of the trapezoid, the ``reverse`` of the sort.
+    """
+    return {name: _bind_one(func, name, doc) for name in names}
+
+
+def _bind_one(func: Callable[..., Any], name: str, doc: str | None) -> Callable[..., Any]:
+    """The entry point of one function of a backend.
+
+    The signature is spelled out from the description of the function's own
+    arguments, so that the entry point of the quantile takes its ``q`` and
+    the entry point of the variance its ``ddof``.
+    """
+    arguments: list[tuple[str, str, Any]] = [
+        ("group_idx", "npt.NDArray[np.integer]", _NO_DEFAULT),
+        ("a", "AValue", _NO_DEFAULT),
+    ]
+    arguments += [(extra, annotation, default) for extra, annotation, default in FUNC_EXTRAS.get(name, ())]
+    arguments += [
+        ("size", "int | Sequence[int] | None", None),
+        ("fill_value", "AFillValue", DEFAULT_FILL_VALUE),
+        ("order", "RavelOrder", '"C"'),
+        ("dtype", "npt.DTypeLike | None", None),
+        ("axis", "int | None", None),
+    ]
+    signature = ", ".join(
+        n + ": " + ann + ("" if default is _NO_DEFAULT else f" = {default}") for n, ann, default in arguments
+    )
+    # the arguments of their own go to the call of the backend
+    own = "".join(f", {n}={n}" for n, _, _ in FUNC_EXTRAS.get(name, ()))
+    source = f"""
+def _entry_point({signature}):
+    return _func(group_idx, a, func=_name, size=size, fill_value=fill_value,
+                 order=order, dtype=dtype, axis=axis{own})
+"""
+    namespace: dict[str, Any] = {"_func": func, "_name": name, "DEFAULT_FILL_VALUE": DEFAULT_FILL_VALUE}
+    exec(source, namespace)  # noqa: S102 - the signature is spelled out in one place
+    entry_point: Callable[..., Any] = namespace["_entry_point"]
+    entry_point.__name__ = name
+    entry_point.__qualname__ = name
+    entry_point.__module__ = __name__
+    entry_point.__doc__ = doc or f"The {name} of every group - see the documentation of the package."
+    return entry_point
+
+
+def function_names() -> list[str]:
+    """The names of the functions of the package: the plain ones and the
+    nan-skipping ones beside them.
+
+    The four functions that do not skip nans have no nan variant of their
+    own, so they appear once.
+    """
+    names = list(funcs_common)
+    names += ["nan" + name for name in funcs_common if name not in funcs_no_separate_nan]
+    return names
