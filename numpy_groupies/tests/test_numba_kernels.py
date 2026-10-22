@@ -2,9 +2,10 @@
 
 The kernels share their compiled drivers with the python-level
 ``aggregate()``, so value-parity with the (elsewhere exhaustively tested)
-layer-2 results is the contract here; the explicitly documented deviations
-(njit-only dtype approximations, fill defaults, pure-python refusal) get
-their own tests.
+layer-2 results is the contract here; every kernel is therefore called from
+jitted code *and* from python, which is the other way into the same driver.
+The explicitly documented deviations (the dtype approximations of the kernels,
+the fill defaults, the input checks of the python call) get their own tests.
 """
 
 from importlib import import_module
@@ -22,8 +23,9 @@ FLOAT_A = np.array([3.0, 1.0, np.nan, 2.0, 5.0, 4.0])
 INT_A = np.array([3, 1, 7, 2, 5, 4], dtype=np.int64)
 BOOL_A = np.array([True, False, True, True, False, True])
 
-# (kernel name, kwargs, values) - the kernels run inside a jitted caller and
-# are compared against the python-level aggregate() of the same name
+# (kernel name, kwargs, values) - the kernels run inside a jitted caller and as a
+# plain python call, and both are compared against the python-level
+# aggregate() of the same name
 _FLOAT_OPS = [
     ("sum", {}),
     ("nansum", {}),
@@ -98,21 +100,25 @@ _BOOL_OPS = [
 ]
 
 
-def _kernel_result(name, values, **kwargs):
-    """Call the kernel of ``name`` from jitted code (fill default via None).
+def _kernel_arguments(name, kwargs):
+    """The argument the function of ``name`` has of its own, as a tuple.
 
-    Every kernel carries the signature of its function, so the arguments the
-    function has of its own are passed by their name.
+    Every kernel carries the signature of its function, so the argument it has
+    of its own comes first, the size and the fill value after it.  It is always
+    passed, with its default if the test does not ask for another one.
     """
-    stub = getattr(aggregate_numba, name)
-    # the argument the function has of its own comes first, the size and the
-    # fill value after it - the signature of the kernel.  It is always
-    # passed, with its default if the test does not ask for another one
     extras = func_extras(name)
     own = next(iter(kwargs.values()), None) if extras else None
     if own is None and extras:
         own = extras[0][2]
-    arguments = "" if own is None else f", {own!r}"
+    return () if own is None else (own,)
+
+
+def _kernel_result(name, values, **kwargs):
+    """Call the kernel of ``name`` from jitted code (fill default via None)."""
+    stub = getattr(aggregate_numba, name)
+    own = _kernel_arguments(name, kwargs)
+    arguments = "" if not own else f", {own[0]!r}"
     source = f"""
 def _caller(group_idx, a, size, fill_value):
     return _stub(group_idx, a{arguments}, size, fill_value)
@@ -123,6 +129,15 @@ def _caller(group_idx, a, size, fill_value):
     return caller(GROUP_IDX, values, -1, None)
 
 
+def _python_kernel_result(name, values, **kwargs):
+    """Call the kernel of ``name`` from python - one argument per position.
+
+    The other way into the very same kernel: the same signature, the same
+    compiled driver, only no jitted caller around it.
+    """
+    return getattr(aggregate_numba, name)(GROUP_IDX, values, *_kernel_arguments(name, kwargs), -1, None)
+
+
 def _layer2_result(name, values, **kwargs):
     """The python-level aggregate of the same function and the same arguments."""
     return aggregate_numba.aggregate(GROUP_IDX, values, func=name, **kwargs)
@@ -131,22 +146,22 @@ def _layer2_result(name, values, **kwargs):
 @pytest.mark.parametrize("name,kwargs", _FLOAT_OPS)
 def test_float_ops_match_layer2(name, kwargs):
     expected = _layer2_result(name, FLOAT_A, **kwargs)
-    result = _kernel_result(name, FLOAT_A, **kwargs)
-    np.testing.assert_allclose(result, expected, equal_nan=True)
+    np.testing.assert_allclose(_kernel_result(name, FLOAT_A, **kwargs), expected, equal_nan=True)
+    np.testing.assert_allclose(_python_kernel_result(name, FLOAT_A, **kwargs), expected, equal_nan=True)
 
 
 @pytest.mark.parametrize("name,kwargs", _INT_OPS)
 def test_int_ops_match_layer2(name, kwargs):
     expected = _layer2_result(name, INT_A, **kwargs)
-    result = _kernel_result(name, INT_A, **kwargs)
-    np.testing.assert_allclose(result, expected)
+    np.testing.assert_allclose(_kernel_result(name, INT_A, **kwargs), expected)
+    np.testing.assert_allclose(_python_kernel_result(name, INT_A, **kwargs), expected)
 
 
 @pytest.mark.parametrize("name,kwargs", _BOOL_OPS)
 def test_bool_ops_match_layer2(name, kwargs):
     expected = _layer2_result(name, BOOL_A, **kwargs)
-    result = _kernel_result(name, BOOL_A, **kwargs)
-    np.testing.assert_array_equal(result, expected)
+    np.testing.assert_array_equal(_kernel_result(name, BOOL_A, **kwargs), expected)
+    np.testing.assert_array_equal(_python_kernel_result(name, BOOL_A, **kwargs), expected)
 
 
 def test_collecting_kernel_matches_layer2():
@@ -157,13 +172,14 @@ def test_collecting_kernel_matches_layer2():
     object array, and the two hold the same sequences.
     """
     expected = aggregate_numba.aggregate(GROUP_IDX, FLOAT_A, func="array")
-    result = _kernel_result("array", FLOAT_A)
-    assert len(result) == len(expected)
-    for got, other in zip(result, expected):
-        np.testing.assert_array_equal(got, other)
-        assert got.dtype == other.dtype
-    # the group without values holds an empty sequence
-    assert len(result[2]) == 0
+    # the jitted and the python call of the kernel hand out the same sequences
+    for result in (_kernel_result("array", FLOAT_A), _python_kernel_result("array", FLOAT_A)):
+        assert len(result) == len(expected)
+        for got, other in zip(result, expected):
+            np.testing.assert_array_equal(got, other)
+            assert got.dtype == other.dtype
+        # the group without values holds an empty sequence
+        assert len(result[2]) == 0
 
 
 def test_collecting_kernel_refuses_a_fill_value():
@@ -195,9 +211,49 @@ def test_njit_composition():
     np.testing.assert_allclose(result, [-1.0, 1.0, -1.0, 1.0])
 
 
-def test_pure_python_call_raises():
-    with pytest.raises(NotImplementedError, match="jitted"):
-        aggregate_numba.mean(GROUP_IDX, FLOAT_A)
+def test_pure_python_call_refuses_a_fill_value_as_jitted_code_does():
+    """The refusal of the collecting kernel is the same sentence in both worlds.
+
+    Jitted code is answered with a typing error, a python call with the plain
+    ValueError of its own world - but with the words of the same complaint.
+    """
+    with pytest.raises(ValueError, match="has no fill_value"):
+        aggregate_numba.array(GROUP_IDX, FLOAT_A, -1, 7.0)
+
+
+@pytest.mark.parametrize(
+    ("group_idx", "values", "message"),
+    [
+        (np.tile(GROUP_IDX, (2, 1)), FLOAT_A, "flat one-dimensional"),
+        (GROUP_IDX, np.tile(FLOAT_A, (2, 1)), "flat one-dimensional"),
+        (GROUP_IDX.astype(np.float64), FLOAT_A, "integer dtype"),
+        (GROUP_IDX, FLOAT_A.astype(np.str_), "numeric values"),
+    ],
+)
+def test_pure_python_call_checks_what_jitted_code_cannot(group_idx, values, message):
+    """The python call checks the input the jitted caller has to guarantee.
+
+    The drivers are written for flat 1d numeric input with integer indices and
+    do not look at what they are given: a multidimensional ``group_idx`` they
+    even answer with a result.  Stricter on one side only is the way round -
+    nothing a jitted caller could get away with is refused here.
+    """
+    with pytest.raises(ValueError, match=message):
+        aggregate_numba.mean(group_idx, values)
+
+
+def test_the_python_call_answers_in_the_dtype_of_the_jitted_one():
+    """The python call resolves the dtype as the jitted one does.
+
+    The values are compared against the python-level aggregate() by the tests
+    above; what is left to name is the dtype they arrive in, which the kernel
+    takes from its own rule and not from the length-dependent one of
+    ``aggregate()``.
+    """
+    for name in ("sum", "prod", "mean", "var", "std", "min", "first", "len", "all", "cumsum", "nunique", "median"):
+        jitted = np.asarray(_kernel_result(name, INT_A))
+        python = np.asarray(_python_kernel_result(name, INT_A))
+        assert jitted.dtype == python.dtype, name
 
 
 def test_the_moments_answer_from_njit_like_the_reference():

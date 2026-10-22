@@ -135,8 +135,8 @@ array = build_custom_kernel(
     post=blocks_to_object_array,
     assembles=True,
     # the driver hands out the values of the groups and cannot place a fill
-    # value in an absent one - the njit-callable stub says so instead of
-    # ignoring the argument
+    # value in an absent one - the kernel says so instead of ignoring the
+    # argument
     reject_fill=True,
     doc="The values of every group, one sequence per group",
 )

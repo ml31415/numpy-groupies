@@ -27,14 +27,16 @@ forced_fill) -> state``
     then skip their untouched bookkeeping entirely)
 
 The factory assembles these into ONE compiled driver per operation that owns
-the group loop, bounds checks and pass structure, and exposes it as a plain
-function callable from jitted code (see the ``kernels`` subpackage).  The
-python-level ``aggregate()`` calls the same driver with fully resolved
-arguments, so there is exactly one compiled artifact per operation.  Unused
+the group loop, bounds checks and pass structure, and exposes it as a function
+callable from jitted code and from python alike (the kernels of
+``numpy_groupies.aggregate_numba``).  The python-level ``aggregate()`` calls
+the same driver with fully resolved arguments, so there is exactly one
+compiled artifact per operation.  Unused
 building blocks are replaced by synthesized no-ops - the driver always runs
 every stage, and LLVM folds the empty calls away.
 """
 
+import functools
 from collections.abc import Callable
 from typing import Any, NamedTuple, cast
 
@@ -197,6 +199,51 @@ def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar
     return fill_default
 
 
+# the input dtypes a compiled driver of this package can be given at all: the
+# numeric ones (the complex drivers of the reductions, the median and the
+# quantile included) - datetime, timedelta, text and structured dtypes make
+# numba refuse the call, which is a harder error to read than this one
+_NUMERIC_KINDS = "iufcb"
+
+
+def _kernel_inputs(group_idx: Any, a: Any) -> tuple[Any, Any]:
+    """The two arrays of a python call of a kernel, contiguous and checked.
+
+    What jitted code cannot be asked, the python call asks: flat one-
+    dimensional input, an integer ``group_idx`` and numeric values.  The
+    drivers are written for exactly that and trust it: something else is
+    answered with a numba typing error, and a multidimensional ``group_idx``
+    even with a result that is quietly wrong.  ``aggregate()`` is the entry
+    point that knows an axis and an indexed ``group_idx``.
+    """
+    group_idx = np.ascontiguousarray(group_idx)
+    a = np.ascontiguousarray(a)
+    if group_idx.ndim != 1 or a.ndim != 1:
+        raise ValueError(
+            "the kernels take flat one-dimensional input - use aggregate() for an axis or an indexed group_idx"
+        )
+    if group_idx.dtype.kind not in "iu":
+        raise ValueError(f"group_idx must be of an integer dtype, not {group_idx.dtype}")
+    if a.dtype.kind not in _NUMERIC_KINDS:
+        raise ValueError(f"the kernels take numeric values, not {a.dtype}")
+    return group_idx, a
+
+
+@functools.cache
+def _array_type(dtype: np.dtype) -> nb.types.Type:
+    """The numba type of a contiguous 1d array of *dtype*.
+
+    The dtype rules of the kernels are written against the numba type an
+    overload builder is handed, so the python call of a kernel reads them
+    through this type - the two calls of one kernel cannot disagree about the
+    output dtype that way.  The rules look at nothing but the dtype, so one
+    type per dtype is enough - and the cache is worth having, since ``typeof``
+    of an array costs a dozen microseconds, more than the whole call of a
+    small kernel.
+    """
+    return cast("nb.types.Type", nb.typeof(np.empty(0, dtype=dtype)))
+
+
 @njit_stable
 def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
     """The resolved output size of one aggregation: one past the largest
@@ -231,23 +278,29 @@ def _make_stub(
     extras: Extra = (),
     reject_fill: bool = False,
 ) -> Callable[..., Any]:
-    """Create the njit-callable ``aggregate_*`` function of one variant.
+    """Create the kernel of one variant: the function of the name of its
+    operation (``mean``, ``nanmean``) with the signature of that operation.
 
-    The stub is a plain python function: calling it from python raises, from
-    jitted code the ``@overload`` resolves the dtype rule at compile time and
-    forwards to the compiled driver.  ``fill_value=None`` asks for the
-    function default, which - like the python-level DEFAULT_FILL_VALUE -
-    depends on the output dtype (nan only fits inexact results); the
-    resolution happens in the overload builder, the choice itself is a
-    runtime branch on the typed-none argument.
+    The stub is one function with two ways in, and both of them end at the
+    same compiled driver with the same arguments: from python it resolves the
+    dtypes itself and calls the driver, from jitted code the ``@overload``
+    resolves the dtype rule at compile time and returns the call.  The python
+    path therefore answers exactly what the jitted one does - the same
+    (approximated, 1d-only) dtype rules of the kernels and nothing of the
+    validation machinery of ``aggregate()``.
+
+    ``fill_value=None`` asks for the function default, which - like the
+    python-level DEFAULT_FILL_VALUE - depends on the output dtype (nan only
+    fits inexact results); each path resolves it for itself, the jitted one
+    in the overload builder, the python one in its own body.
 
     The signature is the one of the operation: the arguments it has of its own
     (the ``ddof`` of the variance, the ``q`` of the quantile, the ``dx`` of
     the trapezoid, the ``reverse`` of the sort) come first, the ``size`` and
     the ``fill_value`` last.  Numba compares the typing function of an
     overload with the implementation it returns - argument names and
-    annotations included - so the three functions that carry the signature
-    are spelled out from one description of it.
+    annotations included - so the three functions that carry the signature are
+    spelled out from one description of it.
     """
 
     # the arguments of the signature, in order: the two that every operation
@@ -269,23 +322,28 @@ def _make_stub(
         slot_values[slot] if slot_values[slot] else repr(default) for slot, default in (("ddof", 0), ("q", 0.5))
     )
     # the driver of this operation cannot place a fill value - saying so
-    # beats ignoring the argument silently
-    fill_check = (
-        "        if fill_value is not None:\n"
-        "            raise nb.TypingError(\n"
-        '                f"aggregate_' + stub_name + ' has no fill_value - an absent group holds an empty sequence"\n'
-        "            )\n"
-        if reject_fill
-        else ""
+    # beats ignoring the argument silently.  Both calls of the kernel say it
+    # in the words of the same sentence, each in the error of its own world.
+    refusal = f"The {stub_name} kernel has no fill_value - an absent group holds an empty sequence"
+    python_fill_check = "    if fill_value is not None:\n        raise ValueError(_refusal)\n" if reject_fill else ""
+    typing_fill_check = (
+        "        if fill_value is not None:\n            raise nb.TypingError(_refusal)\n" if reject_fill else ""
     )
 
-    # the three functions with the one signature: the stub that raises in
-    # python, the typing function of the overload and the implementation it
-    # returns - the latter two are built from one source, so they cannot
-    # drift apart
+    # the three functions with the one signature: the stub, the typing function
+    # of the overload and the implementation it returns - built from one
+    # source, so that they cannot drift apart.  The stub is the python entry
+    # point and does by hand, once per call, what the overload does by rule
+    # once per compiled signature: the two dtype resolutions are the same
+    # rule, read from the numba type of the values on one side and from the
+    # numpy dtype behind ``_array_type`` on the other.
     source = f"""
 def _stub({signature}):
-    raise NotImplementedError("only callable from jitted code - use aggregate() otherwise")
+    group_idx, a = _kernel_inputs(group_idx, a)
+{python_fill_check}    out_dtype, aux_dtype = _rule(_array_type(a.dtype))
+    if fill_value is None:
+        fill_value = _resolve_default_fill(_fill_default, out_dtype)
+    return _driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, {driver_args})
 
 
 def _typing({signature}):
@@ -294,7 +352,7 @@ def _typing({signature}):
     default_fill = _resolve_default_fill(_fill_default, out_dtype)
 
     def _impl({signature}):
-{fill_check}        if fill_value is None:
+{typing_fill_check}        if fill_value is None:
             return _driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, {driver_args})
         return _driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, {driver_args})
 
@@ -307,6 +365,9 @@ def _typing({signature}):
         "_fill_default": fill_default,
         "_driver": driver_getter(),
         "_resolve_default_fill": _resolve_default_fill,
+        "_kernel_inputs": _kernel_inputs,
+        "_array_type": _array_type,
+        "_refusal": refusal,
     }
     # the signature is the one of the operation, spelled out in one place
     exec(source, namespace)  # noqa: S102
@@ -323,7 +384,10 @@ def _typing({signature}):
     typing.__name__ = f"_typing_{stub_name}"
     typing.__qualname__ = f"_typing_{stub_name}"
     typing.__module__ = __name__
-    stub.__doc__ = f"{doc or f'Njit-callable {stub_name} kernel'} - see ``numpy_groupies.aggregate_numba.kernels``."
+    stub.__doc__ = (
+        f"{doc or f'The {stub_name} of every group'} - the compiled kernel, "
+        "callable from jitted code and from python with the same arguments."
+    )
 
     # no jit_options cache here: the impl shim is compiled by numba's
     # overload machinery OUTSIDE the revisioned ``njit_stable`` namespace,
@@ -344,8 +408,9 @@ def _typing({signature}):
 class KernelHandle(NamedTuple):
     """The compiled artifact of one operation variant.
 
-    ``stub``    the njit-callable function, exported via the ``kernels``
-                module
+    ``stub``    the kernel of the operation: the function it is exported
+                under, by name, from the package - the same call from python
+                and from jitted code
     ``driver``  the raw compiled driver - the python-level ``aggregate()``
                 calls it with fully resolved arguments
     ``forced_fill`` the seeding default of the output (or None when the
@@ -634,7 +699,8 @@ def build_custom_kernel(
     counting sort before selecting, sort groups it before ordering).
 
     ``reject_fill`` says that the driver cannot place a fill value: the
-    njit-callable stub then refuses one instead of ignoring it silently.
+    kernel then refuses one instead of ignoring it silently - a typing error
+    to jitted code, a ValueError to python.
     """
 
     def build(nan_variant: bool) -> KernelHandle:
