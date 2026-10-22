@@ -22,10 +22,12 @@ and - with the same arguments and the same result - from python::
 Both ways reach the same compiled driver: the jitted one resolves the output
 dtype from the numba type of the values at compile time, the python call from
 the dtype of the array it is given - the same rule read from the two sides of
-numba, so the two cannot answer with different dtypes.  The python call is not
-``aggregate()``: it holds none of its validation machinery and asks only what
-jitted code cannot be asked to guarantee (flat 1d input, integer indices and
-numeric values).
+numba, so the two cannot answer with different dtypes.  Both of them refuse
+what the driver cannot read: the shapes are asked at compile time, the dtypes
+of the two arrays in the python call.  That refusal is all the checking a
+kernel does - it is not ``aggregate()`` and holds none of its validation
+machinery: ``group_idx`` has to be flat, one-dimensional and of an integer
+dtype, the values flat, one-dimensional and numeric.
 
 Every kernel carries the signature of its function: ``(group_idx, a,
 size=-1, fill_value=<default>)``, and the argument the function has of its own

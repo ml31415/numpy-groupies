@@ -199,6 +199,12 @@ def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar
     return fill_default
 
 
+# the input the drivers of this package are written for: two flat 1d arrays.
+# Jitted code is answered by the overload of the kernel, a python call by its
+# body, and both of them say this sentence - the python one with the advice
+# that only a python caller can follow
+_FLAT_INPUT = "the kernels take flat one-dimensional input"
+
 # the input dtypes a compiled driver of this package can be given at all: the
 # numeric ones (the complex drivers of the reductions, the median and the
 # quantile included) - datetime, timedelta, text and structured dtypes make
@@ -209,19 +215,17 @@ _NUMERIC_KINDS = "iufcb"
 def _kernel_inputs(group_idx: Any, a: Any) -> tuple[Any, Any]:
     """The two arrays of a python call of a kernel, contiguous and checked.
 
-    What jitted code cannot be asked, the python call asks: flat one-
-    dimensional input, an integer ``group_idx`` and numeric values.  The
-    drivers are written for exactly that and trust it: something else is
-    answered with a numba typing error, and a multidimensional ``group_idx``
-    even with a result that is quietly wrong.  ``aggregate()`` is the entry
-    point that knows an axis and an indexed ``group_idx``.
+    The kernel refuses multidimensional input to jitted code in the typing
+    function of its overload (see ``_make_stub``) - a python call never reaches
+    that one, so its body asks the same question here, and adds the integer
+    ``group_idx`` and the numeric values that the drivers trust without
+    looking at them.  ``aggregate()`` is the entry point that knows an axis and
+    an indexed ``group_idx``.
     """
     group_idx = np.ascontiguousarray(group_idx)
     a = np.ascontiguousarray(a)
     if group_idx.ndim != 1 or a.ndim != 1:
-        raise ValueError(
-            "the kernels take flat one-dimensional input - use aggregate() for an axis or an indexed group_idx"
-        )
+        raise ValueError(f"{_FLAT_INPUT} - use aggregate() for an axis or an indexed group_idx")
     if group_idx.dtype.kind not in "iu":
         raise ValueError(f"group_idx must be of an integer dtype, not {group_idx.dtype}")
     if a.dtype.kind not in _NUMERIC_KINDS:
@@ -284,10 +288,10 @@ def _make_stub(
     The stub is one function with two ways in, and both of them end at the
     same compiled driver with the same arguments: from python it resolves the
     dtypes itself and calls the driver, from jitted code the ``@overload``
-    resolves the dtype rule at compile time and returns the call.  The python
-    path therefore answers exactly what the jitted one does - the same
-    (approximated, 1d-only) dtype rules of the kernels and nothing of the
-    validation machinery of ``aggregate()``.
+    resolves the dtype rule at compile time, refuses anything but flat 1d input
+    and returns the call.  The python path therefore answers exactly what the
+    jitted one does - the same (approximated, 1d-only) dtype rules of the
+    kernels and nothing of the validation machinery of ``aggregate()``.
 
     ``fill_value=None`` asks for the function default, which - like the
     python-level DEFAULT_FILL_VALUE - depends on the output dtype (nan only
@@ -347,6 +351,10 @@ def _stub({signature}):
 
 
 def _typing({signature}):
+    if getattr(group_idx, "ndim", -1) != 1 or getattr(a, "ndim", -1) != 1:
+        # the drivers read one label per value: a multidimensional group_idx
+        # they walk by row and answer with a result that is quietly wrong
+        raise nb.TypingError(_flat_input)
     a_type = a
     out_dtype, aux_dtype = _rule(a_type)
     default_fill = _resolve_default_fill(_fill_default, out_dtype)
@@ -367,6 +375,7 @@ def _typing({signature}):
         "_resolve_default_fill": _resolve_default_fill,
         "_kernel_inputs": _kernel_inputs,
         "_array_type": _array_type,
+        "_flat_input": _FLAT_INPUT,
         "_refusal": refusal,
     }
     # the signature is the one of the operation, spelled out in one place

@@ -230,16 +230,43 @@ def test_pure_python_call_refuses_a_fill_value_as_jitted_code_does():
         (GROUP_IDX, FLOAT_A.astype(np.str_), "numeric values"),
     ],
 )
-def test_pure_python_call_checks_what_jitted_code_cannot(group_idx, values, message):
-    """The python call checks the input the jitted caller has to guarantee.
+def test_a_python_call_names_the_input_the_driver_cannot_take(group_idx, values, message):
+    """The python call says what the drivers were written not to expect.
 
-    The drivers are written for flat 1d numeric input with integer indices and
-    do not look at what they are given: a multidimensional ``group_idx`` they
-    even answer with a result.  Stricter on one side only is the way round -
-    nothing a jitted caller could get away with is refused here.
+    Jitted code is answered for the one-dimensional case by the typing function
+    of the kernel, which knows the shapes at compile time; the dtype of the
+    indices and of the values is what only the python call can name in one
+    sentence - the driver would answer both with a numba error it did not
+    write.
     """
     with pytest.raises(ValueError, match=message):
         aggregate_numba.mean(group_idx, values)
+
+
+@pytest.mark.parametrize(
+    ("group_idx", "values"),
+    [
+        (np.tile(GROUP_IDX, (2, 1)), FLOAT_A),
+        (np.tile(GROUP_IDX, (1, 2)), FLOAT_A),
+        (GROUP_IDX, np.tile(FLOAT_A, (2, 1))),
+    ],
+)
+def test_multidimensional_input_is_refused_from_jitted_code(group_idx, values):
+    """A kernel refuses what its driver cannot read, jitted code included.
+
+    The driver takes one label per value, so a two-dimensional ``group_idx`` it
+    walks by row: a one-column one it answers with a quietly wrong result (the
+    labels of one dimension happen to index as well as the flat ones), any
+    other shape with the truth value of an array.  The typing function of the
+    kernel therefore asks the shapes, which are known at compile time.
+    """
+
+    @nb.njit
+    def caller(group_idx, a):
+        return aggregate_numba.sum(group_idx, a)
+
+    with pytest.raises(nb.TypingError, match="flat one-dimensional"):
+        caller(group_idx, values)
 
 
 def test_the_python_call_answers_in_the_dtype_of_the_jitted_one():
