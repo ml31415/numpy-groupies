@@ -21,6 +21,8 @@ nan = float("nan")  # nan is just this float
 
 
 funcs_common = [
+    "sum",
+    "prod",
     "first",
     "last",
     "len",
@@ -34,12 +36,16 @@ funcs_common = [
     "std",
     "skew",
     "kurt",
+    "all",
+    "any",
     "allnan",
     "anynan",
     "max",
     "min",
     "argmax",
     "argmin",
+    "sort",
+    "array",
     "sumofsquares",
     "cumsum",
     "cumprod",

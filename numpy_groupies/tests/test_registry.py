@@ -1,6 +1,6 @@
 """The vocabulary of the package: the names, the aliases and the registry.
 
-``common`` holds what every implementation shares - and it must not import
+``registry`` holds what every implementation shares - and it must not import
 numpy, because the pure python implementation is loaded before numpy is
 known to be available.
 """
@@ -18,6 +18,7 @@ from numpy_groupies.registry import (
     aliasing_py,
     build_dispatch,
     custom_callable,
+    funcs_common,
     resolve_name,
 )
 from numpy_groupies.utils_np import aliasing
@@ -151,3 +152,35 @@ def test_the_functions_that_hold_a_none_match_the_registry():
 
     assert validation.NONE_RESULT_FUNCTIONS == frozenset({"array"})
     assert frozenset(common.default_fill_values) - validation.NONE_RESULT_FUNCTIONS
+
+
+def test_every_function_of_the_package_has_an_entry_point_on_every_backend():
+    """Every function is reachable by its name, on every backend.
+
+    The entry points of a backend are the functions of ``funcs_common`` and
+    their nan-variants - so the list has to name every function of the
+    package, or a function is reachable only through the ``func`` argument.
+    """
+    from numpy_groupies import aggregate_nb, aggregate_np, aggregate_py
+    from numpy_groupies.aggregate_numpy.ops import _op_dict
+
+    for backend in (aggregate_np, aggregate_nb, aggregate_py):
+        for name in _op_dict:
+            assert hasattr(backend, name), f"{backend!r} has no entry point for {name}"
+
+
+def test_the_list_of_the_functions_names_every_function_of_the_package():
+    """The list the entry points are built from names every function.
+
+    ``funcs_common`` is the list of the functions of the package - the
+    nan-variants are added to it, so a function is named by the one it skips
+    the nans of.
+    """
+    from numpy_groupies.aggregate_numpy.ops import _op_dict
+
+    names = set(funcs_common)
+    for name in _op_dict:
+        assert name in names or name.removeprefix("nan") in names, name
+    # the functions that are implemented by the numba backend alone are named
+    # as well - they are functions of the package, too
+    assert {"cumprod", "cummax", "cummin"} <= names
