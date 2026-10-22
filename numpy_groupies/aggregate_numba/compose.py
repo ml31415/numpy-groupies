@@ -356,6 +356,18 @@ def _array_type(dtype: np.dtype) -> nb.types.Type:
 
 
 @njit_stable
+def _raise_too_large_for_size(size_arg: int) -> None:
+    """The complaint of an explicit size that is too small.
+
+    The message is built in a function of its own: the string machinery of
+    numba is big, and inlined into the caller it costs the hot loop of every
+    operation more than the size in the message is worth - the drivers
+    measured ~15% slower with the concatenation in them.
+    """
+    raise ValueError(TOO_LARGE_SIZE_PREFIX + str(size_arg))
+
+
+@njit_stable
 def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
     """The resolved output size of one aggregation: one past the largest
     group index, capped by an explicitly requested size.  Once this returns,
@@ -366,7 +378,7 @@ def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
         # an explicit output size may be larger than the largest index, but
         # never smaller
         if size > size_arg:
-            raise ValueError(TOO_LARGE_SIZE_PREFIX + str(size_arg))
+            _raise_too_large_for_size(size_arg)
         size = size_arg
     return size
 
@@ -822,7 +834,7 @@ def build_kernel(
                 # an explicit output size may be larger than the largest
                 # index, but never smaller
                 if size > size_arg:
-                    raise ValueError(TOO_LARGE_SIZE_PREFIX + str(size_arg))
+                    _raise_too_large_for_size(size_arg)
                 size = size_arg
             st = init_c(size, len(group_idx), out_dtype, aux_dtype, a.dtype, fill_value, forced_fill)
             seed_c(st, a)

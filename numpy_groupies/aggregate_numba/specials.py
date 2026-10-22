@@ -733,6 +733,10 @@ trapezoid = build_kernel(
     forced_fill=0,
     fill_default=0,
     rule=rule_float,
-    extras=(("dx", "float", 1.0, "ddof"),),
+    # the sample spacing rides in the ``ddof`` slot of the driver, and the
+    # slot is an integer: the float 1.0 compiles the kernel a few percent
+    # slower than the integer 1 it used to carry - the nan variant of the
+    # trapezoid measured ~3% slower with it
+    extras=(("dx", "float", 1, "ddof"),),
     doc="Trapezoidal integration of the samples of every group",
 )

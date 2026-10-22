@@ -424,6 +424,10 @@ def _dx_argument(op: Callable[..., AResult]) -> Callable[..., AResult]:
     """Expose the trapezoid's sample spacing under its public name ``dx``.
 
     The kernels receive it in the position otherwise used for ``ddof``.
+
+    The default is the integer 1 and not the float 1.0: the slot of the
+    driver is an integer, and a float in it compiles the kernel of the
+    trapezoid a few percent slower than the integer it used to carry.
     """
 
     def trapezoid_op(
@@ -434,7 +438,7 @@ def _dx_argument(op: Callable[..., AResult]) -> Callable[..., AResult]:
         order: RavelOrder = "C",
         dtype: npt.DTypeLike | None = None,
         axis: int | None = None,
-        dx: float = 1.0,
+        dx: float = 1,
     ) -> AResult:
         return op(group_idx, a, size, fill_value, order, dtype, axis, dx)
 
