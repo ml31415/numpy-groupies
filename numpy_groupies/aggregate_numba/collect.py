@@ -21,7 +21,9 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.aggregate_numpy.collect import blocks_to_object_array
-from numpy_groupies.common import FuncName
+from numpy_groupies.registry import (
+    FuncName,
+)
 from numpy_groupies.utils_np import AFillValue, AValue, RavelOrder
 
 # the dtypes the compiled driver can place - the numeric ones the drivers of

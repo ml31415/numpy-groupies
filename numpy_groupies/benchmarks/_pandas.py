@@ -10,9 +10,11 @@ from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
+    aggregate_common_doc,
+)
+from numpy_groupies.registry import (
     Registry,
     Resolved,
-    aggregate_common_doc,
     custom_callable,
     funcs_no_separate_nan,
 )

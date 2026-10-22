@@ -13,10 +13,15 @@ before numpy is known to be available, and has to work without it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
+from numpy_groupies.registry import complex_real_result, fill_value_key, fixed_result_types
+
 if TYPE_CHECKING:
-    from numpy_groupies.utils_np import AFillValue
+    import numpy.typing as npt
+
+    from numpy_groupies.utils_np import AFillValue, AScalar
 
 # ---------------------------------------------------------------------------
 # the words of the complaints - one spelling for every path of the package
@@ -249,3 +254,38 @@ def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
             int(cast("SupportsInt", fill_value))
         except ValueError:
             raise ValueError(FILL_NOT_INTEGER)
+
+
+def check_fixed_fill_value(func: str | Callable[..., AScalar], fill_value: AFillValue) -> None:
+    """Refuse a ``fill_value`` that the result type of ``func`` cannot hold, for
+    those functions whose result type the function itself settles.
+
+    This is the rule ``check_fill_value`` tells against a numpy dtype, told
+    without one: a boolean answer is filled with 0 or 1 - a nan would pass for
+    ``bool``, which is why the two values are asked for themselves - and a count
+    or a position with whatever turns into an integer, which a nan does not.
+    """
+    target = fixed_result_types.get(fill_value_key(func))
+    if target is not None:
+        check_fill_value_for_type(fill_value, target)
+
+
+def check_complex_dtype(
+    a_dtype: npt.DTypeLike, dtype: npt.DTypeLike | None, func_str: str | Callable[..., AScalar]
+) -> None:
+    """Complain when a non-complex ``dtype`` is requested for complex input.
+
+    ``resolve_output_dtype`` applies this for the backends that honour ``dtype``;
+    the pure python implementation needs it on its own, since python numbers
+    carry no dtype and it would otherwise silently ignore the request.
+    """
+    if (
+        dtype is not None
+        and is_complex_dtype(a_dtype)
+        and not is_complex_dtype(dtype)
+        and func_str not in complex_real_result
+    ):
+        raise TypeError(
+            f"function {func_str} cannot aggregate complex values into the non-complex dtype "
+            f"{dtype} - pass a complex dtype to keep the imaginary part"
+        )

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.common import FuncName
+    from numpy_groupies.registry import FuncName
     from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
 
     class Aggregate(Protocol):

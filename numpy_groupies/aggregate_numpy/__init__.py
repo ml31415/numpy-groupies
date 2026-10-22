@@ -10,7 +10,13 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.aggregate_numpy.collect import blocks_to_object_array
 from numpy_groupies.aggregate_numpy.steps import step_count, step_indices
-from numpy_groupies.common import DEFAULT_FILL_VALUE, FuncName, aggregate_common_doc
+from numpy_groupies.common import (
+    DEFAULT_FILL_VALUE,
+    aggregate_common_doc,
+)
+from numpy_groupies.registry import (
+    FuncName,
+)
 from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
 
 __all__ = ["aggregate", "blocks_to_object_array", "step_count", "step_indices"]

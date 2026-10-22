@@ -25,14 +25,16 @@ from numpy_groupies.aggregate_numba.steps import group_count, group_place, group
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
+    DefaultFillValue,
+    resolve_fill_value,
+)
+from numpy_groupies.registry import (
     FuncName,
     Registry,
     Resolved,
-    _DefaultFillValue,
     can_name_a_function,
     custom_callable,
     funcs_no_separate_nan,
-    resolve_fill_value,
 )
 from numpy_groupies.utils_np import (
     AFillValue,
@@ -59,7 +61,7 @@ _N_DEPENDENT_ADTYPES = frozenset(
 # the dtypes and fill values that can be a key of the dtype plan cache:
 # the hashable ones - a list is not, and the cache raises a TypeError for it
 _KeyedDType: TypeAlias = str | type | np.dtype | None
-_HashableFillValue: TypeAlias = AScalar | None | tuple[AScalar, ...] | _DefaultFillValue
+_HashableFillValue: TypeAlias = AScalar | None | tuple[AScalar, ...] | DefaultFillValue
 
 
 @functools.lru_cache(maxsize=256)

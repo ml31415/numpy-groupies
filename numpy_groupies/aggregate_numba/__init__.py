@@ -67,8 +67,10 @@ from numpy_groupies.aggregate_numba.ops import _dispatch
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
-    FuncName,
     aggregate_common_doc,
+)
+from numpy_groupies.registry import (
+    FuncName,
     funcs_collecting,
     missing_impl_error,
 )

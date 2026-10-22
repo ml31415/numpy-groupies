@@ -11,7 +11,7 @@ from typing import get_args
 import numpy as np
 import pytest
 
-from numpy_groupies.common import (
+from numpy_groupies.registry import (
     FuncName,
     Registry,
     Resolved,
@@ -150,4 +150,4 @@ def test_the_functions_that_hold_a_none_match_the_registry():
     from numpy_groupies import common, validation
 
     assert validation.NONE_RESULT_FUNCTIONS == frozenset({"array"})
-    assert frozenset(common._default_fill_values) - validation.NONE_RESULT_FUNCTIONS
+    assert frozenset(common.default_fill_values) - validation.NONE_RESULT_FUNCTIONS

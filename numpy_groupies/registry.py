@@ -1,0 +1,416 @@
+"""The registry of the functions of the package: their names and their aliases.
+
+Every function of the package has a name, a set of aliases and a set of
+properties - the result type it settles, the default that fills a group it
+never saw, the arguments it has of its own.  All of that lives here, so that
+the implementations can ask for it without knowing of each other.
+
+This module must not import numpy: the pure python implementation is loaded
+before numpy is known to be available, and has to work without it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias, cast
+
+if TYPE_CHECKING:
+    from numpy_groupies.utils_np import AFillValue, AScalar
+
+nan = float("nan")  # nan is just this float
+
+
+funcs_common = [
+    "first",
+    "last",
+    "len",
+    "nunique",
+    "mean",
+    "median",
+    "quantile",
+    "percentile",
+    "trapezoid",
+    "var",
+    "std",
+    "skew",
+    "kurt",
+    "allnan",
+    "anynan",
+    "max",
+    "min",
+    "argmax",
+    "argmin",
+    "sumofsquares",
+    "cumsum",
+    "cumprod",
+    "cummax",
+    "cummin",
+]
+funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan"])
+
+# the functions that collect the values of a group instead of reducing them to
+# one number: their result is a sequence per group, which the comparisons that
+# work on numbers cannot take in one go
+funcs_collecting = frozenset(["array"])
+
+# the names the known functions answer to - their canonical names and the
+# string aliases of the alias table.  The literal type names them for the
+# type checker (a typo is a type error) and for the editor.
+# fmt: off
+FuncName: TypeAlias = Literal[
+    "add", "all", "allnan", "amax", "amin", "and",
+    "any", "anynan", "argmax", "argmin", "array", "asort",
+    "asorted", "count", "cummax", "cummin", "cumprod", "cumsum",
+    "dsort", "first", "last", "len", "max", "maximum", "nannunique",
+    "mean", "median", "min", "minimum", "multiply", "nanall",
+    "nanany", "nanargmax", "nanargmin", "nancummax", "nancummin", "nancumprod",
+    "nancumsum", "nanfirst", "nanlast", "nanlen", "nanmax", "nanmean",
+    "nanmedian", "nanmin", "nanpercentile", "nanprod", "nanquantile",
+    "nanskew", "nankurt", "nanstd", "nansum", "nansumofsquares",
+    "nantrapezoid", "nanvar", "or", "skew", "kurt", "kurtosis",
+    "percentile", "plus", "prod", "product", "quantile",
+    "rsorted", "sort", "sorted", "splice", "split", "std",
+    "sum", "sumofsquares", "times", "trapezoid", "var", "nunique",
+]
+# fmt: on
+
+
+_alias_str = {
+    "or": "any",
+    "and": "all",
+    "add": "sum",
+    "count": "len",
+    "plus": "sum",
+    "multiply": "prod",
+    "product": "prod",
+    "times": "prod",
+    "amax": "max",
+    "maximum": "max",
+    "amin": "min",
+    "minimum": "min",
+    "split": "array",
+    "splice": "array",
+    "sorted": "sort",
+    "asort": "sort",
+    "asorted": "sort",
+    "rsorted": "sort",
+    "dsort": "sort",
+    "kurtosis": "kurt",
+}
+
+_alias_builtin: dict[str | Callable[..., object], str] = {
+    all: "all",
+    any: "any",
+    len: "len",
+    max: "max",
+    min: "min",
+    sum: "sum",
+    sorted: "sort",
+    slice: "array",
+    list: "array",
+}
+
+
+def get_aliasing(*extra: dict[str | Callable[..., object], str]) -> dict[str | Callable[..., object], str]:
+    """
+    Assembles a dictionary that maps both strings and functions to a list of supported function names.
+
+    Examples:
+        alias['add'] = 'sum'
+        alias[sorted] = 'sort'
+
+    This function should only be called during import.
+    """
+    alias: dict[str | Callable[..., object], str] = {k: k for k in funcs_common}
+    alias.update(_alias_str)
+    alias.update((fn, fn) for fn in _alias_builtin.values())
+    alias.update(_alias_builtin)
+    for d in extra:
+        alias.update(d)
+    alias.update((k, k) for k in set(alias.values()))
+    # Treat nan-functions as firstclass member and add them directly
+    for key in set(alias.values()):
+        if key not in funcs_no_separate_nan and not key.startswith("nan"):
+            key = "nan" + key
+            alias[key] = key
+    return alias
+
+
+aliasing_py = get_aliasing()
+
+
+def can_name_a_function(obj: object) -> bool:
+    """Whether ``obj`` can be a key of the alias table, and so can name a function.
+
+    The table is a dict, which asks its keys for a hash, and an object that
+    defines ``__eq__`` without a ``__hash__`` does not have one (a dataclass with
+    ``eq=True`` is the everyday case), as little as a list or a dict has one.
+    Asked of the type in front of the lookup, this is all that is needed to make
+    the lookup itself unable to fail: what cannot be a key names no function,
+    and does not have to be looked up to know that.
+    """
+    return type(obj).__hash__ is not None
+
+
+def resolve_name(func: Any, aliasing: Mapping[str | Callable[..., object], str] = aliasing_py) -> str | None:
+    """The canonical name of ``func``, or ``None`` where it names no function.
+
+    Every name and every alias is a key of ``aliasing`` and every key of it is
+    hashable (see ``get_aliasing``, which is the only writer), so this is one
+    lookup that can neither miss nor fail - a func that cannot be a key is not a
+    function anybody knows, and is not asked for one.
+    """
+    return aliasing.get(func) if can_name_a_function(func) else None
+
+
+def missing_impl_error(name: str | Callable[..., AScalar]) -> Exception:
+    """The error for a function that is known but not implemented by this backend."""
+    if isinstance(name, str) and name.startswith("nan") and name[3:] in funcs_no_separate_nan:
+        return ValueError(f"{name[3:]} does not have a nan-version")
+    return NotImplementedError("No such function available")
+
+
+def custom_callable(func: Any) -> Callable[..., AScalar]:
+    """The callable behind a ``func`` that is no key of the resolved dispatch table.
+
+    A miss of that table says all there is to know: ``func`` is not one of the
+    functions anybody knows, so it is either a callable of the caller's own -
+    which needs no hashability to be run, a dataclass instance is the everyday
+    case - or it named nothing at all and says so.  Only the cold path comes
+    here; the hot path is the lookup itself.
+    """
+    if callable(func):
+        return cast("Callable[..., AScalar]", func)
+    raise ValueError(f"func {func} is neither a valid function string nor a callable object")
+
+
+def build_dispatch(
+    op_dict: Mapping[str, Callable[..., Any]], aliasing: Mapping[Any, str]
+) -> dict[Any, tuple[str, Callable[..., Any] | None]]:
+    """Fuse an aliasing and an implementation table for single-lookup dispatch.
+
+    Every alias of every known function is a key, holding a
+    ``(canonical name, implementation)`` tuple, so naming a function is one
+    subscript and a func missing from the table is not a function anybody knows
+    (``custom_callable``).  An alias whose name this backend does not implement
+    holds ``(name, None)``, which the caller reports with ``missing_impl_error``
+    - so the table answers that question too, without a second lookup.
+    """
+    return {alias: (name, op_dict.get(name)) for alias, name in aliasing.items()}
+
+
+class Resolved(NamedTuple):
+    """What a func resolved to: the func it names and the operation that does the work.
+
+    The funcname is the canonical name of a known function, or the callable of
+    the caller's own - which is what tells the two apart.  The operation is
+    None where the backend knows the function but does not implement it.
+    """
+
+    funcname: str | Callable[..., AScalar]
+    op: Callable[..., Any] | None
+
+
+class Registry(dict[str | Callable[..., object], Resolved]):
+    """The registry of one backend: the functions it knows and the callables of the caller.
+
+    Every alias of every known function is a key of the table, holding the
+    canonical name and the implementation of this backend - None where the
+    backend does not implement the function.  A func that names no known
+    function is resolved by the custom factory of the backend, which turns a
+    callable of the caller's own into an operation of the same shape.  One
+    lookup therefore answers both kinds of func, and the caller does not have
+    to know which kind it got.
+
+    The lookup is a plain subscript, so that the hot path pays for a dict
+    lookup and nothing else: the factory is reached through ``__missing__``,
+    which the dict calls for a key it does not hold.  A func that cannot be a
+    key of a dict at all - an object that defines ``__eq__`` without
+    ``__hash__`` - is answered by ``custom``, which the caller reaches when
+    the subscript raises.
+    """
+
+    def __init__(
+        self,
+        op_dict: Mapping[str, Callable[..., Any]],
+        aliasing: Mapping[str | Callable[..., object], str],
+        custom: Callable[..., Resolved],
+    ) -> None:
+        super().__init__({alias: Resolved(name, op) for alias, (name, op) in build_dispatch(op_dict, aliasing).items()})
+        self._custom_factory = custom
+
+    def __missing__(self, key: Any) -> Resolved:
+        """The operation of a func that names no known function.
+
+        The dict calls this for a key it does not hold, so that a callable of
+        the caller's own is resolved by the same lookup that resolves a name.
+        """
+        return self._custom_factory(key)
+
+    def custom(self, func: Any) -> Resolved:
+        """The operation of a func that the table cannot hold as a key.
+
+        A dict asks its keys for a hash, which an object that defines ``__eq__``
+        without ``__hash__`` does not have - such a func names no known
+        function either, and is answered by the same factory.
+        """
+        return self._custom_factory(func)
+
+
+default_fill_values: dict[str, AFillValue] = {
+    "sum": 0,
+    "prod": 1,
+    "all": False,
+    "any": False,
+    "allnan": False,
+    "anynan": False,
+    "len": 0,
+    "nunique": 0,
+    "mean": nan,
+    "median": nan,
+    "quantile": nan,
+    "percentile": nan,
+    # an empty domain has a zero integral, just like a single sample does
+    "trapezoid": 0,
+    "var": nan,
+    "std": nan,
+    "skew": nan,
+    "kurt": nan,
+    "min": nan,
+    "max": nan,
+    "first": nan,
+    "last": nan,
+    "argmax": -1,
+    "argmin": -1,
+    "sumofsquares": 0,
+    "cumsum": 0,
+    "cumprod": 1,
+    "cummax": 0,
+    "cummin": 0,
+    # 'array' and 'sort' ask for an empty sequence, which their implementations
+    # interpret as 'leave the empty group as it is' - a fresh list per call is
+    # handed out below so that callers cannot alias each other's results.
+    "array": [],
+    "sort": [],
+}
+
+
+def fill_value_key(func: str | Callable[..., AScalar]) -> str:
+    """Map a function (name, alias or callable) onto a ``default_fill_values`` key."""
+    name = resolve_name(func)
+    if name is None:
+        # a custom callable is keyed by the name it carries, which it usually
+        # does not carry at all (a lambda, a bound method of one's own)
+        name = getattr(func, "__name__", "")
+    if name not in default_fill_values and str(name).startswith("nan"):
+        # nan-variants fill like their plain counterparts
+        name = name[3:]
+    return name
+
+
+forced_float_types = {
+    "mean",
+    "median",
+    "skew",
+    "kurt",
+    "nanskew",
+    "nankurt",
+    "quantile",
+    "percentile",
+    "trapezoid",
+    "nanmean",
+    "nanmedian",
+    "nanquantile",
+    "nanpercentile",
+    "nantrapezoid",
+}
+
+# var/std (and sumofsquares) measure the squared magnitude of the deviations,
+# which is real even for complex input - like np.var returning a real dtype
+forced_real_float_types = {
+    "var",
+    "std",
+    "nanvar",
+    "nanstd",
+    "sumofsquares",
+    "nansumofsquares",
+}
+
+
+# functions whose result type the function settles rather than taking it from
+# the values aggregated: a boolean answer, a count, a position, and the object
+# array of ``array``.  The python counterpart of each result type is here, where
+# no numpy is imported; the numpy dtypes of them in utils, which also knows how
+# wide a count is on the platform it runs on
+fixed_result_types: dict[str, type] = {
+    "array": object,
+    "all": bool,
+    "any": bool,
+    "nanall": bool,
+    "nanany": bool,
+    "allnan": bool,
+    "anynan": bool,
+    "len": int,
+    "nanlen": int,
+    "nunique": int,
+    "nannunique": int,
+    "argmax": int,
+    "argmin": int,
+    "nanargmin": int,
+    "nanargmax": int,
+}
+
+
+# functions whose result is not complex even for complex input - only these may
+# be asked for a non-complex dtype, everything else would throw the imaginary
+# part of the values away
+# the names of the dtype table in utils (which holds the numpy dtypes
+# themselves) - everything here may aggregate complex input into a
+# non-complex dtype without throwing the imaginary part away
+complex_real_result = (
+    frozenset(
+        [
+            "array",
+            "all",
+            "any",
+            "nanall",
+            "nanany",
+            "len",
+            "nanlen",
+            "allnan",
+            "anynan",
+            "argmax",
+            "argmin",
+            "nanargmin",
+            "nanargmax",
+        ]
+    )
+    | forced_real_float_types
+)
+
+
+# the arguments a function has of its own, beyond the size and the fill value
+# that every function takes: the name it carries in the signature, the
+# annotation and the default.  The njit kernels and the python entry points
+# of a backend take the same arguments, so both read them from here.
+FUNC_EXTRAS: dict[str, tuple[tuple[str, str, Any], ...]] = {
+    "std": (("ddof", "int", 0),),
+    "var": (("ddof", "int", 0),),
+    "quantile": (("q", "float", 0.5),),
+    "percentile": (("q", "float", 50.0),),
+    "trapezoid": (("dx", "float", 1.0),),
+    "sort": (("reverse", "bool", False),),
+}
+
+
+# the marker for an argument without a default - None is a default of its own
+_NO_DEFAULT = object()
+
+
+def func_extras(name: str) -> tuple[tuple[str, str, Any], ...]:
+    """The arguments the function has of its own.
+
+    The nan-skipping variant of a function has the same arguments as the
+    plain one, so the name is stripped of its prefix before the lookup.
+    """
+    return FUNC_EXTRAS.get(name.removeprefix("nan"), ())

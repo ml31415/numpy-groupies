@@ -37,7 +37,7 @@ from numpy_groupies.aggregate_numpy.reductions import (
     _sum,
 )
 from numpy_groupies.aggregate_numpy.specials import _median, _nunique, _percentile, _quantile, _sort
-from numpy_groupies.common import (
+from numpy_groupies.registry import (
     Registry,
     Resolved,
     custom_callable,

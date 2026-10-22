@@ -8,10 +8,11 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.common import (
-    _DefaultFillValue,
-    _forced_float_types,
-    _forced_real_float_types,
-    check_complex_dtype,
+    DefaultFillValue,
+)
+from numpy_groupies.registry import (
+    forced_float_types,
+    forced_real_float_types,
     get_aliasing,
     resolve_name,
 )
@@ -23,6 +24,7 @@ from numpy_groupies.validation import (
     NON_INTEGER_GROUP_IDX,
     TOO_LARGE_FOR_SIZE,
     check_boolean,
+    check_complex_dtype,
     is_integer_dtype,
     is_scalar_input,
 )
@@ -41,7 +43,7 @@ AScalar: TypeAlias = float | int | complex | np.number | np.bool_
 
 # what a fill value can be: a number, the sentinel that asks for the
 # default of the function, a None or - for the object result - a sequence
-AFillValue: TypeAlias = AScalar | None | Sequence[AScalar] | _DefaultFillValue
+AFillValue: TypeAlias = AScalar | None | Sequence[AScalar] | DefaultFillValue
 
 # the memory layout the output is written in, as every signature of this
 # package spells it: the docstring offers 'F' for fortran-style and the code
@@ -308,13 +310,13 @@ def resolve_output_dtype(
             # misses, like a name the table does not hold
             return np.dtype(_forced_types[func_str if isinstance(func_str, str) else ""])
         except KeyError:
-            if func_str in _forced_float_types:
+            if func_str in forced_float_types:
                 if np.issubdtype(a_dtype, np.inexact):
                     # floating input keeps its dtype, complex input stays complex
                     return a_dtype
                 else:
                     return np.dtype(np.float64)
-            elif func_str in _forced_real_float_types:
+            elif func_str in forced_real_float_types:
                 if np.issubdtype(a_dtype, np.floating):
                     return a_dtype
                 elif np.issubdtype(a_dtype, np.complexfloating):

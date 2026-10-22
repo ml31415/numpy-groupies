@@ -11,10 +11,12 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numpy.ops import _dispatch
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
+    resolve_fill_value,
+)
+from numpy_groupies.registry import (
     FuncName,
     Registry,
     missing_impl_error,
-    resolve_fill_value,
 )
 from numpy_groupies.utils_np import (
     AFillValue,

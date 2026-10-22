@@ -3,7 +3,7 @@
 Integer input is centered on the first value of each group and the global
 min/max is tracked in the same accumulation pass; the exactness gates run
 between the passes and raise ``OverflowError`` for the same inputs in every
-backend (see ``common`` for the policy constants).
+backend (see ``validation`` for the policy constants).
 """
 
 from collections.abc import Callable
@@ -56,13 +56,13 @@ def _track_extrema_overload(val: float, low: float, high: float) -> Callable[...
     return _impl
 
 
-@njit_stable
-def _mean_overflow_message(count: int, bound: int) -> str:
-    """The numba twin of ``check_integer_mean_overflow`` - numba cannot call
-    the python helper, but it can compile the message builder of
-    ``validation`` (a concatenation of strings and numbers), so the text
-    exists once."""
-    return mean_overflow_message(count, bound)
+# the compiled twins of the message builders of ``validation`` - numba cannot
+# call a python function, but it can compile one, so the text of the
+# complaint exists once
+_mean_overflow_message: Callable[[int, int], str] = njit_stable(mean_overflow_message, name="mean_overflow_message")
+_span_message: Callable[[str, int], str] = njit_stable(
+    variance_span_overflow_message, name="variance_span_overflow_message"
+)
 
 
 @njit_stable
@@ -71,7 +71,7 @@ def _span_overflow_message(low: int, high: int) -> str:
     # numba's str() negates int64-min internally, wraps, and then fails to
     # size the string buffer - spell that one value out
     low_text = "-9223372036854775808" if low == INT64_MIN else str(low)
-    return variance_span_overflow_message(low_text, high)
+    return _span_message(low_text, high)
 
 
 def _mean_limit_check(low: float, high: float, count: int) -> None:

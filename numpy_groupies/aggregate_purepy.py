@@ -9,23 +9,25 @@ from typing import TYPE_CHECKING, Any, cast
 
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
+    aggregate_common_doc,
+    resolve_fill_value,
+)
+from numpy_groupies.registry import (
     FuncName,
     Registry,
     Resolved,
-    aggregate_common_doc,
-    check_complex_dtype,
-    check_fixed_fill_value,
     custom_callable,
     funcs_no_separate_nan,
     missing_impl_error,
-    resolve_fill_value,
 )
-from numpy_groupies.common import (
+from numpy_groupies.registry import (
     aliasing_py as aliasing,
 )
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
     LENGTH_MISMATCH,
+    check_complex_dtype,
+    check_fixed_fill_value,
     check_integer_mean_overflow,
     check_integer_variance_span_overflow,
     is_scalar_input,
