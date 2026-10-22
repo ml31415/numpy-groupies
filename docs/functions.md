@@ -47,17 +47,28 @@ npg.aggregate_py.mean(group_idx, a)          # the pure python one
 npg.aggregate_nb.mean(group_idx, a)          # the numba one
 ```
 
-The attributes of a backend are plain python functions. The njit-callable kernels of the numba backend - the same functions, callable from jitted code - live in their own module, `numpy_groupies.aggregate_numba.kernels`, since numba cannot reach the attributes of a python object from jitted code:
+The attributes of a backend are plain python functions. The kernels of the numba implementation - the compiled functions behind them, callable from jitted code and from python - are the attributes of its module, `numpy_groupies.aggregate_numba`, which is the one place jitted code can reach them (numba cannot reach the attributes of a python object):
 
 ```python
-from numpy_groupies.aggregate_numba import kernels
+import numba as nb
+from numpy_groupies import aggregate_numba as aggregate
 
-@numba.njit
+@nb.njit
 def zscore(group_idx, a):
-    mean = kernels.mean(group_idx, a)
-    std = kernels.std(group_idx, a)
+    mean = aggregate.mean(group_idx, a)
+    std = aggregate.std(group_idx, a)
     return (a - mean[group_idx]) / std[group_idx]
 ```
+
+Calling a kernel from python is the very same call - the same arguments, the same compiled driver, only no jitted caller around it:
+
+```python
+aggregate.mean(group_idx, a)          # the mean of every group
+aggregate.var(group_idx, a, ddof=1)   # the argument the function has of its own, by its own name
+aggregate.array(group_idx, a)         # a list of the arrays of the groups
+```
+
+What the kernels gain by being lean they pay back in rules they do not question: they take flat 1d input with integer indices, the narrow integer sum always widens to `int64`, and `dtype`, `axis`, `order` and `out` are not their business. `aggregate()` is the entry point that knows all of that.
 
 ## Input forms in detail
 

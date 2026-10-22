@@ -41,7 +41,7 @@ Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
 - **Fast.** With Numba installed, `aggregate` is the fastest group-by aggregation for plain NumPy arrays. See [Performance](#performance).
 - **One call, many functions.** The usual reductions plus `median`, `quantile`/`percentile`, `skew`/`kurt`, `sort` (ascending or descending), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
 - **Array in, array out.** Plain NumPy arrays, no DataFrame and no index. The result is an array indexed by group label, with empty groups filled with the value you choose. Multi-dimensional output (N-D binning) and aggregation along an `axis` are built in.
-- **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops.
+- **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops - and the same call from python runs the same compiled driver.
 - **Numerically careful.** Integer sums, means and variances accumulate in a dtype wide enough not to wrap around, NaN handling follows NumPy, and complex and `float16` input are supported.
 - **Light on dependencies.** NumPy is the only requirement; Numba is optional and only makes things faster. A pure-Python implementation is included as a fallback.
 
@@ -92,17 +92,17 @@ npg.aggregate_np(group_idx, a, func=lambda x: " or ".join(map(str, x)), fill_val
 # array(['3.2', '12.0 or -15.0 or 12.9', '', '', '88.0'], dtype=object)
 ```
 
-**Integration into own jitted functions.** Every kernel is `@njit`-callable, so group statistics can sit inside a compiled loop of your own:
+**Integration into own jitted functions.** The numba module carries every function of the package as an attribute of its own - the compiled kernel - and a kernel can be called from inside a jitted function of your own:
 
 ```python
 import numba as nb
 import numpy as np
-from numpy_groupies.aggregate_numba import kernels
+from numpy_groupies import aggregate_numba as aggregate
 
 @nb.njit
 def zscore(group_idx, a):
-    mean = kernels.mean(group_idx, a)
-    std = kernels.std(group_idx, a)
+    mean = aggregate.mean(group_idx, a)
+    std = aggregate.std(group_idx, a)
     scale = np.where(std > 0, std, 1.0)
     return (a - mean[group_idx]) / scale[group_idx]
 ```
@@ -112,8 +112,16 @@ Every kernel carries the signature of its function, so the `ddof` of the varianc
 ```python
 @nb.njit
 def spread(group_idx, a):
-    return kernels.std(group_idx, a, 1) / kernels.mean(group_idx, a)
+    return aggregate.std(group_idx, a, 1) / aggregate.mean(group_idx, a)
 ```
+
+The same call from python reaches the very same compiled driver - the same arguments, the same result, only no jitted caller around it:
+
+```python
+aggregate.std(group_idx, a, 1) / aggregate.mean(group_idx, a)
+```
+
+A kernel is a lean thing: it takes flat 1d input with integer indices and runs none of the validation and dtype resolution of `aggregate()` - the narrow integer sum always widens to `int64`, `dtype`/`order`/`axis`/`out` are not its business. `aggregate()` - `aggregate_numba.aggregate`, or `npg.aggregate` once Numba is installed - is the one that knows all of that.
 
 **Multi-dimensional output.** Give `group_idx` one row per output dimension — here, 1000 values binned into a 15×15×15 cube:
 
@@ -192,7 +200,7 @@ npg.aggregate_np.mean(group_idx, a)        # the numpy implementation
 npg.aggregate_py.mean(group_idx, a)        # the pure python one
 ```
 
-The attribute of a backend is a plain function; the njit-callable kernels of the numba backend live in their own module (see above), since numba cannot reach the attributes of a python object from jitted code.
+The attribute of a backend is a plain function; the kernels of the numba implementation are the attributes of its module, `numpy_groupies.aggregate_numba` (see above) - the one place jitted code can reach them, since numba cannot reach the attributes of a python object. A kernel is a plain function too, and calling it from python reaches the same compiled driver as the attribute of the numba backend does - only under the leaner rules of the kernels, with none of the validation and the dtype resolution of `aggregate()`.
 
 ## Helper tools
 
