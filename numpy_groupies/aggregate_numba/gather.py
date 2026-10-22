@@ -1,8 +1,12 @@
 """Gather aggregated results back onto the input positions."""
 
+from typing import Any
+
 import numba as nb
 import numpy as np
 import numpy.typing as npt
+
+from numpy_groupies.utils_np import AResult
 
 
 # the annotations of the jitted function below are documentation only - numba
@@ -14,6 +18,21 @@ def _gather_1d(
     for i in range(group_idx.size):
         out[i] = ret[group_idx[i]]
     return out
+
+
+def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> AResult:
+    """The gather of a result: the result of the group of every value.
+
+    The jitted loop gathers into an array of its own; ``unpack_into`` gathers
+    into one the caller provides.
+    """
+    if not isinstance(ret, np.ndarray):
+        # the result of the pure python implementation is a list - it is
+        # gathered like any other sequence of values
+        ret = np.asarray(ret)
+    group_idx = np.asanyarray(group_idx)
+    out = np.empty(group_idx.shape + ret.shape[1:], dtype=ret.dtype)
+    return unpack_into(group_idx, ret, out)
 
 
 def unpack_into(

@@ -31,10 +31,10 @@ def step_count(group_idx: npt.NDArray[np.integer]) -> int:
 
 
 @nb.njit(cache=True)
-def step_indices(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.int64]:
+def step_indices(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
     """Return the edges of areas within group_idx, which are filled with the same value."""
     ilen = step_count(group_idx) + 1
-    indices = np.empty(ilen, np.int64)
+    indices = np.empty(ilen, np.intp)
     indices[0] = 0
     indices[-1] = group_idx.size
     cmp_pos = 0

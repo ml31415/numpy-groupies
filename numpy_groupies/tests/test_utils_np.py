@@ -8,8 +8,7 @@ import re
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import random_values
-from numpy_groupies.utils_np import check_dtype, check_nton_shape, unpack
+from numpy_groupies.utils_np import check_dtype, check_nton_shape
 
 
 def test_check_dtype():
@@ -40,18 +39,3 @@ def test_check_nton_shape_stays_quiet_when_the_sizes_agree():
     """No complaint when the output holds as many entries as the size asks for."""
     check_nton_shape(np.arange(3), 3, "sort")
     check_nton_shape(np.arange(6), (2, 3), "sort")
-
-
-def test_unpack(rng):
-    """Keep this test, in case unpack might get reimplemented again at some point."""
-    group_idx = np.arange(10)
-    rng.shuffle(group_idx)
-    group_idx = np.repeat(group_idx, 3)
-    vals = random_values(rng, np.max(group_idx) + 1)
-    np.testing.assert_array_equal(unpack(group_idx, vals), vals[group_idx])
-
-
-def test_unpack_long(rng):
-    group_idx = np.repeat(np.arange(10000), 20)
-    vals = random_values(rng, np.max(group_idx) + 1)
-    np.testing.assert_array_equal(unpack(group_idx, vals), vals[group_idx])

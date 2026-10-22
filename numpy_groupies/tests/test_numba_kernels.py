@@ -27,11 +27,23 @@ BOOL_A = np.array([True, False, True, True, False, True])
 
 # the kernels of ``make_stub``, which is where the input checks are written - as
 # many of the tests below ask them all.  ``step_count`` and ``step_indices`` are
-# jitted functions with a signature of their own, ``unpack_into`` writes into an
-# output buffer the caller provides, and ``aggregate`` is the python-level
+# jitted functions with a signature of their own, ``unpack`` and ``unpack_into``
+# gather a result back onto the input, the percentile is the quantile in percent
+# and so an entry point of the backend, and ``aggregate`` is the python-level
 # dispatcher of the module: none of them is such an entry point
 _ALL_KERNELS = [
-    name for name in aggregate_numba.__all__ if name not in ("aggregate", "step_count", "step_indices", "unpack_into")
+    name
+    for name in aggregate_numba.__all__
+    if name
+    not in (
+        "aggregate",
+        "step_count",
+        "step_indices",
+        "unpack",
+        "unpack_into",
+        "percentile",
+        "nanpercentile",
+    )
 ]
 
 # (kernel name, kwargs, values) - the kernels run inside a jitted caller and as a

@@ -615,16 +615,6 @@ def input_validation(
 # General tools
 
 
-def unpack(group_idx: npt.NDArray[np.integer], ret: npt.NDArray[np.generic]) -> npt.NDArray[np.generic]:
-    """
-    Take an aggregate packed array and uncompress it to the size of group_idx. This is equivalent to
-    ret[group_idx].
-    """
-    # fancy indexing is unannotated in numpy, the result is the same dtype as ret
-    gathered: AResult = ret[group_idx]
-    return gathered
-
-
 def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:
     return np.all(np.isnan(x))
 

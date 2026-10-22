@@ -9,6 +9,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.aggregate_numpy.collect import blocks_to_object_array
+from numpy_groupies.aggregate_numpy.gather import unpack
 from numpy_groupies.aggregate_numpy.steps import step_count, step_indices
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
@@ -21,7 +22,7 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
 
-__all__ = ["aggregate", "blocks_to_object_array", "step_count", "step_indices"]
+__all__ = ["aggregate", "blocks_to_object_array", "step_count", "step_indices", "unpack"]
 
 
 def aggregate(
@@ -33,8 +34,17 @@ def aggregate(
     order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
+    out: AResult | None = None,
+    cache: bool = True,
     **kwargs: Any,
 ) -> AResult:
+    # the two arguments the numba implementation honours and this one does
+    # not: there is no compiled loop here to write into an array of the
+    # caller, and nothing to cache either - the argument is taken, so that
+    # the signature of every backend is the same, and it says what it cannot
+    # do
+    if out is not None:
+        raise NotImplementedError("out= is only supported by the numba implementation")
     return _aggregate_base(
         group_idx,
         a,

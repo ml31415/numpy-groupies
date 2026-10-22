@@ -62,7 +62,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
-from numpy_groupies.aggregate_numba.gather import unpack_into
+from numpy_groupies.aggregate_numba.gather import unpack, unpack_into
 from numpy_groupies.aggregate_numba.ops import _dispatch
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
 from numpy_groupies.common import (
@@ -71,9 +71,7 @@ from numpy_groupies.common import (
 )
 from numpy_groupies.registry import (
     FuncName,
-    bind_functions,
     funcs_collecting,
-    function_names,
     missing_impl_error,
 )
 from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
@@ -234,27 +232,66 @@ cummin = cumulative.cummin.plain.stub
 nancummin = cumulative.cummin.nan.stub
 
 
-# The few functions the kernels do not cover - the percentile is the quantile
-# in percent, and the backend has it as an entry point of its own.
-_entry_points = bind_functions(aggregate, [name for name in function_names() if name not in globals()])
+# The two functions the kernels do not cover - the percentile is the quantile
+# in percent, so it is the entry point of the backend and not a kernel of its
+# own.
 
 
-def __getattr__(name: str) -> Any:
-    """The function of the backend, by its name.
+def percentile(
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
+    q: float = 50.0,
+    size: int | Sequence[int] | None = None,
+    fill_value: AFillValue = DEFAULT_FILL_VALUE,
+    order: RavelOrder = "C",
+    dtype: npt.DTypeLike | None = None,
+    axis: int | None = None,
+) -> AResult:
+    """The percentile of every group - the quantile of the group, in percent.
 
-    The kernels are the attributes of this module - jitted code reaches them
-    here, and python code calls them like any other function.  The few
-    functions the kernels do not cover are the entry points of the backend.
+    The kernel of the quantile is the one that does the work; the percentile
+    is the quantile with its argument in percent.
     """
-    try:
-        return _entry_points[name]
-    except KeyError:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    return aggregate(
+        group_idx,
+        a,
+        func="percentile",
+        q=q,
+        size=size,
+        fill_value=fill_value,
+        order=order,
+        dtype=dtype,
+        axis=axis,
+    )
+
+
+def nanpercentile(
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
+    q: float = 50.0,
+    size: int | Sequence[int] | None = None,
+    fill_value: AFillValue = DEFAULT_FILL_VALUE,
+    order: RavelOrder = "C",
+    dtype: npt.DTypeLike | None = None,
+    axis: int | None = None,
+) -> AResult:
+    """The percentile of every group, the nans of the group left out."""
+    return aggregate(
+        group_idx,
+        a,
+        func="nanpercentile",
+        q=q,
+        size=size,
+        fill_value=fill_value,
+        order=order,
+        dtype=dtype,
+        axis=axis,
+    )
 
 
 def __dir__() -> list[str]:
     """The names of the functions of the backend, among the module's own."""
-    return sorted(set(globals()) | set(_entry_points))
+    return sorted(globals())
 
 
 __all__ = [
@@ -295,6 +332,7 @@ __all__ = [
     "nanmedian",
     "nanmin",
     "nannunique",
+    "nanpercentile",
     "nanprod",
     "nanquantile",
     "nanskew",
@@ -304,8 +342,10 @@ __all__ = [
     "nantrapezoid",
     "nanvar",
     "nunique",
+    "percentile",
     "prod",
     "quantile",
+    "skew",
     "sort",
     "std",
     "step_count",
@@ -313,6 +353,7 @@ __all__ = [
     "sum",
     "sumofsquares",
     "trapezoid",
+    "unpack",
     "unpack_into",
     "var",
 ]
