@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, SupportsInt, TypeAlias, cast
 
+from numpy_groupies.validation import FILL_NOT_BOOLEAN
+
 if TYPE_CHECKING:
     import numpy.typing as npt
 
@@ -595,7 +597,7 @@ _forced_real_float_types = {
 
 def check_boolean(x: AFillValue) -> None:
     if x not in (0, 1):
-        raise ValueError("Value not boolean")
+        raise ValueError(FILL_NOT_BOOLEAN)
 
 
 # functions whose result type the function settles rather than taking it from

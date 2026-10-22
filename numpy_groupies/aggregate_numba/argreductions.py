@@ -12,6 +12,7 @@ from numpy_groupies.aggregate_numba.compose import (
     rule_int64,
 )
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.validation import NEGATIVE_INDICES
 
 
 def _argmax_driver_factory(nan_variant: bool) -> Any:
@@ -52,7 +53,7 @@ def _argmax_driver_factory(nan_variant: bool) -> Any:
                 running[ri] = val if win else cur
                 out[ri] = i if win else out[ri]
             if bad:
-                raise ValueError("negative indices not supported")
+                raise ValueError(NEGATIVE_INDICES)
 
         kernel = kernel_nan
     else:
@@ -101,7 +102,7 @@ def _argmax_driver_factory(nan_variant: bool) -> Any:
                     running[ri] = val
                     out[ri] = i
             if bad:
-                raise ValueError("negative indices not supported")
+                raise ValueError(NEGATIVE_INDICES)
 
         kernel = kernel_plain
 
@@ -167,7 +168,7 @@ def _argmin_driver_factory(nan_variant: bool) -> Any:
                 running[ri] = val if win else cur
                 out[ri] = i if win else out[ri]
             if bad:
-                raise ValueError("negative indices not supported")
+                raise ValueError(NEGATIVE_INDICES)
 
         kernel = kernel_nan
     else:
@@ -202,7 +203,7 @@ def _argmin_driver_factory(nan_variant: bool) -> Any:
                     running[ri] = val
                     out[ri] = i
             if bad:
-                raise ValueError("negative indices not supported")
+                raise ValueError(NEGATIVE_INDICES)
 
         kernel = kernel_plain
 

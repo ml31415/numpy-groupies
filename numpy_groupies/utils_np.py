@@ -17,6 +17,15 @@ from numpy_groupies.common import (
     is_scalar_input,
     resolve_name,
 )
+from numpy_groupies.validation import (
+    EMPTY_GROUP_IDX,
+    FILL_NOT_CONVERTIBLE,
+    LENGTH_MISMATCH_OR_SCALAR,
+    NEGATIVE_INDICES,
+    NON_INTEGER_GROUP_IDX,
+    TOO_LARGE_FOR_SIZE,
+    is_integer_dtype,
+)
 
 # the values as the dispatchers carry them on: an array of any dtype, or
 # the one python scalar that stands for that value repeated over every label
@@ -376,6 +385,25 @@ def maxval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
     return cast("AScalar", np.finfo(dtype).max)
 
 
+def check_fill_value_for_dtype(fill_value: AFillValue, dtype: np.dtype) -> AScalar:
+    """The fill value as the output dtype holds it - the check of a kernel.
+
+    The rules are the ones ``check_fill_value`` applies to the python-level
+    call, without the function-specific part: a kernel knows its output dtype
+    and nothing else, so the value has to fit that dtype - a nan does not fit
+    an integer output, and a boolean output takes the two booleans only.
+    """
+    if issubclass(dtype.type, np.bool_) and not isinstance(fill_value, (list, tuple, np.ndarray)):
+        # a sequence is the fill of a group that holds a sequence (the sorting
+        # function) - it is not a boolean and does not have to be one
+        check_boolean(fill_value)
+        return np.bool_(fill_value)
+    try:
+        return cast("AScalar", dtype.type(fill_value))
+    except (ValueError, TypeError, OverflowError) as err:
+        raise ValueError(FILL_NOT_CONVERTIBLE.format(dtype=dtype.type.__name__)) from err
+
+
 def check_fill_value(
     fill_value: AFillValue, dtype: np.dtype, func: str | Callable[..., AScalar] | None = None
 ) -> AFillValue | None:
@@ -383,10 +411,7 @@ def check_fill_value(
         check_boolean(fill_value)
         return None
     else:
-        try:
-            return cast("AScalar", dtype.type(fill_value))
-        except ValueError:
-            raise ValueError(f"fill_value must be convertible into {dtype.type.__name__}")
+        return check_fill_value_for_dtype(fill_value, dtype)
 
 
 def check_group_idx(
@@ -394,10 +419,10 @@ def check_group_idx(
 ) -> None:
     if a is not None and group_idx.size != a.size:
         raise ValueError("The size of group_idx must be the same as a.size")
-    if not issubclass(group_idx.dtype.type, np.integer):
-        raise TypeError("group_idx must be of integer type")
+    if not is_integer_dtype(group_idx.dtype):
+        raise TypeError(NON_INTEGER_GROUP_IDX)
     if check_min and np.min(group_idx) < 0:
-        raise ValueError("group_idx contains negative indices")
+        raise ValueError(NEGATIVE_INDICES)
 
 
 def _ravel_group_idx(
@@ -493,17 +518,17 @@ def input_validation(
         a = np.asanyarray(a)
 
     if len(group_idx) == 0:
-        raise ValueError("group_idx must not be empty")
+        raise ValueError(EMPTY_GROUP_IDX)
     if not is_duck_array(group_idx):
         group_idx = np.asanyarray(group_idx)
 
     # equivalent to np.issubdtype(group_idx.dtype, np.integer), just cheaper
-    if group_idx.dtype.kind not in "iu":
-        raise TypeError("group_idx must be of integer type")
+    if not is_integer_dtype(group_idx.dtype):
+        raise TypeError(NON_INTEGER_GROUP_IDX)
 
     # This check works for multidimensional indexing as well
     if check_bounds and np.any(group_idx < 0):
-        raise ValueError("negative indices not supported")
+        raise ValueError(NEGATIVE_INDICES)
 
     ndim_idx = group_idx.ndim
     ndim_a = getattr(a, "ndim", 0)
@@ -568,7 +593,7 @@ def input_validation(
             # a scalar size, which the comparison below needs as a number
             scalar_size = cast("int | float | np.number", size)
             if check_bounds and np.any(group_idx > scalar_size - 1):
-                raise ValueError(f"one or more indices are too large for size {scalar_size}")
+                raise ValueError(TOO_LARGE_FOR_SIZE.format(size=scalar_size))
         flat_size = size
     else:
         if size is None:
@@ -582,7 +607,7 @@ def input_validation(
         flat_size = np.prod(size)
 
     if not (ndim_a == 0 or len(a) == group_idx.size):
-        raise ValueError("group_idx and a must be of the same length, or a can be scalar")
+        raise ValueError(LENGTH_MISMATCH_OR_SCALAR)
 
     return (group_idx, a, flat_size, ndim_idx, size, None)
 

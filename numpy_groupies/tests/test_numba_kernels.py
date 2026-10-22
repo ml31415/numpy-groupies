@@ -265,13 +265,16 @@ _SAME_WORDS = [
 # over every label, and a kernel has none of those freedoms.  Jitted code is
 # answered by the typing function of the kernel, which knows the shape and the
 # dtype at compile time and answers with a TypingError.
+#
+# The complaint about the labels is the one the python-level call makes as
+# well - a TypeError there and here, in the same words.
 _STRICT_ONLY = [
-    (np.tile(GROUP_IDX, (2, 1)), FLOAT_A, "flat one-dimensional", -1),
-    (GROUP_IDX, np.tile(FLOAT_A, (2, 1)), "flat one-dimensional", -1),
-    (GROUP_IDX.astype(np.float64), FLOAT_A, "integer dtype", -1),
-    (GROUP_IDX.astype(bool), FLOAT_A, "integer dtype", -1),
-    (GROUP_IDX, FLOAT_A.astype(np.str_), "numeric values", -1),
-    (GROUP_IDX, np.array(["2000-01-01", "2000-01-02"], dtype="datetime64[D]"), "numeric values", -1),
+    (np.tile(GROUP_IDX, (2, 1)), FLOAT_A, "flat one-dimensional", -1, ValueError),
+    (GROUP_IDX, np.tile(FLOAT_A, (2, 1)), "flat one-dimensional", -1, ValueError),
+    (GROUP_IDX.astype(np.float64), FLOAT_A, "group_idx must be of integer type", -1, TypeError),
+    (GROUP_IDX.astype(bool), FLOAT_A, "group_idx must be of integer type", -1, TypeError),
+    (GROUP_IDX, FLOAT_A.astype(np.str_), "numeric values", -1, ValueError),
+    (GROUP_IDX, np.array(["2000-01-01", "2000-01-02"], dtype="datetime64[D]"), "numeric values", -1, ValueError),
 ]
 
 
@@ -292,10 +295,43 @@ def test_every_call_refuses_the_input_the_driver_cannot_read(kernel_name, style,
         call(group_idx, values, size)
 
 
+# the faults the three ways of calling a kernel share - the words of them live
+# in numpy_groupies.validation, so all of them answer in exactly the same
+# sentence
+_SHARED_FAULTS = [
+    (GROUP_IDX[:0], FLOAT_A[:0], -1),
+    (np.array([0, -1]), FLOAT_A[:2], -1),
+    (GROUP_IDX, FLOAT_A, 1),
+]
+
+
+@pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
+@pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
+@pytest.mark.parametrize("group_idx, values, size", _SHARED_FAULTS)
+def test_the_shared_faults_are_answered_in_the_same_words(kernel_name, style, group_idx, values, size):
+    """The three ways of calling a kernel say the same thing about a fault.
+
+    The words of the complaints live in one place (numpy_groupies.validation),
+    so the python call of a kernel, the jitted one and the python-level
+    aggregate() answer a fault they share with the very same sentence.
+    """
+    call = _styles(getattr(aggregate_numba, kernel_name))[style]
+    with pytest.raises(ValueError) as excinfo:
+        call(group_idx, values, size)
+    message = str(excinfo.value)
+    assert message in (
+        "group_idx must not be empty",
+        "negative indices not supported",
+        "one or more indices are too large for size 1",
+    )
+
+
 @pytest.mark.parametrize("style", [0, 1], ids=["python", "jitted"])
 @pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
-@pytest.mark.parametrize("group_idx, values, message, size", _STRICT_ONLY)
-def test_every_kernel_refuses_the_input_it_cannot_take(kernel_name, style, group_idx, values, message, size):
+@pytest.mark.parametrize("group_idx, values, message, size, python_error", _STRICT_ONLY)
+def test_every_kernel_refuses_the_input_it_cannot_take(
+    kernel_name, style, group_idx, values, message, size, python_error
+):
     """The shape and dtype checks, as a python call and as a jitted one.
 
     A two-dimensional ``group_idx`` the driver walks by row is answered with a
@@ -307,9 +343,81 @@ def test_every_kernel_refuses_the_input_it_cannot_take(kernel_name, style, group
     call = _styles(getattr(aggregate_numba, kernel_name))[style]
     # the jitted style is answered before anything runs, by the typing function
     # of the kernel, which knows the shape and the dtype at compile time
-    error = nb.TypingError if style == 1 else ValueError
+    error = nb.TypingError if style == 1 else python_error
     with pytest.raises(error, match=message):
         call(group_idx, values, size)
+
+
+# the fill value of a call has to fit the output it fills - the same rule the
+# python-level call applies (utils_np.check_fill_value), in the same words:
+# a nan does not fit an integer output, a boolean output takes the two
+# booleans, and a value that is no number at all fits nothing.
+_FILL_CASES = [
+    ("sum", INT_A, np.nan, "fill_value must be convertible into int64"),
+    ("sum", INT_A, 2.0**63, "fill_value must be convertible into int64"),
+    ("all", BOOL_A, 2.0, "Value not boolean"),
+    ("any", BOOL_A, 0.5, "Value not boolean"),
+]
+
+
+@pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
+@pytest.mark.parametrize("kernel_name, values, fill_value, message", _FILL_CASES)
+def test_every_call_refuses_a_fill_value_the_output_cannot_hold(kernel_name, style, values, fill_value, message):
+    """The fill value is checked like the python-level call checks it.
+
+    A nan in an integer output is not a number the output can hold: numba
+    writes the integer garbage of a converted nan into the group, and the
+    python-level call refuses the value before it reaches the driver.
+    """
+    kernel = getattr(aggregate_numba, kernel_name)
+    if style == 0:
+
+        def call():
+            return kernel(GROUP_IDX, values, -1, fill_value)
+
+    elif style == 1:
+
+        @nb.njit
+        def call_jitted(group_idx, a, fill):
+            return kernel(group_idx, a, -1, fill)
+
+        def call():
+            return call_jitted(GROUP_IDX, values, fill_value)
+
+    else:
+
+        def call():
+            return aggregate(GROUP_IDX, values, func=kernel_name, fill_value=fill_value)
+
+    with pytest.raises(ValueError, match=message):
+        call()
+
+
+def test_the_jitted_call_refuses_a_fill_value_that_is_no_number():
+    """The one check the jitted world can make before anything runs.
+
+    The typing function of the kernel sees the type of the fill value, not its
+    value - a fill that is not a number cannot go into any output, and the
+    typing error says so instead of leaving it to the driver.
+    """
+    with pytest.raises(nb.TypingError, match="fill_value must be convertible into int64"):
+
+        @nb.njit
+        def caller(group_idx, a, fill):
+            return aggregate_numba.sum(group_idx, a, -1, fill)
+
+        caller(GROUP_IDX, INT_A, "x")
+
+
+def test_the_scalar_input_is_refused_with_its_own_words():
+    """A scalar is one value, and a kernel takes one value per label.
+
+    The python-level call repeats a scalar over every label; a kernel has
+    none of that freedom and says so - in its own words, not in the words of
+    a length mismatch, which is a different fault.
+    """
+    with pytest.raises(ValueError, match="one value per label"):
+        aggregate_numba.sum(GROUP_IDX, 3.0)
 
 
 def test_the_python_call_answers_in_the_dtype_of_the_jitted_one():

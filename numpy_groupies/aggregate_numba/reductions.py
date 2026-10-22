@@ -18,6 +18,7 @@ from numpy_groupies.aggregate_numba.compose import (
     rule_widen_int,
 )
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.validation import NEGATIVE_INDICES
 
 
 class ReductionState(NamedTuple):
@@ -368,7 +369,7 @@ def _first_driver_factory(nan_variant: bool) -> Any:
                     pending[ri] = False
                     out[ri] = a[i]
         if bad:
-            raise ValueError("negative indices not supported")
+            raise ValueError(NEGATIVE_INDICES)
         return out
 
     return njit_stable(driver, name=f"{'nan' if nan_variant else ''}first_driver")

@@ -24,8 +24,10 @@ dtype from the numba type of the values at compile time, the python call from
 the dtype of the array it is given - the same rule read from the two sides of
 numba, so the two cannot answer with different dtypes.  Both of them refuse
 what the driver cannot read: the shapes are asked at compile time, the dtypes
-of the two arrays in the python call.  That refusal is all the checking a
-kernel does - it is not ``aggregate()`` and holds none of its validation
+of the two arrays in the python call, and the fill value is checked against
+the output it fills - in the words of the python-level call, which checks it
+the same way.  That refusal is all the checking a kernel does - it is not
+``aggregate()`` and holds none of its validation
 machinery: ``group_idx`` has to be flat, one-dimensional and of an integer
 dtype, the values flat, one-dimensional and numeric.
 

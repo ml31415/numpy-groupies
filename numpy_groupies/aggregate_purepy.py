@@ -26,6 +26,7 @@ from numpy_groupies.common import (
 from numpy_groupies.common import (
     aliasing_py as aliasing,
 )
+from numpy_groupies.validation import EMPTY_GROUP_IDX, LENGTH_MISMATCH
 
 if TYPE_CHECKING:
     import numpy as np
@@ -378,7 +379,7 @@ def aggregate(
     if axis is not None:
         raise NotImplementedError("axis arg not supported in purepy implementation.")
     if len(idx) == 0:
-        raise ValueError("group_idx must not be empty")
+        raise ValueError(EMPTY_GROUP_IDX)
 
     # Check for 2d group_idx
     if size is None:
@@ -424,7 +425,7 @@ def aggregate(
         # have no shape to index at all
         vals = [cast(Any, vals)[()] if hasattr(vals, "shape") else vals] * len(idx)
     elif len(idx) != len(vals):
-        raise ValueError("group_idx and a must be of the same length")
+        raise ValueError(LENGTH_MISMATCH)
 
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it
