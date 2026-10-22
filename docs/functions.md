@@ -29,6 +29,7 @@ aggregate(group_idx, a, func="sum", size=None, fill_value=DEFAULT_FILL_VALUE,
 | `order`      | `'C'` (default) or `'F'`. Memory layout of multi-dimensional output. Hardly affects the speed of `aggregate`, but may matter for your downstream use of the result. |
 | `dtype`      | Output dtype. `None` chooses something sensible from `a`, `func` and `fill_value`. Non-numeric output of custom functions needs `dtype=object`. |
 | `axis`       | Aggregate along one axis of a multi-dimensional `a`. See form 3 below. Not supported by the pure-Python implementation. |
+| `out`        | An array the result is copied into, which has to match its shape and its dtype. Only the Numba implementation supports it, the others raise `NotImplementedError`. |
 | `ddof`       | Delta degrees of freedom for `var` and `std`; the divisor is `N - ddof`. Default 0. |
 | `dx`         | Sample spacing for `trapezoid`. Default 1.0. |
 | `reverse`    | Only for `sort`: sort descending instead of ascending. |
@@ -182,9 +183,9 @@ The nan-variants are supported wherever the plain function is.
 | custom callables               |  x    |  x²   |      x      |
 
 ¹ For the same functions as in the plain row.
-² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use `aggregate_np` instead.
+² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use the NumPy implementation (`numpy_groupies.aggregate_numpy`) instead.
 
-Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call `aggregate_np` or `aggregate_py` for the functions the default implementation lacks.
+Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call the NumPy or the pure Python implementation for the functions the default implementation lacks.
 
 ## Fill values
 
@@ -231,8 +232,8 @@ Small tools around `aggregate`, all exported from the package root. They need Nu
 | `uaggregate(group_idx, a, ...)`              | Same arguments as `aggregate`, but the result is broadcast back to the size of `a`, so every element carries the result of its own group. Equivalent to `unpack(group_idx, aggregate(...))`. |
 | `unpack(group_idx, ret)`                     | `ret[group_idx]` — expand a per-group result back to input length. |
 | `unpack_into(group_idx, ret, out)` *(Numba only)* | Same, but gathered into a caller-provided `out`, which has to match the shape of `ret[group_idx]` and the dtype of `ret`. A jitted loop, noticeably faster than fancy indexing for large contiguous 1-D inputs. |
-| `step_count(group_idx)` *(Numba only)*       | Number of runs of equal, contiguous labels in `group_idx`. |
-| `step_indices(group_idx)` *(Numba only)*     | The edges of those runs, `step_count(group_idx) + 1` values including the start and the end. |
+| `step_count(group_idx)`                       | Number of runs of equal, contiguous labels in `group_idx`. |
+| `step_indices(group_idx)`                     | The edges of those runs, `step_count(group_idx) + 1` values including the start and the end. |
 | `multi_arange(n)`                            | The concatenation of `arange(k)` for every `k` in `n` — a vectorised `np.hstack([np.arange(k) for k in n])`. |
 | `label_contiguous_1d(X)`                     | Labels consecutive blocks 1, 2, 3, …, leaving `0` or `False` as 0. |
 | `relabel_groups_unique(group_idx)`           | Closes gaps in sparse labels while keeping their order. |
@@ -318,9 +319,11 @@ npg.aggregate(group_idx, a, func="cumsum")
 Custom function producing strings (NumPy implementation; Numba cannot compile this):
 
 ```python
+import numpy_groupies.aggregate_numpy as npg
+
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
-npg.aggregate_np(group_idx, a, func=lambda x: " or maybe ".join(str(item) for item in x),
-                 fill_value="", dtype=object)
+npg.aggregate(group_idx, a, func=lambda x: " or maybe ".join(str(item) for item in x),
+              fill_value="", dtype=object)
 # ['3.2', '12.0 or maybe -15.0 or maybe 12.9', '', '', '88.0']
 ```
