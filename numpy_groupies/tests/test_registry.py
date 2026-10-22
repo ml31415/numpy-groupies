@@ -19,6 +19,7 @@ from numpy_groupies.registry import (
     build_dispatch,
     custom_callable,
     funcs_common,
+    function_names,
     resolve_name,
 )
 from numpy_groupies.utils_np import aliasing
@@ -200,3 +201,30 @@ def test_the_package_carries_the_functions_of_the_best_implementation():
         assert hasattr(npg, name), f"the package has no {name}"
         assert hasattr(aggregate_numpy, name), f"the numpy backend has no {name}"
         assert hasattr(aggregate_purepy, name), f"the pure python backend has no {name}"
+
+
+def test_every_function_of_the_package_is_declared_for_the_type_checker():
+    """The names the package hands out are the names the type checker knows.
+
+    The functions of the package are built at runtime, out of the table of
+    the entry points - and the type checker cannot see that table.  So the
+    names are declared for it in the package itself, and the two have to be
+    the same: a function the type checker does not know is one the caller
+    cannot use without an error.
+    """
+    import ast
+    import inspect
+
+    import numpy_groupies
+
+    tree = ast.parse(inspect.getsource(numpy_groupies))
+    declared = {
+        node.target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and isinstance(node.annotation, ast.Name)
+        and node.annotation.id == "EntryPoint"
+    }
+
+    assert declared == set(function_names())

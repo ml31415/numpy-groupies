@@ -11,6 +11,7 @@ before numpy is known to be available, and has to work without it.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias, cast
 
@@ -409,10 +410,6 @@ FUNC_EXTRAS: dict[str, tuple[tuple[str, str, Any], ...]] = {
 }
 
 
-# the marker for an argument without a default - None is a default of its own
-_NO_DEFAULT = object()
-
-
 def func_extras(name: str) -> tuple[tuple[str, str, Any], ...]:
     """The arguments the function has of its own.
 
@@ -431,9 +428,6 @@ class DefaultFillValue:
 
 DEFAULT_FILL_VALUE = DefaultFillValue()
 
-# the marker for an argument without a default - None is a default of its own
-_NO_DEFAULT = object()
-
 
 def bind_functions(
     func: Callable[..., Any],
@@ -443,9 +437,9 @@ def bind_functions(
     """One entry point per function name, with the function in the name.
 
     The entry points call the backend's ``aggregate`` with the name of their
-    function, and each of them carries the arguments its function has of its
-    own - the ``ddof`` of the variance, the ``q`` of the quantile, the ``dx``
-    of the trapezoid, the ``reverse`` of the sort.
+    function, and pass on the arguments they are given - the ``ddof`` of the
+    variance, the ``q`` of the quantile, the ``dx`` of the trapezoid, the
+    ``reverse`` of the sort.
     """
     return {name: _bind_one(func, name, doc) for name in names}
 
@@ -453,40 +447,59 @@ def bind_functions(
 def _bind_one(func: Callable[..., Any], name: str, doc: str | None) -> Callable[..., Any]:
     """The entry point of one function of a backend.
 
-    The signature is spelled out from the description of the function's own
-    arguments, so that the entry point of the quantile takes its ``q`` and
-    the entry point of the variance its ``ddof``.
+    It is the aggregate of the backend with the name of the function in it:
+    the entry point of the quantile is the aggregate with ``func="quantile"``.
+    The arguments behind the values are keyword arguments - the ones of the
+    function itself among them.
     """
-    arguments: list[tuple[str, str, Any]] = [
-        ("group_idx", "npt.NDArray[np.integer]", _NO_DEFAULT),
-        ("a", "AValue", _NO_DEFAULT),
-    ]
-    arguments += [(extra, annotation, default) for extra, annotation, default in FUNC_EXTRAS.get(name, ())]
-    arguments += [
-        ("size", "int | Sequence[int] | None", None),
-        ("fill_value", "AFillValue", DEFAULT_FILL_VALUE),
-        ("order", "RavelOrder", '"C"'),
-        ("dtype", "npt.DTypeLike | None", None),
-        ("axis", "int | None", None),
-    ]
-    signature = ", ".join(
-        n + ": " + ann + ("" if default is _NO_DEFAULT else f" = {default}") for n, ann, default in arguments
-    )
-    # the arguments of their own go to the call of the backend
-    own = "".join(f", {n}={n}" for n, _, _ in FUNC_EXTRAS.get(name, ()))
-    source = f"""
-def _entry_point({signature}):
-    return _func(group_idx, a, func=_name, size=size, fill_value=fill_value,
-                 order=order, dtype=dtype, axis=axis{own})
-"""
-    namespace: dict[str, Any] = {"_func": func, "_name": name, "DEFAULT_FILL_VALUE": DEFAULT_FILL_VALUE}
-    exec(source, namespace)  # noqa: S102 - the signature is spelled out in one place
-    entry_point: Callable[..., Any] = namespace["_entry_point"]
+
+    def entry_point(group_idx: Any, a: Any, **kwargs: Any) -> Any:
+        return func(group_idx, a, func=name, **kwargs)
+
     entry_point.__name__ = name
     entry_point.__qualname__ = name
-    entry_point.__module__ = __name__
+    entry_point.__module__ = getattr(func, "__module__", __name__)
     entry_point.__doc__ = doc or f"The {name} of every group - see the documentation of the package."
+    # the signature of the entry point: the aggregate's, without the name of
+    # the function and with the arguments the function has of its own - so
+    # that the help of the entry point says what it takes
+    vars(entry_point)["__signature__"] = _signature_of(func, name)
     return entry_point
+
+
+def _signature_of(func: Callable[..., Any], name: str) -> inspect.Signature:
+    """The signature an entry point shows.
+
+    It is the signature of the aggregate, without the name of the function -
+    that is what the entry point carries - and with the arguments the
+    function has of its own, which the entry point takes as keyword
+    arguments.
+    """
+    signature = inspect.signature(func)
+    parameters: list[inspect.Parameter] = []
+    behind_the_values = False
+    for parameter in signature.parameters.values():
+        if parameter.name == "func":
+            # the name of the function is in the entry point, not in a
+            # parameter of it
+            continue
+        if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+            parameters.append(parameter)
+            continue
+        if parameter.name == "a":
+            behind_the_values = True
+            parameters.append(parameter)
+            parameters.extend(
+                inspect.Parameter(extra, inspect.Parameter.KEYWORD_ONLY, default=default)
+                for extra, _annotation, default in FUNC_EXTRAS.get(name, ())
+            )
+            continue
+        if behind_the_values:
+            # everything behind the values is a keyword argument
+            parameters.append(parameter.replace(kind=inspect.Parameter.KEYWORD_ONLY))
+        else:
+            parameters.append(parameter)
+    return signature.replace(parameters=parameters)
 
 
 def function_names() -> list[str]:
