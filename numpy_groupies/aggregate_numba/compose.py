@@ -341,15 +341,15 @@ def _fill_fits_overload(fill_value: Any, low: Any, high: Any, high_exclusive: An
     if isinstance(fill_value, nb.types.Integer) and getattr(fill_value, "signed", True):
         # a signed integer is compared with the integer bounds of the output -
         # the largest one fits exactly, which a float comparison would not say
-        def impl(fill_value: Any, low: Any, high: Any, high_exclusive: Any) -> bool:
+        def _fill_fits_body(fill_value: Any, low: Any, high: Any, high_exclusive: Any) -> bool:
             return bool(low <= fill_value <= high)
     else:
         # everything else is compared with the bounds a float holds exactly -
         # and a nan fits nothing
-        def impl(fill_value: Any, low: Any, high: Any, high_exclusive: Any) -> bool:
+        def _fill_fits_body(fill_value: Any, low: Any, high: Any, high_exclusive: Any) -> bool:
             return bool(fill_value == fill_value and low <= fill_value < high_exclusive)
 
-    return impl
+    return _fill_fits_body
 
 
 @njit_stable
@@ -447,6 +447,14 @@ def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
 # kernels of an earlier version of this module had to write by hand, and what
 # the explicit signatures below make impossible.
 Variant = Literal["none", "ddof", "q", "dx", "reverse"]
+
+# the defaults the kernels carry for the argument an operation has of its own.
+# They are the defaults of the registry (``numpy_groupies.registry.FUNC_EXTRAS``)
+# - the one exception is the sample spacing of the trapezoid, which the kernel
+# carries as the integer 1 and not as the float 1.0: a float in the slot of
+# the driver compiles the kernel of the trapezoid a few percent slower than
+# the integer it used to carry (the nan variant measured ~3% slower with it).
+_KERNEL_ARGUMENT_DEFAULTS: dict[str, Any] = {"dx": 1}
 
 # the names the composed kernels of ``build_kernel`` take - the quantile and
 # the reverse flag belong to operations whose pass structure is written by
@@ -596,33 +604,57 @@ def _typing_prologue(
 # typing function with the implementation it returns - argument names and
 # annotations included - and because the argument an operation has of its own
 # is the one thing a caller of the kernel reads the signature for.
+#
+# What the three of them do is not spelled out again and again: the stub of
+# every variant calls the driver through the helper below, and the
+# implementation of every variant asks the same two questions of the call - the
+# two input checks and the fill value.  Only the signatures differ from one
+# variant to the next, and they have to: the name of the argument an operation
+# has of its own is part of the contract with the caller.
+
+
+def _call_kernel_stub(
+    driver: Callable[..., Any],
+    resolve: _PythonPrologue,
+    group_idx: Any,
+    a: Any,
+    size: int,
+    fill_value: AScalar | None,
+    extra_args: tuple[Any, ...] = (),
+) -> Any:
+    """The python half of a call of a kernel.
+
+    The driver takes the two arrays, the size, the two dtypes and the fill
+    value - and, for an operation that has an argument of its own, that
+    argument as its last one: the ``ddof`` of the variance, the quantile ``q``,
+    the sample spacing ``dx`` of the trapezoid, the ``reverse`` flag of the
+    sort.  An operation without one hands the driver no argument at all.
+    """
+    group_idx, a, out_dtype, aux_dtype, fill = resolve(group_idx, a, size, fill_value)
+    return driver(group_idx, a, size, out_dtype, aux_dtype, fill, *extra_args)
 
 
 def _kernel_none(name: str, driver: Callable[..., Any], resolve: _PythonPrologue, prepare: _TypingPrologue) -> _Kernel:
     """The kernel of an operation that takes nothing of its own."""
 
     def stub(group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None) -> Any:
-        group_idx, a, out_dtype, aux_dtype, fill = resolve(group_idx, a, size, fill_value)
-        return driver(group_idx, a, size, out_dtype, aux_dtype, fill)
+        return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value)
 
     def typing(group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None) -> Any:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
 
-        def impl(group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None) -> Any:
+        def _kernel_impl(group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None) -> Any:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill)
             else:
-                # the fill value has to fit the output (numba prunes this
-                # branch away when the fill value is a None, which is the
-                # branch above)
                 _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
                 return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value)
 
-        impl.__qualname__ = f"{name}_impl"
-        return impl
+        _kernel_impl.__qualname__ = f"{name}_kernel_impl"
+        return _kernel_impl
 
     return stub, typing
 
@@ -631,15 +663,14 @@ def _kernel_ddof(name: str, driver: Callable[..., Any], resolve: _PythonPrologue
     """The kernel of an operation that takes the ``ddof`` of the variance."""
 
     def stub(group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None) -> Any:
-        group_idx, a, out_dtype, aux_dtype, fill = resolve(group_idx, a, size, fill_value)
-        return driver(group_idx, a, size, out_dtype, aux_dtype, fill, ddof)
+        return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (ddof,))
 
     def typing(group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None) -> Any:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
 
-        def impl(group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None) -> Any:
+        def _kernel_impl(group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None) -> Any:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
@@ -647,8 +678,8 @@ def _kernel_ddof(name: str, driver: Callable[..., Any], resolve: _PythonPrologue
                 _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
                 return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, ddof)
 
-        impl.__qualname__ = f"{name}_impl"
-        return impl
+        _kernel_impl.__qualname__ = f"{name}_kernel_impl"
+        return _kernel_impl
 
     return stub, typing
 
@@ -657,15 +688,16 @@ def _kernel_q(name: str, driver: Callable[..., Any], resolve: _PythonPrologue, p
     """The kernel of an operation that takes a quantile."""
 
     def stub(group_idx: Any, a: Any, q: float = 0.5, size: int = -1, fill_value: float | None = None) -> Any:
-        group_idx, a, out_dtype, aux_dtype, fill = resolve(group_idx, a, size, fill_value)
-        return driver(group_idx, a, size, out_dtype, aux_dtype, fill, q)
+        return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (q,))
 
     def typing(group_idx: Any, a: Any, q: float = 0.5, size: int = -1, fill_value: float | None = None) -> Any:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
 
-        def impl(group_idx: Any, a: Any, q: float = 0.5, size: int = -1, fill_value: float | None = None) -> Any:
+        def _kernel_impl(
+            group_idx: Any, a: Any, q: float = 0.5, size: int = -1, fill_value: float | None = None
+        ) -> Any:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, q)
@@ -673,8 +705,8 @@ def _kernel_q(name: str, driver: Callable[..., Any], resolve: _PythonPrologue, p
                 _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
                 return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, q)
 
-        impl.__qualname__ = f"{name}_impl"
-        return impl
+        _kernel_impl.__qualname__ = f"{name}_kernel_impl"
+        return _kernel_impl
 
     return stub, typing
 
@@ -689,15 +721,14 @@ def _kernel_dx(name: str, driver: Callable[..., Any], resolve: _PythonPrologue, 
     """
 
     def stub(group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None) -> Any:
-        group_idx, a, out_dtype, aux_dtype, fill = resolve(group_idx, a, size, fill_value)
-        return driver(group_idx, a, size, out_dtype, aux_dtype, fill, dx)
+        return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (dx,))
 
     def typing(group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None) -> Any:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
 
-        def impl(group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None) -> Any:
+        def _kernel_impl(group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None) -> Any:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, dx)
@@ -705,8 +736,8 @@ def _kernel_dx(name: str, driver: Callable[..., Any], resolve: _PythonPrologue, 
                 _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
                 return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, dx)
 
-        impl.__qualname__ = f"{name}_impl"
-        return impl
+        _kernel_impl.__qualname__ = f"{name}_kernel_impl"
+        return _kernel_impl
 
     return stub, typing
 
@@ -717,15 +748,16 @@ def _kernel_reverse(
     """The kernel of an operation that takes the ``reverse`` flag of the sort."""
 
     def stub(group_idx: Any, a: Any, reverse: bool = False, size: int = -1, fill_value: float | None = None) -> Any:
-        group_idx, a, out_dtype, aux_dtype, fill = resolve(group_idx, a, size, fill_value)
-        return driver(group_idx, a, size, out_dtype, aux_dtype, fill, reverse)
+        return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (reverse,))
 
     def typing(group_idx: Any, a: Any, reverse: bool = False, size: int = -1, fill_value: float | None = None) -> Any:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
 
-        def impl(group_idx: Any, a: Any, reverse: bool = False, size: int = -1, fill_value: float | None = None) -> Any:
+        def _kernel_impl(
+            group_idx: Any, a: Any, reverse: bool = False, size: int = -1, fill_value: float | None = None
+        ) -> Any:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, reverse)
@@ -733,8 +765,8 @@ def _kernel_reverse(
                 _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
                 return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, reverse)
 
-        impl.__qualname__ = f"{name}_impl"
-        return impl
+        _kernel_impl.__qualname__ = f"{name}_kernel_impl"
+        return _kernel_impl
 
     return stub, typing
 
@@ -748,9 +780,15 @@ _KERNEL_BUILDERS: dict[Variant, Callable[[str, Callable[..., Any], _PythonProlog
 }
 
 
+# the typing functions of the kernels, by the name of their operation: the
+# outward signature of a kernel is the one of its stub and the one of this
+# function, and the test suite compares the two of them
+_TYPING_FUNCTIONS: dict[str, Callable[..., Any]] = {}
+
+
 def _make_stub(
     stub_name: str,
-    driver_getter: Callable[[], Any],
+    driver: Callable[..., Any],
     rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
     fill_default: AScalar,
     doc: str | None,
@@ -784,7 +822,8 @@ def _make_stub(
 
     resolve = _python_prologue(rule, fill_default, reject_fill, stub_name)
     prepare = _typing_prologue(rule, fill_default, reject_fill, stub_name)
-    stub, typing = _KERNEL_BUILDERS[variant](stub_name, driver_getter(), resolve, prepare)
+    stub, typing = _KERNEL_BUILDERS[variant](stub_name, driver, resolve, prepare)
+    _TYPING_FUNCTIONS[stub_name] = typing
 
     stub.__name__ = stub.__qualname__ = stub_name
     stub.__module__ = __name__
@@ -800,10 +839,10 @@ def _make_stub(
         "callable from jitted code and from python with the same arguments."
     )
 
-    # no jit_options cache here: the impl shim is compiled by numba's
-    # overload machinery OUTSIDE the revisioned ``njit_stable`` namespace,
-    # and its cache key does not reliably capture the identity of the
-    # captured driver - stale impls of earlier refactors then keep being
+    # no jit_options cache here: the shim of the implementation is compiled by
+    # numba's overload machinery OUTSIDE the revisioned ``njit_stable``
+    # namespace, and its cache key does not reliably capture the identity of
+    # the captured driver - stale shims of earlier refactors then keep being
     # served (observed as a nanfirst running plain-first machine code).
     # The shim itself compiles in microseconds, the expensive compilation
     # (the driver) stays cached through ``njit_stable``.
@@ -1143,7 +1182,7 @@ def build_kernel(
 
         stub = _make_stub(
             op_name,
-            lambda: driver,
+            driver,
             rule,
             fill_default,
             doc,
@@ -1206,7 +1245,7 @@ def build_custom_kernel(
         stub_name_variant = name if not nan_variant else "nan" + name
         stub = _make_stub(
             stub_name_variant,
-            lambda: driver,
+            driver,
             rule,
             fill_default,
             doc,
