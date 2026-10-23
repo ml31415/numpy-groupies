@@ -13,7 +13,7 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import build_kernel, rule_float, rule_real_float
+from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
@@ -201,10 +201,30 @@ def _mean_finish(st: MeanState, g: int, fill_value: float, extra: Any) -> Any:
     return fill_value
 
 
+def _mean_combine(acc: MeanState, other: MeanState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one: the sums and the
+    counts add up, and the global extrema that feed the exactness gate are
+    the ones of both chunks."""
+    out: np.ndarray = acc.out
+    out += other.out
+    count: np.ndarray = acc.count
+    count += other.count
+    # the extrema are compared the way the kernel compares them: min() and
+    # max() have no meaning for complex values, and the kernel takes them
+    # for complex input
+    low: np.ndarray = acc.low
+    if complex_less(other.low[0], low[0]):
+        low[0] = other.low[0]
+    high: np.ndarray = acc.high
+    if complex_less(high[0], other.high[0]):
+        high[0] = other.high[0]
+
+
 mean = build_kernel(
     "mean",
     init=_mean_init,
     update=_mean_update,
+    combine=_mean_combine,
     seed=_mean_seed,
     gate=_mean_gate,
     finish=_mean_finish,

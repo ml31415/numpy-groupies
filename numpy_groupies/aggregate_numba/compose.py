@@ -30,6 +30,13 @@ forced_fill) -> state``
     the groups that received no value, queried to apply a custom fill value
     (empty whenever the fill value equals the forced default - the ops
     then skip their untouched bookkeeping entirely)
+``combine(acc, other, fill_value, extra)``
+    optional fold of the states of two chunks of the data into one - the
+    operations that can be reduced in chunks (the sums, the products, the
+    counts, the extremes, the logic) provide one, and their driver then has a
+    parallel path: the data is split into as many chunks as there are threads,
+    every chunk is reduced into a state of its own, and the states are folded
+    in the order of their index
 
 The factory assembles these into ONE compiled driver per operation that owns
 the group loop, bounds checks and pass structure, and exposes it as a function
@@ -54,6 +61,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.aggregate_numba.mt import should_use_mt
 from numpy_groupies.utils_np import AResult, AScalar, check_fill_value_for_dtype
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
@@ -862,7 +870,7 @@ def _make_stub(
 # so nothing has to be looked up in a table of slots on the way.
 
 
-def build_driver(name: str, passes: Any) -> Any:
+def build_driver(name: str, passes: Any, suffix: str) -> Any:
     """The driver of an operation that takes nothing of its own."""
 
     def driver(
@@ -875,10 +883,10 @@ def build_driver(name: str, passes: Any) -> Any:
     ) -> Any:
         return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, 0)
 
-    return njit_stable(driver, name=f"{name}_driver")
+    return njit_stable(driver, name=f"{name}{suffix}")
 
 
-def build_driver_ddof(name: str, passes: Any) -> Any:
+def build_driver_ddof(name: str, passes: Any, suffix: str) -> Any:
     """The driver of an operation that takes the ``ddof`` of the variance."""
 
     def driver(
@@ -892,10 +900,10 @@ def build_driver_ddof(name: str, passes: Any) -> Any:
     ) -> Any:
         return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
 
-    return njit_stable(driver, name=f"{name}_driver")
+    return njit_stable(driver, name=f"{name}{suffix}")
 
 
-def build_driver_dx(name: str, passes: Any) -> Any:
+def build_driver_dx(name: str, passes: Any, suffix: str) -> Any:
     """The driver of an operation that takes the sample spacing ``dx`` of the
     trapezoid."""
 
@@ -910,14 +918,37 @@ def build_driver_dx(name: str, passes: Any) -> Any:
     ) -> Any:
         return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, dx)
 
-    return njit_stable(driver, name=f"{name}_driver")
+    return njit_stable(driver, name=f"{name}{suffix}")
+
+
+def build_mt_driver(name: str, passes: Any, suffix: str) -> Any:
+    """The parallel driver of an operation that can be reduced in chunks.
+
+    It takes the number of threads as its first argument: the threads of the
+    pool are read when the wrapper is built, and a number read inside the
+    compiled code would keep the driver out of the on-disk cache (numba
+    refuses to cache a function that reads a dynamic global).
+    """
+
+    def driver(
+        n_threads: int,
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+    ) -> Any:
+        return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, 0, n_threads)
+
+    return njit_stable(driver, name=f"{name}{suffix}")
 
 
 # the pass structure knows the argument as ``extra``, so a driver builder
 # exists for every name an operation uses for it - the two the composed
 # kernels never take (``q`` and ``reverse``) are answered by the hand-written
 # drivers of ``numpy_groupies.aggregate_numba.specials``
-_DRIVER_BUILDERS: dict[Variant, Callable[[str, Any], Any]] = {
+_DRIVER_BUILDERS: dict[Variant, Callable[[str, Any, str], Any]] = {
     "none": build_driver,
     "ddof": build_driver_ddof,
     "dx": build_driver_dx,
@@ -951,6 +982,10 @@ class KernelHandle(NamedTuple):
     ``assembles``   the driver assembles the result instead of returning a
                 plain array: the fill value is then the business of the
                 post hook, not of the driver
+    ``mt_driver``   the parallel driver of an operation that can be reduced in
+                chunks - it has the signature of the driver of its variant
+                and falls back to the sequential path when the parallel one
+                is not worth it
     """
 
     name: str
@@ -967,6 +1002,7 @@ class KernelHandle(NamedTuple):
     placeable: Callable[[np.dtype | None], bool] | None = None
     post: Callable[..., AResult] | None = None
     assembles: bool = False
+    mt_driver: Callable[..., AResult | list[AResult]] | None = None
 
 
 class KernelPair(NamedTuple):
@@ -1003,6 +1039,8 @@ def build_kernel(
     finish: Callable[..., Any] | None = None,
     untouched: Callable[..., npt.NDArray[np.bool_]] | None = None,
     update_nan: Callable[..., None] | None = None,
+    combine: Callable[..., None] | None = None,
+    combine_nan: Callable[..., None] | None = None,
     nans: bool = True,
     variant: ComposedVariant = "none",
     aux_widen: bool = False,
@@ -1025,6 +1063,10 @@ def build_kernel(
     ``variant`` names the argument the operation has of its own, if any: it
     decides the signature of the driver as well as the one of the kernel, so
     the two cannot drift apart.
+
+    ``combine`` folds the states of two chunks of the data into one - the
+    operations that provide one can be reduced in chunks, and their driver
+    then has a parallel path (see ``combine`` in the module docstring).
     """
     init_c = njit_stable(init)
     update_c = njit_stable(update)
@@ -1125,22 +1167,44 @@ def build_kernel(
             fill_value: float,
             extra: Any,
             size: int,
-        ) -> None:
+        ) -> int:
             # a function of its own on purpose: with the arrays living in the
             # caller's frame (allocated there, reached through the state) the
             # same loop measures ~12% slower - numba has to reload the data
             # pointers around every store instead of keeping them in
             # registers.  measured against numba 0.68 on argmax
+            # A fault of the indices is not raised but returned: an exception
+            # out of the parallel region does not reach the caller in one
+            # piece (numba hands it over mangled, and with a single chunk it
+            # loses it altogether).  The driver reads the code and raises the
+            # very same complaint.
+            # The code travels as a number and not as a flag in an array: the
+            # store into that array would keep the loop from being
+            # vectorized - it measured ten times slower.
+            fault = 0
             for i in range(group_idx.shape[0]):
                 ri = group_idx[i]
                 if ri < 0:
-                    raise ValueError(NEGATIVE_INDICES)
+                    fault |= 1
+                    continue
                 if ri >= size:
-                    raise ValueError(TOO_LARGE)
+                    fault |= 2
+                    continue
                 update_(st, ri, i, a[i], fill_value, extra)
                 record_c(st, ri, i)
+            return fault
 
         kernel = njit_stable(kernel, name=f"{op_name}_kernel")
+
+        def _raise_fault(fault: int) -> None:
+            # the complaint of the indices, in the words of the validation
+            # module - the kernel could not raise it itself
+            if fault & 1:
+                raise ValueError(NEGATIVE_INDICES)
+            if fault & 2:
+                raise ValueError(TOO_LARGE)
+
+        _raise_fault = njit_stable(_raise_fault, name=f"{op_name}_raise_fault")
 
         # the pass structure of the operation, behind the driver variant that
         # ``build_driver`` below builds around it: an operation with an
@@ -1170,7 +1234,8 @@ def build_kernel(
                 size = size_arg
             st = init_c(size, len(group_idx), out_dtype, aux_dtype, a.dtype, fill_value, forced_fill)
             seed_c(st, a)
-            kernel(group_idx, a, st, fill_value, extra, size)
+            fault = kernel(group_idx, a, st, fill_value, extra, size)
+            _raise_fault(fault)
             gate_c(st, len(group_idx))
             for g in range(size):
                 st.out[g] = finish_c(st, g, fill_value, extra)
@@ -1178,7 +1243,84 @@ def build_kernel(
             return st.out
 
         passes = njit_stable(passes, name=f"{op_name}_passes")
-        driver = _DRIVER_BUILDERS[variant](op_name, passes)
+        driver = _DRIVER_BUILDERS[variant](op_name, passes, "_driver")
+
+        mt_driver = None
+        if combine is not None:
+            if variant != "none":
+                # the parallel driver takes the number of threads as its first
+                # argument and nothing else of its own - an operation with an
+                # argument of its own would need a driver of its own here
+                raise ValueError(f"the operation {name} takes an argument of its own and cannot be reduced in chunks")
+            # The parallel path: the data is split into as many chunks as there
+            # are threads, and every chunk is reduced into a state of its own.
+            # The states are folded in the order of their index, so the result
+            # is the one of the sequential kernel up to the order of the
+            # additions - and with a single chunk it is the very same
+            # reduction, bit for bit.
+            #
+            # The nan variant folds its states with its own body where the
+            # plain one is not enough - the select-form kernels, whose nan
+            # handling differs from the plain one.  The choice happens here,
+            # in the factory, so that the driver carries no branch for it.
+            combine_c = njit_stable(
+                combine_nan if (nan_variant and combine_nan is not None) else combine,
+                name=f"{op_name}_combine",
+            )
+
+            def mt_passes(
+                group_idx: npt.NDArray[np.integer],
+                a: npt.NDArray[np.number],
+                size_arg: int,
+                out_dtype: np.dtype,
+                aux_dtype: np.dtype,
+                fill_value: float,
+                extra: Any,
+                n_threads: int,
+            ) -> Any:
+                size = np.max(group_idx) + 1
+                if size_arg >= 0:
+                    if size > size_arg:
+                        _raise_too_large_for_size(size_arg)
+                    size = size_arg
+                n_values = len(group_idx)
+                if not should_use_mt(size, n_threads, n_values):
+                    # not worth it, or only one thread to do it with: the
+                    # sequential path, with its result bit for bit
+                    return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
+                n_chunks = n_threads
+                chunk = (n_values + n_chunks - 1) // n_chunks
+                faults = np.zeros(n_chunks, np.int64)
+                states = [
+                    init_c(size, n_values, out_dtype, aux_dtype, a.dtype, fill_value, forced_fill)
+                    for _ in range(n_chunks)
+                ]
+                for c in nb.prange(n_chunks):
+                    start = c * chunk
+                    stop = min(start + chunk, n_values)
+                    if stop > start:
+                        seed_c(states[c], a[start:stop])
+                        faults[c] = kernel(group_idx[start:stop], a[start:stop], states[c], fill_value, extra, size)
+                # the states of the chunks, folded in the order of their index
+                acc = states[0]
+                for c in range(1, n_chunks):
+                    combine_c(acc, states[c], fill_value, extra)
+                fault = faults[0]
+                for c in range(1, n_chunks):
+                    fault |= faults[c]
+                _raise_fault(fault)
+                gate_c(acc, n_values)
+                # the array of the state is bound to a local: a write through
+                # the field of a state that came out of a list lands in a copy
+                # of it and is lost
+                out = acc.out
+                for g in range(size):
+                    out[g] = finish_c(acc, g, fill_value, extra)
+                fill_untouched(acc, size, fill_value)
+                return out
+
+            mt_passes = njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
+            mt_driver = build_mt_driver(op_name, mt_passes, "_mt_driver")
 
         stub = _make_stub(
             op_name,
@@ -1201,6 +1343,7 @@ def build_kernel(
             placeable=placeable,
             post=post,
             assembles=assembles,
+            mt_driver=mt_driver,
         )
 
     plain = build(False)
