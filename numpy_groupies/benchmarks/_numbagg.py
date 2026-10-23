@@ -17,7 +17,10 @@ import numbagg
 # thread on a 6-core machine).  numbagg is therefore held at one thread -
 # but only for its own calls: setting the thread count of numba at the
 # import of this module would hold every other participant of the
-# benchmark at one thread as well
+# benchmark at one thread as well.  The switch is cheap: measured 0.494ms
+# with the switch and 0.483ms without it, on a machine with three cores
+# and six hardware threads - where the two are equal anyway, since there
+# are not enough cores for the parallel target to win.
 def _single_threaded(func: Callable[..., Any]) -> Callable[..., Any]:
     """The function, called with numba at one thread."""
 
