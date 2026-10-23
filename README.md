@@ -260,20 +260,20 @@ Best of three passes, every cell measured in one block of five runs, in millisec
 
 | function        | numpy  |  numba  | numbagg | polars | pandas |
 | --------------- | -----: | ------: | ------: | -----: | ------: |
-| `sum`           |  0.923 |  0.283 |  0.484 |  2.771 |  6.905 |
-| `mean`          |  1.561 |  0.304 |  0.557 |  2.441 |  7.435 |
-| `max`           |  1.755 |  0.307 |  0.906 |  3.296 |  6.560 |
-| `std`           |  3.186 |  0.669 |  0.722 |  2.907 |  7.958 |
-| `nansum`        |  4.226 |  0.233 |  1.799 |  6.272 |  8.267 |
-| `median`        | 12.563 |  9.472 |   ---- |  4.247 | 16.301 |
-| `skew`          |  5.827 |  2.592 |   ---- |  3.926 |  9.780 |
-| `kurt`          |  5.975 |  2.584 |   ---- |  4.590 | 11.139 |
-| `quantile`      | 15.770 |  9.460 |   ---- |  4.236 | 23.541 |
-| `nunique`       | 15.308 |  8.240 |   ---- | 12.366 | 61.704 |
-| `sort`          | 71.085 | 24.807 |   ---- |   ---- |   ---- |
-| `cumsum`        | 16.269 |  0.570 |   ---- | 10.154 |  7.524 |
-| `array`         |  7.000 |  1.961 |   ---- |   ---- |   ---- |
-| custom callable  | 114.738 |  5.985 |   ---- | 82.364 | 98.066 |
+| `sum`           |  0.958 |  0.347 |  0.496 |  2.793 |  7.131 |
+| `mean`          |  1.554 |  0.368 |  0.574 |  2.811 |  7.547 |
+| `max`           |  1.672 |  0.392 |  0.888 |  3.400 |  6.447 |
+| `std`           |  3.252 |  0.318 |  0.707 |  2.508 |  7.787 |
+| `nansum`        |  4.353 |  0.273 |  1.800 |  6.741 |  8.644 |
+| `median`        | 13.331 |  9.807 |   ---- |  4.157 | 16.114 |
+| `skew`          |  5.953 |  2.611 |   ---- |  4.270 |  9.278 |
+| `kurt`          |  5.800 |  2.671 |   ---- |  4.127 | 10.809 |
+| `quantile`      | 16.259 |  9.545 |   ---- |  4.308 | 23.815 |
+| `nunique`       | 15.537 |  8.274 |   ---- | 13.732 | 60.011 |
+| `sort`          | 70.692 | 24.493 |   ---- |   ---- |   ---- |
+| `cumsum`        | 16.318 |  0.573 |   ---- |  9.816 |  7.372 |
+| `array`         |  7.210 |  2.014 |   ---- |   ---- |   ---- |
+| custom callable  | 110.769 |  5.977 |   ---- | 81.907 | 95.177 |
 
 The `polars` column uses all the cores of the machine. The `numba` column uses them too, for the operations that can be reduced in chunks - the sums, the products, the counts, the extremes and the mean: their data is split into chunks that are reduced separately and folded afterwards. The chunks are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the chunks that are left. The state is one per thread, not one per chunk, so the memory does not grow with the number of the chunks. The operations that need the values of a group together (the order statistics) and the ones that give an output per value (the cumulatives) stay single-threaded. That matters most for the order statistics: with a single thread polars needs 8.5ms for the quantile, against 4.2ms with six, which puts it level with the single-threaded Numba kernel (9.5ms).
 

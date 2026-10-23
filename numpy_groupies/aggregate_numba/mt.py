@@ -110,33 +110,39 @@ def estimate_seq_time_us(n_groups: int, n_values: int) -> float:
 
 
 @nb.njit(cache=True)
-def estimate_mt_time_us(n_groups: int, n_threads: int, n_values: int) -> float:
+def estimate_mt_time_us(n_groups: int, n_threads: int, n_values: int, state_size: int = 1) -> float:
     """The estimated time of the parallel path, in microseconds.
 
     The chunks run in parallel, so the data arrives at the speed the threads
     use together; the state of every thread has to be filled and folded
-    again, and that costs with the number of the groups.
+    again, and that costs with the number of the groups.  ``state_size`` is
+    the number of the arrays the state of the operation holds, counted
+    against the state of the sum the constants were fitted on - the
+    variance holds six arrays against the two of the sum, and its state
+    costs three times as much to fill and to fold.
     """
     data_us = n_values * _BYTES_PER_ELEMENT / _bandwidth_bytes_per_s(n_values, n_threads) * 1e6
-    partials_us = n_threads * n_groups * _C_PART / 1e3
-    return data_us + n_groups * _CG_MT / 1e3 + partials_us + _OVERHEAD_US
+    partials_us = n_threads * n_groups * _C_PART * state_size / 1e3
+    return data_us + n_groups * _CG_MT * state_size / 1e3 + partials_us + _OVERHEAD_US
 
 
 @nb.njit(cache=True)
-def estimate_mt_ratio(n_groups: int, n_threads: int, n_values: int) -> float:
+def estimate_mt_ratio(n_groups: int, n_threads: int, n_values: int, state_size: int = 1) -> float:
     """The estimated time of the parallel path as a multiple of the sequential
     one.  Below 1 means the parallel path is faster; 1 means they are equal."""
-    return estimate_mt_time_us(n_groups, n_threads, n_values) / estimate_seq_time_us(n_groups, n_values)
+    return estimate_mt_time_us(n_groups, n_threads, n_values, state_size) / estimate_seq_time_us(n_groups, n_values)
 
 
 @nb.njit(cache=True)
-def should_use_mt(n_groups: int, n_threads: int, n_values: int) -> bool:
+def should_use_mt(n_groups: int, n_threads: int, n_values: int, state_size: int = 1) -> bool:
     """Whether the multithreaded variant of a kernel is worth using.
 
     ``n_groups`` is the number of groups, ``n_threads`` the number of threads
     the parallel path would use, ``n_values`` the number of values in the
     input.  Note that ``n_values`` is not the ``size`` argument of
-    ``aggregate`` - that one is the number of groups.
+    ``aggregate`` - that one is the number of groups.  ``state_size`` is the
+    number of the arrays the state of the operation holds, against the two
+    of the sum the constants were fitted on.
 
     The answer is False whenever the parallel path could be slower than the
     sequential one: with too few values, and whenever the estimate does not
@@ -146,7 +152,7 @@ def should_use_mt(n_groups: int, n_threads: int, n_values: int) -> bool:
         return False
     if n_values < MT_MIN_VALUES:
         return False
-    return estimate_mt_ratio(n_groups, n_threads, n_values) <= MT_MAX_RATIO
+    return estimate_mt_ratio(n_groups, n_threads, n_values, state_size) <= MT_MAX_RATIO
 
 
 # --- the machine, for the number of threads ---

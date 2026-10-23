@@ -214,6 +214,8 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
         ddof: float,
         q: float,
     ) -> Any:
+        if mt_driver is not None:
+            return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
         return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
 
     return call_ddof

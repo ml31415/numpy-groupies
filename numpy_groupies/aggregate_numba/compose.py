@@ -930,7 +930,7 @@ def build_driver_dx(name: str, passes: Any, suffix: str) -> Any:
 
 
 def build_mt_driver(name: str, passes: Any, suffix: str) -> Any:
-    """The parallel driver of an operation that can be reduced in chunks.
+    """The parallel driver of an operation that takes nothing of its own.
 
     It takes the number of threads as its first argument: the threads of the
     pool are read when the wrapper is built, and a number read inside the
@@ -950,6 +950,32 @@ def build_mt_driver(name: str, passes: Any, suffix: str) -> Any:
         return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, 0, n_threads)
 
     return njit_stable(driver, name=f"{name}{suffix}")
+
+
+def build_mt_driver_ddof(name: str, passes: Any, suffix: str) -> Any:
+    """The parallel driver of an operation that takes the ``ddof`` of the variance."""
+
+    def driver(
+        n_threads: int,
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        ddof: int,
+    ) -> Any:
+        return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof, n_threads)
+
+    return njit_stable(driver, name=f"{name}{suffix}")
+
+
+# the parallel drivers, one per variant of the operation - the number of the
+# threads comes first, the argument of the operation of its own last
+_MT_DRIVER_BUILDERS: dict[Variant, Callable[[str, Any, str], Any]] = {
+    "none": build_mt_driver,
+    "ddof": build_mt_driver_ddof,
+}
 
 
 # the pass structure knows the argument as ``extra``, so a driver builder
@@ -1049,6 +1075,7 @@ def build_kernel(
     update_nan: Callable[..., None] | None = None,
     combine: Callable[..., None] | None = None,
     combine_nan: Callable[..., None] | None = None,
+    state_size: int = 1,
     nans: bool = True,
     variant: ComposedVariant = "none",
     aux_widen: bool = False,
@@ -1075,6 +1102,11 @@ def build_kernel(
     ``combine`` folds the states of two chunks of the data into one - the
     operations that provide one can be reduced in chunks, and their driver
     then has a parallel path (see ``combine`` in the module docstring).
+
+    ``state_size`` is the number of the arrays the state of the operation
+    holds, counted against the two of the sum: the state of every thread
+    has to be filled and folded again, and a state with six arrays costs
+    three times as much as one with two.  The cost model needs to know.
     """
     init_c = njit_stable(init)
     update_c = njit_stable(update)
@@ -1255,10 +1287,10 @@ def build_kernel(
 
         mt_driver = None
         if combine is not None:
-            if variant != "none":
-                # the parallel driver takes the number of threads as its first
-                # argument and nothing else of its own - an operation with an
-                # argument of its own would need a driver of its own here
+            if variant not in _MT_DRIVER_BUILDERS:
+                # the parallel drivers take the number of threads as their
+                # first argument - an operation with an argument of its own
+                # would need a driver of its own here
                 raise ValueError(f"the operation {name} takes an argument of its own and cannot be reduced in chunks")
             # The parallel path: the data is split into as many chunks as there
             # are threads, and every chunk is reduced into a state of its own.
@@ -1292,7 +1324,7 @@ def build_kernel(
                         _raise_too_large_for_size(size_arg)
                     size = size_arg
                 n_values = len(group_idx)
-                if not should_use_mt(size, n_threads, n_values):
+                if not should_use_mt(size, n_threads, n_values, state_size):
                     # not worth it, or only one thread to do it with: the
                     # sequential path, with its result bit for bit
                     return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
@@ -1335,7 +1367,7 @@ def build_kernel(
                 return out
 
             mt_passes = njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
-            mt_driver = build_mt_driver(op_name, mt_passes, "_mt_driver")
+            mt_driver = _MT_DRIVER_BUILDERS[variant](op_name, mt_passes, "_mt_driver")
 
         stub = _make_stub(
             op_name,

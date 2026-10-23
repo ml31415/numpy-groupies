@@ -15,7 +15,21 @@ from numpy_groupies.aggregate_numba import aggregate, mt
 # the operations that can be reduced in chunks - the others need the values
 # of a group together (the order statistics) or one output per value (the
 # cumulatives)
-CHUNKABLE = ["sum", "prod", "len", "all", "any", "allnan", "anynan", "max", "min", "mean", "sumofsquares"]
+CHUNKABLE = [
+    "sum",
+    "prod",
+    "len",
+    "all",
+    "any",
+    "allnan",
+    "anynan",
+    "max",
+    "min",
+    "mean",
+    "sumofsquares",
+    "var",
+    "std",
+]
 
 
 @pytest.fixture
@@ -102,12 +116,27 @@ def test_the_nan_variants_give_the_same_result():
     values = rng.random(200_000)
     values[group_idx == 2] = np.nan
     # allnan and anynan are the nan variants themselves - they have no twin
-    for func in ("sum", "prod", "len", "all", "any", "max", "min", "mean"):
+    for func in ("sum", "prod", "len", "all", "any", "max", "min", "mean", "var", "std"):
         mt.set_thread_count(4)
         parallel = aggregate(group_idx, values, func="nan" + func)
         mt.set_thread_count(1)
         sequential = aggregate(group_idx, values, func="nan" + func)
         np.testing.assert_allclose(parallel, sequential, rtol=1e-12, equal_nan=True)
+
+
+def test_the_dispersion_keeps_the_result_of_the_integer_input():
+    # the integer input is centered on the first value of its group, and
+    # every chunk has its own first value - the fold of the two states has
+    # to correct for the two anchors
+    rng = np.random.default_rng(100)
+    group_idx = rng.integers(0, 100, 200_000)
+    values = rng.integers(-1000, 1000, 200_000)
+    for func in ("var", "std"):
+        mt.set_thread_count(1)
+        one = aggregate(group_idx, values, func=func)
+        mt.set_thread_count(4)
+        many = aggregate(group_idx, values, func=func)
+        np.testing.assert_allclose(one, many, rtol=1e-12, equal_nan=True)
 
 
 def test_a_fault_of_the_indices_is_complained_about():
