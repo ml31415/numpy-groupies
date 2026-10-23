@@ -92,14 +92,24 @@ def _sum_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
+@njit_stable
+def _combine_untouched(acc: ReductionState, other: ReductionState) -> None:
+    """The groups that neither of the two chunks touched stay untouched.
+
+    A group that one of the chunks put a value into is not untouched any
+    more - the flag of the state of the first chunk says so.
+    """
+    if acc.track:
+        untouched: np.ndarray = acc.untouched
+        untouched &= other.untouched
+
+
 def _sum_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
     """The states of two chunks of the data, folded into one: the sums add up,
     and a group that neither of the chunks touched stays untouched."""
     out: np.ndarray = acc.out
     out += other.out
-    if acc.track:
-        untouched: np.ndarray = acc.untouched
-        untouched &= other.untouched
+    _combine_untouched(acc, other)
 
 
 sum = build_kernel(
@@ -156,9 +166,7 @@ def _prod_combine(acc: ReductionState, other: ReductionState, fill_value: float,
     multiply, and a group that neither of the chunks touched stays untouched."""
     out: np.ndarray = acc.out
     out *= other.out
-    if acc.track:
-        untouched: np.ndarray = acc.untouched
-        untouched &= other.untouched
+    _combine_untouched(acc, other)
 
 
 prod = build_kernel(
@@ -211,9 +219,7 @@ def _len_combine(acc: ReductionState, other: ReductionState, fill_value: float, 
     up, and a group that neither of the chunks touched stays untouched."""
     out: np.ndarray = acc.out
     out += other.out
-    if acc.track:
-        untouched: np.ndarray = acc.untouched
-        untouched &= other.untouched
+    _combine_untouched(acc, other)
 
 
 len = build_kernel(
@@ -265,9 +271,7 @@ def _all_combine(acc: ReductionState, other: ReductionState, fill_value: float, 
     only if it is true in both of the chunks."""
     out: np.ndarray = acc.out
     out &= other.out
-    if acc.track:
-        untouched: np.ndarray = acc.untouched
-        untouched &= other.untouched
+    _combine_untouched(acc, other)
 
 
 all = build_kernel(
@@ -320,9 +324,7 @@ def _any_combine(acc: ReductionState, other: ReductionState, fill_value: float, 
     if it is true in one of the chunks."""
     out: np.ndarray = acc.out
     out |= other.out
-    if acc.track:
-        untouched: np.ndarray = acc.untouched
-        untouched &= other.untouched
+    _combine_untouched(acc, other)
 
 
 any = build_kernel(
@@ -466,9 +468,7 @@ def _allnan_combine(acc: ReductionState, other: ReductionState, fill_value: floa
     only nans if it holds them in both of the chunks."""
     out: np.ndarray = acc.out
     out &= other.out
-    if acc.track:
-        untouched: np.ndarray = acc.untouched
-        untouched &= other.untouched
+    _combine_untouched(acc, other)
 
 
 allnan = build_kernel(
@@ -514,9 +514,7 @@ def _anynan_combine(acc: ReductionState, other: ReductionState, fill_value: floa
     nan if it holds one in one of the chunks."""
     out: np.ndarray = acc.out
     out |= other.out
-    if acc.track:
-        untouched: np.ndarray = acc.untouched
-        untouched &= other.untouched
+    _combine_untouched(acc, other)
 
 
 anynan = build_kernel(
@@ -768,9 +766,7 @@ def _sumofsquares_combine(acc: ReductionState, other: ReductionState, fill_value
     squared magnitudes add up."""
     out: np.ndarray = acc.out
     out += other.out
-    if acc.track:
-        untouched: np.ndarray = acc.untouched
-        untouched &= other.untouched
+    _combine_untouched(acc, other)
 
 
 sumofsquares = build_kernel(
