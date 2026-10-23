@@ -262,11 +262,12 @@ def single_run(
                     # moment after their region and sleep afterwards, and the
                     # first call after that pays for the waking up - which
                     # would tell nothing about the work.  The timed calls
-                    # come in a block, so that the threads stay awake.
+                    # come in one block, so that they follow each other
+                    # without a pause and the threads stay awake.
                     aggregate_fn(group_idx, used_a, func=func)
                     timer = timeit.Timer(lambda: aggregate_fn(group_idx, used_a, func=func))
                     number = min(repeat, MAX_REPEAT.get(name, repeat))
-                    t0 = min(timer.repeat(repeat=number, number=number)) / number
+                    t0 = min(timer.repeat(repeat=1, number=number)) / number
                     cells.append(t0 * 1000)
         if snapshot is not None and _restore((group_idx, a, nana), snapshot):
             # a participant wrote into the data: the numbers of this row were

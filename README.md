@@ -256,7 +256,7 @@ All implementations share the calling syntax and produce the same results up to 
 
 ## Performance
 
-Best of three passes of five timed blocks of five runs each, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
+Best of three passes, every cell measured in one block of five runs, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
 
 | function        | numpy  | numba  | numbagg | polars | pandas |
 | --------------- | -----: | -----: | ------: | -----: | -----: |

@@ -161,7 +161,12 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     """
     driver = handle.driver
     mt_driver = handle.mt_driver
-    n_threads = mt_thread_count() if mt_driver is not None else 1
+    n_threads = mt_thread_count()
+    if mt_driver is None or n_threads < 2:
+        # without a second thread there is nothing to parallelize, and the
+        # parallel driver would cost the overhead of the parallel region
+        # (the thread pool of the runtime) without any of its benefit
+        mt_driver = None
 
     if handle.variant == "none":
 
