@@ -256,7 +256,7 @@ All implementations share the calling syntax and produce the same results up to 
 
 ## Performance
 
-Best of three passes of five timed runs each, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
+Best of three passes of five timed blocks of five runs each, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
 
 | function        | numpy  | numba  | numbagg | polars | pandas |
 | --------------- | -----: | -----: | ------: | -----: | -----: |
@@ -275,7 +275,7 @@ Best of three passes of five timed runs each, in milliseconds, for 500,000 value
 | `array`          |  7.358 |  1.958 |   ---- |   ---- |   ---- |
 | custom callable  | 111.000 |  5.961 |   ---- | 79.490 | 95.918 |
 
-The `polars` column uses all the cores of the machine, the `numpy` and `numba` columns are single-threaded - the Numba kernels of this package do not use `prange`. That matters most for the order statistics: with a single thread polars needs 9.7ms for the quantile, against 4.0ms with six, which puts it level with the single-threaded Numba kernel (9.3ms).
+The `polars` column uses all the cores of the machine. The `numba` column uses them too, for the operations that can be reduced in chunks - the sums, the products, the counts, the extremes and the mean: their data is split into chunks that are reduced separately and folded afterwards. The operations that need the values of a group together (the order statistics) and the ones that give an output per value (the cumulatives) stay single-threaded. That matters most for the order statistics: with a single thread polars needs 9.7ms for the quantile, against 4.0ms with six, which puts it level with the single-threaded Numba kernel (9.3ms).
 
 Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 

@@ -3,47 +3,67 @@
 optional dependency (part of the dev extras), an ImportError on this module
 means it is not installed."""
 
+from collections.abc import Callable
+from functools import wraps
+from typing import Any
+
 import numba
 import numbagg
+
 
 # numbagg compiles its grouped reductions to parallel-target gufuncs -
 # for a scatter reduction the per-call thread sync of that target
 # dominates at this data size (measured 3.6ms against 0.5ms at one
-# thread on a 6-core machine).  every other participant of this
-# benchmark runs single threaded, so numbagg is held there too
-numba.set_num_threads(1)
+# thread on a 6-core machine).  numbagg is therefore held at one thread -
+# but only for its own calls: setting the thread count of numba at the
+# import of this module would hold every other participant of the
+# benchmark at one thread as well
+def _single_threaded(func: Callable[..., Any]) -> Callable[..., Any]:
+    """The function, called with numba at one thread."""
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        threads = numba.get_num_threads()
+        numba.set_num_threads(1)
+        try:
+            return func(*args, **kwargs)
+        finally:
+            numba.set_num_threads(threads)
+
+    return wrapper
+
 
 funcs = {
-    "sum": numbagg.group_nansum,
-    "prod": numbagg.group_nanprod,
-    "len": numbagg.group_nancount,
-    "all": numbagg.group_nanall,
-    "any": numbagg.group_nanany,
-    "min": numbagg.group_nanmin,
-    "max": numbagg.group_nanmax,
-    "mean": numbagg.group_nanmean,
-    "std": numbagg.group_nanstd,
-    "var": numbagg.group_nanvar,
-    "first": numbagg.group_nanfirst,
-    "last": numbagg.group_nanlast,
-    "argmin": numbagg.group_nanargmin,
-    "argmax": numbagg.group_nanargmax,
-    "anynan": numbagg.group_nanany,
-    "allnan": numbagg.group_nanall,
-    "nansum": numbagg.group_nansum,
-    "nanprod": numbagg.group_nanprod,
-    "nanlen": numbagg.group_nancount,
-    "nanall": numbagg.group_nanall,
-    "nanany": numbagg.group_nanany,
-    "nanmin": numbagg.group_nanmin,
-    "nanmax": numbagg.group_nanmax,
-    "nanmean": numbagg.group_nanmean,
-    "nanstd": numbagg.group_nanstd,
-    "nanvar": numbagg.group_nanvar,
-    "nanfirst": numbagg.group_nanfirst,
-    "nanlast": numbagg.group_nanlast,
-    "nanargmin": numbagg.group_nanargmin,
-    "nanargmax": numbagg.group_nanargmax,
+    "sum": _single_threaded(numbagg.group_nansum),
+    "prod": _single_threaded(numbagg.group_nanprod),
+    "len": _single_threaded(numbagg.group_nancount),
+    "all": _single_threaded(numbagg.group_nanall),
+    "any": _single_threaded(numbagg.group_nanany),
+    "min": _single_threaded(numbagg.group_nanmin),
+    "max": _single_threaded(numbagg.group_nanmax),
+    "mean": _single_threaded(numbagg.group_nanmean),
+    "std": _single_threaded(numbagg.group_nanstd),
+    "var": _single_threaded(numbagg.group_nanvar),
+    "first": _single_threaded(numbagg.group_nanfirst),
+    "last": _single_threaded(numbagg.group_nanlast),
+    "argmin": _single_threaded(numbagg.group_nanargmin),
+    "argmax": _single_threaded(numbagg.group_nanargmax),
+    "anynan": _single_threaded(numbagg.group_nanany),
+    "allnan": _single_threaded(numbagg.group_nanall),
+    "nansum": _single_threaded(numbagg.group_nansum),
+    "nanprod": _single_threaded(numbagg.group_nanprod),
+    "nanlen": _single_threaded(numbagg.group_nancount),
+    "nanall": _single_threaded(numbagg.group_nanall),
+    "nanany": _single_threaded(numbagg.group_nanany),
+    "nanmin": _single_threaded(numbagg.group_nanmin),
+    "nanmax": _single_threaded(numbagg.group_nanmax),
+    "nanmean": _single_threaded(numbagg.group_nanmean),
+    "nanstd": _single_threaded(numbagg.group_nanstd),
+    "nanvar": _single_threaded(numbagg.group_nanvar),
+    "nanfirst": _single_threaded(numbagg.group_nanfirst),
+    "nanlast": _single_threaded(numbagg.group_nanlast),
+    "nanargmin": _single_threaded(numbagg.group_nanargmin),
+    "nanargmax": _single_threaded(numbagg.group_nanargmax),
 }
 ddof_funcs = frozenset(("std", "var", "nanstd", "nanvar"))
 

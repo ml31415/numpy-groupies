@@ -6,9 +6,14 @@ per call as a Markdown table.  NumPy and Numba are always measured, ``--help``
 explains the columns to ask for, ``--all`` takes them all.  A single run, the
 default, prints its rows as they are measured; a repeated one reports a counter
 and then the fastest measurement of all runs.
+
+``python -m numpy_groupies.benchmarks.mt`` is a tool of its own: it
+measures the parallel variant of the numba kernels against the sequential
+one and fits the cost model that decides between them.
 """
 
 import argparse
+import os
 import platform
 import sys
 import timeit
@@ -201,11 +206,6 @@ def _assert_same_result(got, want, func_name):
 # participant in a process starts the threads of its pool and lets each of them
 # map the arena it allocates from, measured 2700 page faults for polars - none
 # of which belongs into a measurement, and the first timed call would show
-# nothing else.  The pool starts once per process, so once per participant is
-# enough - not once per cell of the table.
-_warmed_up: set[str] = set()
-
-
 def single_run(
     implementations,
     group_idx,
@@ -257,12 +257,16 @@ def single_run(
                 except AssertionError:
                     cells.append("FAIL")
                 else:
-                    if name not in _warmed_up:
-                        # an untimed call that starts the pool of the participant
-                        aggregate_fn(group_idx, used_a, func=func)
-                        _warmed_up.add(name)
+                    # An untimed call that wakes the threads of the pool up:
+                    # the threads of a parallel implementation spin for a
+                    # moment after their region and sleep afterwards, and the
+                    # first call after that pays for the waking up - which
+                    # would tell nothing about the work.  The timed calls
+                    # come in a block, so that the threads stay awake.
+                    aggregate_fn(group_idx, used_a, func=func)
                     timer = timeit.Timer(lambda: aggregate_fn(group_idx, used_a, func=func))
-                    t0 = min(timer.repeat(repeat=min(repeat, MAX_REPEAT.get(name, repeat)), number=1))
+                    number = min(repeat, MAX_REPEAT.get(name, repeat))
+                    t0 = min(timer.repeat(repeat=number, number=number)) / number
                     cells.append(t0 * 1000)
         if snapshot is not None and _restore((group_idx, a, nana), snapshot):
             # a participant wrote into the data: the numbers of this row were
@@ -379,6 +383,22 @@ def _versions_line(implementations):
         import polars
 
         postfix += f", Polars {polars.__version__}"
+    # the threads the implementations had at their disposal
+    threads: list[tuple[str, int]] = []
+    if "numba" in implementation_names:
+        import numba
+
+        threads.append(("numba", numba.get_num_threads()))
+    if "polars" in implementation_names:
+        import polars
+
+        threads.append(("polars", polars.thread_pool_size()))
+    if threads:
+        counts = [count for _, count in threads]
+        if len(set(counts)) == 1:
+            postfix += f" ({counts[0]} threads max)"
+        else:
+            postfix += " (" + ", ".join(f"{name} {count}" for name, count in threads) + " threads max)"
     return (
         f"*{platform.system()}({platform.machine()}), Python {sys.version.split()[0]}, "
         f"Numpy {np.version.version}{postfix}*"
@@ -577,17 +597,34 @@ the two coincide.""",
         type=int,
         default=5,
         help=(
-            "timed executions per cell, the fastest counts, except for the pure-Python and "
+            "timed executions per cell (in one block, the fastest block counts), "
+            "except for the pure-Python and "
             "the group-loop column (default: 5)"
         ),
     )
     parser.add_argument("--size", type=float, default=5e5, help="number of values in the benchmark data (default: 5e5)")
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=0,
+        help="the number of threads the numba kernels use (default: every hardware thread of the machine)",
+    )
     parser.add_argument(
         "--raise-errors",
         action="store_true",
         help="abort on the first failing implementation instead of printing ERROR",
     )
     args = parser.parse_args(argv)
+    if args.threads:
+        # the numba kernels split their data into as many chunks as there
+        # are threads - the flag sets both the pool of numba and the number
+        # of the threads the kernels use
+        import numba
+
+        from numpy_groupies.aggregate_numba import mt
+
+        numba.set_num_threads(args.threads)
+        mt.set_thread_count(args.threads)
     if args.all:
         for column in OPTIONAL_COLUMNS:
             setattr(args, column, True)
