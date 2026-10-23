@@ -5,7 +5,7 @@ position of the value that just arrived - one pass over the data in input
 order (these operations are order-sensitive, unlike the reductions).
 """
 
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
@@ -34,11 +34,11 @@ def _cumsum_init(
     return CumulativeState(np.zeros(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
 
-def _cumsum_update(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _cumsum_update(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     st.running[ri] += val
 
 
-def _cumsum_update_nan(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _cumsum_update_nan(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form twin of _cumsum_update - a nan leaves the running value
     # unchanged, the position still records it.  integer input has no nan
     # and keeps the plain path (a python literal 0 would unify uint64 with
@@ -79,11 +79,11 @@ def _cumprod_init(
     return CumulativeState(np.ones(size, out_dtype), np.full(n_input, fill_value, out_dtype))
 
 
-def _cumprod_update(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _cumprod_update(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     st.running[ri] *= val
 
 
-def _cumprod_update_nan(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _cumprod_update_nan(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.running[ri] *= val if val == val else 1.0
     else:
@@ -138,7 +138,7 @@ def _cummax_init(
     )
 
 
-def _cummax_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _cummax_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form on purpose, see reductions._max_update
     first = st.pending[ri]
     st.pending[ri] = False
@@ -150,7 +150,7 @@ def _cummax_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value:
     st.running[ri] = val if (first or val != val or best) else cur
 
 
-def _cummax_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _cummax_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form twin of _cummax_update - nans neither win nor clear the
     # pending flag
     valid = val == val
@@ -197,7 +197,7 @@ def _cummin_init(
     )
 
 
-def _cummin_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _cummin_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form on purpose, see reductions._min_update
     first = st.pending[ri]
     st.pending[ri] = False
@@ -209,7 +209,7 @@ def _cummin_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value:
     st.running[ri] = val if (first or val != val or best) else cur
 
 
-def _cummin_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _cummin_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     valid = val == val
     first = st.pending[ri]
     st.pending[ri] = first & (val != val)

@@ -9,12 +9,14 @@ the fill defaults, the input checks of the python call) get their own tests.
 """
 
 from importlib import import_module
+from inspect import signature
 
 import numba as nb
 import numpy as np
 import pytest
 
 from numpy_groupies import aggregate, aggregate_numba, aggregate_numpy
+from numpy_groupies.aggregate_numba import compose
 from numpy_groupies.registry import (
     func_extras,
 )
@@ -135,6 +137,45 @@ def _kernel_arguments(name, kwargs):
     if own is None and extras:
         own = extras[0][2]
     return () if own is None else (own,)
+
+
+# The outward signature of a kernel is one: the python call and the jitted
+# call take the same arguments under the same names.  It is the stub of the
+# kernel that spells it out for python and the typing function of its overload
+# that spells it out for jitted code - numba binds the arguments of a jitted
+# call against the signature of that typing function - and the two have to be
+# the same signature, down to the name of the argument an operation has of its
+# own.  An operation without such an argument has no extra argument at all.
+def test_the_python_and_the_jitted_signature_of_a_kernel_are_one():
+    for name, typing_function in compose._TYPING_FUNCTIONS.items():
+        stub = getattr(aggregate_numba, name)
+        assert signature(stub) == signature(typing_function), name
+
+
+def test_a_kernel_carries_the_arguments_of_its_function_and_no_others():
+    for name, typing_function in compose._TYPING_FUNCTIONS.items():
+        extras = [extra for extra, _annotation, _default in func_extras(name)]
+        expected = ["group_idx", "a", *extras, "size", "fill_value"]
+        assert list(signature(typing_function).parameters) == expected, name
+
+
+def test_the_argument_of_a_kernel_is_the_one_of_its_function():
+    """The argument an operation has of its own is the one of the function.
+
+    Same name, same annotation and same default - the kernel is the function
+    in a compiled dress, and a caller that reads the signature of one of them
+    reads the signature of the other.  The one exception is the sample
+    spacing of the trapezoid, which the kernel carries as the integer 1 and
+    not as the float 1.0 (see ``compose._KERNEL_ARGUMENT_DEFAULTS``).
+    """
+    for name, typing_function in compose._TYPING_FUNCTIONS.items():
+        parameters = signature(typing_function).parameters
+        for extra, annotation, default in func_extras(name):
+            parameter = parameters[extra]
+            assert parameter.annotation.__name__ == annotation, name
+            expected = compose._KERNEL_ARGUMENT_DEFAULTS.get(extra, default)
+            assert parameter.default == expected, name
+            assert type(parameter.default) is type(expected), name
 
 
 def _kernel_result(name, values, **kwargs):

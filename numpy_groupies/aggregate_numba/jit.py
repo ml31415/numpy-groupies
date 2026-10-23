@@ -34,7 +34,7 @@ except ImportError:  # pragma: no cover - windows
 # AttributeError on the dangling global.  Bumping the revision renames every
 # cache file of this package, orphaning the stale indexes (they keep lying
 # around, numba never reads them again).
-_cache_revision = "8"
+_cache_revision = "9"
 
 
 @contextlib.contextmanager
@@ -172,12 +172,12 @@ def njit_stable(
             # versions of one function differing only in a constant (which
             # lives in co_consts, not co_code) would otherwise share an index
             # and could load each other's compiled artifacts.
-            impl = disp._cache._impl
-            impl._filename_base = f"{impl._filename_base}-r{_cache_revision}-{uuid}"
+            cache_impl = disp._cache._impl
+            cache_impl._filename_base = f"{cache_impl._filename_base}-r{_cache_revision}-{uuid}"
             disp._cache._cache_file = _ProcessSafeCacheFile(
                 cache_path=disp._cache._cache_path,
-                filename_base=impl.filename_base,
-                source_stamp=impl.locator.get_source_stamp(),
+                filename_base=cache_impl.filename_base,
+                source_stamp=cache_impl.locator.get_source_stamp(),
             )
         except Exception:  # noqa: BLE001 - any numba internals change must degrade to no caching
             # numba internals changed: without a stable uuid the closure

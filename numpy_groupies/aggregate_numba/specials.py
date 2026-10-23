@@ -7,8 +7,8 @@ average) instead of sorting within the groups.
 by insertion sort while the block is small, by ``np.sort`` beyond that - and
 scatters the blocks back to the positions their group occupies in the input.
 ``trapezoid`` integrates consecutive sample pairs within each group in a
-single pass - it composes like the streaming reductions, but carries the
-sample spacing ``dx`` in the ``ddof`` slot.
+single pass - it composes like the streaming reductions and takes the sample
+spacing ``dx`` as the argument of its own.
 """
 
 import math
@@ -209,11 +209,8 @@ def _median_driver_factory(nans: bool) -> Any:
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
-        ddof: int,
-        q: float,
     ) -> npt.NDArray[np.number]:
-        # median is order-insensitive and takes no ddof and no quantile -
-        # both slots unused
+        # median is order-insensitive and takes nothing of its own
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         counts = _count(group_idx, size)
@@ -317,11 +314,9 @@ def _quantile_driver_factory(nans: bool) -> Any:
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
-        ddof: int,
         q: float,
     ) -> npt.NDArray[np.number]:
-        # the quantile is order-insensitive and takes no ddof - the slot stays
-        # unused, the quantile has one of its own
+        # the quantile is order-insensitive and takes its quantile
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         counts = _count(group_idx, size)
@@ -367,7 +362,7 @@ quantile = build_custom_kernel(
     driver_factory=_quantile_driver_factory,
     rule=rule_float,
     fill_default=np.nan,
-    extras=(("q", "float", 0.5, "q"),),
+    variant="q",
     doc="Quantile of the values of every group",
 )
 
@@ -485,18 +480,16 @@ def _sort_driver_factory(nans: bool) -> Any:
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
-        ddof: int,
-        q: float,
+        reverse: bool,
     ) -> npt.NDArray[np.number]:
         # sort emits one value per input item, so neither the group count nor
-        # the fill value is of any use here; the reverse flag arrives in the
-        # slot trapezoid uses for its sample spacing
+        # the fill value is of any use here
         size = output_size(group_idx, size_arg)
         counts = _count(group_idx, size)
         starts = _starts(counts)
         a_sorted = np.empty(group_idx.size, a.dtype)
         _place(group_idx, a, starts.copy(), a_sorted)
-        _blocks(a_sorted, counts, starts, ddof != 0.0)
+        _blocks(a_sorted, counts, starts, reverse)
         out = np.empty(group_idx.size, out_dtype)
         _scatter(group_idx, a_sorted, starts, out)
         return out
@@ -510,7 +503,7 @@ sort = build_custom_kernel(
     rule=rule_same,
     nans=False,
     nton=True,
-    extras=(("reverse", "bool", False, "ddof"),),
+    variant="reverse",
     doc="Values of every group in ascending, or with reverse=True in descending order",
 )
 
@@ -624,11 +617,8 @@ def _nunique_driver_factory(nans: bool) -> Any:
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
-        ddof: int,
-        q: float,
     ) -> npt.NDArray[np.number]:
-        # the number of the distinct values takes neither ddof nor a quantile -
-        # both slots stay unused
+        # the number of the distinct values takes nothing of its own
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         counts = _count(group_idx, size)
@@ -709,15 +699,14 @@ def _trapezoid_init(
     )
 
 
-def _trapezoid_update(st: TrapezoidState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _trapezoid_update(st: TrapezoidState, ri: int, i: int, val: float, fill_value: float, dx: float) -> None:
     if st.track:
         st.untouched[ri] = False
     if st.pending[ri]:
         # the first sample of a group has no predecessor to integrate with
         st.pending[ri] = False
     else:
-        # the sample spacing dx rides in the ddof slot
-        st.out[ri] += 0.5 * ddof * (st.prev[ri] + val)
+        st.out[ri] += 0.5 * dx * (st.prev[ri] + val)
     st.prev[ri] = val
 
 
@@ -733,10 +722,10 @@ trapezoid = build_kernel(
     forced_fill=0,
     fill_default=0,
     rule=rule_float,
-    # the sample spacing rides in the ``ddof`` slot of the driver, and the
-    # slot is an integer: the float 1.0 compiles the kernel a few percent
-    # slower than the integer 1 it used to carry - the nan variant of the
-    # trapezoid measured ~3% slower with it
-    extras=(("dx", "float", 1, "ddof"),),
+    # the sample spacing is the argument of the operation, and the default of
+    # the kernel is the integer 1: a float in that slot compiles the kernel of
+    # the trapezoid a few percent slower than the integer it used to carry -
+    # the nan variant of the trapezoid measured ~3% slower with it
+    variant="dx",
     doc="Trapezoidal integration of the samples of every group",
 )

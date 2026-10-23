@@ -63,13 +63,13 @@ def _sum_init(
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
 
 
-def _sum_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _sum_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] += val
 
 
-def _sum_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _sum_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # branchless select-form twin of _sum_update - nans contribute nothing
     # and do not ready their group for a custom fill value; the guarded
     # equivalent turns the loop scalar and compiles ~3x slower
@@ -119,13 +119,13 @@ def _prod_init(
     return ReductionState(np.ones(size, out_dtype), untouched, track)
 
 
-def _prod_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _prod_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] *= val
 
 
-def _prod_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _prod_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
@@ -167,13 +167,13 @@ def _len_init(
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
 
 
-def _len_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _len_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] += 1
 
 
-def _len_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _len_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
@@ -211,13 +211,13 @@ def _all_init(
     return ReductionState(np.ones(size, np.bool_), untouched, track)
 
 
-def _all_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _all_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] &= bool(val)
 
 
-def _all_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _all_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
     st.out[ri] &= (val != val) | bool(val)
@@ -254,13 +254,13 @@ def _any_init(
     return ReductionState(np.zeros(size, np.bool_), untouched, track)
 
 
-def _any_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _any_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] |= bool(val)
 
 
-def _any_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _any_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
@@ -303,11 +303,11 @@ def _last_init(
     return LastState(np.full(size, fill_value, out_dtype))
 
 
-def _last_update(st: LastState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _last_update(st: LastState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     st.out[ri] = val
 
 
-def _last_update_nan(st: LastState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _last_update_nan(st: LastState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form twin of _last_update - the current value must be read into
     # a local first, repeating the subscript expression in the else branch
     # keeps the slow codegen (aliasing, see the note in _max_update)
@@ -337,8 +337,6 @@ def _first_driver_factory(nan_variant: bool) -> Any:
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
-        ddof: int,
-        q: float,
     ) -> npt.NDArray[np.number]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
@@ -398,7 +396,7 @@ def _allnan_init(
     return ReductionState(np.ones(size, np.bool_), untouched, track)
 
 
-def _allnan_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _allnan_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] &= val != val
@@ -435,7 +433,7 @@ def _anynan_init(
     return ReductionState(np.zeros(size, np.bool_), untouched, track)
 
 
-def _anynan_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _anynan_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = False
     st.out[ri] |= val != val
@@ -470,7 +468,7 @@ def _max_init(
     return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
 
 
-def _max_update(st: SelectionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _max_update(st: SelectionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form on purpose: the branchy equivalent compiles ~15x slower
     # under numba >= 0.66 when reached as a separate njit call.  Note: out[ri]
     # must be read into a local first - repeating the subscript expression
@@ -496,7 +494,7 @@ def _max_update(st: SelectionState, ri: int, i: int, val: float, fill_value: flo
     st.out[ri] = val if (first or val != val or best) else cur
 
 
-def _max_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _max_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form twin of _max_update - nans neither win nor clear the
     # pending flag
     valid = val == val
@@ -533,7 +531,7 @@ def _min_init(
     return SelectionState(np.full(size, fill_value, out_dtype), np.ones(size, np.bool_))
 
 
-def _min_update(st: SelectionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _min_update(st: SelectionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form on purpose, see _max_update (including why val != val is
     # part of the condition and what it costs)
     first = st.pending[ri]
@@ -546,7 +544,7 @@ def _min_update(st: SelectionState, ri: int, i: int, val: float, fill_value: flo
     st.out[ri] = val if (first or val != val or best) else cur
 
 
-def _min_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _min_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form twin of _min_update, see _max_update_nan
     valid = val == val
     first = st.pending[ri]
@@ -584,7 +582,7 @@ def _sumofsquares_init(
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
 
 
-def _sumofsquares_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _sumofsquares_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = False
     # the squared magnitude of val - complex values give a real, sqrt-free
@@ -596,7 +594,7 @@ def _sumofsquares_update(st: ReductionState, ri: int, i: int, val: float, fill_v
         st.out[ri] += val.real * val.real + val.imag * val.imag
 
 
-def _sumofsquares_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _sumofsquares_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
