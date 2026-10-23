@@ -36,12 +36,12 @@ import numba as nb
 
 # --- the fitted constants, on the pessimistic side ---
 _BYTES_PER_ELEMENT = 16.0  # a float64 value and an int64 index
-_CORE_BYTES_PER_S = 1.746e10  # what one core delivers at a working set of 1 MB
-_CORE_BYTES_PER_DECADE = -0.09133  # and how that depends on the working set
+_CORE_BYTES_PER_S = 2.003e10  # what one core delivers at a working set of 1 MB
+_CORE_BYTES_PER_DECADE = -0.04499  # and how that depends on the working set
 _PEAK_CORES = 2  # the peak of the machine, in cores
-_CG_SEQ = 0.9504  # nanoseconds per group, sequential
-_CG_MT = 8.412  # nanoseconds per group, parallel
-_C_PART = 0.1181  # nanoseconds per element of the partial matrix
+_CG_SEQ = 1.2286  # nanoseconds per group, sequential
+_CG_MT = 7.8473  # nanoseconds per group, parallel
+_C_PART = 0.16679  # nanoseconds per element of the partial matrix
 
 # the fixed cost of the parallel path, measured directly (an empty prange loop
 # costs 4.7us with two threads and 5.8us with six)
@@ -56,6 +56,38 @@ MT_MIN_VALUES = 100_000
 # it is used - the margin absorbs the error of the model and of the
 # measurement, and the error goes in the conservative direction
 MT_MAX_RATIO = 0.8
+
+# The chunks are not one per thread but several: the threads of the pool take
+# the chunks from a queue, so a thread whose core is busy with something else
+# does not hold up the whole call - the threads that are done with their
+# chunks take the ones that are left.  With one chunk per thread there is
+# nothing to take, and the call waits for the slowest core (measured: a
+# kernel with one slow chunk measured 2.3ms with six chunks against 0.4ms
+# with twelve).
+#
+# The chunks are not the states, though: the states are one per thread, and
+# the chunks are aggregated into the state of the thread that takes them.  The
+# state of a thread is written by that thread only, so the chunks need no
+# lock - and the memory stays at one state per thread.
+MT_CHUNKS_PER_THREAD = 2
+
+
+@nb.njit(cache=True)
+def chunk_count(n_threads: int, n_values: int) -> int:
+    """The number of the chunks the data is split into.
+
+    Several per thread, so that the threads can take the chunks from the
+    queue of the pool and a busy core does not hold up the whole call.  Never
+    more than there are values: an empty chunk is no work at all.
+
+    With a single thread there is nothing to balance, and the data is not
+    split at all - the result is then the one of the sequential kernel, bit
+    for bit.
+    """
+    if n_threads < 2:
+        return 1
+    chunks = n_threads * MT_CHUNKS_PER_THREAD
+    return min(chunks, n_values)
 
 
 @nb.njit(cache=True)
@@ -82,8 +114,8 @@ def estimate_mt_time_us(n_groups: int, n_threads: int, n_values: int) -> float:
     """The estimated time of the parallel path, in microseconds.
 
     The chunks run in parallel, so the data arrives at the speed the threads
-    use together; the partial matrix of every chunk has to be written and
-    read again, and that costs with the number of the groups.
+    use together; the state of every thread has to be filled and folded
+    again, and that costs with the number of the groups.
     """
     data_us = n_values * _BYTES_PER_ELEMENT / _bandwidth_bytes_per_s(n_values, n_threads) * 1e6
     partials_us = n_threads * n_groups * _C_PART / 1e3

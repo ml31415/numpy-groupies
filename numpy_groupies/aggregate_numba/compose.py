@@ -34,9 +34,17 @@ forced_fill) -> state``
     optional fold of the states of two chunks of the data into one - the
     operations that can be reduced in chunks (the sums, the products, the
     counts, the extremes, the logic) provide one, and their driver then has a
-    parallel path: the data is split into as many chunks as there are threads,
-    every chunk is reduced into a state of its own, and the states are folded
-    in the order of their index
+    parallel path: the data is split into chunks that are reduced separately,
+    and the states are folded afterwards
+
+The parallel path has one state per thread and more chunks than threads: the
+threads take the chunks from the queue of the pool, so a core that is busy
+with something else does not hold up the whole call, and a chunk that is left
+over is taken by a thread that is done.  The chunks are aggregated into the
+state of the thread that takes them, so a thread never writes into the state
+of another one and no lock is needed.  The sums of the floats are added up in
+the order the chunks reach the threads, so they differ in the last bits from
+run to run - the extremes, the counts and the logic are exact.
 
 The factory assembles these into ONE compiled driver per operation that owns
 the group loop, bounds checks and pass structure, and exposes it as a function
@@ -61,7 +69,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.aggregate_numba.mt import should_use_mt
+from numpy_groupies.aggregate_numba.mt import chunk_count, should_use_mt
 from numpy_groupies.utils_np import AResult, AScalar, check_fill_value_for_dtype
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
@@ -1288,22 +1296,29 @@ def build_kernel(
                     # not worth it, or only one thread to do it with: the
                     # sequential path, with its result bit for bit
                     return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
-                n_chunks = n_threads
+                n_chunks = chunk_count(n_threads, n_values)
                 chunk = (n_values + n_chunks - 1) // n_chunks
                 faults = np.zeros(n_chunks, np.int64)
+                # one state per thread, not per chunk: the chunks are the
+                # units of work the queue hands out, the states are the
+                # accumulators of the threads.  A thread that is busy with
+                # something else delays its chunks and not the whole call -
+                # the threads that are done take the chunks that are left.
                 states = [
                     init_c(size, n_values, out_dtype, aux_dtype, a.dtype, fill_value, forced_fill)
-                    for _ in range(n_chunks)
+                    for _ in range(n_threads)
                 ]
                 for c in nb.prange(n_chunks):
                     start = c * chunk
                     stop = min(start + chunk, n_values)
                     if stop > start:
-                        seed_c(states[c], a[start:stop])
-                        faults[c] = kernel(group_idx[start:stop], a[start:stop], states[c], fill_value, extra, size)
-                # the states of the chunks, folded in the order of their index
+                        # the state of the thread that takes the chunk
+                        state = states[nb.get_thread_id()]
+                        seed_c(state, a[start:stop])
+                        faults[c] = kernel(group_idx[start:stop], a[start:stop], state, fill_value, extra, size)
+                # the states of the threads, folded in the order of their index
                 acc = states[0]
-                for c in range(1, n_chunks):
+                for c in range(1, n_threads):
                     combine_c(acc, states[c], fill_value, extra)
                 fault = faults[0]
                 for c in range(1, n_chunks):
