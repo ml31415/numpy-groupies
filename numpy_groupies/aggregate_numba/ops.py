@@ -137,6 +137,69 @@ def _driver_fill(handle: KernelHandle, fill_value: AFillValue) -> AScalar:
     return 0.0 if handle.assembles else cast("AScalar", fill_value)
 
 
+def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
+    """Call the compiled driver of one variant with the arguments of a
+    python-level call.
+
+    The driver takes the argument the operation has of its own under the name
+    of that argument (``compose.build_driver`` spells the signatures out),
+    while the entry point of this module knows two: the ``ddof`` and the
+    ``q``.  The wrappers of ``_ARGUMENT_WRAPPERS`` hand the sample spacing of
+    the trapezoid and the reverse flag of the sort in through the ``ddof`` of
+    that signature, so picking the one the driver of a variant is written for
+    is all there is to it.
+    """
+    driver = handle.driver
+
+    if handle.variant == "none":
+
+        def call_nothing(
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
+            size_arg: int,
+            out_dtype: np.dtype,
+            aux_dtype: np.dtype,
+            fill_value: AScalar,
+            ddof: float,
+            q: float,
+        ) -> Any:
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
+
+        return call_nothing
+
+    if handle.variant == "q":
+
+        def call_q(
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
+            size_arg: int,
+            out_dtype: np.dtype,
+            aux_dtype: np.dtype,
+            fill_value: AScalar,
+            ddof: float,
+            q: float,
+        ) -> Any:
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
+
+        return call_q
+
+    # ddof, dx and reverse: the three arrive in the ddof of the call
+
+    def call_ddof(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: AScalar,
+        ddof: float,
+        q: float,
+    ) -> Any:
+        return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
+
+    return call_ddof
+
+
 def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult]:
     """Create the python-level wrapper around one compiled kernel.
 
@@ -146,6 +209,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
     dtypes that the compiled driver cannot handle go to the operation's
     python-level ``fallback`` (complex medians to the numpy implementation).
     """
+    driver_call = _driver_call(handle)
 
     def aggregate(
         group_idx: npt.NDArray[np.integer],
@@ -188,7 +252,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
                 # unhashable dtype/fill_value - resolve on the slow path
                 plan_dtype = None
             if plan_dtype is not None:
-                ret = handle.driver(
+                ret = driver_call(
                     group_idx,
                     a,
                     -1 if size is None else size,
@@ -230,7 +294,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         group_idx = np.ascontiguousarray(group_idx)
         a = np.ascontiguousarray(a)
 
-        ret = handle.driver(
+        ret = driver_call(
             group_idx,
             a,
             flat_size,
@@ -425,9 +489,10 @@ def _dx_argument(op: Callable[..., AResult]) -> Callable[..., AResult]:
 
     The kernels receive it in the position otherwise used for ``ddof``.
 
-    The default is the integer 1 and not the float 1.0: the slot of the
-    driver is an integer, and a float in it compiles the kernel of the
-    trapezoid a few percent slower than the integer it used to carry.
+    The default is the integer 1 and not the float 1.0: the value of the
+    argument is what numba compiles the kernel for, and a float in the slot of
+    the trapezoid measures a few percent slower than the integer (see the note
+    at the kernel builder of the trapezoid).
     """
 
     def trapezoid_op(
@@ -446,9 +511,9 @@ def _dx_argument(op: Callable[..., AResult]) -> Callable[..., AResult]:
 
 
 def _sort_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
-    """Expose ``reverse`` and keep the driver arguments jittable.
+    """Expose the reverse flag of the sort under its public name.
 
-    The flag reaches the kernel in the position otherwise used for ``ddof``,
+    The flag reaches the driver in the position otherwise used for ``ddof``,
     and the empty list the shared fill value resolution hands out for ``sort``
     - it tells the python twins to leave an absent group alone - becomes the
     scalar the compiled driver expects, since sort emits one value per input
@@ -467,7 +532,7 @@ def _sort_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
     ) -> AResult:
         if fill_value is DEFAULT_FILL_VALUE:
             fill_value = 0
-        return op(group_idx, a, size, fill_value, order, dtype, axis, 1.0 if reverse else 0.0)
+        return op(group_idx, a, size, fill_value, order, dtype, axis, reverse)
 
     return sort_op
 

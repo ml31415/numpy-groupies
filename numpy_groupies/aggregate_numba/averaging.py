@@ -182,7 +182,7 @@ def _mean_seed(st: MeanState, a: npt.NDArray[np.number]) -> None:
         st.high[0] = a[0]
 
 
-def _mean_update(st: MeanState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _mean_update(st: MeanState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     st.count[ri] += 1
     st.out[ri] += val
     _track_extrema(val, st.low, st.high)  # type: ignore[arg-type]  # low/high are 1-element arrays; body uses low[0]
@@ -192,8 +192,11 @@ def _mean_gate(st: MeanState, n_values: int) -> None:
     _mean_limit_check(st.low[0], st.high[0], n_values)
 
 
-def _mean_finish(st: MeanState, g: int, fill_value: float, ddof: int) -> Any:
-    if st.count[g] > ddof:
+def _mean_finish(st: MeanState, g: int, fill_value: float, extra: Any) -> Any:
+    # the mean takes nothing of its own, so the driver reaches this with the
+    # zero of an operation without an argument and the test is the plain one of
+    # a group that received a value at all
+    if st.count[g] > extra:
         return st.out[g] / st.count[g]
     return fill_value
 
@@ -259,7 +262,7 @@ def _moment_seed(st: MomentState, a: npt.NDArray[np.number]) -> None:
         st.high[0] = a[0]
 
 
-def _moment_update(st: MomentState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _moment_update(st: MomentState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     """Accumulate one value into the running central moments.
 
     The update is the one of Welford (and the one pandas uses): the moments
@@ -284,7 +287,7 @@ def _moment_update(st: MomentState, ri: int, i: int, val: float, fill_value: flo
     _track_extrema(val, st.low, st.high)  # type: ignore[arg-type]  # low/high are 1-element arrays; body uses low[0]
 
 
-def _moment_update_nan(st: MomentState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _moment_update_nan(st: MomentState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     """The same accumulation, with the nans left out.
 
     The body is a copy of the one above: a call would make the loop of the
@@ -313,7 +316,7 @@ def _moment_gate(st: MomentState, n_values: int) -> None:
     _mean_limit_check(st.low[0], st.high[0], n_values)
 
 
-def _skew_finish(st: MomentState, g: int, fill_value: float, ddof: int) -> Any:
+def _skew_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
     n = st.count[g]
     if n == 0:
         return fill_value
@@ -327,7 +330,7 @@ def _skew_finish(st: MomentState, g: int, fill_value: float, ddof: int) -> Any:
     return n * np.sqrt(n - 1) / (n - 2) * st.m3[g] / st.m2[g] ** 1.5
 
 
-def _kurt_finish(st: MomentState, g: int, fill_value: float, ddof: int) -> Any:
+def _kurt_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
     n = st.count[g]
     if n == 0:
         return fill_value
@@ -450,7 +453,7 @@ def _std_seed(st: StdState, a: npt.NDArray[np.number]) -> None:
         st.high[0] = a[0]
 
 
-def _std_update(st: StdState, ri: int, i: int, val: float, fill_value: float, ddof: int) -> None:
+def _std_update(st: StdState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     st.count[ri] += 1
     if isinstance(val, bool):
         st.dev[ri] += val
@@ -483,7 +486,7 @@ std = build_kernel(
     fill_default=np.nan,
     rule=rule_real_float,
     aux_widen=True,
-    extras=(("ddof", "int", 0, "ddof"),),
+    variant="ddof",
     doc="Standard deviation of the values of every group",
 )
 
@@ -507,6 +510,6 @@ var = build_kernel(
     fill_default=np.nan,
     rule=rule_real_float,
     aux_widen=True,
-    extras=(("ddof", "int", 0, "ddof"),),
+    variant="ddof",
     doc="Variance of the values of every group",
 )
