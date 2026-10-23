@@ -70,6 +70,22 @@ funcs = {
 }
 ddof_funcs = frozenset(("std", "var", "nanstd", "nanvar"))
 
+# the same functions without the single-threading: the second column shows
+# what numbagg does with all the threads of the machine, so that nobody has
+# to take the first column for a handicap
+funcs_mt = {name: getattr(func, "__wrapped__", func) for name, func in funcs.items()}
+
+
+def _aggregate(funcs, group_idx, a, func="sum", size=None, fill_value=None, order="C", dtype=None, axis=None, ddof=0):
+    """The grouped reductions of numbagg, out of the given set of functions."""
+    name = func if isinstance(func, str) else getattr(func, "__name__", None)
+    fn = funcs.get(name)
+    if fn is None:
+        raise NotImplementedError(f"numbagg has no grouped '{name}'")
+    if name in ddof_funcs:
+        return fn(a, group_idx, ddof=ddof)
+    return fn(a, group_idx)
+
 
 def aggregate(group_idx, a, func="sum", size=None, fill_value=None, order="C", dtype=None, axis=None, ddof=0):
     """numbagg grouped reductions as a benchmark participant.
@@ -82,11 +98,18 @@ def aggregate(group_idx, a, func="sum", size=None, fill_value=None, order="C", d
     reported as "----".  ``size``/``fill_value`` are accepted but ignored:
     numbagg infers the group count and fills empty groups itself (the
     benchmark data leaves no group empty).
+
+    These calls run with numba at one thread - see the comment above the
+    functions.  ``aggregate_mt`` is the same with the pool as it is.
     """
-    name = func if isinstance(func, str) else getattr(func, "__name__", None)
-    fn = funcs.get(name)
-    if fn is None:
-        raise NotImplementedError(f"numbagg has no grouped '{name}'")
-    if name in ddof_funcs:
-        return fn(a, group_idx, ddof=ddof)
-    return fn(a, group_idx)
+    return _aggregate(funcs, group_idx, a, func, size, fill_value, order, dtype, axis, ddof)
+
+
+def aggregate_mt(group_idx, a, func="sum", size=None, fill_value=None, order="C", dtype=None, axis=None, ddof=0):
+    """The same as ``aggregate``, but with the pool of numba as it is.
+
+    numbagg compiles its grouped reductions to parallel targets, so it can
+    use the threads of the machine - whether that is faster is what this
+    column shows.
+    """
+    return _aggregate(funcs_mt, group_idx, a, func, size, fill_value, order, dtype, axis, ddof)
