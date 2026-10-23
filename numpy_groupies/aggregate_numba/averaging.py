@@ -511,14 +511,14 @@ def _fold_std(acc: StdState, other: StdState, fill_value: float, extra: Any) -> 
 
 
 @nb.extending.overload(_fold_std)
-def _fold_std_overload(acc: Any, other: Any, fill_value: Any, extra: Any) -> Callable[..., None]:
+def _fold_std_overload(acc: StdState, other: StdState, fill_value: float, extra: Any) -> Callable[..., None]:
     # the dtype of the anchor field tells the two cases apart: the integer
     # input is centered on the first value of its group, the inexact one on
     # zero.  The fields of a named tuple are reached through their types in
     # the typing of the overload - the anchor is the fourth field.  The
-    # arguments are typed by numba here, not by mypy: the types of the
-    # fields are a property of the numba type, not of the named tuple.
-    if isinstance(acc.types[3].dtype, nb.types.Integer):
+    # annotation of the arguments has to be the one of the implementation:
+    # numba checks the two signatures against each other (strict=True).
+    if isinstance(acc.types[3].dtype, nb.types.Integer):  # type: ignore[attr-defined]  # the types of the fields are a property of the numba type
 
         def _impl(acc: StdState, other: StdState, fill_value: float, extra: Any) -> None:
             # the integer input is centered on the first value of its group,
