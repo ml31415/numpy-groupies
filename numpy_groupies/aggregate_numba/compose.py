@@ -49,11 +49,10 @@ run to run - the extremes, the counts and the logic are exact.
 The factory assembles these into ONE compiled driver per operation that owns
 the group loop, bounds checks and pass structure, and exposes it as a function
 callable from jitted code and from python alike (the kernels of
-``numpy_groupies.aggregate_numba``).  The driver carries the argument the
-operation has of its own under the name the caller uses - ``build_driver`` and
-its siblings below spell the signatures out, so that the python function, the
-typing function of its overload and the jitted driver of an operation all
-carry the same one.  The python-level ``aggregate()`` calls
+``numpy_groupies.aggregate_numba``).  The driver hands the argument the
+operation has of its own on as the ``extra`` of the pass structure - the
+kernel keeps the name the caller uses, the driver does not need it.  The
+python-level ``aggregate()`` calls
 the same driver with fully resolved arguments, so there is exactly one
 compiled artifact per operation.  Unused
 building blocks are replaced by synthesized no-ops - the driver always runs
@@ -875,118 +874,56 @@ def _make_stub(
 # the driver of a variant: the pass structure of ``build_kernel`` behind the
 # signature of the operation.  The argument an operation has of its own keeps
 # its name from the caller of the kernel to the update step of the operation,
-# so nothing has to be looked up in a table of slots on the way.
+# so nothing has to be looked up in a table of slots on the way.  The driver
+# itself does not need the name - it hands the argument on as the ``extra``
+# of the pass structure.
 
 
-def build_driver(name: str, passes: Any, suffix: str) -> Any:
-    """The driver of an operation that takes nothing of its own."""
+def build_driver(name: str, passes: Any, suffix: str, multi_threading: bool = False) -> Any:
+    """The driver of an operation.
 
-    def driver(
-        group_idx: npt.NDArray[np.integer],
-        a: npt.NDArray[np.number],
-        size_arg: int,
-        out_dtype: np.dtype,
-        aux_dtype: np.dtype,
-        fill_value: float,
-    ) -> Any:
-        return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, 0)
+    The driver takes the two arrays, the size, the two dtypes and the fill
+    value - and, for an operation that has an argument of its own, that
+    argument as its last one: the ``ddof`` of the variance, the sample
+    spacing ``dx`` of the trapezoid, the quantile ``q``, the ``reverse``
+    flag of the sort.  The argument has a default, so that an operation
+    without one needs no driver of its own - it hands the driver nothing and
+    the driver passes the zero on.
 
-    return njit_stable(driver, name=f"{name}{suffix}")
-
-
-def build_driver_ddof(name: str, passes: Any, suffix: str) -> Any:
-    """The driver of an operation that takes the ``ddof`` of the variance."""
-
-    def driver(
-        group_idx: npt.NDArray[np.integer],
-        a: npt.NDArray[np.number],
-        size_arg: int,
-        out_dtype: np.dtype,
-        aux_dtype: np.dtype,
-        fill_value: float,
-        ddof: int,
-    ) -> Any:
-        return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
-
-    return njit_stable(driver, name=f"{name}{suffix}")
-
-
-def build_driver_dx(name: str, passes: Any, suffix: str) -> Any:
-    """The driver of an operation that takes the sample spacing ``dx`` of the
-    trapezoid."""
-
-    def driver(
-        group_idx: npt.NDArray[np.integer],
-        a: npt.NDArray[np.number],
-        size_arg: int,
-        out_dtype: np.dtype,
-        aux_dtype: np.dtype,
-        fill_value: float,
-        dx: float,
-    ) -> Any:
-        return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, dx)
-
-    return njit_stable(driver, name=f"{name}{suffix}")
-
-
-def build_mt_driver(name: str, passes: Any, suffix: str) -> Any:
-    """The parallel driver of an operation that takes nothing of its own.
-
-    It takes the number of threads as its first argument: the threads of the
-    pool are read when the wrapper is built, and a number read inside the
-    compiled code would keep the driver out of the on-disk cache (numba
-    refuses to cache a function that reads a dynamic global).
+    The parallel driver takes the number of the threads as its first
+    argument: the threads of the pool are read when the wrapper is built,
+    and a number read inside the compiled code would keep the driver out of
+    the on-disk cache (numba refuses to cache a function that reads a
+    dynamic global).
     """
+    if multi_threading:
 
-    def driver(
-        n_threads: int,
-        group_idx: npt.NDArray[np.integer],
-        a: npt.NDArray[np.number],
-        size_arg: int,
-        out_dtype: np.dtype,
-        aux_dtype: np.dtype,
-        fill_value: float,
-    ) -> Any:
-        return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, 0, n_threads)
+        def driver(
+            n_threads: int,
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
+            size_arg: int,
+            out_dtype: np.dtype,
+            aux_dtype: np.dtype,
+            fill_value: float,
+            extra: Any = 0,
+        ) -> Any:
+            return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra, n_threads)
 
-    return njit_stable(driver, name=f"{name}{suffix}")
+    else:
 
-
-def build_mt_driver_ddof(name: str, passes: Any, suffix: str) -> Any:
-    """The parallel driver of an operation that takes the ``ddof`` of the variance."""
-
-    def driver(
-        n_threads: int,
-        group_idx: npt.NDArray[np.integer],
-        a: npt.NDArray[np.number],
-        size_arg: int,
-        out_dtype: np.dtype,
-        aux_dtype: np.dtype,
-        fill_value: float,
-        ddof: int,
-    ) -> Any:
-        return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof, n_threads)
+        def driver(  # type: ignore[misc]  # the two branches are one builder with two signatures
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
+            size_arg: int,
+            out_dtype: np.dtype,
+            aux_dtype: np.dtype,
+            fill_value: float,
+            extra: Any = 0,
+        ) -> Any:
+            return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
 
     return njit_stable(driver, name=f"{name}{suffix}")
-
-
-# the parallel drivers, one per variant of the operation - the number of the
-# threads comes first, the argument of the operation of its own last
-_MT_DRIVER_BUILDERS: dict[Variant, Callable[[str, Any, str], Any]] = {
-    "none": build_mt_driver,
-    "ddof": build_mt_driver_ddof,
-}
-
-
-# the pass structure knows the argument as ``extra``, so a driver builder
-# exists for every name an operation uses for it - the two the composed
-# kernels never take (``q`` and ``reverse``) are answered by the hand-written
-# drivers of ``numpy_groupies.aggregate_numba.specials``
-_DRIVER_BUILDERS: dict[Variant, Callable[[str, Any, str], Any]] = {
-    "none": build_driver,
-    "ddof": build_driver_ddof,
-    "dx": build_driver_dx,
-}
 
 
 class KernelHandle(NamedTuple):
@@ -1283,15 +1220,10 @@ def build_kernel(
             return st.out
 
         passes = njit_stable(passes, name=f"{op_name}_passes")
-        driver = _DRIVER_BUILDERS[variant](op_name, passes, "_driver")
+        driver = build_driver(op_name, passes, "_driver")
 
         mt_driver = None
         if combine is not None:
-            if variant not in _MT_DRIVER_BUILDERS:
-                # the parallel drivers take the number of threads as their
-                # first argument - an operation with an argument of its own
-                # would need a driver of its own here
-                raise ValueError(f"the operation {name} takes an argument of its own and cannot be reduced in chunks")
             # The parallel path: the data is split into as many chunks as there
             # are threads, and every chunk is reduced into a state of its own.
             # The states are folded in the order of their index, so the result
@@ -1367,7 +1299,7 @@ def build_kernel(
                 return out
 
             mt_passes = njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
-            mt_driver = _MT_DRIVER_BUILDERS[variant](op_name, mt_passes, "_mt_driver")
+            mt_driver = build_driver(op_name, mt_passes, "_mt_driver", multi_threading=True)
 
         stub = _make_stub(
             op_name,

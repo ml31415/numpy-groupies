@@ -142,9 +142,9 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     """Call the compiled driver of one variant with the arguments of a
     python-level call.
 
-    The driver takes the argument the operation has of its own under the name
-    of that argument (``compose.build_driver`` spells the signatures out),
-    while the entry point of this module knows two: the ``ddof`` and the
+    The driver takes the argument the operation has of its own as its last
+    one, under whatever name that argument has in the operation - the
+    entry point of this module knows two of them: the ``ddof`` and the
     ``q``.  The wrappers of ``_ARGUMENT_WRAPPERS`` hand the sample spacing of
     the trapezoid and the reverse flag of the sort in through the ``ddof`` of
     that signature, so picking the one the driver of a variant is written for
