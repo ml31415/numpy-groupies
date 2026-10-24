@@ -92,11 +92,32 @@ def _sum_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
+@njit_stable
+def _combine_untouched(acc: ReductionState, other: ReductionState) -> None:
+    """The groups that neither of the two chunks touched stay untouched.
+
+    A group that one of the chunks put a value into is not untouched any
+    more - the flag of the state of the first chunk says so.
+    """
+    if acc.track:
+        untouched: np.ndarray = acc.untouched
+        untouched &= other.untouched
+
+
+def _sum_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one: the sums add up,
+    and a group that neither of the chunks touched stays untouched."""
+    out: np.ndarray = acc.out
+    out += other.out
+    _combine_untouched(acc, other)
+
+
 sum = build_kernel(
     "sum",
     init=_sum_init,
     update=_sum_update,
     update_nan=_sum_update_nan,
+    combine=_sum_combine,
     untouched=_sum_untouched,
     forced_fill=0,
     fill_default=0,
@@ -140,11 +161,20 @@ def _prod_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
+def _prod_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one: the products
+    multiply, and a group that neither of the chunks touched stays untouched."""
+    out: np.ndarray = acc.out
+    out *= other.out
+    _combine_untouched(acc, other)
+
+
 prod = build_kernel(
     "prod",
     init=_prod_init,
     update=_prod_update,
     update_nan=_prod_update_nan,
+    combine=_prod_combine,
     untouched=_prod_untouched,
     forced_fill=1,
     fill_default=1,
@@ -184,11 +214,20 @@ def _len_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
+def _len_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one: the counts add
+    up, and a group that neither of the chunks touched stays untouched."""
+    out: np.ndarray = acc.out
+    out += other.out
+    _combine_untouched(acc, other)
+
+
 len = build_kernel(
     "len",
     init=_len_init,
     update=_len_update,
     update_nan=_len_update_nan,
+    combine=_len_combine,
     untouched=_len_untouched,
     forced_fill=0,
     fill_default=0,
@@ -227,11 +266,20 @@ def _all_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
+def _all_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one: a group is true
+    only if it is true in both of the chunks."""
+    out: np.ndarray = acc.out
+    out &= other.out
+    _combine_untouched(acc, other)
+
+
 all = build_kernel(
     "all",
     init=_all_init,
     update=_all_update,
     update_nan=_all_update_nan,
+    combine=_all_combine,
     untouched=_all_untouched,
     forced_fill=1,
     fill_default=False,
@@ -271,11 +319,20 @@ def _any_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
+def _any_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one: a group is true
+    if it is true in one of the chunks."""
+    out: np.ndarray = acc.out
+    out |= other.out
+    _combine_untouched(acc, other)
+
+
 any = build_kernel(
     "any",
     init=_any_init,
     update=_any_update,
     update_nan=_any_update_nan,
+    combine=_any_combine,
     untouched=_any_untouched,
     forced_fill=0,
     fill_default=False,
@@ -406,10 +463,19 @@ def _allnan_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
+def _allnan_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one: a group holds
+    only nans if it holds them in both of the chunks."""
+    out: np.ndarray = acc.out
+    out &= other.out
+    _combine_untouched(acc, other)
+
+
 allnan = build_kernel(
     "allnan",
     init=_allnan_init,
     update=_allnan_update,
+    combine=_allnan_combine,
     untouched=_allnan_untouched,
     forced_fill=1,
     fill_default=False,
@@ -443,10 +509,19 @@ def _anynan_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
+def _anynan_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one: a group holds a
+    nan if it holds one in one of the chunks."""
+    out: np.ndarray = acc.out
+    out |= other.out
+    _combine_untouched(acc, other)
+
+
 anynan = build_kernel(
     "anynan",
     init=_anynan_init,
     update=_anynan_update,
+    combine=_anynan_combine,
     untouched=_anynan_untouched,
     forced_fill=0,
     fill_default=False,
@@ -508,11 +583,84 @@ def _max_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value:
     st.out[ri] = val if (valid & (first | best)) else cur
 
 
+def _max_combine(acc: SelectionState, other: SelectionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one.
+
+    The value of the other chunk is put into the state of the first one the
+    way the kernel would have done it - the chunks are folded in the order of
+    the data, so the result is the one of the sequential kernel, bit for bit.
+    The body repeats the select of ``_max_update`` instead of calling it: the
+    call would defeat the branchless form the update is written for.
+    """
+    out: np.ndarray = acc.out
+    pending = acc.pending
+    other_out: np.ndarray = other.out
+    other_pending: np.ndarray = other.pending
+    for g in range(out.size):
+        if not other_pending[g]:
+            if pending[g]:
+                out[g] = other_out[g]
+                pending[g] = False
+            else:
+                val = other_out[g]
+                if val != val or complex_less(out[g], val):
+                    out[g] = val
+
+
+def _max_combine_nan(acc: SelectionState, other: SelectionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one - the twin of
+    ``_max_combine`` for the nan variant, whose nans neither win nor clear
+    the pending flag."""
+    out: np.ndarray = acc.out
+    pending = acc.pending
+    other_out: np.ndarray = other.out
+    other_pending: np.ndarray = other.pending
+    for g in range(out.size):
+        if not other_pending[g]:
+            if pending[g]:
+                out[g] = other_out[g]
+                pending[g] = False
+            elif complex_less(out[g], other_out[g]):
+                out[g] = other_out[g]
+
+
+def _min_combine(acc: SelectionState, other: SelectionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one - the twin of
+    ``_max_combine`` for the minimum."""
+    out: np.ndarray = acc.out
+    pending = acc.pending
+    other_out: np.ndarray = other.out
+    other_pending: np.ndarray = other.pending
+    for g in range(out.size):
+        if not other_pending[g]:
+            if pending[g]:
+                out[g] = other_out[g]
+                pending[g] = False
+            else:
+                val = other_out[g]
+                if val != val or complex_less(val, out[g]):
+                    out[g] = val
+
+
+def _min_combine_nan(acc: SelectionState, other: SelectionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one - the twin of
+    ``_max_combine_nan`` for the minimum."""
+    for g in range(acc.out.size):
+        if not other.pending[g]:
+            if acc.pending[g]:
+                acc.out[g] = other.out[g]
+                acc.pending[g] = False
+            elif complex_less(other.out[g], acc.out[g]):
+                acc.out[g] = other.out[g]
+
+
 max = build_kernel(
     "max",
     init=_max_init,
     update=_max_update,
     update_nan=_max_update_nan,
+    combine=_max_combine,
+    combine_nan=_max_combine_nan,
     rule=rule_same,
     fill_default=np.nan,
     doc="Maximum value of every group",
@@ -562,6 +710,8 @@ min = build_kernel(
     init=_min_init,
     update=_min_update,
     update_nan=_min_update_nan,
+    combine=_min_combine,
+    combine_nan=_min_combine_nan,
     rule=rule_same,
     fill_default=np.nan,
     doc="Minimum value of every group",
@@ -611,11 +761,20 @@ def _sumofsquares_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
     return st.untouched
 
 
+def _sumofsquares_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one: the sums of the
+    squared magnitudes add up."""
+    out: np.ndarray = acc.out
+    out += other.out
+    _combine_untouched(acc, other)
+
+
 sumofsquares = build_kernel(
     "sumofsquares",
     init=_sumofsquares_init,
     update=_sumofsquares_update,
     update_nan=_sumofsquares_update_nan,
+    combine=_sumofsquares_combine,
     untouched=_sumofsquares_untouched,
     forced_fill=0,
     fill_default=0,

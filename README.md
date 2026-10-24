@@ -256,33 +256,33 @@ All implementations share the calling syntax and produce the same results up to 
 
 ## Performance
 
-Best of three passes of five timed runs each, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
+Best of three passes, every cell measured in one block of five runs, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
 
-| function        | numpy  | numba  | numbagg | polars | pandas |
-| --------------- | -----: | -----: | ------: | -----: | -----: |
-| `sum`            |  0.917 |  0.454 |  0.463 |  2.421 |  6.960 |
-| `mean`           |  1.512 |  0.491 |  0.531 |  2.665 |  7.430 |
-| `max`            |  1.681 |  0.608 |  0.858 |  3.337 |  6.718 |
-| `std`            |  3.060 |  0.653 |  0.680 |  2.481 |  7.676 |
-| `nansum`         |  4.099 |  0.429 |  1.754 |  5.915 |  8.288 |
-| `median`         | 11.730 |  9.345 |   ---- |  3.675 | 16.229 |
-| `skew`            |  5.578 |  2.577 |   ---- |  3.349 |  9.642 |
-| `kurt`            |  5.591 |  2.434 |   ---- |  4.125 | 10.717 |
-| `quantile`       | 14.050 |  9.469 |   ---- |  4.180 | 22.721 |
-| `nunique`        | 14.921 |  8.296 |   ---- | 11.896 | 58.062 |
-| `sort`           | 70.184 | 24.658 |   ---- |   ---- |   ---- |
-| `cumsum`         | 14.042 |  0.551 |   ---- |  8.483 |  7.283 |
-| `array`          |  7.358 |  1.958 |   ---- |   ---- |   ---- |
-| custom callable  | 111.000 |  5.961 |   ---- | 79.490 | 95.918 |
+| function        | numpy  |  numba  | numbagg | numbagg-mt | polars | pandas |
+| --------------- | -----: | ------: | ------: | ---------: | -----: | ------: |
+| `sum`           |  0.957 |  0.347 |  0.472 |  0.466 |  2.931 |  6.903 |
+| `mean`          |  1.553 |  0.342 |  0.550 |  0.551 |  2.651 |  7.425 |
+| `max`           |  1.730 |  0.358 |  0.864 |  0.868 |  3.470 |  6.559 |
+| `std`           |  3.128 |  0.303 |  0.759 |  0.929 |  3.147 |  7.630 |
+| `nansum`        |  4.168 |  0.261 |  1.803 |  1.774 |  6.503 |  9.124 |
+| `median`        | 12.522 |  9.527 |   ---- |   ---- |  4.214 | 15.759 |
+| `skew`          |  6.020 |  2.607 |   ---- |   ---- |  3.739 |  9.477 |
+| `kurt`          |  5.742 |  2.557 |   ---- |   ---- |  4.129 | 10.473 |
+| `quantile`      | 14.649 |  9.496 |   ---- |   ---- |  4.222 | 23.426 |
+| `nunique`       | 15.355 |  8.187 |   ---- |   ---- | 13.413 | 56.520 |
+| `sort`          | 70.556 | 24.860 |   ---- |   ---- |   ---- |   ---- |
+| `cumsum`        | 15.176 |  0.556 |   ---- |   ---- |  9.880 |  7.601 |
+| `array`         |  7.575 |  1.935 |   ---- |   ---- |   ---- |   ---- |
+| custom callable  | 115.266 |  6.039 |   ---- |   ---- | 80.268 | 96.240 |
 
-The `polars` column uses all the cores of the machine, the `numpy` and `numba` columns are single-threaded - the Numba kernels of this package do not use `prange`. That matters most for the order statistics: with a single thread polars needs 9.7ms for the quantile, against 4.0ms with six, which puts it level with the single-threaded Numba kernel (9.3ms).
+The `polars` column uses all the cores of the machine. The `numba` column uses them too, for the operations that can be reduced in chunks - the sums, the products, the counts, the extremes and the mean: their data is split into chunks that are reduced separately and folded afterwards. The chunks are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the chunks that are left. The state is one per thread, not one per chunk, so the memory does not grow with the number of the chunks. The operations that need the values of a group together (the order statistics) and the ones that give an output per value (the cumulatives) stay single-threaded. That matters most for the order statistics: with a single thread polars needs 8.5ms for the quantile, against 4.2ms with six, which puts it level with the single-threaded Numba kernel (9.5ms).
 
 Absolute numbers depend on your machine, so compare the columns against each other rather than reading a single one as the price of the operation.
 
 The complete table and the benchmark setup are in [docs/benchmarks.md](https://github.com/ml31415/numpy-groupies/blob/master/docs/benchmarks.md). To run it yourself, from the repository root — `--help` explains which columns to ask for:
 
 ```sh
-python -m numpy_groupies.benchmarks --numbagg --pandas --polars
+python -m numpy_groupies.benchmarks --numbagg --numbagg-mt --pandas --polars
 ```
 
 The `numpy` and `numba` columns above are not the whole story: NumPy 1.25 brought major [speed improvements to ufuncs](https://numpy.org/doc/stable/release/1.25.0-notes.html), which narrowed the gap between the NumPy and Numba implementations considerably. The authors hope that `ufunc.at` or an equivalent in NumPy or SciPy will eventually become fast enough to make this package redundant.
