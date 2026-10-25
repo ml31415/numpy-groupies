@@ -8,7 +8,7 @@ them would show up in the numbers of the table and nowhere else.
 import numpy as np
 import pytest
 
-from numpy_groupies.benchmarks import _numbagg, select_funcs
+from numpy_groupies.benchmarks import COLUMN_ORDER, _numbagg, select_funcs
 
 
 def test_the_function_names_are_the_ones_of_the_package():
@@ -22,24 +22,19 @@ def test_the_function_names_are_the_ones_of_the_package():
 
 
 @pytest.mark.skipif(_numbagg is None, reason="numbagg is not installed")
-def test_the_two_numbagg_columns_give_the_same_result():
-    # the columns differ only in the number of the threads numbagg may use
-    rng = np.random.default_rng(100)
-    group_idx = rng.integers(0, 100, 10_000)
-    values = rng.random(10_000)
-    for func in ("sum", "prod", "len", "all", "any", "max", "min", "mean"):
-        eins = _numbagg.aggregate(group_idx, values, func=func)
-        viele = _numbagg.aggregate_mt(group_idx, values, func=func)
-        np.testing.assert_allclose(eins, viele, rtol=1e-12, equal_nan=True)
+def test_the_numbagg_column_is_the_one_of_numbagg():
+    # the benchmark does not hold numbagg at one thread and does not measure
+    # it twice: the threads of the machine are numbagg's own business, and a
+    # second column would only show the same numbers twice - on a
+    # one-dimensional input there is nothing for the parallel target of
+    # numbagg to split
+    import numbagg
 
-
-@pytest.mark.skipif(_numbagg is None, reason="numbagg is not installed")
-def test_the_numbagg_column_is_the_one_threaded_one():
-    # the functions of the one-threaded column switch the thread count of
-    # numba, the ones of the other column do not
     for name, func in _numbagg.funcs.items():
-        assert hasattr(func, "__wrapped__"), name
-        assert func.__wrapped__ is _numbagg.funcs_mt[name], name
+        assert isinstance(func, numbagg.decorators.groupndreduce), name
+    # and the second column is gone
+    assert not hasattr(_numbagg, "aggregate_mt")
+    assert "numbagg-mt" not in COLUMN_ORDER
 
 
 @pytest.mark.skipif(_numbagg is None, reason="numbagg is not installed")

@@ -513,11 +513,11 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
 
 
 # The columns in the order they appear in the table.
-COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "numbagg", "numbagg-mt", "polars", "pandas", "ufunc")
+COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "numbagg", "polars", "pandas", "ufunc")
 # of those, the ones that have to be asked for
 OPTIONAL_COLUMNS = COLUMN_ORDER[2:]
 # the column names that differ from the name of their flag
-COLUMN_ARGUMENTS = {"numbagg-mt": "numbagg_mt"}
+COLUMN_ARGUMENTS: dict[str, str] = {}
 
 
 def _build_implementations(args):
@@ -533,7 +533,6 @@ def _build_implementations(args):
         "ufunc": _ufunc.aggregate,
         # the optional dependencies are None when they are not installed
         "numbagg": _numbagg.aggregate if _numbagg is not None else None,
-        "numbagg-mt": _numbagg.aggregate_mt if _numbagg is not None else None,
         "pandas": _pandas.aggregate if _pandas is not None else None,
         "polars": _polars.aggregate if _polars is not None else None,
     }
@@ -560,9 +559,10 @@ with a counter and prints the fastest measurement of all runs once at the end.
 
 numbagg ships nan-guarded reductions only, so its numbers for the plain
 functions are those of the nan twins - on the nan-free data of this benchmark
-the two coincide.  The 'numbagg' column runs its calls at one thread, the
-'numbagg-mt' column with all the threads of the machine: the two show what
-the choice is worth.""",
+the two coincide.  The threads of the machine are numbagg's own business: it
+compiles its grouped reductions to parallel targets and uses the pool where
+there is anything to split - and on a one-dimensional input there is
+nothing, the whole array being the core of the kernel.""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--all", action="store_true", help="include every optional column listed below")
@@ -582,13 +582,7 @@ the choice is worth.""",
     parser.add_argument(
         "--numbagg",
         action="store_true",
-        help="the numbagg grouped reductions at one thread (optional dependency, part of the dev extras)",
-    )
-    parser.add_argument(
-        "--numbagg-mt",
-        dest="numbagg_mt",
-        action="store_true",
-        help="the numbagg grouped reductions with all the threads of the machine (optional dependency)",
+        help="the numbagg grouped reductions (optional dependency, part of the dev extras)",
     )
     parser.add_argument("--pandas", action="store_true", help="the pandas groupby wrapper (optional dependency)")
     parser.add_argument("--polars", action="store_true", help="the polars group_by wrapper (optional dependency)")
