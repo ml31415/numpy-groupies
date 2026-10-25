@@ -106,15 +106,15 @@ def test_the_group_ratio_gets_better_with_more_threads():
 
 
 def test_the_group_path_needs_fewer_values_than_the_chunked_one():
-    # the operations that cut their groups into ranges cost 18 to 68
-    # nanoseconds a value against the half a nanosecond of the sum: the fixed
-    # cost of a parallel region is a thousand times smaller a share of their
-    # time, so they parallelize where the reductions still run single threaded
+    # the operations that cut their groups into ranges cost orders of
+    # magnitude more per value than the sum: the fixed cost of a parallel
+    # region is a far smaller share of their time, so they parallelize where
+    # the reductions still run single threaded
     assert not mt.should_use_mt(1000, 4, mt.GROUP_MT_MIN_VALUES)
     assert mt.should_use_group_mt(1000, 4, mt.GROUP_MT_MIN_VALUES, 18.0)
 
 
-def test_an_cheap_operation_needs_more_values_to_amortize_the_region():
+def test_a_cheap_operation_needs_more_values_to_amortize_the_region():
     # the fixed cost of the parallel region against what a value costs: the
     # cheaper the operation, the more values it has to gather before the
     # region is paid for
@@ -133,9 +133,13 @@ def test_the_group_ratio_of_one_thread_is_no_gain():
 
 def test_the_ranges_are_more_than_the_threads():
     # a thread that is done with its range takes one that is left instead of
-    # waiting for the slowest core, so the ranges have to outnumber the threads
-    for threads in (2, nb.config.NUMBA_NUM_THREADS):
+    # waiting for the slowest core, so the ranges have to outnumber the
+    # threads - with a pool of one thread the sequential path runs, and
+    # nothing is cut at all
+    pools = {2, nb.get_num_threads()}
+    for threads in (t for t in pools if t > 1):
         assert mt.group_chunk_count(threads, 1000) > threads
+    assert mt.group_chunk_count(1, 1000) == 1
     # and never more than there are groups to work on
     assert mt.group_chunk_count(8, 2) <= 2
 
@@ -151,7 +155,7 @@ def test_the_shape_of_the_kernel_tests_is_one_the_parallel_path_is_used_for():
     # creeps above the test data would leave every one of them a test of the
     # sequential kernel, passing and empty.  The select is the cheapest of the
     # operations that cut their groups into ranges, so what is enough for it is
-    # enough for all of them (the sort costs nearly four times as much a value).
+    # enough for all of them.
     from numpy_groupies.aggregate_numba import specials
 
     for n_groups in (100, 1000, 10_000):

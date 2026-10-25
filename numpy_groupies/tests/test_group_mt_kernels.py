@@ -119,7 +119,7 @@ def skewed() -> tuple[np.ndarray, np.ndarray]:
 
 
 def _both_ways(group_idx: np.ndarray, values: np.ndarray, func: str, **kwargs: object) -> tuple:
-    """The result of the operation with four threads and the one with one of
+    """The result of the operation with two threads and the one with one of
     them - the two paths side by side."""
     nb.set_num_threads(2)
     parallel = aggregate(group_idx, values, func=func, **kwargs)

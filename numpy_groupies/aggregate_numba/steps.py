@@ -100,9 +100,9 @@ def group_ranges(
     schedule of the pool hands the iterations out once, at the start.  Cutting
     ``size`` iterations in as many pieces as there are threads therefore leaves
     the thread that drew the heavy half of the groups waiting for the others -
-    on a machine with six threads and 1000 groups of a zipf-like distribution
-    (the largest group 179 times the mean) that is 1.2 times the sequential
-    time against 3.1 times for the ranges of equal value count below.
+    on a zipf-like distribution the call then takes a multiple of the
+    sequential time, where the ranges of equal value count below stay close
+    to it.
 
     The walk cuts a new range whenever the values it has seen pass the next
     multiple of ``total / n_ranges``.  A group bigger than the target cannot be
