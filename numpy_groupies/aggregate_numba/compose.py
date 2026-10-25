@@ -37,22 +37,28 @@ forced_fill) -> state``
     parallel path: the data is split into chunks that are reduced separately,
     and the states are folded afterwards
 
-The parallel path has one state per chunk and more chunks than threads: the
-threads take the chunks from the queue of the pool, so a core that is busy
-with something else does not hold up the whole call, and a chunk that is
-left over is taken by a thread that is done.  The state belongs to the chunk
-and not to the thread: the state of a chunk is written by the one thread
-that took the chunk, so no thread ever writes into the state of another one
-and no lock is needed.  The sums of the floats are added up in the order of
-the chunks, so they differ in the last bits from the sequential sum - the
-extremes, the counts and the logic are exact.
+The parallel path has one state per chunk or one per thread and more chunks
+than threads: the threads take the chunks from the queue of the pool, so a
+core that is busy with something else does not hold up the whole call, and a
+chunk that is left over is taken by a thread that is done.  The chunks are
+aggregated into the state of the thread that takes them, so a thread never
+writes into the state of another one and no lock is needed.  The sums of the
+floats are added up in the order the chunks reach the threads, so they differ
+in the last bits from run to run - the extremes, the counts and the logic are
+exact.
 
-The state does not belong to a thread: the number a thread reports for
-itself is bounded by the pool of the runtime and not by the number of the
-threads the call asked for - a call for two threads on a machine whose pool
-has six still hands its chunks to those six.  A state per thread indexed by
-that number would be read out of its range, and the chunks that fell off the
-end of it would be lost.
+The number of the threads is the number of the threads of the pool of numba
+- the environment variable ``NUMBA_NUM_THREADS`` at the start of the process,
+``numba.set_num_threads`` at any time - and the number a thread reports for
+itself is bounded by it.  That is why one state per thread is enough: a
+thread of the pool is one of the threads the call counted, and no id can be
+larger than the last of them.
+
+Whether the states are one per chunk or one per thread is a question of
+memory: a state is an array of the size of the groups, so the states of the
+chunks are twice as many.  With few groups that is nothing, and the states of
+the chunks have the advantage that the fold runs in the order of the chunks -
+the same bits every time.  With many groups the memory is what counts.
 
 The factory assembles these into ONE compiled driver per operation that owns
 the group loop, bounds checks and pass structure, and exposes it as a function
@@ -1282,41 +1288,42 @@ def build_kernel(
                 n_chunks = chunk_count(n_threads, n_values)
                 chunk = (n_values + n_chunks - 1) // n_chunks
                 faults = np.zeros(n_chunks, np.int64)
-                # One state per chunk, and the chunk is what the state belongs
-                # to.  Not per thread: the id a thread reports for itself is
-                # bounded by the pool and not by the number the call asked
-                # for - a call for two threads on a machine whose pool has six
-                # still hands its chunks to those six, and six ids in a list of
-                # two states is four states read out of their range, which
-                # numba does not notice.  Half of the values were lost that
-                # way.
+                # The states are one per chunk or one per thread, and the
+                # memory decides: a state is an array of the size of the
+                # groups, so the states of the chunks cost twice the states of
+                # the threads.  With few groups that is nothing, and the
+                # states of the chunks have the advantage that the fold runs
+                # in the order of the chunks - the same bits every time, and
+                # not the order the pool happened to hand the chunks out in.
+                # With many groups the memory is what counts, and the states
+                # are one per thread.
                 #
-                # The state of a chunk is written by the one thread that took
-                # the chunk, and no other thread ever writes into it - so the
-                # states need no lock, and a thread that is busy with
-                # something else delays its chunk and not the whole call: the
-                # threads that are done take the chunks that are left.
-                #
-                # The fold is in the order of the chunks and not in the order
-                # of the threads that took them, so the result does not depend
-                # on the order the pool handed the chunks out in: the same
-                # call gives the same bits every time.
+                # The extra states may not be more than a tenth of the data
+                # itself: a state is an array of the size of the groups, and
+                # the data is an array of the size of the values.
+                per_chunk = n_threads * size * state_size * 10 <= n_values
+                n_states = n_chunks if per_chunk else n_threads
+                # One state per thread: the state of a thread is written by
+                # that thread alone, so the states need no lock.  A thread that
+                # is busy with something else delays its chunk and not the
+                # whole call: the threads that are done take the chunks that
+                # are left.
                 states = [
                     init_c(size, n_values, out_dtype, aux_dtype, a.dtype, fill_value, forced_fill)
-                    for _ in range(n_chunks)
+                    for _ in range(n_states)
                 ]
                 for c in nb.prange(n_chunks):
                     start = c * chunk
                     stop = min(start + chunk, n_values)
                     if stop > start:
-                        # the state of the chunk, written by the one thread
-                        # that was given it
-                        state = states[c]
+                        # the state of the chunk or the one of the thread that
+                        # takes it
+                        state = states[c] if per_chunk else states[nb.get_thread_id()]
                         seed_c(state, a[start:stop])
                         faults[c] = kernel(group_idx[start:stop], a[start:stop], state, fill_value, extra, size)
-                # the states of the chunks, folded in the order of their index
+                # the states, folded in the order of their index
                 acc = states[0]
-                for c in range(1, n_chunks):
+                for c in range(1, n_states):
                     combine_c(acc, states[c], fill_value, extra)
                 fault = faults[0]
                 for c in range(1, n_chunks):

@@ -97,15 +97,14 @@ MT_MAX_RATIO = 0.8
 # kernel with one slow chunk measured 2.3ms with six chunks against 0.4ms
 # with twelve).
 #
-# The states are one per chunk, and the chunk is what the state belongs to:
-# the state of a chunk is written by the one thread that took the chunk, so
-# the states need no lock - and the memory is one state per chunk, which is
-# what ``should_use_mt`` counts as the partial matrix.
+# The states are one per thread, and the thread is what the state belongs to:
+# the state of a thread is written by that thread alone, so the states need no
+# lock - and the memory is one state per thread, which is what
+# ``should_use_mt`` counts as the partial matrix.
 #
-# The state does not belong to a thread: the id a thread reports for itself is
-# bounded by the pool and not by the number of the threads the call asked for,
-# and a state per thread indexed by that id would be read out of its range
-# whenever the pool is the bigger of the two.
+# The number of the threads is the number of the threads of the pool of numba,
+# and the number a thread reports for itself is bounded by it: a thread of
+# the pool is one of the threads the call counted.
 MT_CHUNKS_PER_THREAD = 2
 
 
@@ -318,8 +317,8 @@ def estimate_mt_time_us(n_groups: int, n_threads: int, n_values: int, state_size
     costs three times as much to fill and to fold.
     """
     data_us = n_values * _BYTES_PER_ELEMENT / _bandwidth_bytes_per_s(n_values, n_threads) * 1e6
-    # the states are one per chunk, and the chunks are more than the threads
-    partials_us = chunk_count(n_threads, n_values) * n_groups * _C_PART * state_size / 1e3
+    # the states are one per thread, and the threads are the ones of the pool
+    partials_us = n_threads * n_groups * _C_PART * state_size / 1e3
     return data_us + n_groups * _CG_MT * state_size / 1e3 + partials_us + _OVERHEAD_US
 
 
