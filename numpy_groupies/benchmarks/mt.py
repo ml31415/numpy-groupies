@@ -21,10 +21,10 @@ What is measured:
                      free of the machinery around the kernels and shows what
                      the machine can do.
 
-  the group path     the median, the quantile, the sort and the number of the
-                     distinct values: the sequential kernel of the package
-                     against its parallel one, which cuts the groups into
-                     ranges and lets the threads work on the ranges.
+  the group path     the median, the sort and the number of the distinct
+                     values: the sequential kernel of the package against
+                     its parallel one, which cuts the groups into ranges and
+                     lets the threads work on the ranges.
 
   the gather         the gather of ``unpack_into`` against its parallel twin.
 
@@ -96,9 +96,11 @@ Typical runtime: a few minutes with the default grid.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import math
 import os
 import platform
+import signal
 import statistics
 import subprocess
 import sys
@@ -124,11 +126,16 @@ OVERHEAD_US = {1: 0.0, 2: 4.7, 3: 5.0, 4: 5.2, 6: 5.8, 8: 6.4, 16: 9.0}
 COLD_PAUSE_S = 0.02
 
 # the number of the calls of a cold measurement - enough that one disturbance
-# of the machine does not decide it
-COLD_REPEAT = 7
+# of the machine does not decide it: the fastest of them is the one that was
+# left alone, and one disturbance among four is not the fastest one
+COLD_REPEAT = 4
 
 # the operations that parallelize over the groups
-GROUP_OPS = ("median", "quantile", "sort", "nunique")
+#
+# the quantile is the median with another index, and the model carries the
+# two as one (one ns-per-value constant of the package) - the measurements of
+# the two came out the same, so only the median is fitted and reported
+GROUP_OPS = ("median", "sort", "nunique")
 
 # the cost of a value of the group operations, as the package carries it -
 # the tool measures its own and compares the two
@@ -369,7 +376,7 @@ def measure_cold(fn, repeat: int, pause: float = COLD_PAUSE_S) -> tuple[float, f
 
 def repeat_for(n_values: int) -> int:
     """Enough calls per measurement to get out of the noise, but not too many."""
-    return int(min(200, max(3, 4e6 / max(n_values, 1))))
+    return int(min(100, max(3, 2e6 / max(n_values, 1))))
 
 
 def _package_kernel():
@@ -1320,6 +1327,11 @@ def _package_decision(row: dict) -> tuple[bool | None, float]:
     return decision, modelled
 
 
+# the calibration of the machine is a run of minutes, and an interrupt has
+# to end it cleanly - the mechanism for that lives in the ``__main__`` block
+# at the end of this module, where the run is started.
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -1376,6 +1388,11 @@ def main(argv=None) -> int:
             thread_counts.append(thread_counts[-1] * 2)
         if thread_counts[-1] != pool:
             thread_counts.append(pool)
+    # measured from the pool downwards: a pool that grows launches workers of
+    # the openmp layer, and a launch ignores the interrupt for the whole
+    # process - one that happened while a grid runs would swallow it until
+    # the next measurement arms the handler again
+    thread_counts.reverse()
     sizes = [int(s) for s in args.sizes.split(",")]
     group_sizes = [int(s) for s in args.group_sizes.split(",")]
     gather_sizes = [int(s) for s in args.gather_sizes.split(",")]
@@ -1409,4 +1426,37 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if hasattr(signal, "SIGPIPE"):
+        # a reader that went away (``| head``) ends the run quietly, as it
+        # does for any other command line filter; left alone, python prints
+        # a traceback of the broken pipe on the way out
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+    def _on_interrupt(signum: int, frame: object) -> None:
+        """End the run at once, on an interrupt.
+
+        A KeyboardInterrupt raised from the handler would not arrive: the
+        interrupt reaches the compiled kernels, and the ctypes callbacks of
+        numba swallow the exceptions raised inside them - the run would go
+        on, and llvmlite would print a complaint about it.  Leaving the
+        process is the only way out that works from within such a callback,
+        and the exit code says what happened.
+
+        The pool of the threads of numba is closed before that, so that the
+        semaphore of it does not leak - the resource tracker of
+        multiprocessing would complain about it on the way out.
+        """
+        with contextlib.suppress(Exception):
+            import numba
+
+            numba.close()
+        os._exit(130)
+
+    signal.signal(signal.SIGINT, _on_interrupt)
+    try:
+        raise SystemExit(main())
+    except BrokenPipeError:
+        pass
+    except KeyboardInterrupt:
+        # an interrupt that arrives outside of a compiled kernel
+        pass
