@@ -1,10 +1,10 @@
 """How the parallel path of the numba kernels scales with the threads.
 
-    python -m tools.mt_scaling [threads ...]
+    python -m numpy_groupies.benchmarks.mt_scaling [threads ...]
 
 Every thread count gets a process of its own: the threads of the pool spin
 after a parallel region, and they disturb the measurement of the next one in
-the same process.  The times are the fastest of five blocks of ten calls.
+the same process.  The times are the fastest of the blocks of ten calls each.
 
 The numbers say how many threads the parallel path is worth: it splits its
 data into as many chunks as there are threads, and the chunks are reduced
@@ -88,15 +88,15 @@ def main(argv: list) -> int:
             try:
                 ms, median = measure(t, n_values)
             except subprocess.CalledProcessError as exc:
-                print(f"  {t} threads: {exc.stderr.strip().splitlines()[-1] if exc.stderr else 'fehlgeschlagen'}")
+                print(f"  {t} threads: {exc.stderr.strip().splitlines()[-1] if exc.stderr else 'failed'}")
                 continue
             if base is None:
                 base = ms
             speedup = base / ms
-            bandwidth = n_values * 16 / ms / 1e3
+            bandwidth = n_values * 16 / ms / 1e6
             print(
                 f"  {t:>2} threads: {ms:8.3f} ms   Speedup {speedup:5.2f}x   {bandwidth:6.1f} GB/s"
-                f"   (Mittel {median:8.3f} ms)"
+                f"   (median {median:8.3f} ms)"
             )
     return 0
 
