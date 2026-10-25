@@ -1,5 +1,6 @@
 """The decision whether a kernel runs multithreaded."""
 
+import numba as nb
 import numpy as np
 
 from numpy_groupies.aggregate_numba import mt
@@ -133,7 +134,7 @@ def test_the_group_ratio_of_one_thread_is_no_gain():
 def test_the_ranges_are_more_than_the_threads():
     # a thread that is done with its range takes one that is left instead of
     # waiting for the slowest core, so the ranges have to outnumber the threads
-    for threads in (2, 4, 6, 7):
+    for threads in (2, nb.config.NUMBA_NUM_THREADS):
         assert mt.group_chunk_count(threads, 1000) > threads
     # and never more than there are groups to work on
     assert mt.group_chunk_count(8, 2) <= 2

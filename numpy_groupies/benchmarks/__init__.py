@@ -613,7 +613,7 @@ nothing, the whole array being the core of the kernel.""",
         "--threads",
         type=int,
         default=0,
-        help="the number of threads the numba kernels use (default: every hardware thread of the machine)",
+        help="the number of threads of the pool of numba, which the kernels use (default: every hardware thread of the machine)",
     )
     parser.add_argument(
         "--raise-errors",
@@ -623,14 +623,11 @@ nothing, the whole array being the core of the kernel.""",
     args = parser.parse_args(argv)
     if args.threads:
         # the numba kernels split their data into as many chunks as there
-        # are threads - the flag sets both the pool of numba and the number
-        # of the threads the kernels use
+        # are threads - the flag sets the pool of numba, and the kernels use
+        # the threads they find there
         import numba
 
-        from numpy_groupies.aggregate_numba import mt
-
         numba.set_num_threads(args.threads)
-        mt.set_thread_count(args.threads)
     if args.all:
         for column in OPTIONAL_COLUMNS:
             setattr(args, COLUMN_ARGUMENTS.get(column, column), True)

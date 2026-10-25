@@ -157,8 +157,14 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     are read here, and a number read inside the compiled code would keep the
     driver out of the on-disk cache - numba refuses to cache a function that
     reads a dynamic global).  Read of every call and not once when the wrapper
-    is built: ``set_thread_count`` is the knob of the caller, and a number
-    captured at the import of the package would keep it from turning.
+    is built: the threads of the pool of numba are the knob of the caller
+    (``numba.set_num_threads``), and a number captured at the import of the
+    package would keep them from turning.
+
+    The number is read only for the calls that are big enough for the
+    parallel path at all - the number of the threads of the pool is a call
+    into the runtime, and a call that is too small for the parallel path
+    should not pay for it.
 
     The driver itself decides whether the parallel path is worth it (the cost
     model of ``aggregate_numba.mt``) and falls back to the sequential one
@@ -166,6 +172,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     """
     driver = handle.driver
     mt_driver = handle.mt_driver
+    min_values = handle.mt_min_values
 
     if handle.variant == "none":
 
@@ -179,12 +186,12 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             ddof: float,
             q: float,
         ) -> Any:
-            if mt_driver is not None:
+            if mt_driver is not None and group_idx.size >= min_values:
                 # the number of the threads is asked of every call: a number
                 # captured when the wrapper was built would be the number the
                 # package was imported with, whatever the caller does with
-                # ``set_thread_count`` after that - and the sequential path
-                # would be unreachable
+                # ``numba.set_num_threads`` after that - and the sequential
+                # path would be unreachable
                 n_threads = mt_thread_count()
                 if n_threads > 1:
                     # without a second thread there is nothing to parallelize,
@@ -208,7 +215,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             ddof: float,
             q: float,
         ) -> Any:
-            if mt_driver is not None:
+            if mt_driver is not None and group_idx.size >= min_values:
                 n_threads = mt_thread_count()
                 if n_threads > 1:
                     return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
@@ -228,7 +235,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
         ddof: float,
         q: float,
     ) -> Any:
-        if mt_driver is not None:
+        if mt_driver is not None and group_idx.size >= min_values:
             n_threads = mt_thread_count()
             if n_threads > 1:
                 return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)

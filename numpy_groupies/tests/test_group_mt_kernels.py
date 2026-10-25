@@ -14,10 +14,11 @@ groups hides a group that no range worked on - which is where a range that is
 one group too short, or one too long, would show.
 """
 
+import numba as nb
 import numpy as np
 import pytest
 
-from numpy_groupies.aggregate_numba import aggregate, mt
+from numpy_groupies.aggregate_numba import aggregate
 from numpy_groupies.registry import DEFAULT_FILL_VALUE
 
 # the operations that parallelize over the groups and not over the values
@@ -47,12 +48,31 @@ def _same(got: np.ndarray, wanted: np.ndarray, rtol: float = 0) -> None:
     np.testing.assert_allclose(got, wanted, rtol=rtol, atol=0, equal_nan=True)
 
 
+def _thread_counts() -> list[int]:
+    """The numbers of the threads the tests try: one, two and the pool.
+
+    Two threads are enough for every test here, and the pool of the machine
+    is as many as numba was started with - a machine with two of them (a
+    notebook, a container) runs the tests as well.
+    """
+    counts = [1, 2]
+    pool = nb.config.NUMBA_NUM_THREADS
+    if pool > 2:
+        counts.append(pool)
+    return counts
+
+
 @pytest.fixture(autouse=True)
 def restore_the_thread_count():
-    """Every test that steers the number of the threads gives it back."""
-    before = mt.mt_thread_count()
+    """Every test that steers the number of the threads gives it back.
+
+    The number of the threads is the one of the pool of numba - the caller
+    steers it with ``numba.set_num_threads`` and the kernels use what they
+    find there.
+    """
+    before = nb.get_num_threads()
     yield
-    mt.set_thread_count(None if before == mt._pool_threads else before)
+    nb.set_num_threads(before)
 
 
 def _data(
@@ -101,9 +121,9 @@ def skewed() -> tuple[np.ndarray, np.ndarray]:
 def _both_ways(group_idx: np.ndarray, values: np.ndarray, func: str, **kwargs: object) -> tuple:
     """The result of the operation with four threads and the one with one of
     them - the two paths side by side."""
-    mt.set_thread_count(4)
+    nb.set_num_threads(2)
     parallel = aggregate(group_idx, values, func=func, **kwargs)
-    mt.set_thread_count(1)
+    nb.set_num_threads(1)
     sequential = aggregate(group_idx, values, func=func, **kwargs)
     return parallel, sequential
 
@@ -122,8 +142,10 @@ def test_the_parallel_path_gives_the_result_of_the_sequential_one(func, data):
 def test_the_number_of_the_threads_does_not_change_the_result(func, data):
     group_idx, values = data
     results = []
-    for threads in (1, 2, 3, 4, 6, 7):
-        mt.set_thread_count(threads)
+    # the pool of numba takes the number of the threads it was started with,
+    # and no more
+    for threads in _thread_counts():
+        nb.set_num_threads(threads)
         results.append(aggregate(group_idx, values, func=func))
     # the ranges are the units of work and nothing else: every group belongs to
     # exactly one of them whichever number they are cut into, so the result
@@ -173,7 +195,7 @@ def test_the_median_is_the_quantile_of_a_half(data):
     # two kernels that are built separately and have to agree, one with the
     # middle index and one with the quantile of it
     group_idx, values = data
-    mt.set_thread_count(4)
+    nb.set_num_threads(2)
     _same(aggregate(group_idx, values, func="median"), aggregate(group_idx, values, func="quantile", q=0.5))
 
 
@@ -184,7 +206,7 @@ def test_the_result_of_every_group_is_the_result_of_that_group(func, clean):
     # of a boundary of the ranges is the case a range that is one too short
     # cannot survive
     group_idx, values = clean
-    mt.set_thread_count(4)
+    nb.set_num_threads(2)
     kwargs = {"q": 0.5} if func.endswith("quantile") else {}
     got = aggregate(group_idx, values, func=func, **kwargs)
     wanted = np.array([np.quantile(values[group_idx == g], 0.5) for g in range(N_GROUPS)])
@@ -216,7 +238,7 @@ def test_the_sort_keeps_the_values_of_its_group(clean):
     # the same values in every group, only put in order - the ranges of the
     # threads may not move a value across the border of a group
     group_idx, values = clean
-    mt.set_thread_count(4)
+    nb.set_num_threads(2)
     got = aggregate(group_idx, values, func="sort")
     for g in (0, 37, 99):
         _same(np.sort(got[group_idx == g]), np.sort(values[group_idx == g]))
@@ -228,7 +250,7 @@ def test_a_fault_of_the_indices_is_complained_about(func, data):
     # sequential path has to be made before a single one of them is cut
     group_idx, values = data
     group_idx[17] = -1
-    mt.set_thread_count(4)
+    nb.set_num_threads(2)
     with pytest.raises(ValueError, match="negative indices"):
         aggregate(group_idx, values, func=func)
     group_idx[17] = N_GROUPS

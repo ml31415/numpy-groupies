@@ -97,16 +97,15 @@ MT_MAX_RATIO = 0.8
 # kernel with one slow chunk measured 2.3ms with six chunks against 0.4ms
 # with twelve).
 #
-# The chunks are not the states, though: the states are one per thread of the
-# pool, and the chunks are aggregated into the state of the thread that takes
-# them.  The state of a thread is written by that thread only, so the chunks
-# need no lock - and the memory stays at one state per thread of the pool.
+# The states are one per chunk, and the chunk is what the state belongs to:
+# the state of a chunk is written by the one thread that took the chunk, so
+# the states need no lock - and the memory is one state per chunk, which is
+# what ``should_use_mt`` counts as the partial matrix.
 #
-# The pool and not the number the call asked for: the number a thread reports
-# for itself is bounded by the pool, and a call for two threads on a machine
-# whose pool has six still hands its chunks to those six - a state per thread
-# of the call would be read out of its range, and the chunks that fell off the
-# end of it would be lost.
+# The state does not belong to a thread: the id a thread reports for itself is
+# bounded by the pool and not by the number of the threads the call asked for,
+# and a state per thread indexed by that id would be read out of its range
+# whenever the pool is the bigger of the two.
 MT_CHUNKS_PER_THREAD = 2
 
 
@@ -319,10 +318,8 @@ def estimate_mt_time_us(n_groups: int, n_threads: int, n_values: int, state_size
     costs three times as much to fill and to fold.
     """
     data_us = n_values * _BYTES_PER_ELEMENT / _bandwidth_bytes_per_s(n_values, n_threads) * 1e6
-    # the states are one per thread of the pool - the number the call asked
-    # for is what the chunks are cut after, and the states are one per thread
-    # that takes a chunk
-    partials_us = n_threads * n_groups * _C_PART * state_size / 1e3
+    # the states are one per chunk, and the chunks are more than the threads
+    partials_us = chunk_count(n_threads, n_values) * n_groups * _C_PART * state_size / 1e3
     return data_us + n_groups * _CG_MT * state_size / 1e3 + partials_us + _OVERHEAD_US
 
 
@@ -359,72 +356,26 @@ def should_use_mt(n_groups: int, n_threads: int, n_values: int, state_size: int 
 
 _physical_cores: int | None = None
 
-# The number of threads the parallel path uses.  None hands the decision to
-# the pool of numba - every hardware thread it offers.  A number overrides
-# it: the chunks are cut after it (twice as many, see MT_CHUNKS_PER_THREAD),
-# so it is the number of the threads that are asked to do the work.
-_thread_count: int | None = None
-
-# The size of the pool, read once: the pool does not grow or shrink while
-# the process runs, and the code that wants another size says so through
-# ``set_thread_count``.
-_pool_threads = max(1, nb.get_num_threads())
-
-# The number of the threads the pool was started with - the bound of the
-# numbers a thread reports for itself.  ``numba.set_num_threads`` masks the
-# threads that are not to be used, so the threads of a parallel region are
-# fewer than this, but never more: a kernel that keeps one state per thread
-# of the pool needs this many of them, and not the number the call asked for
-# (a call for two threads on a pool of six still hands its chunks to six).
-#
-# Read from the configuration and not from ``numba.get_num_threads()``: that
-# one is a dynamic global, and a driver that reads one never reaches the
-# on-disk cache - which is worth 30 seconds of compiling at every start.  The
-# number is handed to the kernels as an argument for the same reason.
-_pool_upper_bound = max(1, int(getattr(nb.config, "NUMBA_NUM_THREADS", _pool_threads)))
-
 
 def mt_thread_count() -> int:
-    """The number of the threads the parallel path should be cut for.
+    """The number of the threads the parallel path uses.
 
-    Every hardware thread of the machine by default: the threads that share
-    a core bring little on some machines and a lot on others, and the reports
-    disagree - on a guest with six processors the parallel path measured 1.8
-    times faster with six threads than with three, on another machine the
-    two were within the noise of the measurement.  The hardware threads are
-    free to use, and the parallel path is faster than the sequential one
-    with any number of them.
+    The threads of the pool of numba are the ones that work on the chunks,
+    and numba decides how many they are: the environment variable
+    ``NUMBA_NUM_THREADS`` at the start of the process, ``numba.set_num_threads``
+    at any time.  This package asks no questions of its own - it uses what it
+    finds.
 
-    ``set_thread_count`` overrides the number, and so does the environment
-    variable ``NUMPY_GROUPIES_MT_THREADS`` at the start of the process -
-    for the machines where the threads that share a core do cost.
+    Read of every call and not once at the import: a number captured at the
+    import would be the number the process started with, whatever the caller
+    does with ``numba.set_num_threads`` afterwards.
 
-    The number cuts the data into chunks; which of them runs the pieces is the
-    pool's say, and a machine whose pool is smaller than the number delivers
-    the smaller of the two.  One thread is the sequential path: the call goes
+    The number cuts the data into chunks - twice as many, see
+    ``MT_CHUNKS_PER_THREAD`` - and the chunks are what the threads take from
+    the queue of the pool.  One thread is the sequential path: the call goes
     the sequential way instead, with its result bit for bit.
     """
-    if _thread_count is not None:
-        return _thread_count
-    return _pool_threads
-
-
-def set_thread_count(n: int | None) -> None:
-    """The number of threads the parallel path uses.
-
-    None gives the pool of numba the say (every hardware thread of the
-    machine), a number of at least one takes it over.  The data is cut into
-    twice as many chunks as that (``MT_CHUNKS_PER_THREAD``), so that the
-    threads have something to take from the queue - and a machine whose pool
-    is smaller than the number delivers the smaller of the two.
-    """
-    global _thread_count
-    _thread_count = None if n is None else max(1, int(n))
-
-
-_override = os.environ.get("NUMPY_GROUPIES_MT_THREADS")
-if _override:
-    set_thread_count(int(_override))
+    return nb.get_num_threads()
 
 
 def physical_core_count() -> int:
