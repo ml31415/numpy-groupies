@@ -105,6 +105,7 @@ import statistics
 import subprocess
 import sys
 import time
+from multiprocessing.synchronize import SemLock
 
 import numba as nb
 import numpy as np
@@ -1332,6 +1333,33 @@ def _package_decision(row: dict) -> tuple[bool | None, float]:
 # at the end of this module, where the run is started.
 
 
+def _release_numba_resources() -> None:
+    """Release the semaphore the threading layer of numba leaves behind.
+
+    The lock of the threading-layer initialization is a semaphore of
+    multiprocessing, and the resource tracker of it reports the semaphore
+    as leaked when the process leaves without releasing it - an interrupt
+    leaves exactly like that.  The lock is dropped, which unregisters the
+    semaphore from the tracker, and its name is unlinked from /dev/shm,
+    which is what the shutdown of a normal exit does.
+    """
+    import gc
+
+    from numba.np.ufunc import parallel as numba_parallel
+
+    lock = numba_parallel._backend_init_process_lock
+    if lock is None:
+        return
+    name = lock._semlock.name
+    # dropping the reference of numba runs the dealloc of the semaphore,
+    # and the dealloc is what unregisters it from the tracker
+    numba_parallel._backend_init_process_lock = None
+    gc.collect()
+    # the name in /dev/shm is unlinked the way the shutdown of a normal
+    # exit unlinks it
+    SemLock._cleanup(name)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -1426,13 +1454,6 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    # the resource tracker of multiprocessing complains about the semaphore
-    # of the thread pool of numba when the process leaves without the
-    # cleanup - and the interrupt leaves exactly like that.  The tracker is
-    # a child process, and it reads its warning filters at its start, so the
-    # silence has to be asked for before the pool of threads is launched.
-    os.environ.setdefault("PYTHONWARNINGS", "ignore")
-
     if hasattr(signal, "SIGPIPE"):
         # a reader that went away (``| head``) ends the run quietly, as it
         # does for any other command line filter; left alone, python prints
@@ -1449,14 +1470,12 @@ if __name__ == "__main__":
         process is the only way out that works from within such a callback,
         and the exit code says what happened.
 
-        The pool of the threads of numba is closed before that, so that the
-        semaphore of it does not leak - the resource tracker of
-        multiprocessing would complain about it on the way out.
+        The semaphore of the threading-layer initialization of numba is
+        released before that, so that the resource tracker of
+        multiprocessing has nothing to complain about on the way out.
         """
         with contextlib.suppress(Exception):
-            import numba
-
-            numba.close()
+            _release_numba_resources()
         os._exit(130)
 
     signal.signal(signal.SIGINT, _on_interrupt)
