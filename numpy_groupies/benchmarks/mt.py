@@ -1426,6 +1426,13 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    # the resource tracker of multiprocessing complains about the semaphore
+    # of the thread pool of numba when the process leaves without the
+    # cleanup - and the interrupt leaves exactly like that.  The tracker is
+    # a child process, and it reads its warning filters at its start, so the
+    # silence has to be asked for before the pool of threads is launched.
+    os.environ.setdefault("PYTHONWARNINGS", "ignore")
+
     if hasattr(signal, "SIGPIPE"):
         # a reader that went away (``| head``) ends the run quietly, as it
         # does for any other command line filter; left alone, python prints
