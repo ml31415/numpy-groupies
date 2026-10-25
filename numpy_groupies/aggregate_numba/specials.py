@@ -13,7 +13,7 @@ spacing ``dx`` as the argument of its own.
 
 import math
 from collections.abc import Callable
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, TypeAlias
 
 import numba as nb
 import numpy as np
@@ -353,28 +353,89 @@ _quantile_group_plain = njit_stable(_quantile_group_plain, name="quantile_group"
 _quantile_group_nan = njit_stable(_quantile_group_nan, name="nanquantile_group")
 
 
-# what one value of the operation costs in the sequential kernel, measured on 2
-# million float64 values: 18 ns for the median and the quantile in 100 groups (23
-# for their nan variants and in 10 000 groups), 19 for the number of the distinct
-# values and 68 for the sort.  The cost model needs the number to decide whether
-# a parallel region is worth its overhead, and these operations are 36 to 136
-# times as expensive a value as the sum the model was fitted on - the same 5
-# microseconds of overhead is a few hundred times a smaller share of their time.
+# ---------------------------------------------------------------------------
+# the counting sort and the range cut, at the module level
+#
+# The four blocks below have no closure of their own - the same source, the
+# same signature, the same specializations for every operation that uses them
+# - so ONE compiled artifact serves them all.  Per-operation copies buy
+# nothing here: the identity of ``njit_stable`` covers the source and the
+# closure, and neither differs from operation to operation (the note at
+# ``compose.build_kernel`` is about the blocks whose closures do).
+
+_count = njit_stable(group_count)
+_starts = njit_stable(group_starts)
+_place = njit_stable(group_place)
+_ranges = njit_stable(group_ranges)
+
+# what the shared setup of the group parallel passes hands back: the counts,
+# the group starts, the placed values, the boundaries of the ranges and the
+# largest block of every range, in that order - or None, when the cost model
+# keeps the call on the sequential path
+_GroupMTSetup: TypeAlias = (
+    tuple[
+        npt.NDArray[np.int64],  # the number of the values of every group
+        npt.NDArray[np.int64],  # where the block of every group starts
+        npt.NDArray[np.number],  # the values, placed group by group
+        npt.NDArray[np.intp],  # the boundaries of the ranges
+        npt.NDArray[np.int64],  # the largest block of every range
+    ]
+    | None
+)
+
+
+def _group_mt_setup(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
+    size_arg: int,
+    ns_per_value: float,
+    n_threads: int,
+) -> _GroupMTSetup:
+    """the shared setup of the parallel passes that cut the GROUPS into ranges
+
+    The gate of the cost model, the counting sort that places the values and
+    the cut of the ranges are the same for every operation of this shape, so
+    one compiled body does all three: it returns the counts, the group starts,
+    the placed values and the range cut - or None when the model keeps the
+    call on the sequential path (the caller then runs the sequential driver,
+    with its result bit for bit).
+
+    Jitted and disk cached like everything a compiled caller reaches into:
+    numba cannot resolve an uncached callee from cached caller code (see the
+    note at the top of the module).
+    """
+    size = output_size(group_idx, size_arg)
+    n_values = group_idx.size
+    counts = _count(group_idx, size)
+    starts = _starts(counts)
+    if not should_use_group_mt(size, n_threads, n_values, ns_per_value):
+        return None
+    a_sorted = np.empty(n_values, a.dtype)
+    _place(group_idx, a, starts.copy(), a_sorted)
+    n_ranges = group_chunk_count(n_threads, size)
+    edges, largest = _ranges(counts, n_ranges)
+    return counts, starts, a_sorted, edges, largest
+
+
+_group_mt_setup = njit_stable(_group_mt_setup)
+
+
+# what one value of the operation costs in the sequential kernel, measured on
+# the machine of ``docs/benchmarks.md``, the counting sort of the placement
+# included.  The select is the cheapest of the operations that cut their
+# groups into ranges and the sort the most expensive; all of them cost orders
+# of magnitude more per value than the sum the cost model was fitted on, so
+# the fixed cost of a parallel region is a far smaller share of their time.
 _NS_PER_VALUE_SELECT = 18.0
 _NS_PER_VALUE_NUNIQUE = 19.0
 _NS_PER_VALUE_SORT = 68.0
 
 
 def _median_driver_factory(nans: bool) -> Any:
-    # every driver builds its own copies of the counting sort - the compiled
-    # specialization of one must not reach into the other (see
-    # compose.build_kernel)
-    _count = njit_stable(group_count)
-    _starts = njit_stable(group_starts)
-    _place = njit_stable(group_place)
     # the block of the group is what the two drivers work on - the plain one
     # and the parallel one reach the ONE compiled body of it (see the note
-    # above ``_median_group_plain``)
+    # above ``_median_group_plain``); the counting sort is the shared one of
+    # the module (see the note at ``_count``)
     group = _median_group_nan if nans else _median_group_plain
 
     def driver(
@@ -407,18 +468,13 @@ def _median_driver_factory(nans: bool) -> Any:
 def _median_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
     """The parallel passes of the median: the groups cut into ranges.
 
-    The counting sort that places the values stays single threaded (see
-    ``group_ranges``), the loop that selects the middle of every block runs in
-    the ranges of the pool.  Every group belongs to exactly one range, so no
-    two threads ever touch the same block, the buffer of a range is written by
-    the thread that works on it and nothing has to be folded afterwards - the
-    result is the one of the sequential driver bit for bit, whatever the number
-    of the threads and of the ranges.
+    The gate, the counting sort that places the values and the cut of the
+    ranges are the shared setup of ``_group_mt_setup``.  Every group belongs
+    to exactly one range, so no two threads ever touch the same block, the
+    buffer of a range is written by the thread that works on it and nothing
+    has to be folded afterwards - the result is the one of the sequential
+    driver bit for bit, whatever the number of the threads and of the ranges.
     """
-    _count = njit_stable(group_count)
-    _starts = njit_stable(group_starts)
-    _place = njit_stable(group_place)
-    _ranges = njit_stable(group_ranges, name=f"{'nan' if nans else ''}median_ranges")
     group = _median_group_nan if nans else _median_group_plain
 
     def mt_passes(
@@ -431,32 +487,20 @@ def _median_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]
         extra: Any,
         n_threads: int,
     ) -> npt.NDArray[np.number]:
-        size = output_size(group_idx, size_arg)
-        n_values = group_idx.size
-        counts = _count(group_idx, size)
-        starts = _starts(counts)
-        if not should_use_group_mt(size, n_threads, n_values, _NS_PER_VALUE_SELECT):
+        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
+        if setup is None:
             # not worth a parallel region: the sequential driver, with its
             # result bit for bit
-            out = driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
-            return out
-        # the groups that no range ever works on keep this seeding - the same
-        # one the sequential driver gives them
-        out = np.full(size, fill_value, out_dtype)
-        # counting-sort placement, single threaded
-        a_sorted = np.empty(n_values, a.dtype)
-        _place(group_idx, a, starts.copy(), a_sorted)
-        # more ranges than threads, so that a thread that is done with its
-        # range takes one that is left instead of waiting for the slowest core
-        # (the same reason the chunks of the reductions are more than the
-        # threads, see MT_CHUNKS_PER_THREAD)
-        n_ranges = group_chunk_count(n_threads, size)
-        edges, largest = _ranges(counts, n_ranges)
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
+        counts, starts, a_sorted, edges, largest = setup
+        # the groups that receive no values keep this seeding - the same one
+        # the sequential driver gives them
+        out = np.full(counts.size, fill_value, out_dtype)
         # the buffer of a range is sized after the largest block of that range:
         # summed over the ranges that is at most the number of the values, so
         # the parallel path holds no more scratch than the sequential one
-        bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * n_ranges
-        for c in nb.prange(n_ranges):
+        bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
+        for c in nb.prange(largest.size):
             buf = bufs[c]
             for g in range(edges[c], edges[c + 1]):
                 group(g, a_sorted, counts, starts, buf, out, fill_value)
@@ -484,9 +528,6 @@ def _quantile_driver_factory(nans: bool) -> Any:
     (O(n) on average) instead of sorting it.
     """
     op_name = "nanquantile" if nans else "quantile"
-    _count = njit_stable(group_count)
-    _starts = njit_stable(group_starts)
-    _place = njit_stable(group_place)
     group = _quantile_group_nan if nans else _quantile_group_plain
 
     def driver(
@@ -522,10 +563,6 @@ def _quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number
 
     The same shape as ``_median_mt_factory``, for the same reasons.
     """
-    _count = njit_stable(group_count)
-    _starts = njit_stable(group_starts)
-    _place = njit_stable(group_place)
-    _ranges = njit_stable(group_ranges, name=f"{'nan' if nans else ''}quantile_ranges")
     group = _quantile_group_nan if nans else _quantile_group_plain
 
     def mt_passes(
@@ -538,20 +575,13 @@ def _quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number
         q: float,
         n_threads: int,
     ) -> npt.NDArray[np.number]:
-        size = output_size(group_idx, size_arg)
-        n_values = group_idx.size
-        counts = _count(group_idx, size)
-        starts = _starts(counts)
-        if not should_use_group_mt(size, n_threads, n_values, _NS_PER_VALUE_SELECT):
-            out = driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
-            return out
-        out = np.full(size, fill_value, out_dtype)
-        a_sorted = np.empty(n_values, a.dtype)
-        _place(group_idx, a, starts.copy(), a_sorted)
-        n_ranges = group_chunk_count(n_threads, size)
-        edges, largest = _ranges(counts, n_ranges)
-        bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * n_ranges
-        for c in nb.prange(n_ranges):
+        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
+        if setup is None:
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
+        counts, starts, a_sorted, edges, largest = setup
+        out = np.full(counts.size, fill_value, out_dtype)
+        bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
+        for c in nb.prange(largest.size):
             buf = bufs[c]
             for g in range(edges[c], edges[c + 1]):
                 group(g, a_sorted, counts, starts, buf, out, fill_value, q)
@@ -674,12 +704,8 @@ def _sort_scatter(
 
 
 def _sort_driver_factory(nans: bool) -> Any:
-    # every operation builds its own copies of the shared helpers - the
-    # compiled specialization of one must not reach into the other (see
-    # compose.build_kernel)
-    _count = njit_stable(group_count)
-    _starts = njit_stable(group_starts)
-    _place = njit_stable(group_place)
+    # the ordering and the scatter are the sort's own blocks - the counting
+    # sort is the shared one of the module (see the note at ``_count``)
     _blocks = njit_stable(_sort_blocks)
     _scatter = njit_stable(_sort_scatter)
 
@@ -710,19 +736,15 @@ def _sort_driver_factory(nans: bool) -> Any:
 def _sort_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
     """The parallel passes of the sort: the blocks cut into ranges.
 
-    The ordering of the blocks is what the sort spends its time on - measured on
-    2 million float64 values, 160 ms of the 204 ms the call takes - and the block
-    of one group is nowhere near the block of the next one, so the ranges need
-    neither a fold nor a lock.  The scatter that writes the ordered blocks back
-    to the positions their group occupies in the input stays single threaded:
-    it walks the input in order and moves a cursor per group, which two threads
-    cannot share without a per-range cursor per group.
+    The ordering of the blocks is what the sort spends most of its time on,
+    and the block of one group is nowhere near the block of the next one, so
+    the ranges need neither a fold nor a lock.  The scatter that writes the
+    ordered blocks back to the positions their group occupies in the input
+    stays single threaded: it walks the input in order and moves a cursor per
+    group, which two threads cannot share without a per-range cursor per
+    group.
     """
-    _count = njit_stable(group_count)
-    _starts = njit_stable(group_starts)
-    _place = njit_stable(group_place)
     _scatter = njit_stable(_sort_scatter)
-    _ranges = njit_stable(group_ranges, name=f"{'nan' if nans else ''}sort_ranges")
 
     def mt_passes(
         group_idx: npt.NDArray[np.integer],
@@ -734,24 +756,17 @@ def _sort_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) 
         reverse: bool,
         n_threads: int,
     ) -> npt.NDArray[np.number]:
-        size = output_size(group_idx, size_arg)
-        n_values = group_idx.size
-        counts = _count(group_idx, size)
-        starts = _starts(counts)
-        if not should_use_group_mt(size, n_threads, n_values, _NS_PER_VALUE_SORT):
-            out = driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, reverse)
-            return out
-        a_sorted = np.empty(n_values, a.dtype)
-        _place(group_idx, a, starts.copy(), a_sorted)
-        n_ranges = group_chunk_count(n_threads, size)
-        edges, _ = _ranges(counts, n_ranges)
-        for c in nb.prange(n_ranges):
+        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SORT, n_threads)
+        if setup is None:
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, reverse)
+        counts, starts, a_sorted, edges, _ = setup
+        for c in nb.prange(edges.size - 1):
             for g in range(edges[c], edges[c + 1]):
                 # the same step the sequential loop runs, on the block of a
                 # group no other thread has touched
                 if counts[g] > 1:
                     _order_block(a_sorted, starts[g], counts[g], reverse)
-        out = np.empty(n_values, out_dtype)
+        out = np.empty(group_idx.size, out_dtype)
         _scatter(group_idx, a_sorted, starts, out)
         return out
 
@@ -912,9 +927,6 @@ def _nunique_driver_factory(nans: bool) -> Any:
     as one, the nan variant leaves them out.
     """
     op_name = "nannunique" if nans else "nunique"
-    _count = njit_stable(group_count)
-    _starts = njit_stable(group_starts)
-    _place = njit_stable(group_place)
     capacity_of = _table_capacity
 
     def driver(
@@ -953,16 +965,12 @@ def _nunique_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]
     The one thing the shape needs that the median does not is a hash table of
     its own per range - the table is scratch that every group of the range
     clears by its generation, which two ranges cannot do in one table.  Sized
-    after the largest block of the range and not after the largest group of the
-    whole call: summed over the ranges that is at most twice the number of the
-    values, where a table per range after the global maximum would be twice the
-    number of the values per thread (the largest group of a machine with six
-    threads and two million values in one group is that one group).
+    after the largest block of the range and not after the largest group of
+    the whole call: summed over the ranges that is at most twice the number
+    of the values, where a table per range after the global maximum would be
+    twice the number of the values per thread (the largest group of a
+    lopsided call can be most of the call).
     """
-    _count = njit_stable(group_count)
-    _starts = njit_stable(group_starts)
-    _place = njit_stable(group_place)
-    _ranges = njit_stable(group_ranges, name=f"{'nan' if nans else ''}nunique_ranges")
     capacity_of = _table_capacity
 
     def mt_passes(
@@ -975,20 +983,13 @@ def _nunique_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]
         extra: Any,
         n_threads: int,
     ) -> npt.NDArray[np.number]:
-        size = output_size(group_idx, size_arg)
-        n_values = group_idx.size
-        counts = _count(group_idx, size)
-        starts = _starts(counts)
-        if not should_use_group_mt(size, n_threads, n_values, _NS_PER_VALUE_NUNIQUE):
-            out = driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
-            return out
-        out = np.full(size, fill_value, out_dtype)
-        a_sorted = np.empty(n_values, a.dtype)
-        _place(group_idx, a, starts.copy(), a_sorted)
-        n_ranges = group_chunk_count(n_threads, size)
-        edges, largest = _ranges(counts, n_ranges)
+        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_NUNIQUE, n_threads)
+        if setup is None:
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
+        counts, starts, a_sorted, edges, largest = setup
+        out = np.full(counts.size, fill_value, out_dtype)
         tables = [(np.empty(capacity_of(k), a.dtype), np.full(capacity_of(k), -1, np.int32)) for k in largest]
-        for c in nb.prange(n_ranges):
+        for c in nb.prange(largest.size):
             slots, gens = tables[c]
             for g in range(edges[c], edges[c + 1]):
                 _nunique_group(g, a_sorted, counts, starts, out, slots, gens, not nans)
