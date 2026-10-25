@@ -1324,30 +1324,30 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--sizes",
-        default="100000,200000,500000,1000000,2000000,5000000,10000000",
+        default="50000,500000,2000000,10000000",
         help="comma-separated numbers of values to measure (the chunked path)",
     )
     parser.add_argument(
         "--group-sizes",
-        default="2000,5000,10000,20000,50000,100000,200000,500000",
+        default="20000,100000,500000",
         help="comma-separated numbers of values to measure (the group path)",
     )
     parser.add_argument(
         "--gather-sizes",
-        default="10000,20000,50000,100000,200000,500000,1000000,2000000",
+        default="20000,200000,2000000",
         help="comma-separated numbers of values to measure (the gather)",
     )
     parser.add_argument(
         "--groups",
-        default="1000,10000,100000",
+        default="1000,100000",
         help="comma-separated numbers of groups to measure",
     )
     parser.add_argument(
         "--threads",
         default="",
-        help="comma-separated thread counts to measure (default: 1 up to the pool size)",
+        help="comma-separated thread counts to measure (default: 1, the powers of two, and the pool size)",
     )
-    parser.add_argument("--rounds", type=int, default=5, help="measurement rounds, the fastest counts (default: 5)")
+    parser.add_argument("--rounds", type=int, default=3, help="measurement rounds, the fastest counts (default: 3)")
     parser.add_argument("--no-cold", action="store_true", help="skip the measurements with the threads asleep")
     parser.add_argument("--no-gather", action="store_true", help="skip the gather measurements")
     parser.add_argument("--no-group", action="store_true", help="skip the group path measurements")
@@ -1367,7 +1367,15 @@ def main(argv=None) -> int:
     if args.threads:
         thread_counts = [int(t) for t in args.threads.split(",")]
     else:
-        thread_counts = list(range(1, pool + 1))
+        # one thread, then the powers of two, the pool itself at the end:
+        # the bandwidth of the threads saturates early, and a count in
+        # between moves the numbers by less than the noise of the machine -
+        # a pool of a hundred threads is then still a handful of points
+        thread_counts = [1]
+        while thread_counts[-1] * 2 < pool:
+            thread_counts.append(thread_counts[-1] * 2)
+        if thread_counts[-1] != pool:
+            thread_counts.append(pool)
     sizes = [int(s) for s in args.sizes.split(",")]
     group_sizes = [int(s) for s in args.group_sizes.split(",")]
     gather_sizes = [int(s) for s in args.gather_sizes.split(",")]
