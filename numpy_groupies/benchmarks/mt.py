@@ -391,7 +391,7 @@ def _group_callers(handle, group_idx, a, n_groups, out_dtype, aux_dtype, fill_va
 # the grids
 
 
-def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool, verbose: bool):
+def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool):
     """The measurements of the chunked path: the sum of every group.
 
     Two pairs of kernels are measured: the prototype of this script, whose
@@ -407,6 +407,8 @@ def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool
     if npg_sum is None:
         print("numpy_groupies is not importable - the overhead of the package is unknown")
 
+    points = len(sizes) * len(group_counts) * sum(1 for t in thread_counts if t <= pool)
+    print(f"--- the chunked path, the prototype of this script: {points} points ---", flush=True)
     print("warming up the kernels ...", flush=True)
     warm = rng.integers(0, 10, 1000)
     warm_a = rng.random(1000)
@@ -417,6 +419,7 @@ def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool
     sum_seq(warm, warm_a, np.zeros(10))
     if npg_sum is not None:
         npg_sum(warm, warm_a)
+    print("         compiled, measuring", flush=True)
 
     for n_values in sizes:
         repeat = repeat_for(n_values)
@@ -488,21 +491,20 @@ def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool
                     row["seq_cold_us"], _ = measure_cold(seq_call, COLD_REPEAT)
                     row["mt_cold_us"], _ = measure_cold(mt_call, COLD_REPEAT)
                 rows.append(row)
-                if verbose:
-                    print(
-                        f"    chunked groups={n_groups:>8} threads={n_threads:>3}  "
-                        f"seq={seq:10.1f} us  mt={mt:10.1f} us  ratio={mt / seq:.2f}",
-                        flush=True,
-                    )
+                print(
+                    f"    chunked groups={n_groups:>8} threads={n_threads:>3}  "
+                    f"seq={seq:10.1f} us  mt={mt:10.1f} us  ratio={mt / seq:.2f}",
+                    flush=True,
+                )
 
     # the kernels of the package: the decisions are about them, and the
     # prototype carries an overhead of its own (the numpy calls around the
     # kernel) that they do not have
-    package_rows = run_package_chunked_grid(sizes, group_counts, thread_counts, rounds, cold, verbose)
+    package_rows = run_package_chunked_grid(sizes, group_counts, thread_counts, rounds, cold)
     return rows + package_rows
 
 
-def run_package_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool, verbose: bool):
+def run_package_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool):
     """The measurements of the chunked path with the kernels of the package."""
     try:
         from numpy_groupies.aggregate_numba import reductions
@@ -517,11 +519,14 @@ def run_package_chunked_grid(sizes, group_counts, thread_counts, rounds: int, co
     out_dtype = np.dtype(np.float64)
     aux_dtype = np.dtype(np.float64)
 
+    points = len(sizes) * len(group_counts) * sum(1 for t in thread_counts if t <= pool)
+    print(f"--- the chunked path, the kernels of the package: {points} points ---", flush=True)
     print("warming up the kernels of the package ...", flush=True)
     warm = rng.integers(0, 10, 1000)
     warm_a = rng.random(1000)
     handle.driver(warm, warm_a, 10, out_dtype, aux_dtype, 0.0)
     handle.mt_driver(2, warm, warm_a, 10, out_dtype, aux_dtype, 0.0)
+    print("         compiled, measuring", flush=True)
 
     for n_values in sizes:
         repeat = repeat_for(n_values)
@@ -561,16 +566,15 @@ def run_package_chunked_grid(sizes, group_counts, thread_counts, rounds: int, co
                     row["seq_cold_us"], _ = measure_cold(seq_call, COLD_REPEAT)
                     row["mt_cold_us"], _ = measure_cold(mt_call, COLD_REPEAT)
                 rows.append(row)
-                if verbose:
-                    print(
-                        f"    chunked (the package) groups={n_groups:>8} threads={n_threads:>3}  "
-                        f"seq={seq_us:10.1f} us  mt={mt_us:10.1f} us  ratio={mt_us / seq_us:.2f}",
-                        flush=True,
-                    )
+                print(
+                    f"    chunked (the package) groups={n_groups:>8} threads={n_threads:>3}  "
+                    f"seq={seq_us:10.1f} us  mt={mt_us:10.1f} us  ratio={mt_us / seq_us:.2f}",
+                    flush=True,
+                )
     return rows
 
 
-def run_group_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool, verbose: bool):
+def run_group_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool):
     """The measurements of the group path: the order statistics."""
     handles = _group_handles()
     if not handles:
@@ -583,13 +587,16 @@ def run_group_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool, 
     out_dtype = np.dtype(np.float64)
     aux_dtype = np.dtype(np.float64)
 
-    print("warming up the group kernels ...", flush=True)
+    points = len(sizes) * len(group_counts) * sum(1 for t in thread_counts if t <= pool)
+    print(f"--- the group path, {len(handles)} operations: {len(handles) * points} points ---", flush=True)
+    print(f"warming up the group kernels ({len(handles)} operations, sequential and parallel each) ...", flush=True)
     warm = rng.integers(0, 10, 1000)
     warm_a = rng.random(1000)
     for name, handle in handles.items():
         seq, par = _group_callers(handle, warm, warm_a, 10, out_dtype, aux_dtype, np.nan, 2)
         seq()
         par()
+    print("         compiled, measuring", flush=True)
 
     for name, handle in handles.items():
         for n_values in sizes:
@@ -633,16 +640,15 @@ def run_group_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool, 
                         row["seq_cold_us"], _ = measure_cold(seq, COLD_REPEAT)
                         row["mt_cold_us"], _ = measure_cold(par, COLD_REPEAT)
                     rows.append(row)
-                    if verbose:
-                        print(
-                            f"    {name:<8} groups={n_groups:>8} threads={n_threads:>3}  "
-                            f"seq={seq_us:10.1f} us  mt={mt_us:10.1f} us  ratio={mt_us / seq_us:.2f}",
-                            flush=True,
-                        )
+                    print(
+                        f"    {name:<8} groups={n_groups:>8} threads={n_threads:>3}  "
+                        f"seq={seq_us:10.1f} us  mt={mt_us:10.1f} us  ratio={mt_us / seq_us:.2f}",
+                        flush=True,
+                    )
     return rows
 
 
-def run_gather_grid(sizes, thread_counts, rounds: int, cold: bool, verbose: bool):
+def run_gather_grid(sizes, thread_counts, rounds: int, cold: bool):
     """The measurements of the gather: one value per value."""
     try:
         from numpy_groupies.aggregate_numba import gather as npg_gather
@@ -654,10 +660,13 @@ def run_gather_grid(sizes, thread_counts, rounds: int, cold: bool, verbose: bool
     rows = []
     pool = nb.get_num_threads()
 
+    points = len(sizes) * sum(1 for t in thread_counts if t <= pool)
+    print(f"--- the gather: {points} points ---", flush=True)
     print("warming up the gather ...", flush=True)
     warm = rng.integers(0, 10, 1000)
     npg_gather._gather_1d(rng.random(10), warm, np.empty(1000))
     npg_gather._gather_1d_mt(rng.random(10), warm, np.empty(1000), 2)
+    print("         compiled, measuring", flush=True)
 
     for n_values in sizes:
         repeat = repeat_for(n_values)
@@ -701,21 +710,21 @@ def run_gather_grid(sizes, thread_counts, rounds: int, cold: bool, verbose: bool
                 row["seq_cold_us"], _ = measure_cold(seq_call, COLD_REPEAT)
                 row["mt_cold_us"], _ = measure_cold(mt_call, COLD_REPEAT)
             rows.append(row)
-            if verbose:
-                print(
-                    f"    gather  threads={n_threads:>3}  seq={seq_us:10.1f} us  "
-                    f"mt={mt_us:10.1f} us  ratio={mt_us / seq_us:.2f}",
-                    flush=True,
-                )
+            print(
+                f"    gather  threads={n_threads:>3}  seq={seq_us:10.1f} us  "
+                f"mt={mt_us:10.1f} us  ratio={mt_us / seq_us:.2f}",
+                flush=True,
+            )
     return rows
 
 
-def run_overhead(thread_counts, rounds: int, verbose: bool) -> list:
+def run_overhead(thread_counts, rounds: int) -> list:
     """The fixed cost of a parallel region, warm and cold."""
     rng = np.random.default_rng(100)
     warm = rng.integers(0, 10, 1000)
     pool = nb.get_num_threads()
     rows = []
+    print(f"--- the cost of the region: {len(thread_counts)} thread counts ---", flush=True)
     for n_threads in thread_counts:
         if n_threads > pool:
             continue
@@ -735,8 +744,7 @@ def run_overhead(thread_counts, rounds: int, verbose: bool) -> list:
                 "cold_median_us": cold_median,
             }
         )
-        if verbose:
-            print(f"    the region of {n_threads} threads: warm {warm_us:.2f} us  cold {cold_us:.2f} us")
+        print(f"    the region of {n_threads} threads: warm {warm_us:.2f} us  cold {cold_us:.2f} us", flush=True)
     return rows
 
 
@@ -1262,7 +1270,9 @@ def main(argv=None) -> int:
     parser.add_argument("--no-cold", action="store_true", help="skip the measurements with the threads asleep")
     parser.add_argument("--no-gather", action="store_true", help="skip the gather measurements")
     parser.add_argument("--no-group", action="store_true", help="skip the group path measurements")
-    parser.add_argument("--verbose", action="store_true", help="print every measurement, not only the result")
+    parser.add_argument(
+        "--verbose", action="store_true", help="print the times of the model against the measurements in the report"
+    )
     parser.add_argument("--seed", type=int, default=100, help="the seed of the data (default: 100)")
     args = parser.parse_args(argv)
 
@@ -1292,12 +1302,12 @@ def main(argv=None) -> int:
         print()
 
     cold = not args.no_cold
-    rows = run_chunked_grid(sizes, group_counts, thread_counts, args.rounds, cold, args.verbose)
+    rows = run_chunked_grid(sizes, group_counts, thread_counts, args.rounds, cold)
     if not args.no_group:
-        rows += run_group_grid(group_sizes, group_counts, thread_counts, args.rounds, cold, args.verbose)
+        rows += run_group_grid(group_sizes, group_counts, thread_counts, args.rounds, cold)
     if not args.no_gather:
-        rows += run_gather_grid(gather_sizes, thread_counts, args.rounds, cold, args.verbose)
-    overhead_rows = run_overhead(thread_counts, args.rounds, args.verbose)
+        rows += run_gather_grid(gather_sizes, thread_counts, args.rounds, cold)
+    overhead_rows = run_overhead(thread_counts, args.rounds)
     report(rows, info, overhead_rows, args.verbose)
     return 0
 
