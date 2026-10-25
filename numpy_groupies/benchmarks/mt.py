@@ -33,6 +33,14 @@ What is measured:
                      asleep, which is what a program that calls a kernel once
                      and waits pays).
 
+  the scaling        how the parallel path scales with the number of the
+                     threads, one process per thread count (--scaling).  The
+                     threads of the pool spin after a region and disturb the
+                     measurement of the next one in the same process, so the
+                     question of how many threads are worth it is not asked
+                     inside the grids above, where the thread counts follow
+                     one another.
+
 Every kernel is measured twice: warm and cold.  The threads of the pool spin
 for a moment after a region and sleep afterwards - about ten milliseconds -
 and waking them up costs twenty times what the region itself costs.  A
@@ -89,6 +97,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import platform
 import statistics
 import subprocess
@@ -250,11 +259,28 @@ def _l3_bytes() -> int:
     return 0
 
 
+def _cgroup_quota() -> str:
+    """The cpu quota of the container, if the process runs in one.
+
+    A container whose quota is below the cores it sees answers the scaling
+    question with numbers that no model can use - the quota has to be in the
+    report for the numbers to be readable at all.
+    """
+    for path in ("/sys/fs/cgroup/cpu.max", "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"):
+        try:
+            with open(path) as handle:
+                return handle.read().strip()
+        except OSError:
+            continue
+    return "-"
+
+
 def machine_info() -> dict:
     return {
         "cpu_model": _cpu_model(),
         "physical_cores": physical_core_count(),
         "hardware_threads": logical_core_count(),
+        "cgroup_quota": _cgroup_quota(),
         "l3_bytes": _l3_bytes(),
         "python": sys.version.split()[0],
         "numpy": np.__version__,
@@ -746,6 +772,61 @@ def run_overhead(thread_counts, rounds: int) -> list:
         )
         print(f"    the region of {n_threads} threads: warm {warm_us:.2f} us  cold {cold_us:.2f} us", flush=True)
     return rows
+
+
+def run_scaling(sizes, thread_counts) -> None:
+    """How the parallel path scales with the number of the threads.
+
+    Every thread count gets a process of its own: the threads of the pool
+    spin after a parallel region, and they disturb the measurement of the
+    next one in the same process - the question of how many threads are
+    worth it is therefore not asked inside the grids above, where the
+    thread counts follow one another.  The subprocess imports the package
+    and finds its kernels in the on-disk cache, so a process of its own
+    costs the interpreter start and little more.
+    """
+    script = (
+        "import sys, timeit, numpy as np\n"
+        "from numpy_groupies import aggregate_numba\n"
+        "n = int(sys.argv[1])\n"
+        "rng = np.random.default_rng(0)\n"
+        "gi = rng.integers(0, 1000, n); a = rng.random(n)\n"
+        "call = lambda: aggregate_numba.aggregate(gi, a, func=np.sum)\n"
+        "for _ in range(3): call()\n"
+        "times = sorted(timeit.Timer(call).repeat(repeat=20, number=10))\n"
+        "print(min(times) * 1000 / 10, times[len(times) // 2] * 1000 / 10)\n"
+    )
+    pool = nb.get_num_threads()
+    print(f"--- the scaling of the threads: {len(thread_counts)} thread counts x {len(sizes)} sizes ---", flush=True)
+    print("    one process per thread count - the pool spins after a region and would disturb the next one", flush=True)
+    for n_values in sizes:
+        print(f"  n_values = {n_values:,}", flush=True)
+        base = None
+        for n_threads in thread_counts:
+            if n_threads > pool:
+                continue
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-c", script, str(n_values)],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env={**os.environ, "NUMBA_NUM_THREADS": str(n_threads)},
+                )
+            except subprocess.CalledProcessError as exc:
+                tail = exc.stderr.strip().splitlines()[-1] if exc.stderr else "failed"
+                print(f"    {n_threads:>2} threads: {tail}", flush=True)
+                continue
+            numbers = result.stdout.strip().splitlines()[-1].split()
+            ms, median = float(numbers[0]), float(numbers[1])
+            if base is None:
+                base = ms
+            bandwidth = n_values * BYTES_PER_ELEMENT / ms / 1e6
+            print(
+                f"    {n_threads:>2} threads: {ms:8.3f} ms   speedup {base / ms:5.2f}x   "
+                f"{bandwidth:6.1f} GB/s   (median {median:8.3f} ms)",
+                flush=True,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1271,6 +1352,11 @@ def main(argv=None) -> int:
     parser.add_argument("--no-gather", action="store_true", help="skip the gather measurements")
     parser.add_argument("--no-group", action="store_true", help="skip the group path measurements")
     parser.add_argument(
+        "--scaling",
+        action="store_true",
+        help="also measure how the parallel path scales with the threads, one process per thread count",
+    )
+    parser.add_argument(
         "--verbose", action="store_true", help="print the times of the model against the measurements in the report"
     )
     parser.add_argument("--seed", type=int, default=100, help="the seed of the data (default: 100)")
@@ -1308,6 +1394,8 @@ def main(argv=None) -> int:
     if not args.no_gather:
         rows += run_gather_grid(gather_sizes, thread_counts, args.rounds, cold)
     overhead_rows = run_overhead(thread_counts, args.rounds)
+    if args.scaling:
+        run_scaling(sizes, thread_counts)
     report(rows, info, overhead_rows, args.verbose)
     return 0
 

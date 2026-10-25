@@ -50,13 +50,12 @@ call and the median of the calls, and a spread of two and more means that
 the numbers of that run are worth little.
 
 How the parallel path scales with the number of the threads is a question of
-its own, and `numpy_groupies/benchmarks/mt_scaling.py` answers it - every
-thread count gets a process of its own, because the threads of the pool spin
-after a region and they disturb the measurement of the next one in the same
-process:
+its own, and the tool answers it with `--scaling` - every thread count gets
+a process of its own, because the threads of the pool spin after a region
+and they disturb the measurement of the next one in the same process:
 
 ```sh
-python -m numpy_groupies.benchmarks.mt_scaling
+python -m numpy_groupies.benchmarks.mt --scaling
 ```
 
 `--funcs min,max` measures the named functions only, instead of all of them. `--threads N` sets the number of threads the numba kernels use - they split their data into more chunks than that, so that the threads can take the chunks from the queue of the pool and a busy core does not hold up the whole call. Without it they use every hardware thread of the machine. See `--help` for further options. `----` in the table below means the function is not available in that implementation, the row `arbitrary` is a custom Python callable passed as `func`.
