@@ -260,20 +260,20 @@ Best of three passes, every cell measured in one block of five runs, in millisec
 
 | function        | numpy  |  numba  | numbagg | polars | pandas |
 | --------------- | -----: | ------: | ------: | -----: | ------: |
-| `sum`           |  0.935 |  0.291 |  0.519 |  2.934 |  7.136 |
-| `mean`          |  1.577 |  0.407 |  0.560 |  2.794 |  7.765 |
-| `max`           |  1.708 |  0.311 |  0.856 |  3.595 |  6.575 |
-| `std`           |  3.172 |  0.438 |  0.717 |  2.991 |  7.734 |
-| `nansum`        |  4.262 |  0.273 |  1.831 |  6.098 |  8.656 |
-| `median`        | 13.850 |  2.998 |   ---- |  4.335 | 16.476 |
-| `skew`          |  5.746 |  2.593 |   ---- |  3.951 |  9.513 |
-| `kurt`          |  5.754 |  2.573 |   ---- |  4.327 | 10.727 |
-| `quantile`      | 16.390 |  2.887 |   ---- |  4.492 | 23.434 |
-| `nunique`       | 14.755 |  2.605 |   ---- | 12.187 | 61.492 |
-| `sort`          | 73.162 |  6.527 |   ---- |   ---- |   ---- |
-| `cumsum`        | 15.804 |  0.577 |   ---- |  9.176 |  7.844 |
-| `array`         |  7.361 |  1.964 |   ---- |   ---- |   ---- |
-| custom callable | 113.750 |  6.217 |   ---- | 86.194 | 97.678 |
+| `sum`           |  0.926 |  0.256 |  0.477 |  2.707 |  6.480 |
+| `mean`          |  1.530 |  0.297 |  0.540 |  2.731 |  7.189 |
+| `max`           |  1.683 |  0.313 |  0.872 |  3.588 |  6.349 |
+| `std`           |  3.188 |  0.331 |  0.685 |  2.439 |  7.574 |
+| `nansum`        |  4.104 |  0.285 |  1.795 |  6.221 |  8.152 |
+| `median`        | 12.614 |  2.813 |   ---- |  3.868 | 15.484 |
+| `skew`          |  5.735 |  2.594 |   ---- |  3.654 |  9.297 |
+| `kurt`          |  5.522 |  2.601 |   ---- |  4.116 | 10.396 |
+| `quantile`      | 16.014 |  3.185 |   ---- |  4.409 | 23.320 |
+| `nunique`       | 15.398 |  2.988 |   ---- | 12.716 | 57.843 |
+| `sort`          | 71.603 |  6.910 |   ---- |   ---- |   ---- |
+| `cumsum`        | 15.621 |  0.577 |   ---- | 11.228 |  7.045 |
+| `array`         |  7.183 |  1.952 |   ---- |   ---- |   ---- |
+| custom callable | 111.187 |  6.313 |   ---- | 82.065 | 96.429 |
 
 The `numba` column is the backend of this package, optimized as far as we could get it: it uses the threads of the machine where that pays for itself. The operations that can be reduced in chunks - the sums, the products, the counts, the extremes and the mean - split their data into chunks that are reduced separately and folded afterwards. The operations that cannot - the order statistics (the median, the quantile, the sort, the number of the distinct values) - cut their *groups* into ranges instead and let the threads work on the ranges one after another; every group belongs to one range, so nothing is folded afterwards and the result is the one of the sequential kernel bit for bit. The chunks and the ranges are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the pieces that are left. The operations that give an output per value (the cumulatives) stay single-threaded.
 

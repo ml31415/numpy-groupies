@@ -21,6 +21,31 @@ def test_the_function_names_are_the_ones_of_the_package():
     assert [getattr(func, "__name__", func) for func in gewaehlt] == ["min", "max"]
 
 
+def test_a_participant_that_writes_into_the_data_is_undone():
+    # the participants must not write into the data: one that does would
+    # change the results of the runs that follow, silently.  The snapshot is
+    # the bytes of the data as they were at the start of the run, and a change
+    # is put back.
+    from numpy_groupies.benchmarks import _byte_snapshot, _restore
+
+    values = np.random.default_rng(100).random(1000)
+    snapshot = _byte_snapshot(values)
+    values[0] = 42.0
+    assert _restore((values,), snapshot)
+    np.testing.assert_array_equal(values, np.frombuffer(snapshot[0], dtype=values.dtype))
+
+
+def test_the_pandas_column_does_not_copy_the_data():
+    # the benchmark goes from the array to the array: a participant that
+    # copies the data pays for the copy, and the pandas one does not have to
+    # - its Series takes the buffer of the array.
+    import pandas as pd
+
+    values = np.random.default_rng(100).random(1000)
+    series = pd.Series(values, copy=False)
+    assert np.shares_memory(series.to_numpy(), values)
+
+
 @pytest.mark.skipif(_numbagg is None, reason="numbagg is not installed")
 def test_the_numbagg_column_is_the_one_of_numbagg():
     # the benchmark does not hold numbagg at one thread and does not measure
