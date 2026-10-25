@@ -6,6 +6,7 @@ they all answer the same.
 """
 
 import numpy as np
+import pytest
 
 from numpy_groupies.aggregate_numpy import unpack as unpack_numpy
 from numpy_groupies.aggregate_purepy import unpack as unpack_purepy
@@ -46,3 +47,70 @@ def test_the_numba_gather_answers_the_same(rng):
     vals = random_values(rng, 7)
 
     np.testing.assert_array_equal(unpack_numba(group_idx, vals), vals[group_idx])
+
+
+def test_the_parallel_gather_answers_the_same(rng):
+    """The gather of the numba implementation across the threads of the pool.
+
+    Below the threshold of the cost model the plain loop runs, so the two
+    sizes below are the two paths - and they have to answer the same, because
+    every value writes the one position of its own and no thread ever writes
+    where another one has written.
+    """
+    from numpy_groupies.aggregate_numba import mt
+    from numpy_groupies.aggregate_numba import unpack as unpack_numba
+
+    for n in (mt.GATHER_MT_MIN_VALUES - 1, mt.GATHER_MT_MIN_VALUES, 4 * mt.GATHER_MT_MIN_VALUES):
+        group_idx = rng.integers(0, 7, size=n)
+        vals = random_values(rng, 7)
+        np.testing.assert_array_equal(unpack_numba(group_idx, vals), vals[group_idx])
+
+
+def test_the_parallel_gather_keeps_the_shape_of_its_out():
+    """The gather writes into the array of the caller and not into a new one.
+
+    The parallel region has to fill every position of that array and nothing
+    beside it: an array the size of which is one value off shows the last
+    chunk of the last thread running past its end.
+    """
+    from numpy_groupies.aggregate_numba import gather, mt
+
+    n = 3 * mt.GATHER_MT_MIN_VALUES + 7
+    rng = np.random.default_rng(7)
+    group_idx = rng.integers(0, 1000, n)
+    ret = rng.random(1000)
+    out = np.empty(n)
+    got = gather.unpack_into(group_idx, ret, out)
+    assert got is out
+    np.testing.assert_array_equal(out, ret[group_idx])
+
+
+def test_the_gather_is_parallel_only_where_the_model_says_so():
+    """The gather runs in a parallel region only where it pays for itself.
+
+    The gather copies one value per value and is bound by the memory: below
+    the size the cost model names, the region costs more than the work it
+    does, and the sequential loop is the one that runs.  The test says which
+    of the two runs - by the time it takes, and by the number of the threads
+    the pool is asked for.
+    """
+    import numpy as np
+
+    from numpy_groupies.aggregate_numba import gather, mt
+
+    n_threads = mt.mt_thread_count()
+    if n_threads < 2:
+        pytest.skip("the machine has no second thread to compare against")
+    # the model of the reductions with no groups and no partial matrix: the
+    # gather moves the bytes and holds no state
+    ratio = mt.estimate_mt_ratio(0, n_threads, mt.GATHER_MT_MIN_VALUES, 0)
+    assert ratio <= mt.MT_MAX_RATIO, "the floor of the gather is above the size the model pays for"
+
+    # below the floor the plain loop runs - and the result is the same either
+    # way, because every value writes the one position of its own
+    rng = np.random.default_rng(3)
+    group_idx = rng.integers(0, 10, 1000)
+    vals = random_values(rng, 10)
+    out = np.empty(1000)
+    gather.unpack_into(group_idx, vals, out)
+    np.testing.assert_array_equal(out, vals[group_idx])

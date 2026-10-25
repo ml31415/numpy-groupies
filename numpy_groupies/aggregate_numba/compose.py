@@ -37,14 +37,21 @@ forced_fill) -> state``
     parallel path: the data is split into chunks that are reduced separately,
     and the states are folded afterwards
 
-The parallel path has one state per thread and more chunks than threads: the
-threads take the chunks from the queue of the pool, so a core that is busy
-with something else does not hold up the whole call, and a chunk that is left
-over is taken by a thread that is done.  The chunks are aggregated into the
-state of the thread that takes them, so a thread never writes into the state
-of another one and no lock is needed.  The sums of the floats are added up in
-the order the chunks reach the threads, so they differ in the last bits from
-run to run - the extremes, the counts and the logic are exact.
+The parallel path has one state per thread of the pool and more chunks than
+threads: the threads take the chunks from the queue of the pool, so a core
+that is busy with something else does not hold up the whole call, and a chunk
+that is left over is taken by a thread that is done.  The chunks are
+aggregated into the state of the thread that takes them, so a thread never
+writes into the state of another one and no lock is needed.  The sums of the
+floats are added up in the order the chunks reach the threads, so they differ
+in the last bits from run to run - the extremes, the counts and the logic are
+exact.
+
+The states are one per thread of the *pool* and not per thread of the call: a
+call for two threads on a machine whose pool has six still hands its chunks
+to those six, and the number a thread reports for itself is bounded by the
+pool - a state per thread of the call would then be read out of its range,
+and the chunks that fell off the end of it would be lost.
 
 The factory assembles these into ONE compiled driver per operation that owns
 the group loop, bounds checks and pass structure, and exposes it as a function
@@ -68,7 +75,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.aggregate_numba.mt import chunk_count, should_use_mt
+from numpy_groupies.aggregate_numba.mt import _pool_upper_bound, chunk_count, should_use_mt
 from numpy_groupies.utils_np import AResult, AScalar, check_fill_value_for_dtype
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
@@ -879,7 +886,7 @@ def _make_stub(
 # of the pass structure.
 
 
-def build_driver(name: str, passes: Any, suffix: str, multi_threading: bool = False) -> Any:
+def build_driver(name: str, passes: Any, suffix: str, multi_threading: bool = False, with_pool: bool = False) -> Any:
     """The driver of an operation.
 
     The driver takes the two arrays, the size, the two dtypes and the fill
@@ -895,6 +902,12 @@ def build_driver(name: str, passes: Any, suffix: str, multi_threading: bool = Fa
     and a number read inside the compiled code would keep the driver out of
     the on-disk cache (numba refuses to cache a function that reads a
     dynamic global).
+
+    ``with_pool`` adds the number of the threads of the pool as a second
+    argument - the bound of the numbers a thread reports for itself, which a
+    kernel that keeps one state per thread of the pool needs.  It comes in
+    as an argument for the same reason the number of the threads does: read
+    inside the compiled code it would be a dynamic global.
     """
     if multi_threading:
 
@@ -908,6 +921,14 @@ def build_driver(name: str, passes: Any, suffix: str, multi_threading: bool = Fa
             fill_value: float,
             extra: Any = 0,
         ) -> Any:
+            if with_pool:
+                # the number of the threads of the pool is asked of the
+                # python layer, where it is a plain number - inside the
+                # compiled code it would be a dynamic global, and a driver
+                # that reads one never reaches the on-disk cache
+                return passes(
+                    group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra, n_threads, _pool_upper_bound
+                )
             return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra, n_threads)
 
     else:
@@ -953,10 +974,15 @@ class KernelHandle(NamedTuple):
     ``assembles``   the driver assembles the result instead of returning a
                 plain array: the fill value is then the business of the
                 post hook, not of the driver
-    ``mt_driver``   the parallel driver of an operation that can be reduced in
-                chunks - it has the signature of the driver of its variant
-                and falls back to the sequential path when the parallel one
-                is not worth it
+    ``mt_driver``   the parallel driver of an operation that has a parallel path
+                beside its sequential one - either because it can be reduced in
+                chunks (``combine`` of ``build_kernel``) or because the loop over
+                its groups is cut into ranges (``mt_driver_factory`` of
+                ``build_custom_kernel``).  It has the signature of the driver of
+                its variant with the number of the threads in front, and falls
+                back to the sequential path when the parallel one is not worth it
+                - to the very driver that always ran, so that the fallback cannot
+                change a result
     """
 
     name: str
@@ -1249,6 +1275,7 @@ def build_kernel(
                 fill_value: float,
                 extra: Any,
                 n_threads: int,
+                n_pool: int,
             ) -> Any:
                 size = np.max(group_idx) + 1
                 if size_arg >= 0:
@@ -1263,14 +1290,36 @@ def build_kernel(
                 n_chunks = chunk_count(n_threads, n_values)
                 chunk = (n_values + n_chunks - 1) // n_chunks
                 faults = np.zeros(n_chunks, np.int64)
-                # one state per thread, not per chunk: the chunks are the
-                # units of work the queue hands out, the states are the
-                # accumulators of the threads.  A thread that is busy with
-                # something else delays its chunks and not the whole call -
-                # the threads that are done take the chunks that are left.
+                # One state per thread of the POOL, not one per chunk and not
+                # one per thread of the request:
+                #
+                # - not per chunk: the state of a chunk is an array of the size
+                #   of the groups, and one of those per chunk costs what the
+                #   partial matrix costs - measured, a call with twelve chunks
+                #   and a thousand groups spends a third of its time on the
+                #   extra six states.
+                # - not per thread of the request: the id a thread reports for
+                #   itself is bounded by the pool and not by the number the
+                #   call asked for - a call for two threads on a machine whose
+                #   pool has six still hands its chunks to those six, and six
+                #   ids in a list of two states is four states read out of
+                #   their range, which numba does not notice.  Half of the
+                #   values were lost that way.
+                #
+                # The bound is the number of the threads the pool was started
+                # with, and it comes in as an argument: read inside the
+                # compiled code it would be a dynamic global, and a driver that
+                # reads one never reaches the on-disk cache.
+                #
+                # A thread writes only into the state of its own id, and the
+                # chunk it takes is written into the state of the thread that
+                # took it - so the states need no lock, and a thread that is
+                # busy with something else delays its chunk and not the whole
+                # call: the threads that are done take the chunks that are
+                # left.
                 states = [
                     init_c(size, n_values, out_dtype, aux_dtype, a.dtype, fill_value, forced_fill)
-                    for _ in range(n_threads)
+                    for _ in range(n_pool)
                 ]
                 for c in nb.prange(n_chunks):
                     start = c * chunk
@@ -1282,7 +1331,7 @@ def build_kernel(
                         faults[c] = kernel(group_idx[start:stop], a[start:stop], state, fill_value, extra, size)
                 # the states of the threads, folded in the order of their index
                 acc = states[0]
-                for c in range(1, n_threads):
+                for c in range(1, n_pool):
                     combine_c(acc, states[c], fill_value, extra)
                 fault = faults[0]
                 for c in range(1, n_chunks):
@@ -1299,7 +1348,7 @@ def build_kernel(
                 return out
 
             mt_passes = njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
-            mt_driver = build_driver(op_name, mt_passes, "_mt_driver", multi_threading=True)
+            mt_driver = build_driver(op_name, mt_passes, "_mt_driver", multi_threading=True, with_pool=True)
 
         stub = _make_stub(
             op_name,
@@ -1346,6 +1395,7 @@ def build_custom_kernel(
     post: Callable[..., AResult] | None = None,
     assembles: bool = False,
     reject_fill: bool = False,
+    mt_driver_factory: Callable[[bool, Callable[..., Any]], Any] | None = None,
     doc: str | None = None,
 ) -> KernelPair:
     """Compose the kernels of an operation with a hand-written driver.
@@ -1360,11 +1410,31 @@ def build_custom_kernel(
     ``reject_fill`` says that the driver cannot place a fill value: the
     kernel then refuses one instead of ignoring it silently - a typing error
     to jitted code, a ValueError to python.
+
+    ``mt_driver_factory(nans, driver)`` returns the parallel passes of the
+    operation, which take the number of the threads as their last argument on
+    top of the arguments of the variant.  The sequential driver of the variant
+    is handed to the factory as its second argument, so that the passes can fall
+    back to it - the decision whether the parallel path is worth it is theirs, as
+    it is for the chunked operations, and a fallback to the very driver that
+    always ran is the one that cannot change a result.  Used by the operations
+    that cannot be reduced in chunks (no ``combine`` of theirs reaches
+    ``build_kernel``) but whose loop over the groups can be cut into ranges the
+    threads work on; the driver around those passes is the one of
+    ``build_driver``.
     """
 
     def build(nan_variant: bool) -> KernelHandle:
         driver = driver_factory(nan_variant)
         stub_name_variant = name if not nan_variant else "nan" + name
+        mt_driver = None
+        if mt_driver_factory is not None:
+            mt_driver = build_driver(
+                stub_name_variant,
+                mt_driver_factory(nan_variant, driver),
+                "_mt_driver",
+                multi_threading=True,
+            )
         stub = _make_stub(
             stub_name_variant,
             driver,
@@ -1387,6 +1457,7 @@ def build_custom_kernel(
             placeable=placeable,
             post=post,
             assembles=assembles,
+            mt_driver=mt_driver,
         )
 
     plain = build(False)

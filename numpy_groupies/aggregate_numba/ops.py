@@ -151,22 +151,21 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     is all there is to it.
 
     The operation can be reduced in chunks - then it has a parallel driver
-    beside its sequential one.  The parallel driver takes the number of the
-    threads as its first argument (the threads are read here, and a number
-    read inside the compiled code would keep the driver out of the on-disk
-    cache - numba refuses to cache a function that reads a dynamic global).
+    beside its sequential one, and an operation whose loop over the groups is
+    cut into ranges has one too (see ``build_custom_kernel``).  The parallel
+    driver takes the number of the threads as its first argument (the threads
+    are read here, and a number read inside the compiled code would keep the
+    driver out of the on-disk cache - numba refuses to cache a function that
+    reads a dynamic global).  Read of every call and not once when the wrapper
+    is built: ``set_thread_count`` is the knob of the caller, and a number
+    captured at the import of the package would keep it from turning.
+
     The driver itself decides whether the parallel path is worth it (the cost
     model of ``aggregate_numba.mt``) and falls back to the sequential one
     when it is not.
     """
     driver = handle.driver
     mt_driver = handle.mt_driver
-    n_threads = mt_thread_count()
-    if mt_driver is None or n_threads < 2:
-        # without a second thread there is nothing to parallelize, and the
-        # parallel driver would cost the overhead of the parallel region
-        # (the thread pool of the runtime) without any of its benefit
-        mt_driver = None
 
     if handle.variant == "none":
 
@@ -181,7 +180,18 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             q: float,
         ) -> Any:
             if mt_driver is not None:
-                return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
+                # the number of the threads is asked of every call: a number
+                # captured when the wrapper was built would be the number the
+                # package was imported with, whatever the caller does with
+                # ``set_thread_count`` after that - and the sequential path
+                # would be unreachable
+                n_threads = mt_thread_count()
+                if n_threads > 1:
+                    # without a second thread there is nothing to parallelize,
+                    # and the parallel driver would cost the overhead of the
+                    # parallel region (the thread pool of the runtime) without
+                    # any of its benefit
+                    return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
 
         return call_nothing
@@ -198,6 +208,10 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             ddof: float,
             q: float,
         ) -> Any:
+            if mt_driver is not None:
+                n_threads = mt_thread_count()
+                if n_threads > 1:
+                    return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
 
         return call_q
@@ -215,7 +229,9 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
         q: float,
     ) -> Any:
         if mt_driver is not None:
-            return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
+            n_threads = mt_thread_count()
+            if n_threads > 1:
+                return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
         return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
 
     return call_ddof

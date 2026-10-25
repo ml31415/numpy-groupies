@@ -1,10 +1,17 @@
 """The parallel path of the numba kernels.
 
-The parallel path splits the data into as many chunks as there are threads,
-reduces them separately and folds their states afterwards.  The tests below
-say three things about it: it gives the same result as the sequential path,
-the result with one thread is the one of the sequential path bit for bit,
-and the number of the threads can be steered.
+The parallel path splits the data into chunks - twice as many as there are
+threads - reduces every chunk into a state of its own and folds the states
+afterwards.  The tests below say three things about it: it gives the same
+result as the sequential path, the result with one thread is the one of the
+sequential path bit for bit, and the number of the threads can be steered.
+
+The last of these was not true for a while and could not be noticed: the
+number of the threads was read once, when the wrappers of the kernels were
+built at the import of the package, so every later call to ``set_thread_count``
+changed the number the *model* saw and not the number the kernels ran with.
+The tests below that steer the number of the threads were comparing a call
+with itself.
 """
 
 import numpy as np
@@ -91,7 +98,8 @@ def test_the_number_of_the_threads_does_not_change_the_result(func, data):
     for threads in (2, 3, 4, 6):
         mt.set_thread_count(threads)
         results.append(aggregate(group_idx, values, func=func))
-    # the chunks are as many as the threads, so the sums of the floats add up
+    # the chunks are twice as many as the threads and the number of them
+    # changes with the number of the threads, so the sums of the floats add up
     # in a different order - the results agree to the last bits, and the
     # extremes, the counts and the logic agree exactly
     for result in results[1:]:
@@ -199,3 +207,46 @@ def test_a_fault_of_the_indices_is_complained_about():
     group_idx[17] = 100
     with pytest.raises(ValueError, match="too large for size 100"):
         aggregate(group_idx, values, func="sum", size=100)
+
+
+@pytest.mark.parametrize("func", CHUNKABLE)
+def test_fewer_threads_than_the_pool_has_do_not_lose_a_chunk(func, data):
+    # the threads a call asks for and the threads the pool has are two
+    # numbers: a call for two threads on a machine whose pool has six still
+    # hands its chunks to those six, and a state per thread indexed by the id
+    # of the thread that took a chunk is then read out of its range - silently,
+    # because the read is inside a compiled function.  The chunks that fall
+    # off the end of the states are lost, and the result is a sum over less
+    # than the values of the group.
+    import numba as nb
+
+    group_idx, values = data
+    if nb.get_num_threads() < 3:
+        pytest.skip("the machine has no pool to ask fewer threads than it has")
+    mt.set_thread_count(2)
+    few = aggregate(group_idx, values, func=func)
+    mt.set_thread_count(nb.get_num_threads())
+    many = aggregate(group_idx, values, func=func)
+    np.testing.assert_allclose(few, many, rtol=1e-12, equal_nan=True)
+
+
+def test_the_number_of_the_threads_of_a_call_reaches_the_kernel(data):
+    # the number of the threads is asked of every call: a number captured when
+    # the wrapper of the operation was built would be the number the package
+    # was imported with, whatever the caller does with set_thread_count after
+    # that - and the sequential path would be unreachable
+    import numba as nb
+
+    group_idx, values = data
+    if nb.get_num_threads() < 2:
+        pytest.skip("the machine has no second thread to compare against")
+    mt.set_thread_count(1)
+    one = aggregate(group_idx, values, func="sum")
+    # the parallel path adds the values of a group in the order of the chunks
+    # and not in the order of the values, which the last bits of a float sum
+    # do notice - a result identical to the one of the single thread is a
+    # result of the single thread
+    for threads in (2, 3, nb.get_num_threads()):
+        mt.set_thread_count(threads)
+        many = aggregate(group_idx, values, func="sum")
+        assert not np.array_equal(one, many)
