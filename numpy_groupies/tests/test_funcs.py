@@ -51,7 +51,7 @@ def test_first_last(impl, first_last):
     np.testing.assert_array_equal(res, ref)
 
 
-@pytest.mark.parametrize("dtype", [np.float16, np.float64], ids=["float16", "float64"])
+@pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64], ids=["float16", "float32", "float64"])
 @pytest.mark.parametrize(["func", "ddof"], list(itertools.product(["var", "std"], [0, 1, 2])))
 def test_ddof(impl, rng, func, ddof, dtype, size=20):
     group_idx = np.zeros(20, dtype=int)
@@ -199,11 +199,11 @@ def test_sort_reverse_descends(impl, a, ref):
     np.testing.assert_array_equal(np.asarray(res), ref)
 
 
-@pytest.mark.parametrize("size", [1, 2, 31, 32, 33])
+@pytest.mark.parametrize("size", [1, 2, 3, 8, 16, 31, 32, 33, 40])
 @pytest.mark.parametrize(
     "dtype",
-    [np.float64, np.float32, np.int64, np.uint8, np.bool_],
-    ids=["float64", "float32", "int64", "uint8", "bool"],
+    [np.float64, np.float32, np.float16, np.int64, np.uint8, np.bool_],
+    ids=["float64", "float32", "float16", "int64", "uint8", "bool"],
 )
 def test_sort_of_a_small_group_matches_the_reference(impl, size, dtype):
     # a block of a few dozen values is ordered by insertion sort in the flat

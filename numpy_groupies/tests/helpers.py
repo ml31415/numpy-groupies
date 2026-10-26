@@ -89,7 +89,7 @@ def is_supported(impl, func):
     if isinstance(impl, _BackendProxy):
         impl = impl._module
     if not isinstance(func, str):
-        # a func that cannot be a key of a dict cannot key the probe cache
+        # a func that cannot be a key of a dict cannot key the dispatch table
         # either, and no func of one's own is ever deselected
         func = getattr(func, "__name__", None)
         if not isinstance(func, str):

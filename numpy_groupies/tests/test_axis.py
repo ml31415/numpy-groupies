@@ -129,6 +129,17 @@ _AXIS_FUNCS = (
     "sort",
     "nanmean",
     "array",
+    # the functions whose expectation the test writes itself - the first and
+    # the last value of a group, the truth of the values that are left and the
+    # running extreme of a slice
+    "first",
+    "last",
+    "nanfirst",
+    "nanlast",
+    "nanall",
+    "nanany",
+    "cummax",
+    "cummin",
 )
 
 _AXIS_CASES = (

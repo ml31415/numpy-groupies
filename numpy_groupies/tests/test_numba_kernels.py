@@ -21,7 +21,6 @@ from numpy_groupies.aggregate_numba import compose
 from numpy_groupies.registry import (
     func_extras,
 )
-from numpy_groupies.tests._jitcallers import jitted_caller, jitted_caller_with_extra
 from numpy_groupies.tests.reference import aggregate_ref
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
@@ -61,9 +60,14 @@ _ALL_KERNELS = [
 # operation, which every kernel has - so the faults of every kernel are the
 # faults of one of them.  The tests below therefore ask a representative set
 # of the kernels, one of every family: the plain reduction, its nan variant,
-# the order statistic, the sort, a function with an argument of its own, the
-# variance, the cumulative one, the collecting one, the count of the distinct
-# values and the arg reduction.
+# the order statistic, the sort, a function with an argument of its own (the
+# quantile, the variance and the trapezoid - one per builder of a variant),
+# the cumulative one, the collecting one, the count of the distinct values
+# and the arg reduction.
+#
+# Every kernel of the backend is asked once whether it refuses the empty
+# labels - the smoke test of the whole family, which a new kernel joins
+# without anyone adding it to a list.
 _FAULT_KERNELS = [
     "sum",
     "nansum",
@@ -71,6 +75,7 @@ _FAULT_KERNELS = [
     "sort",
     "quantile",
     "var",
+    "trapezoid",
     "cumsum",
     "array",
     "nunique",
@@ -207,6 +212,50 @@ def test_the_argument_of_a_kernel_is_the_one_of_its_function():
             assert type(parameter.default) is type(expected), name
 
 
+def _make_jitted_caller(kernel, name):
+    """A jitted caller of one kernel, with the name the kernel has.
+
+    A caller that reaches a kernel from jitted code is a dispatcher of its
+    own, and a dispatcher compiles the first time it is called.  The callers
+    are therefore built once per kernel and shared by the tests - built per
+    test, every test would compile its own copy of the very same wrapper,
+    which is the most expensive thing the suite does.
+
+    Every caller carries the name of the kernel it calls: two callers that
+    differ only in their closure share the symbol numba mangles their code
+    into, and one of them may bind the calls of the other - the same types
+    and the wrong kernel.
+    """
+
+    def caller(group_idx, values, size):
+        return kernel(group_idx, values, size=size, fill_value=None)
+
+    caller.__qualname__ = caller.__name__ = name
+    return nb.njit(caller)
+
+
+def _make_jitted_caller_with_extra(kernel, extra, name):
+    """A jitted caller of one kernel, with the argument of its own baked in.
+
+    The kernel of a function that has an argument of its own takes it behind
+    the two arrays, and the value of it is a constant of the caller - the
+    kernel is called with it, not with a parameter of its own.
+    """
+    if extra is None:
+
+        def caller(group_idx, a, size, fill_value):
+            return kernel(group_idx, a, size=size, fill_value=fill_value)
+
+    else:
+        value = extra
+
+        def caller(group_idx, a, size, fill_value):
+            return kernel(group_idx, a, value, size=size, fill_value=fill_value)
+
+    caller.__qualname__ = caller.__name__ = name
+    return nb.njit(caller)
+
+
 @cache
 def _jitted_caller(name, own):
     """The jitted caller of one kernel, with the argument of its own baked in.
@@ -216,7 +265,7 @@ def _jitted_caller(name, own):
     of itself for every test that asks for it.
     """
     stub = getattr(aggregate_numba, name)
-    return jitted_caller_with_extra(stub, own, name=f"caller_{name}_{own!r}")
+    return _make_jitted_caller_with_extra(stub, own, name=f"caller_{name}_{own!r}")
 
 
 def _kernel_result(name, values, **kwargs):
@@ -340,7 +389,7 @@ def _styles(kernel_name):
     def call_python(group_idx, values, size):
         return kernel(group_idx, values, size=size, fill_value=None)
 
-    call_jitted = jitted_caller(kernel, name=f"call_jitted_{kernel_name}")
+    call_jitted = _make_jitted_caller(kernel, name=f"call_jitted_{kernel_name}")
 
     def call_aggregate(group_idx, values, size):
         return aggregate(group_idx, values, func=kernel_name, size=size)
@@ -377,6 +426,21 @@ _STRICT_ONLY = [
     (GROUP_IDX, FLOAT_A.astype(np.str_), "numeric values", -1, ValueError),
     (GROUP_IDX, np.array(["2000-01-01", "2000-01-02"], dtype="datetime64[D]"), "numeric values", -1, ValueError),
 ]
+
+
+@pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
+def test_every_kernel_refuses_the_empty_labels(kernel_name):
+    """Every kernel of the backend refuses the empty labels.
+
+    The check is written in the stub of the operation, and every stub has it -
+    but a kernel that loses it would go unnoticed if only a few of them were
+    asked.  This test asks all of them, once; the jitted way into a kernel is
+    asked of the representatives of :data:`_FAULT_KERNELS`, where the whole
+    matrix of the faults is checked.
+    """
+    call = _styles(kernel_name)[0]
+    with pytest.raises(ValueError, match=EMPTY_GROUP_IDX):
+        call(GROUP_IDX[:0], FLOAT_A[:0], -1)
 
 
 @pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
