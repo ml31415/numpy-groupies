@@ -109,6 +109,7 @@ import time
 import numba as nb
 import numpy as np
 
+from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.mt import logical_core_count, physical_core_count
 from numpy_groupies.benchmarks import _release_numba_resources
 
@@ -188,14 +189,14 @@ def overhead_us(n_threads: int) -> float:
 #         out[group_idx[i]] += a[i]
 
 
-@nb.njit(cache=True)
+@njit_stable
 def sum_seq(group_idx, a, out):
     for i in range(group_idx.size):
         out[group_idx[i]] += a[i]
     return out
 
 
-@nb.njit(parallel=True, cache=True)
+@njit_stable(parallel=True)
 def sum_mt(group_idx, a, partials, n_groups):
     """The parallel sum: one row of partials per thread.
 
@@ -215,21 +216,21 @@ def sum_mt(group_idx, a, partials, n_groups):
     return partials
 
 
-@nb.njit(cache=True)
+@njit_stable
 def gather_seq(ret, group_idx, out):
     for i in range(group_idx.size):
         out[i] = ret[group_idx[i]]
     return out
 
 
-@nb.njit(parallel=True, cache=True)
+@njit_stable(parallel=True)
 def gather_mt(ret, group_idx, out):
     for i in nb.prange(group_idx.size):
         out[i] = ret[group_idx[i]]
     return out
 
 
-@nb.njit(parallel=True, cache=True)
+@njit_stable(parallel=True)
 def empty_parallel(group_idx):
     """An empty parallel loop - it measures the fixed cost of the parallel path."""
     total = 0.0

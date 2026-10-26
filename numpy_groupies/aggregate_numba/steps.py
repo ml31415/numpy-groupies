@@ -7,16 +7,16 @@ sort and the collecting function) each compile their own copies of them, so
 that the compiled artifacts of one operation never reach into another.
 """
 
-import numba as nb
 import numpy as np
 import numpy.typing as npt
 
+from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.validation import NEGATIVE_INDICES, TOO_LARGE
 
 
 # the annotations of the jitted functions below are documentation only - numba
 # compiles from the argument types and ignores them, the type checker needs them
-@nb.njit(cache=True)
+@njit_stable
 def step_count(group_idx: npt.NDArray[np.integer]) -> int:
     """Return the amount of index changes within group_idx."""
     cmp_pos = 0
@@ -30,7 +30,7 @@ def step_count(group_idx: npt.NDArray[np.integer]) -> int:
     return steps
 
 
-@nb.njit(cache=True)
+@njit_stable
 def step_indices(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
     """Return the edges of areas within group_idx, which are filled with the same value."""
     ilen = step_count(group_idx) + 1

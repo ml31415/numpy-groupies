@@ -1,19 +1,26 @@
 """Tests for the numba backend: the jitted fast path, the slow-path
-fallback, the callable cache, the ``out=`` parameter and the lock around the
-shared on-disk compilation cache.
+fallback, the callable cache, the ``out=`` parameter, the lock around the
+shared on-disk compilation cache and the pinned identity that keeps that
+cache from growing from run to run.
 """
 
+import importlib
 import os
+import pkgutil
+import re
 from threading import Thread
+from types import ModuleType
 
+import numba as nb
 import numpy as np
 import pytest
 from numba.core.dispatcher import Dispatcher
+from numba.core.serialize import dumps
 
 from numpy_groupies import aggregate_numba, uaggregate
 from numpy_groupies.aggregate_numba import aggregate, ops
 from numpy_groupies.aggregate_numba.gather import _gather_1d
-from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile
+from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile, njit_stable
 from numpy_groupies.aggregate_numba.ops import _dispatch
 from numpy_groupies.utils_np import resolve_output_dtype
 
@@ -422,3 +429,110 @@ def test_every_key_of_a_contended_cache_names_its_own_machine(tmp_path):
     for worker in range(_workers):
         for index in range(_per_worker):
             assert cache_file.load(f"key-{worker}-{index}") == (worker, index)
+
+
+# ---------------------------------------------------------------------------
+# The identity of the on-disk cache.  Numba keys its cache index by the
+# signature, the machine and two hashes: of the bytecode and of the
+# cloudpickled closure of the compiled function.  A dispatcher that reaches
+# into such a closure with a uuid drawn fresh in every process therefore
+# moves the key of an already cached signature in every process - and the
+# cache gains one duplicate of every signature of every parallel kernel per
+# run, without bound.  What pins the uuid is ``njit_stable``; the tests
+# below keep the pinning from decaying one module at a time.
+
+_uuid4 = re.compile(rb"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_pinned = re.compile(r"\A[0-9a-f]{16}\Z")
+
+
+def _walk_dispatchers():
+    """Every dispatcher of the numba backend, the ones only reachable
+    through a closure included - the pickle of a closure descends into all
+    of them and every one of them needs its uuid pinned."""
+    seen: set[int] = set()
+    found: list[Dispatcher] = []
+
+    def push(obj):
+        # tuples of dispatchers (the pass structures) and dispatchers kept
+        # in dicts count as reachable, the pickle of a cell follows them
+        if isinstance(obj, Dispatcher):
+            if id(obj) not in seen:
+                seen.add(id(obj))
+                found.append(obj)
+        elif isinstance(obj, (tuple, list, set, frozenset)):
+            for item in obj:
+                push(item)
+        elif isinstance(obj, dict):
+            for item in obj.values():
+                push(item)
+
+    queue = [aggregate_numba] + [
+        importlib.import_module(f"numpy_groupies.aggregate_numba.{name}")
+        for _, name, _ in sorted(pkgutil.iter_modules(aggregate_numba.__path__))
+    ]
+    while queue:
+        item = queue.pop(0)
+        if isinstance(item, ModuleType):
+            # only the modules of this backend - the names a module imports
+            # are followed as values, they are not walked as namespaces
+            if not item.__name__.startswith("numpy_groupies.aggregate_numba"):
+                continue
+            queue.extend(value for _, value in sorted(vars(item).items()))
+            continue
+        push(item)
+        if isinstance(item, Dispatcher):
+            for cell in item.py_func.__closure__ or ():
+                try:
+                    push(cell.cell_contents)
+                except ValueError:  # pragma: no cover - empty cell
+                    pass
+    return found
+
+
+def _cell_contents(disp):
+    """The contents of the non-empty closure cells of one dispatcher."""
+    cells = []
+    for cell in disp.py_func.__closure__ or ():
+        try:
+            cells.append(cell.cell_contents)
+        except ValueError:  # pragma: no cover - empty cell
+            pass
+    return tuple(cells)
+
+
+def test_the_jitted_callables_of_the_backend_are_pinned():
+    """Every dispatcher of the backend carries the 16 hex digits of a pinned
+    uuid - the 36 of a ``uuid4`` say it was drawn fresh in this process."""
+    unpinned = sorted(
+        f"{d.py_func.__module__}.{d.py_func.__qualname__}"
+        for d in _walk_dispatchers()
+        if not _pinned.match(str(d._uuid))
+    )
+    assert unpinned == []
+
+
+def test_no_process_local_uuid_reaches_the_index_key_of_the_cache():
+    """The cloudpickled closure of every cached dispatcher - the bytes the
+    second hash of the index key covers - is free of a uuid of the draw."""
+    leaks = sorted(
+        f"{d.py_func.__module__}.{d.py_func.__qualname__}"
+        for d in _walk_dispatchers()
+        if d.py_func.__closure__ is not None
+        and type(d._cache).__name__ != "NullCache"
+        and _uuid4.search(dumps(_cell_contents(d)))
+    )
+    assert leaks == []
+
+
+def test_a_dispatcher_without_the_pin_would_be_caught():
+    """The two checks above are not vacuous: a dispatcher jitted without
+    ``njit_stable`` right here leaks its draw into both of them."""
+
+    @nb.njit
+    def inner(x):
+        return x + 1
+
+    outer = njit_stable(lambda x: inner(x), name="probe_outer")
+    assert not _pinned.match(str(inner._uuid))
+    assert _uuid4.search(dumps(_cell_contents(outer))) is not None
+    assert outer._uuid != str(inner._uuid)

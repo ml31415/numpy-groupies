@@ -808,7 +808,7 @@ def _mix_hash(x: np.uint64) -> Any:
 
 
 @njit_stable
-def _hash_float(v: float) -> Any:
+def _hash_float(v: float | np.floating[Any]) -> Any:
     """the hash of a floating point value.
 
     The mantissa of a double is exact in 53 bits, so the mantissa and the

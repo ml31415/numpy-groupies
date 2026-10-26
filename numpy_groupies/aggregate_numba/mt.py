@@ -33,6 +33,8 @@ import os
 
 import numba as nb
 
+from numpy_groupies.aggregate_numba.jit import njit_stable
+
 # --- the fitted constants, on the pessimistic side ---
 _BYTES_PER_ELEMENT = 16.0  # a float64 value and an int64 index
 _CORE_BYTES_PER_S = 2.003e10  # what one core delivers at a working set of 1 MB
@@ -178,13 +180,13 @@ GROUP_MT_CHUNKS_PER_THREAD = 2
 GATHER_MT_MIN_VALUES = MT_MIN_VALUES
 
 
-@nb.njit(cache=True)
+@njit_stable
 def _parallel_parts(n_threads: int) -> float:
     """The number of the threads worth of work the parallel path gets done in."""
     return 1.0 + (n_threads - 1) * _GROUP_PER_THREAD
 
 
-@nb.njit(cache=True)
+@njit_stable
 def group_chunk_count(n_threads: int, n_groups: int) -> int:
     """The number of the ranges the groups are cut into.
 
@@ -202,7 +204,7 @@ def group_chunk_count(n_threads: int, n_groups: int) -> int:
     return min(n_threads * GROUP_MT_CHUNKS_PER_THREAD, n_groups)
 
 
-@nb.njit(cache=True)
+@njit_stable
 def estimate_group_mt_ratio(n_groups: int, n_threads: int, n_values: int, ns_per_value: float) -> float:
     """The estimated time of the group parallel path as a multiple of the sequential
     one, for an operation that works on the groups one after another.
@@ -225,7 +227,7 @@ def estimate_group_mt_ratio(n_groups: int, n_threads: int, n_values: int, ns_per
     return (par_us + _OVERHEAD_US) / seq_us
 
 
-@nb.njit(cache=True)
+@njit_stable
 def should_use_group_mt(n_groups: int, n_threads: int, n_values: int, ns_per_value: float) -> bool:
     """Whether the loop over the groups of an operation is worth spreading.
 
@@ -241,7 +243,7 @@ def should_use_group_mt(n_groups: int, n_threads: int, n_values: int, ns_per_val
     return estimate_group_mt_ratio(n_groups, n_threads, n_values, ns_per_value) <= MT_MAX_RATIO
 
 
-@nb.njit(cache=True)
+@njit_stable
 def chunk_count(n_threads: int, n_values: int) -> int:
     """The number of the chunks the data is split into.
 
@@ -259,7 +261,7 @@ def chunk_count(n_threads: int, n_values: int) -> int:
     return min(chunks, n_values)
 
 
-@nb.njit(cache=True)
+@njit_stable
 def _bandwidth_bytes_per_s(n_values: int, n_threads: int) -> float:
     """The bandwidth the threads use together for a working set of the given size.
 
@@ -271,14 +273,14 @@ def _bandwidth_bytes_per_s(n_values: int, n_threads: int) -> float:
     return core * min(n_threads, _PEAK_CORES)
 
 
-@nb.njit(cache=True)
+@njit_stable
 def estimate_seq_time_us(n_groups: int, n_values: int) -> float:
     """The estimated time of the sequential path, in microseconds."""
     data_us = n_values * _BYTES_PER_ELEMENT / _bandwidth_bytes_per_s(n_values, 1) * 1e6
     return data_us + n_groups * _CG_SEQ / 1e3
 
 
-@nb.njit(cache=True)
+@njit_stable
 def estimate_mt_time_us(n_groups: int, n_threads: int, n_values: int, state_size: int = 1) -> float:
     """The estimated time of the parallel path, in microseconds.
 
@@ -295,14 +297,14 @@ def estimate_mt_time_us(n_groups: int, n_threads: int, n_values: int, state_size
     return data_us + n_groups * _CG_MT * state_size / 1e3 + partials_us + _OVERHEAD_US
 
 
-@nb.njit(cache=True)
+@njit_stable
 def estimate_mt_ratio(n_groups: int, n_threads: int, n_values: int, state_size: int = 1) -> float:
     """The estimated time of the parallel path as a multiple of the sequential
     one.  Below 1 means the parallel path is faster; 1 means they are equal."""
     return estimate_mt_time_us(n_groups, n_threads, n_values, state_size) / estimate_seq_time_us(n_groups, n_values)
 
 
-@nb.njit(cache=True)
+@njit_stable
 def should_use_mt(n_groups: int, n_threads: int, n_values: int, state_size: int = 1) -> bool:
     """Whether the multithreaded variant of a kernel is worth using.
 
