@@ -90,9 +90,13 @@ def test_the_moments_of_complex_values_are_refused(impl):
             impl.aggregate(group_idx, a, func=func)
 
 
-def test_the_kurtosis_is_the_excess_of_the_normal_distribution(impl):
+def test_the_kurtosis_is_the_excess_of_the_normal_distribution(impl, rng):
     """The kurtosis of a normal distribution is zero - the excess over three."""
-    group_idx = np.zeros(20000, dtype=int)
-    a = np.random.default_rng(0).normal(size=20000)
+    # the excess kurtosis of a normal sample is zero up to its own error,
+    # which is sqrt(24/n) - a hundred thousand values put the tolerance of
+    # the test six standard errors away, so the sample of the seed cannot
+    # fail it
+    group_idx = np.zeros(100_000, dtype=int)
+    a = rng.normal(size=100_000)
     got = impl.aggregate(group_idx, a, func="kurt")
     assert abs(got[0]) < 0.1

@@ -205,23 +205,22 @@ def test_sort_reverse_descends(impl, a, ref):
     [np.float64, np.float32, np.float16, np.int64, np.uint8, np.bool_],
     ids=["float64", "float32", "float16", "int64", "uint8", "bool"],
 )
-def test_sort_of_a_small_group_matches_the_reference(impl, size, dtype):
+def test_sort_of_a_small_group_matches_the_reference(impl, rng, size, dtype):
     # a block of a few dozen values is ordered by insertion sort in the flat
     # array instead of a library sort of a view - the values, the nan at their
     # end and the descending order of them all have to come out the same, and
     # the sizes here straddle the limit that switches the two passes.  The
     # reference is the group loop, so even the numpy backend is compared
     # against something it does not share a sort with
-    rnd = np.random.RandomState(size)
     if dtype is np.bool_:
-        a = rnd.randint(0, 2, size).astype(dtype)
+        a = rng.integers(0, 2, size).astype(dtype)
     elif dtype is np.int64:
-        a = rnd.randint(0, 100, size).astype(dtype)
+        a = rng.integers(0, 100, size).astype(dtype)
     elif dtype is np.uint8:
-        a = rnd.randint(0, 20, size).astype(dtype)
+        a = rng.integers(0, 20, size).astype(dtype)
     else:
-        a = rnd.random_sample(size).astype(dtype)
-        a[rnd.random_sample(size) < 0.25] = np.nan
+        a = rng.random(size).astype(dtype)
+        a[rng.random(size) < 0.25] = np.nan
     group_idx = np.zeros(size, dtype=int)
 
     for reverse in (False, True):

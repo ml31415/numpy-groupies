@@ -54,7 +54,7 @@ def _quiet_reference(func: Callable[..., Any], a: npt.NDArray[Any], *args: Any, 
 )
 @pytest.mark.parametrize("axis", [0, 1, 2, -1])
 @pytest.mark.parametrize("order", ["C", "F"])
-def test_arg_alias_axis_coordinates(impl, func, axis, order):
+def test_arg_alias_axis_coordinates(impl, rng, func, axis, order):
     """NumPy aliases report positions along the requested axis, including gaps.
 
     Both spellings of every alias are asked, since the bug behind this test was
@@ -62,7 +62,7 @@ def test_arg_alias_axis_coordinates(impl, func, axis, order):
     doing it: the position has to come out along the axis that was asked for,
     whether the caller wrote ``"argmin"`` or ``np.argmin``.
     """
-    a = np.array(np.random.default_rng(0).normal(size=(3, 4, 5)), order=order)
+    a = np.array(rng.normal(size=(3, 4, 5)), order=order)
     name = func if isinstance(func, str) else func.__name__
     if name in ("nanargmin", "nanargmax"):
         a[0, 0, 0] = np.nan

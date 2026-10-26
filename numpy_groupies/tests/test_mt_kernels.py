@@ -79,18 +79,28 @@ def _thread_counts() -> list[int]:
     return counts
 
 
-@pytest.fixture
-def data():
-    rng = np.random.default_rng(100)
+def _write_protected(*arrays: np.ndarray) -> None:
+    """The arrays of a fixture are write protected.
+
+    The fixtures are shared by the tests of the module, so a test that writes
+    into one of them fails at that place rather than in whatever test reads
+    the data next.
+    """
+    for array in arrays:
+        array.setflags(write=False)
+
+
+@pytest.fixture(scope="module")
+def data(rng):
     group_idx = rng.integers(0, 100, 200_000)
     values = rng.random(200_000)
+    _write_protected(group_idx, values)
     return group_idx, values
 
 
 def _group_data(
-    n_values: int = N_VALUES, n_groups: int = N_GROUPS, seed: int = 100, nans: bool = True
+    rng, n_values: int = N_VALUES, n_groups: int = N_GROUPS, nans: bool = True
 ) -> tuple[np.ndarray, np.ndarray]:
-    rng = np.random.default_rng(seed)
     group_idx = rng.integers(0, n_groups, n_values)
     values = rng.integers(-1000, 1000, n_values).astype(np.float64)
     if nans:
@@ -98,25 +108,25 @@ def _group_data(
     return group_idx, values
 
 
-@pytest.fixture
-def group_data() -> tuple[np.ndarray, np.ndarray]:
+@pytest.fixture(scope="module")
+def group_data(rng) -> tuple[np.ndarray, np.ndarray]:
     """A shape the cost model of the group path sends to the parallel path.
 
     The values carry nan values, which the nan variants filter out and the
     plain ones answer with a poisoned cell.
     """
-    return _group_data()
+    return _group_data(rng)
 
 
-@pytest.fixture
-def group_clean() -> tuple[np.ndarray, np.ndarray]:
+@pytest.fixture(scope="module")
+def group_clean(rng) -> tuple[np.ndarray, np.ndarray]:
     """The same, without the nan values - for the comparisons that a nan in
     either of the two results would break."""
-    return _group_data(nans=False)
+    return _group_data(rng, nans=False)
 
 
-@pytest.fixture
-def group_skewed() -> tuple[np.ndarray, np.ndarray]:
+@pytest.fixture(scope="module")
+def group_skewed(rng) -> tuple[np.ndarray, np.ndarray]:
     """The same number of values, in groups of wildly different size.
 
     A zipf distribution over the groups, so a handful of them hold most of the
@@ -125,12 +135,12 @@ def group_skewed() -> tuple[np.ndarray, np.ndarray]:
     really are: ranges of an equal number of groups would give one thread all
     the big groups, and the call would be as parallel as its longest range.
     """
-    rng = np.random.default_rng(7)
     weights = 1.0 / np.arange(1, N_GROUPS + 1)
     weights /= weights.sum()
     group_idx = rng.choice(N_GROUPS, size=N_VALUES, p=weights).astype(np.intp)
     values = rng.integers(-1000, 1000, N_VALUES).astype(np.float64)
     values[::10] = np.nan
+    _write_protected(group_idx, values)
     return group_idx, values
 
 
@@ -199,10 +209,9 @@ def test_the_number_of_the_threads_does_not_change_the_result(func, data):
         np.testing.assert_allclose(results[0], result, rtol=1e-12, equal_nan=True)
 
 
-def test_too_few_values_take_the_sequential_path():
+def test_too_few_values_take_the_sequential_path(rng):
     # below the threshold of the cost model the parallel path is not used, and
     # the result is the one of the sequential path bit for bit
-    rng = np.random.default_rng(100)
     group_idx = rng.integers(0, 100, 1000)
     values = rng.random(1000)
     nb.set_num_threads(2)
@@ -212,8 +221,7 @@ def test_too_few_values_take_the_sequential_path():
     np.testing.assert_allclose(parallel, sequential, rtol=0, atol=0, equal_nan=True)
 
 
-def test_the_nan_variants_give_the_same_result():
-    rng = np.random.default_rng(100)
+def test_the_nan_variants_give_the_same_result(rng):
     group_idx = rng.integers(0, 100, 200_000)
     values = rng.random(200_000)
     values[group_idx == 2] = np.nan
@@ -226,10 +234,9 @@ def test_the_nan_variants_give_the_same_result():
         np.testing.assert_allclose(parallel, sequential, rtol=1e-12, equal_nan=True)
 
 
-def test_the_complex_input_gives_the_same_result():
+def test_the_complex_input_gives_the_same_result(rng):
     # the complex input has no order, so the extremes compare the way the
     # kernel compares them - and the fold of the states has to as well
-    rng = np.random.default_rng(100)
     group_idx = rng.integers(0, 100, 200_000)
     values = rng.random(200_000) + 1j * rng.random(200_000)
     for func in ("sum", "max", "min", "mean", "var", "std"):
@@ -240,11 +247,10 @@ def test_the_complex_input_gives_the_same_result():
         np.testing.assert_allclose(parallel, sequential, rtol=1e-12, equal_nan=True)
 
 
-def test_the_groups_without_a_value_keep_the_fill_value():
+def test_the_groups_without_a_value_keep_the_fill_value(rng):
     # a group that no chunk received a value for stays untouched - the fold
     # of the states has to keep that, and the custom fill value has to reach
     # such a group
-    rng = np.random.default_rng(100)
     # only ten of the hundred groups receive a value
     group_idx = rng.integers(0, 10, 200_000)
     values = rng.random(200_000)
@@ -257,10 +263,9 @@ def test_the_groups_without_a_value_keep_the_fill_value():
             np.testing.assert_allclose(parallel, sequential, rtol=1e-12, equal_nan=True)
 
 
-def test_the_dispersion_honours_the_ddof():
+def test_the_dispersion_honours_the_ddof(rng):
     # the ddof is the argument of the operation of its own - the parallel
     # driver takes it like the sequential one
-    rng = np.random.default_rng(100)
     group_idx = rng.integers(0, 100, 200_000)
     values = rng.random(200_000)
     for ddof in (0, 1, 2):
@@ -271,11 +276,10 @@ def test_the_dispersion_honours_the_ddof():
         np.testing.assert_allclose(parallel, sequential, rtol=1e-12, equal_nan=True)
 
 
-def test_the_dispersion_keeps_the_result_of_the_integer_input():
+def test_the_dispersion_keeps_the_result_of_the_integer_input(rng):
     # the integer input is centered on the first value of its group, and
     # every chunk has its own first value - the fold of the two states has
     # to correct for the two anchors
-    rng = np.random.default_rng(100)
     group_idx = rng.integers(0, 100, 200_000)
     values = rng.integers(-1000, 1000, 200_000)
     for func in ("var", "std"):
@@ -286,10 +290,9 @@ def test_the_dispersion_keeps_the_result_of_the_integer_input():
         np.testing.assert_allclose(one, many, rtol=1e-12, equal_nan=True)
 
 
-def test_a_fault_of_the_indices_is_complained_about():
+def test_a_fault_of_the_indices_is_complained_about(rng):
     # the parallel path cannot raise out of its region, so the kernel
     # remembers the fault and the driver raises the very same complaint
-    rng = np.random.default_rng(100)
     group_idx = rng.integers(0, 100, 200_000)
     values = rng.random(200_000)
     group_idx[17] = -1
@@ -499,6 +502,9 @@ def test_the_group_path_complains_about_a_fault_of_the_indices(func, group_data)
     # the ranges cannot raise out of their region, so the complaint of the
     # sequential path has to be made before a single one of them is cut
     group_idx, values = group_data
+    # the labels of the fixture are write protected - the test writes into a
+    # copy of them
+    group_idx = group_idx.copy()
     group_idx[17] = -1
     nb.set_num_threads(2)
     with pytest.raises(ValueError, match="negative indices"):
