@@ -390,14 +390,21 @@ def _group_mt_setup(
     size_arg: int,
     ns_per_value: float,
     n_threads: int,
-) -> GroupMTSetup | None:
+) -> tuple[bool, GroupMTSetup]:
     """the shared setup of the parallel passes that cut the GROUPS into ranges
 
     The gate of the cost model, the counting sort that places the values and
     the cut of the ranges are the same for every operation of this shape, so
-    one compiled body does all three: it returns the ``GroupMTSetup`` of the
-    call - or None when the model keeps the call on the sequential path (the
-    caller then runs the sequential driver, with its result bit for bit).
+    one compiled body does all three: it returns whether the model sends the
+    call to the parallel path, and the ``GroupMTSetup`` of the call with it.
+    On the sequential path the caller runs the sequential driver, with its
+    result bit for bit, and the payload of the answer is empty arrays.
+
+    The gate result is an explicit flag and not a None next to the tuple:
+    numba casts an Optional of a named tuple to its payload with a runtime
+    check that fires inside prange bodies even when the value is valid (the
+    crash of the benchmarks) - the optional never enters the compiled value
+    flow of the callers.
 
     Jitted and disk cached like everything a compiled caller reaches into:
     numba cannot resolve an uncached callee from cached caller code (see the
@@ -408,12 +415,17 @@ def _group_mt_setup(
     counts = _count(group_idx, size)
     starts = _starts(counts)
     if not should_use_group_mt(size, n_threads, n_values, ns_per_value):
-        return None
+        # the empty payload of the sequential path - its types match the
+        # parallel one, so both branches of the callers compile to one type
+        empty = GroupMTSetup(
+            counts, starts, np.empty(0, dtype=a.dtype), np.zeros(0, dtype=np.intp), np.zeros(0, dtype=np.int64)
+        )
+        return (False, empty)
     a_sorted = np.empty(n_values, a.dtype)
     _place(group_idx, a, starts.copy(), a_sorted)
     n_ranges = group_chunk_count(n_threads, size)
     edges, largest = _ranges(counts, n_ranges)
-    return GroupMTSetup(counts, starts, a_sorted, edges, largest)
+    return (True, GroupMTSetup(counts, starts, a_sorted, edges, largest))
 
 
 _group_mt_setup = njit_stable(_group_mt_setup)
@@ -486,22 +498,26 @@ def _median_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]
         extra: Any,
         n_threads: int,
     ) -> npt.NDArray[np.number]:
-        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
-        if setup is None:
+        found, setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
+        if not found:
             # not worth a parallel region: the sequential driver, with its
             # result bit for bit
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
+        # the tuple is unpacked into locals before the prange - a tuple that
+        # crosses the border of a parallel region trips the gufunc creation
+        # of numba (parfor_lowering reads a .loc of it that is not there)
+        counts, starts, a_sorted, edges, largest = setup
         # the groups that receive no values keep this seeding - the same one
         # the sequential driver gives them
-        out = np.full(setup.counts.size, fill_value, out_dtype)
+        out = np.full(counts.size, fill_value, out_dtype)
         # the buffer of a range is sized after the largest block of that range:
         # summed over the ranges that is at most the number of the values, so
         # the parallel path holds no more scratch than the sequential one
-        bufs = [np.empty(k, a.dtype) for k in setup.largest] if nans else [np.empty(0, a.dtype)] * setup.largest.size
-        for c in nb.prange(setup.largest.size):
+        bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
+        for c in nb.prange(largest.size):
             buf = bufs[c]
-            for g in range(setup.edges[c], setup.edges[c + 1]):
-                group(g, setup.a_sorted, setup.counts, setup.starts, buf, out, fill_value)
+            for g in range(edges[c], edges[c + 1]):
+                group(g, a_sorted, counts, starts, buf, out, fill_value)
         return out
 
     return njit_stable(mt_passes, name=f"{'nan' if nans else ''}median_mt_passes", parallel=True)
@@ -573,15 +589,17 @@ def _quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number
         q: float,
         n_threads: int,
     ) -> npt.NDArray[np.number]:
-        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
-        if setup is None:
+        found, setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
+        if not found:
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
-        out = np.full(setup.counts.size, fill_value, out_dtype)
-        bufs = [np.empty(k, a.dtype) for k in setup.largest] if nans else [np.empty(0, a.dtype)] * setup.largest.size
-        for c in nb.prange(setup.largest.size):
+        # unpacked before the prange - see the note in _median_mt_factory
+        counts, starts, a_sorted, edges, largest = setup
+        out = np.full(counts.size, fill_value, out_dtype)
+        bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
+        for c in nb.prange(largest.size):
             buf = bufs[c]
-            for g in range(setup.edges[c], setup.edges[c + 1]):
-                group(g, setup.a_sorted, setup.counts, setup.starts, buf, out, fill_value, q)
+            for g in range(edges[c], edges[c + 1]):
+                group(g, a_sorted, counts, starts, buf, out, fill_value, q)
         return out
 
     return njit_stable(mt_passes, name=f"{'nan' if nans else ''}quantile_mt_passes", parallel=True)
@@ -753,17 +771,19 @@ def _sort_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) 
         reverse: bool,
         n_threads: int,
     ) -> npt.NDArray[np.number]:
-        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SORT, n_threads)
-        if setup is None:
+        found, setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SORT, n_threads)
+        if not found:
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, reverse)
-        for c in nb.prange(setup.edges.size - 1):
-            for g in range(setup.edges[c], setup.edges[c + 1]):
+        # unpacked before the prange - see the note in _median_mt_factory
+        counts, starts, a_sorted, edges, _ = setup
+        for c in nb.prange(edges.size - 1):
+            for g in range(edges[c], edges[c + 1]):
                 # the same step the sequential loop runs, on the block of a
                 # group no other thread has touched
-                if setup.counts[g] > 1:
-                    _order_block(setup.a_sorted, setup.starts[g], setup.counts[g], reverse)
+                if counts[g] > 1:
+                    _order_block(a_sorted, starts[g], counts[g], reverse)
         out = np.empty(group_idx.size, out_dtype)
-        _scatter(group_idx, setup.a_sorted, setup.starts, out)
+        _scatter(group_idx, a_sorted, starts, out)
         return out
 
     return njit_stable(mt_passes, name=f"{'nan' if nans else ''}sort_mt_passes", parallel=True)
@@ -979,15 +999,17 @@ def _nunique_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]
         extra: Any,
         n_threads: int,
     ) -> npt.NDArray[np.number]:
-        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_NUNIQUE, n_threads)
-        if setup is None:
+        found, setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_NUNIQUE, n_threads)
+        if not found:
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
-        out = np.full(setup.counts.size, fill_value, out_dtype)
-        tables = [(np.empty(capacity_of(k), a.dtype), np.full(capacity_of(k), -1, np.int32)) for k in setup.largest]
-        for c in nb.prange(setup.largest.size):
+        # unpacked before the prange - see the note in _median_mt_factory
+        counts, starts, a_sorted, edges, largest = setup
+        out = np.full(counts.size, fill_value, out_dtype)
+        tables = [(np.empty(capacity_of(k), a.dtype), np.full(capacity_of(k), -1, np.int32)) for k in largest]
+        for c in nb.prange(largest.size):
             slots, gens = tables[c]
-            for g in range(setup.edges[c], setup.edges[c + 1]):
-                _nunique_group(g, setup.a_sorted, setup.counts, setup.starts, out, slots, gens, not nans)
+            for g in range(edges[c], edges[c + 1]):
+                _nunique_group(g, a_sorted, counts, starts, out, slots, gens, not nans)
         return out
 
     return njit_stable(mt_passes, name=f"{'nan' if nans else ''}nunique_mt_passes", parallel=True)
