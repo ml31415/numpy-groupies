@@ -66,7 +66,7 @@ def test_the_parallel_gather_answers_the_same(rng):
         np.testing.assert_array_equal(unpack_numba(group_idx, vals), vals[group_idx])
 
 
-def test_the_parallel_gather_keeps_the_shape_of_its_out():
+def test_the_parallel_gather_keeps_the_shape_of_its_out(rng):
     """The gather writes into the array of the caller and not into a new one.
 
     The parallel region has to fill every position of that array and nothing
@@ -76,7 +76,6 @@ def test_the_parallel_gather_keeps_the_shape_of_its_out():
     from numpy_groupies.aggregate_numba import gather, mt
 
     n = 3 * mt.GATHER_MT_MIN_VALUES + 7
-    rng = np.random.default_rng(7)
     group_idx = rng.integers(0, 1000, n)
     ret = rng.random(1000)
     out = np.empty(n)
@@ -85,7 +84,7 @@ def test_the_parallel_gather_keeps_the_shape_of_its_out():
     np.testing.assert_array_equal(out, ret[group_idx])
 
 
-def test_the_gather_is_parallel_only_where_the_model_says_so():
+def test_the_gather_is_parallel_only_where_the_model_says_so(rng):
     """The gather runs in a parallel region only where it pays for itself.
 
     The gather copies one value per value and is bound by the memory: below
@@ -108,7 +107,6 @@ def test_the_gather_is_parallel_only_where_the_model_says_so():
 
     # below the floor the plain loop runs - and the result is the same either
     # way, because every value writes the one position of its own
-    rng = np.random.default_rng(3)
     group_idx = rng.integers(0, 10, 1000)
     vals = random_values(rng, 10)
     out = np.empty(1000)

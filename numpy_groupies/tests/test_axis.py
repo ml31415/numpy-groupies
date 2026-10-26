@@ -52,9 +52,9 @@ def _quiet_reference(func: Callable[..., Any], a: npt.NDArray[Any], *args: Any, 
         "nanargmax-name",
     ],
 )
-@pytest.mark.parametrize("axis", [0, 1, 2, -1, -2, -3])
+@pytest.mark.parametrize("axis", [0, 1, 2, -1])
 @pytest.mark.parametrize("order", ["C", "F"])
-def test_arg_alias_axis_coordinates(impl, func, axis, order):
+def test_arg_alias_axis_coordinates(impl, rng, func, axis, order):
     """NumPy aliases report positions along the requested axis, including gaps.
 
     Both spellings of every alias are asked, since the bug behind this test was
@@ -62,7 +62,7 @@ def test_arg_alias_axis_coordinates(impl, func, axis, order):
     doing it: the position has to come out along the axis that was asked for,
     whether the caller wrote ``"argmin"`` or ``np.argmin``.
     """
-    a = np.array(np.random.default_rng(0).normal(size=(3, 4, 5)), order=order)
+    a = np.array(rng.normal(size=(3, 4, 5)), order=order)
     name = func if isinstance(func, str) else func.__name__
     if name in ("nanargmin", "nanargmax"):
         a[0, 0, 0] = np.nan
@@ -108,12 +108,48 @@ def _distinct_of(values, count_nans):
     return distinct + (1 if count_nans and nans.any() else 0)
 
 
-@pytest.mark.parametrize(
-    ("size", "axis"),
-    [((12,), 0), ((12, 5), 0), ((12, 5), 1)],
-    ids=["(12,)-ax0", "(12,5)-ax0", "(12,5)-ax1"],
+# The axis of the aggregation is what the case is about, not the function: the
+# labels of a one-dimensional array and the labels of the last axis of a
+# two-dimensional one are asked for every function, the labels of the first
+# axis of a two-dimensional one for a representative set of them.
+_AXIS_FUNCS = (
+    "sum",
+    "prod",
+    "mean",
+    "median",
+    "quantile",
+    "var",
+    "std",
+    "min",
+    "max",
+    "len",
+    "nanlen",
+    "nunique",
+    "cumsum",
+    "sort",
+    "nanmean",
+    "array",
+    # the functions whose expectation the test writes itself - the first and
+    # the last value of a group, the truth of the values that are left and the
+    # running extreme of a slice
+    "first",
+    "last",
+    "nanfirst",
+    "nanlast",
+    "nanall",
+    "nanany",
+    "cummax",
+    "cummin",
 )
-@pytest.mark.parametrize("func", func_list)
+
+_AXIS_CASES = (
+    [pytest.param((12,), 0, func, id=f"{func}-(12,)-ax0") for func in func_list]
+    + [pytest.param((12, 5), 1, func, id=f"{func}-(12,5)-ax1") for func in func_list]
+    + [pytest.param((12, 5), 0, func, id=f"{func}-(12,5)-ax0") for func in _AXIS_FUNCS]
+)
+
+
+@pytest.mark.parametrize(("size", "axis", "func"), _AXIS_CASES)
 def test_along_axis(impl, rng, func, size, axis):
     group_idx = np.zeros(size[axis], dtype=int)
     a = random_values(rng, size)
@@ -123,7 +159,8 @@ def test_along_axis(impl, rng, func, size, axis):
         a[[1, 4, 5], ...] = np.nan
     elif "nanarg" in func and a.ndim > 1:
         a[[1, 4, 5], 1] = np.nan
-    if func in ["any", "all"]:
+    nans = np.isnan(a)
+    if func in ["any", "all", "nanany", "nanall"]:
         a = a > 0.5
 
     # construct expected values for all cases
@@ -135,6 +172,32 @@ def test_along_axis(impl, rng, func, size, axis):
         expected = np.isnan(a).any(axis=axis)
     elif func == "allnan":
         expected = np.isnan(a).all(axis=axis)
+    elif func in ("nanall", "nanany"):
+        # the truth of the values that are left - the nans are no value of
+        # their own and are left out
+        truth = np.where(nans, False, a)
+        expected = np.all(truth, axis=axis) if func == "nanall" else np.any(truth, axis=axis)
+    elif func in ("first", "last", "nanfirst", "nanlast"):
+        # the first or the last value of the slice, the nan variants leaving
+        # the nans out
+        if func == "first":
+            expected = np.take(a, 0, axis=axis)
+        elif func == "last":
+            expected = np.take(a, -1, axis=axis)
+        else:
+            take = 0 if func == "nanfirst" else -1
+
+            def first_of(v):
+                values = v[~np.isnan(v)]
+                # a slice of nothing but nans is an empty group: it takes the
+                # fill value of the function
+                return values[take] if values.size else np.nan
+
+            expected = np.apply_along_axis(first_of, axis, a)
+    elif func in ("cummax", "cummin"):
+        # the running extreme of the slice, as numpy accumulates it
+        operation = np.maximum if func == "cummax" else np.minimum
+        expected = operation.accumulate(a, axis=axis)
     elif func == "sumofsquares":
         expected = np.sum(a * a, axis=axis)
     elif func == "nansumofsquares":

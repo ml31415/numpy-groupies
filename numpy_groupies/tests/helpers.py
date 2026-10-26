@@ -10,7 +10,7 @@ that deviates from the group loop is measured like any other result, never
 filtered out of the collection.
 """
 
-from functools import cache, wraps
+from functools import wraps
 from typing import Any
 
 import numpy as np
@@ -19,7 +19,9 @@ import pytest
 from numpy_groupies import aggregate_numpy, aggregate_purepy
 from numpy_groupies.registry import (
     funcs_collecting,
+    function_names,
 )
+from numpy_groupies.tests.reference import aggregate_ref, reference_names
 
 aggregate_numba: Any
 
@@ -68,11 +70,18 @@ def random_values(rng, size):
 def is_supported(impl, func):
     """True if the backend runs ``func``.
 
-    Probed with a tiny real-valued and a tiny complex-valued input: a func
-    counts as supported when the backend resolves it for either, so that
-    dtype-specific gaps (a backend implementing sumofsquares only for
-    complex input, say) do not deselect testable combos. Combos failing for only
-    one dtype still skip at runtime via the backend proxy.
+    The dispatch table of the backend answers it: a function the table does
+    not hold, or one it holds without an implementation behind it, is a
+    function this backend does not have.
+
+    The answer is a lookup and nothing else.  Asking the backend to run the
+    function would be the same question with a price: the numba backend would
+    compile the kernel of the function, and the collection of the suite would
+    compile a kernel per function in every worker of the parallel run - which
+    is where the minutes of a cold run went.
+
+    A func that names no function of the package is the caller's own and is
+    never deselected.
 
     Accepts a backend module or its ``_BackendProxy``, and a function name
     or callable.
@@ -80,28 +89,31 @@ def is_supported(impl, func):
     if isinstance(impl, _BackendProxy):
         impl = impl._module
     if not isinstance(func, str):
-        # a func that cannot be a key of a dict cannot key the probe cache
+        # a func that cannot be a key of a dict cannot key the dispatch table
         # either, and no func of one's own is ever deselected
         func = getattr(func, "__name__", None)
         if not isinstance(func, str):
             return True
-    return _is_supported(impl, func)
-
-
-@cache
-def _is_supported(impl, func):
-    """The probe itself, keyed by a backend module and a function name."""
-    group_idx = np.array([0, 0, 1, 1])
-    inputs = (np.arange(4.0), np.array([1 + 1j, 2 + 2j, 3 + 3j, 4 + 4j]))
-    for a in inputs:
-        try:
-            impl.aggregate(group_idx, a, func=func)
-        except (NotImplementedError, ValueError):
-            continue
-        except Exception:  # noqa: BLE001 - unexpected, but the func runs
-            return True
+    table = _dispatch_of(impl)
+    if table is None:
         return True
-    return False
+    resolved = table.get(func)
+    return resolved is not None and resolved.op is not None
+
+
+def _dispatch_of(impl):
+    """The dispatch table of a backend, or None for one that has none.
+
+    Every backend holds one: a table of the aliases of the functions it knows
+    and the implementation of its own behind every one of them.
+    """
+    if impl is aggregate_purepy:
+        return aggregate_purepy._dispatch
+    if impl is aggregate_numpy:
+        return aggregate_numpy.ops._dispatch
+    if aggregate_numba is not None and impl is aggregate_numba:
+        return aggregate_numba.ops._dispatch
+    return None
 
 
 def _wrap_notimplemented_skip(impl, name=None):
@@ -145,50 +157,12 @@ class _BackendProxy:
             pytest.skip(f"{self._name} backend does not provide {name!r}")
 
 
-func_list = (
-    "sum",
-    "prod",
-    "min",
-    "max",
-    "all",
-    "any",
-    "mean",
-    "median",
-    "quantile",
-    "percentile",
-    "trapezoid",
-    "std",
-    "var",
-    "skew",
-    "kurt",
-    "len",
-    "nunique",
-    "argmin",
-    "argmax",
-    "anynan",
-    "allnan",
-    "cumsum",
-    "sumofsquares",
-    "nansum",
-    "nanprod",
-    "nanmin",
-    "nanmax",
-    "nanmean",
-    "nanmedian",
-    "nanquantile",
-    "nanpercentile",
-    "nantrapezoid",
-    "nanstd",
-    "nanvar",
-    "nanskew",
-    "nankurt",
-    "nanlen",
-    "nannunique",
-    "nanargmin",
-    "nanargmax",
-    "nansumofsquares",
-    "array",
-)
+# The functions the sweeps of the suite ask for: every function the package
+# knows whose value the group loop of the reference computes as well.  The
+# list is derived from the registry of the package, so a function that is
+# added there is asked for from the start - the three nan variants of the
+# cumulative functions are the ones the loop does not know yet.
+func_list = tuple(name for name in function_names() if name in set(reference_names()))
 
 
 def assert_same_result(got, want, func, rtol=10**-10):
@@ -204,6 +178,19 @@ def assert_same_result(got, want, func, rtol=10**-10):
         np.testing.assert_allclose(got, want, rtol=rtol)
 
 
+def assert_matches_the_group_loop(impl, func, block, values):
+    """Compare the result of a backend against the group loop.
+
+    The yardstick of the suite: a backend is measured against the group loop
+    of :mod:`.reference`, never against itself.  The values are the ones of
+    the block - the plain ones, the ones with nans in them or the complex
+    ones.
+    """
+    got = impl.aggregate(block.group_idx, values, func=func, size=block.size)
+    want = aggregate_ref(block.group_idx, values, func=func, size=block.size)
+    assert_same_result(got, want, func)
+
+
 def _assert_same_groups(got, want):
     """Compare two collections of per-group sequences."""
     groups = list(got) if isinstance(got, list) else np.ravel(got)
@@ -216,7 +203,7 @@ def _assert_same_groups(got, want):
             np.testing.assert_array_equal(one, other, err_msg=f"group {g}")
 
 
-def is_purepy(impl, *args, **kwargs):
+def is_purepy(impl):
     """True for the implementation that computes with python numbers.
 
     Those carry no dtype: purepy neither honours a ``dtype`` argument nor hands
@@ -225,7 +212,7 @@ def is_purepy(impl, *args, **kwargs):
     return impl_name(impl) == "purepy"
 
 
-def is_numba(impl, *args, **kwargs):
+def is_numba(impl):
     """True for the implementation that compiles what it is given as func.
 
     A compiled function and a callable object are two different things to that

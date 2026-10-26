@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies.tests.helpers import (
-    assert_same_result,
+    assert_matches_the_group_loop,
     func_list,
     random_values,
 )
@@ -75,51 +75,42 @@ def test_mean(impl):
     np.testing.assert_allclose(res, [1.5, np.nan, np.nan, 5.5], equal_nan=True)
 
 
-def test_argmin_argmax_nonans(impl):
-    group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
-    a = np.array([4, 4, 3, 1, 10, 9, 9, 11])
-
-    res = impl.aggregate(group_idx, a, func="argmax", fill_value=-1)
-    np.testing.assert_array_equal(res, [0, -1, -1, 7])
-
-    res = impl.aggregate(group_idx, a, func="argmin", fill_value=-1)
-    np.testing.assert_array_equal(res, [3, -1, -1, 5])
-
-
-def test_min_max_inf(impl):
-    # https://github.com/ml31415/numpy-groupies/issues/40
-    res = impl.aggregate(
+# the reductions that name a value of a group: the position of the extreme and
+# the extreme itself - over the values that make the difference, an infinity
+# among them
+_REDUCTION_CASES = [
+    # (group_idx, a, {func: expected})
+    (
+        np.array([0, 0, 0, 0, 3, 3, 3, 3]),
+        np.array([4, 4, 3, 1, 10, 9, 9, 11]),
+        {"argmax": [0, -1, -1, 7], "argmin": [3, -1, -1, 5]},
+    ),
+    # https://github.com/ml31415/numpy-groupies/issues/40 - an infinity is a
+    # value of its own, and the extreme of a group of them is the infinity
+    (
         np.array([0, 1, 2, 0, 1, 2]),
         np.array([-np.inf, 0, -np.inf, -np.inf, 0, 0]),
-        func="max",
-    )
-    np.testing.assert_array_equal(res, [-np.inf, 0, 0])
-
-    res = impl.aggregate(
+        {"max": [-np.inf, 0, 0], "argmax": [0, 1, 5]},
+    ),
+    (
         np.array([0, 1, 2, 0, 1, 2]),
         np.array([np.inf, 0, np.inf, np.inf, 0, 0]),
-        func="min",
-    )
-    np.testing.assert_array_equal(res, [np.inf, 0, 0])
+        {"min": [np.inf, 0, 0], "argmin": [0, 1, 5]},
+    ),
+]
 
 
-def test_argmin_argmax_inf(impl):
-    # https://github.com/ml31415/numpy-groupies/issues/40
-    res = impl.aggregate(
-        np.array([0, 1, 2, 0, 1, 2]),
-        np.array([-np.inf, 0, -np.inf, -np.inf, 0, 0]),
-        func="argmax",
-        fill_value=-1,
-    )
-    np.testing.assert_array_equal(res, [0, 1, 5])
+@pytest.mark.parametrize(("group_idx", "a", "expected"), _REDUCTION_CASES)
+def test_the_reductions_that_point_at_a_value(impl, group_idx, a, expected):
+    """The extreme of a group, and the position of it in the input.
 
-    res = impl.aggregate(
-        np.array([0, 1, 2, 0, 1, 2]),
-        np.array([np.inf, 0, np.inf, np.inf, 0, 0]),
-        func="argmin",
-        fill_value=-1,
-    )
-    np.testing.assert_array_equal(res, [0, 1, 5])
+    The position is one in the input, not one in an array the backend had to
+    build on the way to it, and a group that is never named takes the fill
+    value of the function.
+    """
+    for func, want in expected.items():
+        res = impl.aggregate(group_idx, a, func=func, fill_value=-1)
+        np.testing.assert_array_equal(res, want, err_msg=func)
 
 
 def test_cumsum(impl):
@@ -214,23 +205,22 @@ def test_sort_reverse_descends(impl, a, ref):
     [np.float64, np.float32, np.float16, np.int64, np.uint8, np.bool_],
     ids=["float64", "float32", "float16", "int64", "uint8", "bool"],
 )
-def test_sort_of_a_small_group_matches_the_reference(impl, size, dtype):
+def test_sort_of_a_small_group_matches_the_reference(impl, rng, size, dtype):
     # a block of a few dozen values is ordered by insertion sort in the flat
     # array instead of a library sort of a view - the values, the nan at their
     # end and the descending order of them all have to come out the same, and
     # the sizes here straddle the limit that switches the two passes.  The
     # reference is the group loop, so even the numpy backend is compared
     # against something it does not share a sort with
-    rnd = np.random.RandomState(size)
     if dtype is np.bool_:
-        a = rnd.randint(0, 2, size).astype(dtype)
+        a = rng.integers(0, 2, size).astype(dtype)
     elif dtype is np.int64:
-        a = rnd.randint(0, 100, size).astype(dtype)
+        a = rng.integers(0, 100, size).astype(dtype)
     elif dtype is np.uint8:
-        a = rnd.randint(0, 20, size).astype(dtype)
+        a = rng.integers(0, 20, size).astype(dtype)
     else:
-        a = rnd.random_sample(size).astype(dtype)
-        a[rnd.random_sample(size) < 0.25] = np.nan
+        a = rng.random(size).astype(dtype)
+        a[rng.random(size) < 0.25] = np.nan
     group_idx = np.zeros(size, dtype=int)
 
     for reverse in (False, True):
@@ -248,6 +238,4 @@ def test_matches_the_group_loop(impl, func, block):
     The backend and the loop share no code: no bincount, no ufunc trick, no
     compiled kernel, one computation per group.
     """
-    got = impl.aggregate(block.group_idx, block.a, func=func, size=block.size)
-    want = aggregate_ref(block.group_idx, block.a, func=func, size=block.size)
-    assert_same_result(got, want, func)
+    assert_matches_the_group_loop(impl, func, block, block.a)

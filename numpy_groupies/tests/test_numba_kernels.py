@@ -8,6 +8,7 @@ The explicitly documented deviations (the dtype approximations of the kernels,
 the fill defaults, the input checks of the python call) get their own tests.
 """
 
+from functools import cache
 from importlib import import_module
 from inspect import signature
 
@@ -21,6 +22,13 @@ from numpy_groupies.registry import (
     func_extras,
 )
 from numpy_groupies.tests.reference import aggregate_ref
+from numpy_groupies.validation import (
+    EMPTY_GROUP_IDX,
+    LENGTH_MISMATCH,
+    LENGTH_MISMATCH_OR_SCALAR,
+    NEGATIVE_INDICES,
+    TOO_LARGE_FOR_SIZE,
+)
 
 GROUP_IDX = np.array([0, 0, 1, 1, 1, 3])  # group 2 stays empty
 FLOAT_A = np.array([3.0, 1.0, np.nan, 2.0, 5.0, 4.0])
@@ -46,6 +54,32 @@ _ALL_KERNELS = [
         "percentile",
         "nanpercentile",
     )
+]
+
+# The input checks of a kernel are written in one place - the stub of the
+# operation, which every kernel has - so the faults of every kernel are the
+# faults of one of them.  The tests below therefore ask a representative set
+# of the kernels, one of every family: the plain reduction, its nan variant,
+# the order statistic, the sort, a function with an argument of its own (the
+# quantile, the variance and the trapezoid - one per builder of a variant),
+# the cumulative one, the collecting one, the count of the distinct values
+# and the arg reduction.
+#
+# Every kernel of the backend is asked once whether it refuses the empty
+# labels - the smoke test of the whole family, which a new kernel joins
+# without anyone adding it to a list.
+_FAULT_KERNELS = [
+    "sum",
+    "nansum",
+    "median",
+    "sort",
+    "quantile",
+    "var",
+    "trapezoid",
+    "cumsum",
+    "array",
+    "nunique",
+    "argmax",
 ]
 
 # (kernel name, kwargs, values) - the kernels run inside a jitted caller and as a
@@ -178,18 +212,66 @@ def test_the_argument_of_a_kernel_is_the_one_of_its_function():
             assert type(parameter.default) is type(expected), name
 
 
+def _make_jitted_caller(kernel, name):
+    """A jitted caller of one kernel, with the name the kernel has.
+
+    A caller that reaches a kernel from jitted code is a dispatcher of its
+    own, and a dispatcher compiles the first time it is called.  The callers
+    are therefore built once per kernel and shared by the tests - built per
+    test, every test would compile its own copy of the very same wrapper,
+    which is the most expensive thing the suite does.
+
+    Every caller carries the name of the kernel it calls: two callers that
+    differ only in their closure share the symbol numba mangles their code
+    into, and one of them may bind the calls of the other - the same types
+    and the wrong kernel.
+    """
+
+    def caller(group_idx, values, size):
+        return kernel(group_idx, values, size=size, fill_value=None)
+
+    caller.__qualname__ = caller.__name__ = name
+    return nb.njit(caller)
+
+
+def _make_jitted_caller_with_extra(kernel, extra, name):
+    """A jitted caller of one kernel, with the argument of its own baked in.
+
+    The kernel of a function that has an argument of its own takes it behind
+    the two arrays, and the value of it is a constant of the caller - the
+    kernel is called with it, not with a parameter of its own.
+    """
+    if extra is None:
+
+        def caller(group_idx, a, size, fill_value):
+            return kernel(group_idx, a, size=size, fill_value=fill_value)
+
+    else:
+        value = extra
+
+        def caller(group_idx, a, size, fill_value):
+            return kernel(group_idx, a, value, size=size, fill_value=fill_value)
+
+    caller.__qualname__ = caller.__name__ = name
+    return nb.njit(caller)
+
+
+@cache
+def _jitted_caller(name, own):
+    """The jitted caller of one kernel, with the argument of its own baked in.
+
+    The caller is built once per kernel and shared: a dispatcher compiles the
+    first time it is called, so a caller built per test would compile a copy
+    of itself for every test that asks for it.
+    """
+    stub = getattr(aggregate_numba, name)
+    return _make_jitted_caller_with_extra(stub, own, name=f"caller_{name}_{own!r}")
+
+
 def _kernel_result(name, values, **kwargs):
     """Call the kernel of ``name`` from jitted code (fill default via None)."""
-    stub = getattr(aggregate_numba, name)
     own = _kernel_arguments(name, kwargs)
-    arguments = "" if not own else f", {own[0]!r}"
-    source = f"""
-def _caller(group_idx, a, size, fill_value):
-    return _stub(group_idx, a{arguments}, size, fill_value)
-"""
-    namespace = {"_stub": stub}
-    exec(source, namespace)  # noqa: S102 - the signature of the kernel is spelled out in one place
-    caller = nb.njit(namespace["_caller"])
+    caller = _jitted_caller(name, own[0] if own else None)
     return caller(GROUP_IDX, values, -1, None)
 
 
@@ -293,26 +375,39 @@ def test_pure_python_call_refuses_a_fill_value_as_jitted_code_does():
 # them twice, which is what the fast path of the wrapper exists to avoid.  Each
 # style is a function of the kernel it is asked of: a kernel is an overload, and
 # an overload cannot be passed into jitted code as an argument.
-def _styles(kernel):
+@cache
+def _styles(kernel_name):
+    """The three ways a caller reaches the kernel of ``kernel_name``.
+
+    The three of them are built once per kernel and shared by the tests: the
+    jitted one is a dispatcher of its own, and a dispatcher compiles the first
+    time it is called - built per test, every test would compile its own copy
+    of the very same wrapper.
+    """
+    kernel = getattr(aggregate_numba, kernel_name)
+
     def call_python(group_idx, values, size):
         return kernel(group_idx, values, size=size, fill_value=None)
 
-    @nb.njit
-    def call_jitted(group_idx, values, size):
-        return kernel(group_idx, values, size=size, fill_value=None)
+    call_jitted = _make_jitted_caller(kernel, name=f"call_jitted_{kernel_name}")
 
     def call_aggregate(group_idx, values, size):
-        return aggregate(group_idx, values, func=kernel.__name__, size=size)
+        return aggregate(group_idx, values, func=kernel_name, size=size)
 
     return [call_python, call_jitted, call_aggregate]
 
 
 _SAME_WORDS = [
-    (GROUP_IDX[:0], FLOAT_A[:0], "group_idx must not be empty", -1),
-    (np.array([0, 1, 2]), FLOAT_A[:2], "of the same length", -1),
-    (GROUP_IDX, np.append(FLOAT_A, 1.0), "of the same length", -1),
-    (np.array([0, -1]), FLOAT_A[:2], "negative indices", -1),
-    (GROUP_IDX, FLOAT_A, "too large", 1),
+    # (group_idx, values, size, the words of the kernel, the words of aggregate())
+    #
+    # the kernel and the python-level call do not say the very same thing
+    # about a length that does not match: the call knows that a scalar is a
+    # value of its own, the kernel does not
+    (GROUP_IDX[:0], FLOAT_A[:0], -1, EMPTY_GROUP_IDX, EMPTY_GROUP_IDX),
+    (np.array([0, 1, 2]), FLOAT_A[:2], -1, LENGTH_MISMATCH, LENGTH_MISMATCH_OR_SCALAR),
+    (GROUP_IDX, np.append(FLOAT_A, 1.0), -1, LENGTH_MISMATCH, LENGTH_MISMATCH_OR_SCALAR),
+    (np.array([0, -1]), FLOAT_A[:2], -1, NEGATIVE_INDICES, NEGATIVE_INDICES),
+    (GROUP_IDX, FLOAT_A, 1, TOO_LARGE_FOR_SIZE.format(size=1), TOO_LARGE_FOR_SIZE.format(size=1)),
 ]
 
 # what only a kernel is strict about: aggregate() spreads a multidimensional a
@@ -333,10 +428,27 @@ _STRICT_ONLY = [
 ]
 
 
-@pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
 @pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
-@pytest.mark.parametrize("group_idx, values, message, size", _SAME_WORDS)
-def test_every_call_refuses_the_input_the_driver_cannot_read(kernel_name, style, group_idx, values, message, size):
+def test_every_kernel_refuses_the_empty_labels(kernel_name):
+    """Every kernel of the backend refuses the empty labels.
+
+    The check is written in the stub of the operation, and every stub has it -
+    but a kernel that loses it would go unnoticed if only a few of them were
+    asked.  This test asks all of them, once; the jitted way into a kernel is
+    asked of the representatives of :data:`_FAULT_KERNELS`, where the whole
+    matrix of the faults is checked.
+    """
+    call = _styles(kernel_name)[0]
+    with pytest.raises(ValueError, match=EMPTY_GROUP_IDX):
+        call(GROUP_IDX[:0], FLOAT_A[:0], -1)
+
+
+@pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
+@pytest.mark.parametrize("kernel_name", _FAULT_KERNELS)
+@pytest.mark.parametrize("group_idx, values, size, kernel_words, call_words", _SAME_WORDS)
+def test_every_call_refuses_the_input_the_driver_cannot_read(
+    kernel_name, style, group_idx, values, size, kernel_words, call_words
+):
     """The value checks of a kernel call, in both worlds and through aggregate().
 
     The drivers take one value per label and numba never looks at the bounds of
@@ -344,45 +456,19 @@ def test_every_call_refuses_the_input_the_driver_cannot_read(kernel_name, style,
     the array, an empty one with nothing at all.  The entry points of the kernel
     therefore ask the two lengths and the bounds of the labels before the driver
     runs - the same questions ``input_validation`` asks the python-level call.
+
+    The words of the complaint are the ones of ``numpy_groupies.validation``,
+    and every way of calling a kernel says the very same ones - the python
+    call of the kernel, the jitted one and the python-level aggregate() alike.
     """
-    call = _styles(getattr(aggregate_numba, kernel_name))[style]
-    with pytest.raises(ValueError, match=message):
-        call(group_idx, values, size)
-
-
-# the faults the three ways of calling a kernel share - the words of them live
-# in numpy_groupies.validation, so all of them answer in exactly the same
-# sentence
-_SHARED_FAULTS = [
-    (GROUP_IDX[:0], FLOAT_A[:0], -1),
-    (np.array([0, -1]), FLOAT_A[:2], -1),
-    (GROUP_IDX, FLOAT_A, 1),
-]
-
-
-@pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
-@pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
-@pytest.mark.parametrize("group_idx, values, size", _SHARED_FAULTS)
-def test_the_shared_faults_are_answered_in_the_same_words(kernel_name, style, group_idx, values, size):
-    """The three ways of calling a kernel say the same thing about a fault.
-
-    The words of the complaints live in one place (numpy_groupies.validation),
-    so the python call of a kernel, the jitted one and the python-level
-    aggregate() answer a fault they share with the very same sentence.
-    """
-    call = _styles(getattr(aggregate_numba, kernel_name))[style]
+    call = _styles(kernel_name)[style]
     with pytest.raises(ValueError) as excinfo:
         call(group_idx, values, size)
-    message = str(excinfo.value)
-    assert message in (
-        "group_idx must not be empty",
-        "negative indices not supported",
-        "one or more indices are too large for size 1",
-    )
+    assert str(excinfo.value) == (call_words if style == 2 else kernel_words)
 
 
 @pytest.mark.parametrize("style", [0, 1], ids=["python", "jitted"])
-@pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
+@pytest.mark.parametrize("kernel_name", _FAULT_KERNELS)
 @pytest.mark.parametrize("group_idx, values, message, size, python_error", _STRICT_ONLY)
 def test_every_kernel_refuses_the_input_it_cannot_take(
     kernel_name, style, group_idx, values, message, size, python_error
@@ -395,7 +481,7 @@ def test_every_kernel_refuses_the_input_it_cannot_take(
     the drivers were never written for with a numba error that is harder to read
     than this one.
     """
-    call = _styles(getattr(aggregate_numba, kernel_name))[style]
+    call = _styles(kernel_name)[style]
     # the jitted style is answered before anything runs, by the typing function
     # of the kernel, which knows the shape and the dtype at compile time
     error = nb.TypingError if style == 1 else python_error

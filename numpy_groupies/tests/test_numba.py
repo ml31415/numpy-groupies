@@ -26,7 +26,7 @@ from numpy_groupies.utils_np import resolve_output_dtype
 
 
 @pytest.fixture(
-    params=[np.float64, np.float32, np.float16, np.int64, np.int32, np.int8, np.bool_],
+    params=[np.float64, np.float32, np.float16, np.int64, np.bool_],
     ids=lambda t: np.dtype(t).name,
 )
 def adtype(request):

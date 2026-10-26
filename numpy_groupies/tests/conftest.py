@@ -49,7 +49,7 @@ def rng(request):
     return np.random.default_rng(request.config.getoption("--seed"))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def block(request):
     """A small block of values, the awkward groups included - the comparisons
     against the group loop of :mod:`.reference` need cases, not statistics.
@@ -78,6 +78,9 @@ def block(request):
     that place rather than in whatever test reads the block next.  It draws on a
     generator of its own rather than on ``rng``, whose state depends on how much
     randomness the tests of the module asked for before the fixture was made.
+
+    The block is the same in every module - the seed is the same and the
+    generator is drawn anew - so it is made once for the session.
     """
     rng = np.random.default_rng(request.config.getoption("--seed"))
     sizes = (3, 1, 1, 2, 5, 8, 13, 20, 32, 24, 16, 9)
@@ -132,6 +135,10 @@ def pytest_collection_modifyitems(config, items):
     ``NotImplementedError``, which the ``impl`` proxy turns into a skip at
     runtime, and a backend that deviates without raising is measured against the
     group loop like any other and called out where it differs.
+
+    The tests that ask for the same function are put into one group, so that
+    the workers of a parallel run share the compiled kernel of that function
+    (see :func:`_group_of`).
     """
     removed, kept = [], []
     for item in items:
@@ -140,7 +147,34 @@ def pytest_collection_modifyitems(config, items):
         if "impl" in params and "func" in params and not is_supported(params["impl"], params["func"]):
             removed.append(item)
             continue
+        group = _group_of(item, params)
+        if group is not None:
+            item.add_marker(pytest.mark.xdist_group(name=group))
         kept.append(item)
     if removed:
         config.hook.pytest_deselected(items=removed)
         items[:] = kept
+
+
+# the parameters that name the function a test asks for
+_FUNCTION_PARAMS = ("func", "kernel_name", "name")
+
+
+def _group_of(item, params):
+    """The group a test belongs to: its module and the function it asks for.
+
+    The workers of a parallel run share one cache of the compiled kernels on
+    the disk, and they wait for each other: a worker that needs a kernel
+    another worker is compiling right now waits for it - or compiles it
+    itself, which is the same waste with more CPU.
+
+    A group is therefore a module and a function: the workers get different
+    corners of the suite, and the tests of one function inside one module are
+    given to one worker, which compiles the kernel of that function once.
+    """
+    module = item.module.__name__.rsplit(".", 1)[-1]
+    for name in _FUNCTION_PARAMS:
+        value = params.get(name)
+        if isinstance(value, str):
+            return f"{module}-{value}"
+    return module
