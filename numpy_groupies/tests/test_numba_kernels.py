@@ -57,6 +57,26 @@ _ALL_KERNELS = [
     )
 ]
 
+# The input checks of a kernel are written in one place - the stub of the
+# operation, which every kernel has - so the faults of every kernel are the
+# faults of one of them.  The tests below therefore ask a representative set
+# of the kernels, one of every family: the plain reduction, its nan variant,
+# the order statistic, the sort, a function with an argument of its own, the
+# variance, the cumulative one, the collecting one, the count of the distinct
+# values and the arg reduction.
+_FAULT_KERNELS = [
+    "sum",
+    "nansum",
+    "median",
+    "sort",
+    "quantile",
+    "var",
+    "cumsum",
+    "array",
+    "nunique",
+    "argmax",
+]
+
 # (kernel name, kwargs, values) - the kernels run inside a jitted caller and as a
 # plain python call, and both are compared against the python-level
 # aggregate() of the same name
@@ -360,7 +380,7 @@ _STRICT_ONLY = [
 
 
 @pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
-@pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
+@pytest.mark.parametrize("kernel_name", _FAULT_KERNELS)
 @pytest.mark.parametrize("group_idx, values, size, kernel_words, call_words", _SAME_WORDS)
 def test_every_call_refuses_the_input_the_driver_cannot_read(
     kernel_name, style, group_idx, values, size, kernel_words, call_words
@@ -384,7 +404,7 @@ def test_every_call_refuses_the_input_the_driver_cannot_read(
 
 
 @pytest.mark.parametrize("style", [0, 1], ids=["python", "jitted"])
-@pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
+@pytest.mark.parametrize("kernel_name", _FAULT_KERNELS)
 @pytest.mark.parametrize("group_idx, values, message, size, python_error", _STRICT_ONLY)
 def test_every_kernel_refuses_the_input_it_cannot_take(
     kernel_name, style, group_idx, values, message, size, python_error

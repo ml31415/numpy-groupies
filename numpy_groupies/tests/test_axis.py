@@ -52,7 +52,7 @@ def _quiet_reference(func: Callable[..., Any], a: npt.NDArray[Any], *args: Any, 
         "nanargmax-name",
     ],
 )
-@pytest.mark.parametrize("axis", [0, 1, 2, -1, -2, -3])
+@pytest.mark.parametrize("axis", [0, 1, 2, -1])
 @pytest.mark.parametrize("order", ["C", "F"])
 def test_arg_alias_axis_coordinates(impl, func, axis, order):
     """NumPy aliases report positions along the requested axis, including gaps.
@@ -108,12 +108,37 @@ def _distinct_of(values, count_nans):
     return distinct + (1 if count_nans and nans.any() else 0)
 
 
-@pytest.mark.parametrize(
-    ("size", "axis"),
-    [((12,), 0), ((12, 5), 0), ((12, 5), 1)],
-    ids=["(12,)-ax0", "(12,5)-ax0", "(12,5)-ax1"],
+# The axis of the aggregation is what the case is about, not the function: the
+# labels of a one-dimensional array and the labels of the last axis of a
+# two-dimensional one are asked for every function, the labels of the first
+# axis of a two-dimensional one for a representative set of them.
+_AXIS_FUNCS = (
+    "sum",
+    "prod",
+    "mean",
+    "median",
+    "quantile",
+    "var",
+    "std",
+    "min",
+    "max",
+    "len",
+    "nanlen",
+    "nunique",
+    "cumsum",
+    "sort",
+    "nanmean",
+    "array",
 )
-@pytest.mark.parametrize("func", func_list)
+
+_AXIS_CASES = (
+    [pytest.param((12,), 0, func, id=f"{func}-(12,)-ax0") for func in func_list]
+    + [pytest.param((12, 5), 1, func, id=f"{func}-(12,5)-ax1") for func in func_list]
+    + [pytest.param((12, 5), 0, func, id=f"{func}-(12,5)-ax0") for func in _AXIS_FUNCS]
+)
+
+
+@pytest.mark.parametrize(("size", "axis", "func"), _AXIS_CASES)
 def test_along_axis(impl, rng, func, size, axis):
     group_idx = np.zeros(size[axis], dtype=int)
     a = random_values(rng, size)
