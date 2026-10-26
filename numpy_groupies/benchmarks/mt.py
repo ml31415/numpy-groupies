@@ -105,7 +105,6 @@ import statistics
 import subprocess
 import sys
 import time
-from multiprocessing.synchronize import SemLock
 
 import numba as nb
 import numpy as np
@@ -1339,25 +1338,21 @@ def _release_numba_resources() -> None:
     The lock of the threading-layer initialization is a semaphore of
     multiprocessing, and the resource tracker of it reports the semaphore
     as leaked when the process leaves without releasing it - an interrupt
-    leaves exactly like that.  The lock is dropped, which unregisters the
-    semaphore from the tracker, and its name is unlinked from /dev/shm,
-    which is what the shutdown of a normal exit does.
+    leaves exactly like that.  The lock is dropped, and the finalizer that
+    multiprocessing registered when the lock was created then unlinks its
+    name from /dev/shm and unregisters it from the tracker - the very
+    cleanup the shutdown of a normal exit runs.
     """
     import gc
 
     from numba.np.ufunc import parallel as numba_parallel
 
-    lock = numba_parallel._backend_init_process_lock
-    if lock is None:
-        return
-    name = lock._semlock.name
-    # dropping the reference of numba runs the dealloc of the semaphore,
-    # and the dealloc is what unregisters it from the tracker
+    # dropping the reference of numba runs the dealloc of the lock, and the
+    # dealloc is what calls the finalizer - the finalizer of the lock is the
+    # one that unlinks and unregisters, and calling it here as well would
+    # unlink the name twice
     numba_parallel._backend_init_process_lock = None
     gc.collect()
-    # the name in /dev/shm is unlinked the way the shutdown of a normal
-    # exit unlinks it
-    SemLock._cleanup(name)
 
 
 def main(argv=None) -> int:
