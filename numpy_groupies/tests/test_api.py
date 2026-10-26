@@ -22,7 +22,7 @@ from numpy_groupies.tests.reference import aggregate_ref
 
 # the one-out-per-item functions (cum*, sort) have nothing to fill an absent
 # group with - see test_one_out_per_in_cannot_fill in test_axis.py
-default_fill_funcs = tuple(fn for fn in func_list if "cum" not in fn)
+default_fill_funcs = tuple(fn for fn in func_list if "cum" not in fn and fn != "sort")
 default_fill_funcs += ("first", "last", "nanfirst", "nanlast", "array")
 
 # every spelling of "one value instead of a column": python numbers carry no

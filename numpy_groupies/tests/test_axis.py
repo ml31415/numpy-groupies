@@ -148,7 +148,8 @@ def test_along_axis(impl, rng, func, size, axis):
         a[[1, 4, 5], ...] = np.nan
     elif "nanarg" in func and a.ndim > 1:
         a[[1, 4, 5], 1] = np.nan
-    if func in ["any", "all"]:
+    nans = np.isnan(a)
+    if func in ["any", "all", "nanany", "nanall"]:
         a = a > 0.5
 
     # construct expected values for all cases
@@ -160,6 +161,32 @@ def test_along_axis(impl, rng, func, size, axis):
         expected = np.isnan(a).any(axis=axis)
     elif func == "allnan":
         expected = np.isnan(a).all(axis=axis)
+    elif func in ("nanall", "nanany"):
+        # the truth of the values that are left - the nans are no value of
+        # their own and are left out
+        truth = np.where(nans, False, a)
+        expected = np.all(truth, axis=axis) if func == "nanall" else np.any(truth, axis=axis)
+    elif func in ("first", "last", "nanfirst", "nanlast"):
+        # the first or the last value of the slice, the nan variants leaving
+        # the nans out
+        if func == "first":
+            expected = np.take(a, 0, axis=axis)
+        elif func == "last":
+            expected = np.take(a, -1, axis=axis)
+        else:
+            take = 0 if func == "nanfirst" else -1
+
+            def first_of(v):
+                values = v[~np.isnan(v)]
+                # a slice of nothing but nans is an empty group: it takes the
+                # fill value of the function
+                return values[take] if values.size else np.nan
+
+            expected = np.apply_along_axis(first_of, axis, a)
+    elif func in ("cummax", "cummin"):
+        # the running extreme of the slice, as numpy accumulates it
+        operation = np.maximum if func == "cummax" else np.minimum
+        expected = operation.accumulate(a, axis=axis)
     elif func == "sumofsquares":
         expected = np.sum(a * a, axis=axis)
     elif func == "nansumofsquares":

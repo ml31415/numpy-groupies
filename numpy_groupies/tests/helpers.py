@@ -19,8 +19,9 @@ import pytest
 from numpy_groupies import aggregate_numpy, aggregate_purepy
 from numpy_groupies.registry import (
     funcs_collecting,
+    function_names,
 )
-from numpy_groupies.tests.reference import aggregate_ref
+from numpy_groupies.tests.reference import aggregate_ref, reference_names
 
 aggregate_numba: Any
 
@@ -146,50 +147,12 @@ class _BackendProxy:
             pytest.skip(f"{self._name} backend does not provide {name!r}")
 
 
-func_list = (
-    "sum",
-    "prod",
-    "min",
-    "max",
-    "all",
-    "any",
-    "mean",
-    "median",
-    "quantile",
-    "percentile",
-    "trapezoid",
-    "std",
-    "var",
-    "skew",
-    "kurt",
-    "len",
-    "nunique",
-    "argmin",
-    "argmax",
-    "anynan",
-    "allnan",
-    "cumsum",
-    "sumofsquares",
-    "nansum",
-    "nanprod",
-    "nanmin",
-    "nanmax",
-    "nanmean",
-    "nanmedian",
-    "nanquantile",
-    "nanpercentile",
-    "nantrapezoid",
-    "nanstd",
-    "nanvar",
-    "nanskew",
-    "nankurt",
-    "nanlen",
-    "nannunique",
-    "nanargmin",
-    "nanargmax",
-    "nansumofsquares",
-    "array",
-)
+# The functions the sweeps of the suite ask for: every function the package
+# knows whose value the group loop of the reference computes as well.  The
+# list is derived from the registry of the package, so a function that is
+# added there is asked for from the start - the three nan variants of the
+# cumulative functions are the ones the loop does not know yet.
+func_list = tuple(name for name in function_names() if name in set(reference_names()))
 
 
 def assert_same_result(got, want, func, rtol=10**-10):

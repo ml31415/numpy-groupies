@@ -323,6 +323,16 @@ _REF_COLLECTING: dict[str, Callable[..., Any]] = {
 _REF_FUNCS.update(_REF_COLLECTING)
 
 
+def reference_names() -> list[str]:
+    """The names of the functions the group loop computes.
+
+    The yardstick of the suite knows a function per group and a function per
+    input item - the sweeps over the functions of the package ask the ones it
+    knows.
+    """
+    return sorted(_REF_FUNCS)
+
+
 def aggregate_ref(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
