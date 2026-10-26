@@ -113,4 +113,5 @@ python -m numpy_groupies.benchmarks.mt --scaling
 | arbitrary    |     114.729 |       6.023 |        ---- |      85.638 |      97.647 |        ---- |
 | sort         |      72.128 |       7.192 |        ---- |        ---- |        ---- |        ---- |
 | array        |       7.445 |       1.947 |        ---- |        ---- |        ---- |        ---- |
+
 *Linux(x86_64), Python 3.14.7, Numpy 2.5.4, Numba 0.68.0, numbagg 0.9.6, Pandas 3.0.6, Polars 2.0.0 (6 threads max)*
