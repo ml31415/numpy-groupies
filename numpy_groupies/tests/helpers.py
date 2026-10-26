@@ -193,7 +193,7 @@ def _assert_same_groups(got, want):
             np.testing.assert_array_equal(one, other, err_msg=f"group {g}")
 
 
-def is_purepy(impl, *args, **kwargs):
+def is_purepy(impl):
     """True for the implementation that computes with python numbers.
 
     Those carry no dtype: purepy neither honours a ``dtype`` argument nor hands
@@ -202,7 +202,7 @@ def is_purepy(impl, *args, **kwargs):
     return impl_name(impl) == "purepy"
 
 
-def is_numba(impl, *args, **kwargs):
+def is_numba(impl):
     """True for the implementation that compiles what it is given as func.
 
     A compiled function and a callable object are two different things to that

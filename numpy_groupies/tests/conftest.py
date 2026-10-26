@@ -49,7 +49,7 @@ def rng(request):
     return np.random.default_rng(request.config.getoption("--seed"))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def block(request):
     """A small block of values, the awkward groups included - the comparisons
     against the group loop of :mod:`.reference` need cases, not statistics.
@@ -78,6 +78,9 @@ def block(request):
     that place rather than in whatever test reads the block next.  It draws on a
     generator of its own rather than on ``rng``, whose state depends on how much
     randomness the tests of the module asked for before the fixture was made.
+
+    The block is the same in every module - the seed is the same and the
+    generator is drawn anew - so it is made once for the session.
     """
     rng = np.random.default_rng(request.config.getoption("--seed"))
     sizes = (3, 1, 1, 2, 5, 8, 13, 20, 32, 24, 16, 9)
