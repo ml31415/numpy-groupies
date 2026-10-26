@@ -6,6 +6,7 @@ import pytest
 from numpy_groupies import aggregate_numpy
 from numpy_groupies.tests.helpers import (
     aggregate_numba,
+    assert_matches_the_group_loop,
     impl_name,
     is_purepy,
 )
@@ -600,9 +601,7 @@ def test_matches_the_group_loop(impl, func, block):
     itself moves when such a group is rotated.  The floor that does hold is
     asserted by :func:`test_an_incomparable_value_poisons_the_extreme`.
     """
-    got = impl.aggregate(block.group_idx, block.a_complex, func=func, size=block.size)
-    want = aggregate_ref(block.group_idx, block.a_complex, func=func, size=block.size)
-    np.testing.assert_allclose(got, want, rtol=10**-10)
+    assert_matches_the_group_loop(impl, func, block, block.a_complex)
 
 
 @pytest.mark.parametrize("func", ["min", "max"])

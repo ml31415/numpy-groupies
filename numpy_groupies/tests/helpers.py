@@ -20,6 +20,7 @@ from numpy_groupies import aggregate_numpy, aggregate_purepy
 from numpy_groupies.registry import (
     funcs_collecting,
 )
+from numpy_groupies.tests.reference import aggregate_ref
 
 aggregate_numba: Any
 
@@ -202,6 +203,19 @@ def assert_same_result(got, want, func, rtol=10**-10):
         _assert_same_groups(got, want)
     else:
         np.testing.assert_allclose(got, want, rtol=rtol)
+
+
+def assert_matches_the_group_loop(impl, func, block, values):
+    """Compare the result of a backend against the group loop.
+
+    The yardstick of the suite: a backend is measured against the group loop
+    of :mod:`.reference`, never against itself.  The values are the ones of
+    the block - the plain ones, the ones with nans in them or the complex
+    ones.
+    """
+    got = impl.aggregate(block.group_idx, values, func=func, size=block.size)
+    want = aggregate_ref(block.group_idx, values, func=func, size=block.size)
+    assert_same_result(got, want, func)
 
 
 def _assert_same_groups(got, want):

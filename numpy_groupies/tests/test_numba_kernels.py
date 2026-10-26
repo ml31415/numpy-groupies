@@ -23,6 +23,13 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.tests._jitcallers import jitted_caller, jitted_caller_with_extra
 from numpy_groupies.tests.reference import aggregate_ref
+from numpy_groupies.validation import (
+    EMPTY_GROUP_IDX,
+    LENGTH_MISMATCH,
+    LENGTH_MISMATCH_OR_SCALAR,
+    NEGATIVE_INDICES,
+    TOO_LARGE_FOR_SIZE,
+)
 
 GROUP_IDX = np.array([0, 0, 1, 1, 1, 3])  # group 2 stays empty
 FLOAT_A = np.array([3.0, 1.0, np.nan, 2.0, 5.0, 4.0])
@@ -322,11 +329,16 @@ def _styles(kernel_name):
 
 
 _SAME_WORDS = [
-    (GROUP_IDX[:0], FLOAT_A[:0], "group_idx must not be empty", -1),
-    (np.array([0, 1, 2]), FLOAT_A[:2], "of the same length", -1),
-    (GROUP_IDX, np.append(FLOAT_A, 1.0), "of the same length", -1),
-    (np.array([0, -1]), FLOAT_A[:2], "negative indices", -1),
-    (GROUP_IDX, FLOAT_A, "too large", 1),
+    # (group_idx, values, size, the words of the kernel, the words of aggregate())
+    #
+    # the kernel and the python-level call do not say the very same thing
+    # about a length that does not match: the call knows that a scalar is a
+    # value of its own, the kernel does not
+    (GROUP_IDX[:0], FLOAT_A[:0], -1, EMPTY_GROUP_IDX, EMPTY_GROUP_IDX),
+    (np.array([0, 1, 2]), FLOAT_A[:2], -1, LENGTH_MISMATCH, LENGTH_MISMATCH_OR_SCALAR),
+    (GROUP_IDX, np.append(FLOAT_A, 1.0), -1, LENGTH_MISMATCH, LENGTH_MISMATCH_OR_SCALAR),
+    (np.array([0, -1]), FLOAT_A[:2], -1, NEGATIVE_INDICES, NEGATIVE_INDICES),
+    (GROUP_IDX, FLOAT_A, 1, TOO_LARGE_FOR_SIZE.format(size=1), TOO_LARGE_FOR_SIZE.format(size=1)),
 ]
 
 # what only a kernel is strict about: aggregate() spreads a multidimensional a
@@ -349,8 +361,10 @@ _STRICT_ONLY = [
 
 @pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
 @pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
-@pytest.mark.parametrize("group_idx, values, message, size", _SAME_WORDS)
-def test_every_call_refuses_the_input_the_driver_cannot_read(kernel_name, style, group_idx, values, message, size):
+@pytest.mark.parametrize("group_idx, values, size, kernel_words, call_words", _SAME_WORDS)
+def test_every_call_refuses_the_input_the_driver_cannot_read(
+    kernel_name, style, group_idx, values, size, kernel_words, call_words
+):
     """The value checks of a kernel call, in both worlds and through aggregate().
 
     The drivers take one value per label and numba never looks at the bounds of
@@ -358,41 +372,15 @@ def test_every_call_refuses_the_input_the_driver_cannot_read(kernel_name, style,
     the array, an empty one with nothing at all.  The entry points of the kernel
     therefore ask the two lengths and the bounds of the labels before the driver
     runs - the same questions ``input_validation`` asks the python-level call.
-    """
-    call = _styles(kernel_name)[style]
-    with pytest.raises(ValueError, match=message):
-        call(group_idx, values, size)
 
-
-# the faults the three ways of calling a kernel share - the words of them live
-# in numpy_groupies.validation, so all of them answer in exactly the same
-# sentence
-_SHARED_FAULTS = [
-    (GROUP_IDX[:0], FLOAT_A[:0], -1),
-    (np.array([0, -1]), FLOAT_A[:2], -1),
-    (GROUP_IDX, FLOAT_A, 1),
-]
-
-
-@pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
-@pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
-@pytest.mark.parametrize("group_idx, values, size", _SHARED_FAULTS)
-def test_the_shared_faults_are_answered_in_the_same_words(kernel_name, style, group_idx, values, size):
-    """The three ways of calling a kernel say the same thing about a fault.
-
-    The words of the complaints live in one place (numpy_groupies.validation),
-    so the python call of a kernel, the jitted one and the python-level
-    aggregate() answer a fault they share with the very same sentence.
+    The words of the complaint are the ones of ``numpy_groupies.validation``,
+    and every way of calling a kernel says the very same ones - the python
+    call of the kernel, the jitted one and the python-level aggregate() alike.
     """
     call = _styles(kernel_name)[style]
     with pytest.raises(ValueError) as excinfo:
         call(group_idx, values, size)
-    message = str(excinfo.value)
-    assert message in (
-        "group_idx must not be empty",
-        "negative indices not supported",
-        "one or more indices are too large for size 1",
-    )
+    assert str(excinfo.value) == (call_words if style == 2 else kernel_words)
 
 
 @pytest.mark.parametrize("style", [0, 1], ids=["python", "jitted"])

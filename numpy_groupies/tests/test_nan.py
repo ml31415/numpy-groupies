@@ -13,7 +13,7 @@ import pytest
 
 from numpy_groupies import aggregate_purepy
 from numpy_groupies.tests.helpers import (
-    assert_same_result,
+    assert_matches_the_group_loop,
     func_list,
     random_values,
 )
@@ -129,37 +129,40 @@ def test_min_max_nans(impl):
     np.testing.assert_array_equal(res, [np.nan, 9])
 
 
-def test_argmin_argmax_nans(impl):
-    group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
-    a = np.array([4, 4, 3, 1, np.nan, 1, 2, 3])
+# the arg reductions over the values that make the difference: a nan in a
+# group, and a group that holds none
+_ARG_REDUCTION_CASES = [
+    # (group_idx, a, {func: expected})
+    (
+        np.array([0, 0, 0, 0, 3, 3, 3, 3]),
+        np.array([4, 4, 3, 1, np.nan, 1, 2, 3]),
+        {"argmax": [0, -1, -1, -1], "argmin": [3, -1, -1, -1]},
+    ),
+    (
+        np.array([0, 0, 0, 0, 3, 3, 3, 3]),
+        np.array([4, 4, np.nan, 1, np.nan, np.nan, np.nan, np.nan]),
+        {"nanargmax": [0, -1, -1, -1], "nanargmin": [3, -1, -1, -1]},
+    ),
+    (
+        np.array([0, 0, 0, 0, 3, 3, 3, 3]),
+        np.array([4, 4, 3, 1, 10, 9, 9, 11]),
+        {"nanargmax": [0, -1, -1, 7], "nanargmin": [3, -1, -1, 5]},
+    ),
+]
 
-    res = impl.aggregate(group_idx, a, func="argmax", fill_value=-1)
-    np.testing.assert_array_equal(res, [0, -1, -1, -1])
 
-    res = impl.aggregate(group_idx, a, func="argmin", fill_value=-1)
-    np.testing.assert_array_equal(res, [3, -1, -1, -1])
+@pytest.mark.parametrize(("group_idx", "a", "expected"), _ARG_REDUCTION_CASES)
+def test_the_arg_reductions_of_a_group_with_nans(impl, group_idx, a, expected):
+    """A nan in a group is a nan of the whole group, and the plain arg
+    reductions have no extreme to point at.
 
-
-def test_nanargmin_nanargmax_nans(impl):
-    group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
-    a = np.array([4, 4, np.nan, 1, np.nan, np.nan, np.nan, np.nan])
-
-    res = impl.aggregate(group_idx, a, func="nanargmax", fill_value=-1)
-    np.testing.assert_array_equal(res, [0, -1, -1, -1])
-
-    res = impl.aggregate(group_idx, a, func="nanargmin", fill_value=-1)
-    np.testing.assert_array_equal(res, [3, -1, -1, -1])
-
-
-def test_nanargmin_nanargmax_nonans(impl):
-    group_idx = np.array([0, 0, 0, 0, 3, 3, 3, 3])
-    a = np.array([4, 4, 3, 1, 10, 9, 9, 11])
-
-    res = impl.aggregate(group_idx, a, func="nanargmax", fill_value=-1)
-    np.testing.assert_array_equal(res, [0, -1, -1, 7])
-
-    res = impl.aggregate(group_idx, a, func="nanargmin", fill_value=-1)
-    np.testing.assert_array_equal(res, [3, -1, -1, 5])
+    The nan variants leave the nans out and name the extreme of the values
+    that are left - the position is one in the input, and a group that is
+    never named takes the fill value of the function.
+    """
+    for func, want in expected.items():
+        res = impl.aggregate(group_idx, a, func=func, fill_value=-1)
+        np.testing.assert_array_equal(res, want, err_msg=func)
 
 
 def test_cumsum_nan(impl):
@@ -277,6 +280,4 @@ def test_matches_the_group_loop(impl, func, block):
     skip the value, and a group of nothing but nans is an empty group for them -
     the rule the loop spells out one group at a time.
     """
-    got = impl.aggregate(block.group_idx, block.a_nans, func=func, size=block.size)
-    want = aggregate_ref(block.group_idx, block.a_nans, func=func, size=block.size)
-    assert_same_result(got, want, func)
+    assert_matches_the_group_loop(impl, func, block, block.a_nans)

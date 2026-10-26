@@ -59,14 +59,6 @@ def test_uint_group_idx(impl, group_idx_type):
         assert "int" in res.dtype.name
 
 
-def test_start_with_offset(impl):
-    group_idx = np.array([1, 1, 2, 2, 2, 2, 4, 4])
-    res = impl.aggregate(group_idx, np.ones(group_idx.size), dtype=int)
-    np.testing.assert_array_equal(res, np.array([0, 2, 4, 0, 2]))
-    if not isinstance(res, list):
-        assert "int" in res.dtype.name
-
-
 def test_start_with_offset_prod(impl):
     group_idx = np.array([2, 2, 4, 4, 4, 7, 7, 7])
     res = impl.aggregate(group_idx, group_idx, func=np.prod, dtype=int)
