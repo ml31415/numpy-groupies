@@ -2,17 +2,9 @@
 
 import contextlib
 import os
-
-# The resource tracker of multiprocessing complains about the semaphore of
-# the thread pool of numba when the process leaves without the cleanup - and
-# the interrupt leaves exactly like that.  The tracker is a child process,
-# and it reads its warning filters at its start, so the silence has to be
-# asked for before anything is imported.
-os.environ.setdefault("PYTHONWARNINGS", "ignore")
-
 import signal
 
-from numpy_groupies.benchmarks import main
+from numpy_groupies.benchmarks import _release_numba_resources, main
 
 if hasattr(signal, "SIGPIPE"):
     # a reader that went away (``| head``) ends the run quietly, as it does for
@@ -30,17 +22,12 @@ def _on_interrupt(signum: int, frame: object) -> None:
     it.  Leaving the process is the only way out that works from within
     such a callback, and the exit code says what happened.
 
-    The pool of the threads of numba is closed before that, so that the
-    semaphore of it does not leak - the resource tracker of multiprocessing
-    would complain about it on the way out.
+    The semaphore of the threading-layer initialization of numba is
+    released before that, so that the resource tracker of multiprocessing
+    has nothing to complain about on the way out.
     """
     with contextlib.suppress(Exception):
-        # the pool of the threads is closed before the exit, so that the
-        # semaphore of it does not leak - the resource tracker of
-        # multiprocessing would complain about it on the way out
-        import numba
-
-        numba.close()
+        _release_numba_resources()
     os._exit(130)
 
 

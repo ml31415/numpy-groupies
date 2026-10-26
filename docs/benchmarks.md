@@ -8,72 +8,109 @@ Complete benchmark results for `aggregate`. A short summary is in the [README](.
 - The values of `a` are uniform on `[0, 1)`, and everything above `0.8` is then set to `0`, so that there are falsy values for the boolean functions.
 - For the `nan…` functions, of the remaining values those below `0.2` are set to `nan` (about 20%), leaving the rest on the interval `[0.2, 0.8]`.
 - Times in **milliseconds**, the fastest of three passes of the table (`--repeat=5 --runs=3` of `numpy_groupies.benchmarks`), every cell measured in one block of five executions. Lower is better. An untimed call precedes every block: the threads of a pool spin for a moment after their region and sleep afterwards, and the first call after that would measure the waking up instead of the work.
-- The `polars` column uses all the cores of the machine (6 threads here). The `numba` column uses them too, for the operations that can be reduced in chunks - the sums, the products, the counts, the extremes and the mean: their data is split into chunks that are reduced separately and folded afterwards. The chunks are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the chunks that are left. The state is one per thread, not one per chunk, so the memory does not grow with the number of the chunks. The operations that need the values of a group together (the order statistics) and the ones that give an output per value (the cumulatives) stay single-threaded. The difference matters most for the order statistics: with one thread polars needs 8.9ms for the median and 8.5ms for the quantile, against 4.6ms and 4.4ms with six, which puts it level with the single-threaded Numba kernels (9.5ms and 9.5ms).
-- The `numbagg` column runs its calls with numba at one thread, where its grouped reductions are fastest on a machine with many cores; the `numbagg-mt` column runs them with all the threads of the machine. On the machine of the numbers below the two are within a few percent of each other - the thread sync of the parallel target eats what the cores gain.
-- The `nunique` counts the distinct values of a group in a hash table, which needs no ordering of the values and so is linear in their number - 8.2ms for the Numba kernel against 15.3ms for the NumPy one, which has to sort the values of every group (numba's sort is about four times slower than numpy's, which vectorizes it).
+- The `numpy` and `numba` columns are the two backends of this package - the pure numpy one and the compiled one. The `numba` one is optimized as far as we could get it: it uses the threads of the machine where that pays for itself, and it falls back to a single thread where it does not. The other columns are the group-by machinery of the libraries of the same name and numpy's own `ufunc.at` - reference implementations for the comparison, not backends of this package.
+- The conditions are meant to be the same for every participant: the same data, the same arguments, the same machine, and the threads of the machine are as much theirs as ours. What a participant has to build around the data before it can work on it is its own business, and it is small.
+- The `nunique` counts the distinct values of a group in a hash table, which needs no ordering of the values and so is linear in their number. The counts of the groups are cut into ranges for the threads, like the order statistics.
 - Software: Python 3.14.7, NumPy 2.5.4, Numba 0.68.0, pandas 3.0.6, polars 2.0.0, numbagg 0.9.6 (Linux, x86_64).
 
 Absolute numbers depend heavily on the machine, Python and library versions, so rely on the ratios between columns rather than on the values. On shared machines single runs wobble, so `--runs=3` measures everything three times and reports the fastest measurement of each cell. Re-run on your own hardware, from the repository root:
 
 ```sh
-python -m numpy_groupies.benchmarks --ufunc --numbagg --numbagg-mt --pandas --polars --runs=3
+python -m numpy_groupies.benchmarks --ufunc --numbagg --pandas --polars --runs=3
 ```
 
 The participants get the data as it is - they must not write into it, since that would change the results of the runs that follow. The benchmark checks the data after every function, undoes a change if there was one and reports the row as not measured.
 
-`--funcs min,max` measures the named functions only, instead of all of them. `--threads N` sets the number of threads the numba kernels use - they split their data into more chunks than that, so that the threads can take the chunks from the queue of the pool and a busy core does not hold up the whole call. Without it they use every hardware thread of the machine. See `--help` for further options. `----` in the table below means the function is not available in that implementation, the row `arbitrary` is a custom Python callable passed as `func`. The `numbagg` and `numbagg-mt` columns are the group-by machinery of numbagg, the first with one thread and the second with all the threads of the machine - the two show what the choice is worth, so that nobody has to take the one-threaded column for a handicap. The `pandas` and `polars` columns are the group-by machinery of those libraries, the `ufunc` column is numpy's own `ufunc.at` - the last three are reference implementations for the comparison, not backends of this package.
+## The calibration of the parallel path
+
+Which calls of the numba kernels take the parallel path and which do not is
+decided by a cost model, and the model is fitted on the machine it runs on:
+
+```sh
+python -m numpy_groupies.benchmarks.mt
+```
+
+The tool measures the parallel kernels against the sequential ones over a
+grid of sizes, group counts and thread counts - the chunked path (the sum),
+the group path (the median, the quantile, the sort and the number of the
+distinct values) and the gather - fits the constants of the model to the
+measurements and prints them together with the crossovers, the sizes from
+which the parallel path is faster. It writes no file: its output is the
+result, and the constants in `numpy_groupies/aggregate_numba/mt.py` are the
+ones it prints.
+
+Every kernel is measured twice: warm (the threads of the pool awake, which
+is the state of a workload that is called in a loop) and cold (the pool
+asleep, which is what a program that calls a kernel once pays). The
+difference is the waking of the threads - about twenty times the cost of the
+region itself, and the reason the floors of the model are what they are.
+
+The machine has to be idle: the tool reports the spread between the fastest
+call and the median of the calls, and a spread of two and more means that
+the numbers of that run are worth little.
+
+How the parallel path scales with the number of the threads is a question of
+its own, and the tool answers it with `--scaling` - every thread count gets
+a process of its own, because the threads of the pool spin after a region
+and they disturb the measurement of the next one in the same process:
+
+```sh
+python -m numpy_groupies.benchmarks.mt --scaling
+```
+
+`--funcs min,max` measures the named functions only, instead of all of them. `--threads N` sets the number of threads the numba kernels use - they split their data into more chunks than that, so that the threads can take the chunks from the queue of the pool and a busy core does not hold up the whole call. Without it they use every hardware thread of the machine. See `--help` for further options. `----` in the table below means the function is not available in that implementation, the row `arbitrary` is a custom Python callable passed as `func`.
 
 ## Results
 
-| function     |        numpy |        numba |      numbagg |   numbagg-mt |       polars |       pandas |        ufunc |
-| ------------ | -----------: | -----------: | -----------: | -----------: | -----------: | -----------: | -----------: |
-| sum          |        0.957 |        0.347 |        0.472 |        0.466 |        2.931 |        6.903 |        0.910 |
-| prod         |        0.923 |        0.252 |        0.448 |        0.438 |        7.633 |        6.237 |        0.913 |
-| min          |        1.710 |        0.288 |        0.840 |        0.827 |        3.505 |        6.615 |        1.778 |
-| max          |        1.730 |        0.358 |        0.864 |        0.868 |        3.470 |        6.559 |        1.766 |
-| len          |        0.823 |        0.182 |        0.482 |        0.484 |        2.642 |        5.315 |        0.910 |
-| nunique      |       15.355 |        8.187 |         ---- |         ---- |       13.413 |       56.520 |         ---- |
-| all          |        1.773 |        0.317 |        1.641 |        1.595 |        2.859 |        7.151 |       32.917 |
-| any          |        2.490 |        0.221 |        1.600 |        1.581 |        2.633 |        7.233 |       30.906 |
-| anynan       |        0.883 |        0.326 |        2.717 |        2.709 |        2.317 |        6.844 |        5.266 |
-| allnan       |        2.097 |        0.281 |        3.295 |        3.261 |        2.888 |        6.760 |        7.658 |
-| mean         |        1.553 |        0.342 |        0.550 |        0.551 |        2.651 |        7.425 |         ---- |
-| median       |       12.522 |        9.527 |         ---- |         ---- |        4.214 |       15.759 |         ---- |
-| quantile     |       14.649 |        9.496 |         ---- |         ---- |        4.222 |       23.426 |         ---- |
-| trapezoid    |        3.882 |        0.663 |         ---- |         ---- |         ---- |         ---- |         ---- |
-| std          |        3.128 |        0.303 |        0.759 |        0.929 |        3.147 |        7.630 |         ---- |
-| var          |        3.126 |        0.300 |        0.733 |        0.682 |        3.061 |        8.512 |         ---- |
-| skew         |        6.020 |        2.607 |         ---- |         ---- |        3.739 |        9.477 |         ---- |
-| kurt         |        5.742 |        2.557 |         ---- |         ---- |        4.129 |       10.473 |         ---- |
-| first        |        1.776 |        0.314 |        0.323 |        0.321 |        2.691 |        6.249 |         ---- |
-| last         |        0.847 |        0.376 |        0.464 |        0.602 |        2.839 |        6.867 |         ---- |
-| argmax       |        2.622 |        0.650 |        0.916 |        0.936 |        8.425 |        7.365 |         ---- |
-| argmin       |        4.963 |        0.598 |        0.873 |        0.869 |        8.276 |        7.699 |         ---- |
-| nansum       |        4.168 |        0.261 |        1.803 |        1.774 |        6.503 |        9.124 |         ---- |
-| nanprod      |        4.306 |        0.261 |        1.822 |        1.810 |        9.671 |        7.715 |         ---- |
-| nanmin       |        4.935 |        0.287 |        2.034 |        2.011 |        6.626 |        8.054 |         ---- |
-| nanmax       |        4.818 |        0.360 |        2.073 |        2.025 |        6.321 |        8.367 |         ---- |
-| nanlen       |        2.437 |        0.252 |        1.752 |        1.726 |        6.076 |        7.664 |         ---- |
-| nannunique   |       16.765 |        7.724 |         ---- |         ---- |       14.350 |       29.848 |         ---- |
-| nanall       |        4.887 |        0.341 |        3.305 |        3.326 |        6.259 |        8.757 |         ---- |
-| nanany       |        5.766 |        0.234 |        2.727 |        2.714 |        6.411 |        8.531 |         ---- |
-| nanmean      |        4.684 |        0.440 |        1.788 |        1.771 |        6.099 |        9.215 |         ---- |
-| nanmedian    |       15.326 |        9.392 |         ---- |         ---- |        8.036 |       15.220 |         ---- |
-| nanquantile  |       17.557 |        9.494 |         ---- |         ---- |        7.734 |       21.325 |         ---- |
-| nantrapezoid |        6.582 |        1.890 |         ---- |         ---- |         ---- |         ---- |         ---- |
-| nanvar       |        6.110 |        0.510 |        1.936 |        1.959 |        6.733 |        9.411 |         ---- |
-| nanstd       |        6.248 |        0.511 |        1.975 |        1.948 |        6.466 |        9.672 |         ---- |
-| nanskew      |        8.478 |        3.301 |         ---- |         ---- |        6.689 |       10.046 |         ---- |
-| nankurt      |        8.483 |        3.259 |         ---- |         ---- |        7.282 |       10.591 |         ---- |
-| nanfirst     |        4.859 |        0.337 |        0.325 |        0.323 |        6.040 |        8.085 |         ---- |
-| nanlast      |        4.228 |        0.449 |        1.623 |        1.611 |        5.946 |        8.253 |         ---- |
-| nanargmin    |        6.057 |        0.757 |        1.975 |        1.949 |        8.299 |        8.411 |         ---- |
-| nanargmax    |        3.870 |        0.801 |        2.017 |        2.011 |        6.947 |        8.699 |         ---- |
-| cumsum       |       15.176 |        0.556 |         ---- |         ---- |        9.880 |        7.601 |         ---- |
-| cumprod      |         ---- |        0.584 |         ---- |         ---- |        8.666 |        7.417 |         ---- |
-| cummax       |         ---- |        0.790 |         ---- |         ---- |        9.250 |        6.604 |         ---- |
-| cummin       |         ---- |        0.763 |         ---- |         ---- |        8.736 |        6.300 |         ---- |
-| arbitrary    |      115.266 |        6.039 |         ---- |         ---- |       80.268 |       96.240 |         ---- |
-| sort         |       70.556 |       24.860 |         ---- |         ---- |         ---- |         ---- |         ---- |
-| array        |        7.575 |        1.935 |         ---- |         ---- |         ---- |         ---- |         ---- |
+| function     |        numpy |        numba |      numbagg |       polars |       pandas |        ufunc |
+| ------------ | -----------: | -----------: | -----------: | -----------: | -----------: | -----------: |
+| sum          |       0.912 |       0.253 |       0.483 |       3.102 |       6.486 |       0.907 |
+| prod         |       0.893 |       0.229 |       0.442 |       6.420 |       6.226 |       0.924 |
+| min          |       1.715 |       0.295 |       0.844 |       3.219 |       6.106 |       1.750 |
+| max          |       1.741 |       0.305 |       0.908 |       3.751 |       6.240 |       1.740 |
+| len          |       0.863 |       0.189 |       0.485 |       3.160 |       5.127 |       0.949 |
+| nunique      |      15.796 |       3.838 |        ---- |      14.059 |      59.548 |        ---- |
+| all          |       1.834 |       0.270 |       1.629 |       2.872 |       6.877 |      32.791 |
+| any          |       2.481 |       0.241 |       1.584 |       3.273 |       6.901 |      31.291 |
+| anynan       |       0.898 |       0.281 |       2.690 |       3.011 |       6.833 |       5.244 |
+| allnan       |       2.158 |       0.280 |       3.286 |       2.921 |       6.807 |       7.660 |
+| mean         |       1.548 |       0.281 |       0.548 |       2.818 |       7.163 |        ---- |
+| median       |      14.083 |       2.887 |        ---- |       4.460 |      15.915 |        ---- |
+| quantile     |      15.486 |       2.750 |        ---- |       4.095 |      23.809 |        ---- |
+| trapezoid    |       3.827 |       0.703 |        ---- |        ---- |        ---- |        ---- |
+| std          |       3.168 |       0.418 |       0.741 |       2.357 |       7.778 |        ---- |
+| var          |       3.128 |       0.371 |       0.679 |       2.458 |       7.544 |        ---- |
+| skew         |       5.581 |       2.636 |        ---- |       4.265 |       9.668 |        ---- |
+| kurt         |       5.638 |       2.562 |        ---- |       3.872 |      10.630 |        ---- |
+| first        |       1.744 |       0.320 |       0.311 |       2.809 |       6.098 |        ---- |
+| last         |       0.881 |       0.364 |       0.424 |       2.464 |       6.747 |        ---- |
+| argmax       |       2.665 |       0.626 |       0.951 |       9.775 |       7.082 |        ---- |
+| argmin       |       4.994 |       0.618 |       0.851 |       8.789 |       7.186 |        ---- |
+| nansum       |       4.202 |       0.273 |       1.813 |       6.504 |       8.058 |        ---- |
+| nanprod      |       4.291 |       0.260 |       1.800 |       9.484 |       7.702 |        ---- |
+| nanmin       |       5.000 |       0.362 |       2.456 |       7.397 |       7.851 |        ---- |
+| nanmax       |       4.891 |       0.393 |       2.105 |       6.336 |       7.895 |        ---- |
+| nanlen       |       2.525 |       0.211 |       1.979 |       6.695 |       7.052 |        ---- |
+| nannunique   |      16.865 |       2.601 |        ---- |      15.990 |      28.895 |        ---- |
+| nanall       |       4.959 |       0.376 |       3.518 |       6.787 |       8.396 |        ---- |
+| nanany       |       5.812 |       0.258 |       2.685 |       6.848 |       8.324 |        ---- |
+| nanmean      |       4.795 |       0.549 |       2.033 |       6.376 |       8.733 |        ---- |
+| nanmedian    |      14.695 |       4.299 |        ---- |       7.976 |      14.782 |        ---- |
+| nanquantile  |      17.386 |       3.008 |        ---- |       7.857 |      20.958 |        ---- |
+| nantrapezoid |       6.677 |       1.886 |        ---- |        ---- |        ---- |        ---- |
+| nanvar       |       6.445 |       0.517 |       2.105 |       6.451 |       8.828 |        ---- |
+| nanstd       |       6.224 |       0.493 |       2.455 |       6.899 |       8.795 |        ---- |
+| nanskew      |       8.548 |       3.405 |        ---- |       6.794 |       9.304 |        ---- |
+| nankurt      |       8.559 |       3.344 |        ---- |       8.200 |      10.728 |        ---- |
+| nanfirst     |       4.949 |       0.343 |       0.339 |       6.717 |       7.912 |        ---- |
+| nanlast      |       4.403 |       0.468 |       2.104 |       6.723 |       7.983 |        ---- |
+| nanargmin    |       6.330 |       0.769 |       2.229 |       9.057 |       8.610 |        ---- |
+| nanargmax    |       4.092 |       0.840 |       2.434 |       8.041 |       8.237 |        ---- |
+| cumsum       |      15.371 |       0.572 |        ---- |      10.231 |       6.954 |        ---- |
+| cumprod      |        ---- |       0.567 |        ---- |      10.129 |       7.325 |        ---- |
+| cummax       |        ---- |       0.805 |        ---- |      11.120 |       6.293 |        ---- |
+| cummin       |        ---- |       0.818 |        ---- |      10.219 |       6.322 |        ---- |
+| arbitrary    |     114.729 |       6.023 |        ---- |      85.638 |      97.647 |        ---- |
+| sort         |      72.128 |       7.192 |        ---- |        ---- |        ---- |        ---- |
+| array        |       7.445 |       1.947 |        ---- |        ---- |        ---- |        ---- |
 *Linux(x86_64), Python 3.14.7, Numpy 2.5.4, Numba 0.68.0, numbagg 0.9.6, Pandas 3.0.6, Polars 2.0.0 (6 threads max)*

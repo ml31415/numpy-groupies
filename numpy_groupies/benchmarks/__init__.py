@@ -28,6 +28,37 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.tests.reference import aggregate_ref
 
+# ---------------------------------------------------------------------------
+# the cleanup of the tools: an interrupt ends the run without the shutdown
+# of the interpreter, and the semaphore of the threading-layer
+# initialization of numba would then be reported as leaked by the resource
+# tracker of multiprocessing.  Releasing it is the shared business of both
+# tools, the benchmark and the calibration.
+
+
+def _release_numba_resources() -> None:
+    """Release the semaphore the threading layer of numba leaves behind.
+
+    The lock of the threading-layer initialization is a semaphore of
+    multiprocessing, and the resource tracker of it reports the semaphore
+    as leaked when the process leaves without releasing it - an interrupt
+    leaves exactly like that.  The lock is dropped, and the finalizer that
+    multiprocessing registered when the lock was created then unlinks its
+    name from /dev/shm and unregisters it from the tracker - the very
+    cleanup the shutdown of a normal exit runs.
+    """
+    import gc
+
+    from numba.np.ufunc import parallel as numba_parallel
+
+    # dropping the reference of numba runs the dealloc of the lock, and the
+    # dealloc is what calls the finalizer - the finalizer of the lock is the
+    # one that unlinks and unregisters, and calling it here as well would
+    # unlink the name twice
+    numba_parallel._backend_init_process_lock = None
+    gc.collect()
+
+
 try:
     from numpy_groupies import aggregate_numba
 except ImportError:
@@ -513,11 +544,11 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
 
 
 # The columns in the order they appear in the table.
-COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "numbagg", "numbagg-mt", "polars", "pandas", "ufunc")
+COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "numbagg", "polars", "pandas", "ufunc")
 # of those, the ones that have to be asked for
 OPTIONAL_COLUMNS = COLUMN_ORDER[2:]
 # the column names that differ from the name of their flag
-COLUMN_ARGUMENTS = {"numbagg-mt": "numbagg_mt"}
+COLUMN_ARGUMENTS: dict[str, str] = {}
 
 
 def _build_implementations(args):
@@ -533,7 +564,6 @@ def _build_implementations(args):
         "ufunc": _ufunc.aggregate,
         # the optional dependencies are None when they are not installed
         "numbagg": _numbagg.aggregate if _numbagg is not None else None,
-        "numbagg-mt": _numbagg.aggregate_mt if _numbagg is not None else None,
         "pandas": _pandas.aggregate if _pandas is not None else None,
         "polars": _polars.aggregate if _polars is not None else None,
     }
@@ -560,9 +590,10 @@ with a counter and prints the fastest measurement of all runs once at the end.
 
 numbagg ships nan-guarded reductions only, so its numbers for the plain
 functions are those of the nan twins - on the nan-free data of this benchmark
-the two coincide.  The 'numbagg' column runs its calls at one thread, the
-'numbagg-mt' column with all the threads of the machine: the two show what
-the choice is worth.""",
+the two coincide.  The threads of the machine are numbagg's own business: it
+compiles its grouped reductions to parallel targets and uses the pool where
+there is anything to split - and on a one-dimensional input there is
+nothing, the whole array being the core of the kernel.""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--all", action="store_true", help="include every optional column listed below")
@@ -582,13 +613,7 @@ the choice is worth.""",
     parser.add_argument(
         "--numbagg",
         action="store_true",
-        help="the numbagg grouped reductions at one thread (optional dependency, part of the dev extras)",
-    )
-    parser.add_argument(
-        "--numbagg-mt",
-        dest="numbagg_mt",
-        action="store_true",
-        help="the numbagg grouped reductions with all the threads of the machine (optional dependency)",
+        help="the numbagg grouped reductions (optional dependency, part of the dev extras)",
     )
     parser.add_argument("--pandas", action="store_true", help="the pandas groupby wrapper (optional dependency)")
     parser.add_argument("--polars", action="store_true", help="the polars group_by wrapper (optional dependency)")
@@ -619,7 +644,7 @@ the choice is worth.""",
         "--threads",
         type=int,
         default=0,
-        help="the number of threads the numba kernels use (default: every hardware thread of the machine)",
+        help="the number of threads of the pool of numba, which the kernels use (default: every hardware thread of the machine)",
     )
     parser.add_argument(
         "--raise-errors",
@@ -629,14 +654,11 @@ the choice is worth.""",
     args = parser.parse_args(argv)
     if args.threads:
         # the numba kernels split their data into as many chunks as there
-        # are threads - the flag sets both the pool of numba and the number
-        # of the threads the kernels use
+        # are threads - the flag sets the pool of numba, and the kernels use
+        # the threads they find there
         import numba
 
-        from numpy_groupies.aggregate_numba import mt
-
         numba.set_num_threads(args.threads)
-        mt.set_thread_count(args.threads)
     if args.all:
         for column in OPTIONAL_COLUMNS:
             setattr(args, COLUMN_ARGUMENTS.get(column, column), True)
