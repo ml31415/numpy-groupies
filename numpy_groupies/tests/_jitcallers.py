@@ -6,22 +6,17 @@ test would compile its own copy of the very same wrapper - the most expensive
 thing the test suite does, and the reason the kernel tests took minutes
 although they hold a few thousand assertions.
 
-The wrappers are therefore built once per kernel and shared, and they are
-compiled through ``njit_stable``: the name of the kernel keeps the symbols and
-the cache files of the wrappers apart, and the pinned uuid keeps their
-compiled form valid from one process to the next.  They live in a file of
-their own, because numba keys the cache of a function by the file it is
-written in - a wrapper in the test module itself would lose its compiled form
-with every change of the tests.
+The wrappers are therefore built once per kernel and shared by the tests.
 
-Every wrapper calls the kernel the way a caller of the package calls it: with
-the labels, the values and the size of the groups, and with a fill value of
-``None`` - the default of the kernel itself.
+Every wrapper carries the name of the kernel it calls.  Two wrappers that
+differ only in their closure share the symbol numba mangles their code into,
+and one of them may bind the calls of the other - the same types and the
+wrong kernel.  The name keeps the symbols of the wrappers apart.
 """
 
 from typing import Any
 
-from numpy_groupies.aggregate_numba.jit import njit_stable
+import numba as nb
 
 
 def jitted_caller(kernel: Any, name: str) -> Any:
@@ -30,7 +25,10 @@ def jitted_caller(kernel: Any, name: str) -> Any:
     def caller(group_idx, values, size):
         return kernel(group_idx, values, size=size, fill_value=None)
 
-    return njit_stable(caller, name=name)
+    # the name is set before numba sees the function: it is the name the
+    # symbol of the compiled code is built from
+    caller.__qualname__ = caller.__name__ = name
+    return nb.njit(caller)
 
 
 def jitted_caller_with_extra(kernel: Any, extra: Any, name: str) -> Any:
@@ -51,4 +49,5 @@ def jitted_caller_with_extra(kernel: Any, extra: Any, name: str) -> Any:
         def caller(group_idx, a, size, fill_value):
             return kernel(group_idx, a, value, size=size, fill_value=None)
 
-    return njit_stable(caller, name=name)
+    caller.__qualname__ = caller.__name__ = name
+    return nb.njit(caller)

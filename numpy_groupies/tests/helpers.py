@@ -10,7 +10,7 @@ that deviates from the group loop is measured like any other result, never
 filtered out of the collection.
 """
 
-from functools import cache, wraps
+from functools import wraps
 from typing import Any
 
 import numpy as np
@@ -70,11 +70,18 @@ def random_values(rng, size):
 def is_supported(impl, func):
     """True if the backend runs ``func``.
 
-    Probed with a tiny real-valued and a tiny complex-valued input: a func
-    counts as supported when the backend resolves it for either, so that
-    dtype-specific gaps (a backend implementing sumofsquares only for
-    complex input, say) do not deselect testable combos. Combos failing for only
-    one dtype still skip at runtime via the backend proxy.
+    The dispatch table of the backend answers it: a function the table does
+    not hold, or one it holds without an implementation behind it, is a
+    function this backend does not have.
+
+    The answer is a lookup and nothing else.  Asking the backend to run the
+    function would be the same question with a price: the numba backend would
+    compile the kernel of the function, and the collection of the suite would
+    compile a kernel per function in every worker of the parallel run - which
+    is where the minutes of a cold run went.
+
+    A func that names no function of the package is the caller's own and is
+    never deselected.
 
     Accepts a backend module or its ``_BackendProxy``, and a function name
     or callable.
@@ -87,23 +94,26 @@ def is_supported(impl, func):
         func = getattr(func, "__name__", None)
         if not isinstance(func, str):
             return True
-    return _is_supported(impl, func)
-
-
-@cache
-def _is_supported(impl, func):
-    """The probe itself, keyed by a backend module and a function name."""
-    group_idx = np.array([0, 0, 1, 1])
-    inputs = (np.arange(4.0), np.array([1 + 1j, 2 + 2j, 3 + 3j, 4 + 4j]))
-    for a in inputs:
-        try:
-            impl.aggregate(group_idx, a, func=func)
-        except (NotImplementedError, ValueError):
-            continue
-        except Exception:  # noqa: BLE001 - unexpected, but the func runs
-            return True
+    table = _dispatch_of(impl)
+    if table is None:
         return True
-    return False
+    resolved = table.get(func)
+    return resolved is not None and resolved.op is not None
+
+
+def _dispatch_of(impl):
+    """The dispatch table of a backend, or None for one that has none.
+
+    Every backend holds one: a table of the aliases of the functions it knows
+    and the implementation of its own behind every one of them.
+    """
+    if impl is aggregate_purepy:
+        return aggregate_purepy._dispatch
+    if impl is aggregate_numpy:
+        return aggregate_numpy.ops._dispatch
+    if aggregate_numba is not None and impl is aggregate_numba:
+        return aggregate_numba.ops._dispatch
+    return None
 
 
 def _wrap_notimplemented_skip(impl, name=None):

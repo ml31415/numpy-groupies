@@ -856,12 +856,6 @@ def _make_stub(
 
     stub.__name__ = stub.__qualname__ = stub_name
     stub.__module__ = __name__
-    # the stub carries the identity of the driver it calls: a caller that
-    # closes over a kernel is fingerprinted by ``njit_stable``, and the
-    # address of a function is different in every process - the uuid of the
-    # driver is not, so the cache of such a caller survives the process
-    identified: Any = stub
-    identified._uuid = getattr(driver, "_uuid", f"stub_{stub_name}")
     # the typing function and the implementation it returns carry the name of
     # the operation in their qualname - numba mangles the symbol of a
     # function from its module and qualname, and two of them that share it
