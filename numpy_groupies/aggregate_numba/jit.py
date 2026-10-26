@@ -12,10 +12,15 @@ import hashlib
 import inspect
 import os
 from collections.abc import Callable, Generator
-from typing import Any
+from typing import Any, TypeVar, overload
 
 import numba as nb
 from numba.core import caching
+
+# the decorated function is a dispatcher that keeps the signature of its
+# python function - the overloads below hand that signature through
+# ``njit_stable`` for the type checker, the way ``nb.njit`` does
+_FuncT = TypeVar("_FuncT", bound=Callable[..., Any])
 
 # windows has no flock - the name is an Optional so the no-op fallback below is
 # an honest annotation and not a type error
@@ -92,6 +97,12 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
             return super().flush()  # type: ignore[no-any-return]  # numba leaves caching.py unannotated
 
 
+@overload
+def njit_stable(py_func: _FuncT, cache: bool = True, name: str | None = None, **options: Any) -> _FuncT: ...
+@overload
+def njit_stable(
+    py_func: None = None, cache: bool = True, name: str | None = None, **options: Any
+) -> Callable[[_FuncT], _FuncT]: ...
 def njit_stable(
     py_func: Callable[..., Any] | None = None,
     cache: bool = True,

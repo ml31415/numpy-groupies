@@ -7,12 +7,13 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba import mt
+from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.utils_np import AResult
 
 
 # the annotations of the jitted function below are documentation only - numba
 # compiles from the argument types and ignores them, the type checker needs them
-@nb.njit(cache=True)
+@njit_stable
 def _gather_1d(
     ret: npt.NDArray[np.generic], group_idx: npt.NDArray[np.integer], out: npt.NDArray[np.generic]
 ) -> npt.NDArray[np.generic]:
@@ -21,7 +22,7 @@ def _gather_1d(
     return out
 
 
-@nb.njit(cache=True, parallel=True)
+@njit_stable(parallel=True)
 def _gather_1d_mt(
     ret: npt.NDArray[np.generic],
     group_idx: npt.NDArray[np.integer],
