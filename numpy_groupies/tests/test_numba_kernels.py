@@ -8,6 +8,7 @@ The explicitly documented deviations (the dtype approximations of the kernels,
 the fill defaults, the input checks of the python call) get their own tests.
 """
 
+from functools import cache
 from importlib import import_module
 from inspect import signature
 
@@ -20,6 +21,7 @@ from numpy_groupies.aggregate_numba import compose
 from numpy_groupies.registry import (
     func_extras,
 )
+from numpy_groupies.tests._jitcallers import jitted_caller, jitted_caller_with_extra
 from numpy_groupies.tests.reference import aggregate_ref
 
 GROUP_IDX = np.array([0, 0, 1, 1, 1, 3])  # group 2 stays empty
@@ -178,18 +180,22 @@ def test_the_argument_of_a_kernel_is_the_one_of_its_function():
             assert type(parameter.default) is type(expected), name
 
 
+@cache
+def _jitted_caller(name, own):
+    """The jitted caller of one kernel, with the argument of its own baked in.
+
+    The caller is built once per kernel and shared: a dispatcher compiles the
+    first time it is called, so a caller built per test would compile a copy
+    of itself for every test that asks for it.
+    """
+    stub = getattr(aggregate_numba, name)
+    return jitted_caller_with_extra(stub, own, name=f"caller_{name}_{own!r}")
+
+
 def _kernel_result(name, values, **kwargs):
     """Call the kernel of ``name`` from jitted code (fill default via None)."""
-    stub = getattr(aggregate_numba, name)
     own = _kernel_arguments(name, kwargs)
-    arguments = "" if not own else f", {own[0]!r}"
-    source = f"""
-def _caller(group_idx, a, size, fill_value):
-    return _stub(group_idx, a{arguments}, size, fill_value)
-"""
-    namespace = {"_stub": stub}
-    exec(source, namespace)  # noqa: S102 - the signature of the kernel is spelled out in one place
-    caller = nb.njit(namespace["_caller"])
+    caller = _jitted_caller(name, own[0] if own else None)
     return caller(GROUP_IDX, values, -1, None)
 
 
@@ -293,16 +299,24 @@ def test_pure_python_call_refuses_a_fill_value_as_jitted_code_does():
 # them twice, which is what the fast path of the wrapper exists to avoid.  Each
 # style is a function of the kernel it is asked of: a kernel is an overload, and
 # an overload cannot be passed into jitted code as an argument.
-def _styles(kernel):
+@cache
+def _styles(kernel_name):
+    """The three ways a caller reaches the kernel of ``kernel_name``.
+
+    The three of them are built once per kernel and shared by the tests: the
+    jitted one is a dispatcher of its own, and a dispatcher compiles the first
+    time it is called - built per test, every test would compile its own copy
+    of the very same wrapper.
+    """
+    kernel = getattr(aggregate_numba, kernel_name)
+
     def call_python(group_idx, values, size):
         return kernel(group_idx, values, size=size, fill_value=None)
 
-    @nb.njit
-    def call_jitted(group_idx, values, size):
-        return kernel(group_idx, values, size=size, fill_value=None)
+    call_jitted = jitted_caller(kernel, name=f"call_jitted_{kernel_name}")
 
     def call_aggregate(group_idx, values, size):
-        return aggregate(group_idx, values, func=kernel.__name__, size=size)
+        return aggregate(group_idx, values, func=kernel_name, size=size)
 
     return [call_python, call_jitted, call_aggregate]
 
@@ -345,7 +359,7 @@ def test_every_call_refuses_the_input_the_driver_cannot_read(kernel_name, style,
     therefore ask the two lengths and the bounds of the labels before the driver
     runs - the same questions ``input_validation`` asks the python-level call.
     """
-    call = _styles(getattr(aggregate_numba, kernel_name))[style]
+    call = _styles(kernel_name)[style]
     with pytest.raises(ValueError, match=message):
         call(group_idx, values, size)
 
@@ -370,7 +384,7 @@ def test_the_shared_faults_are_answered_in_the_same_words(kernel_name, style, gr
     so the python call of a kernel, the jitted one and the python-level
     aggregate() answer a fault they share with the very same sentence.
     """
-    call = _styles(getattr(aggregate_numba, kernel_name))[style]
+    call = _styles(kernel_name)[style]
     with pytest.raises(ValueError) as excinfo:
         call(group_idx, values, size)
     message = str(excinfo.value)
@@ -395,7 +409,7 @@ def test_every_kernel_refuses_the_input_it_cannot_take(
     the drivers were never written for with a numba error that is harder to read
     than this one.
     """
-    call = _styles(getattr(aggregate_numba, kernel_name))[style]
+    call = _styles(kernel_name)[style]
     # the jitted style is answered before anything runs, by the typing function
     # of the kernel, which knows the shape and the dtype at compile time
     error = nb.TypingError if style == 1 else python_error
