@@ -110,6 +110,7 @@ import numba as nb
 import numpy as np
 
 from numpy_groupies.aggregate_numba.mt import logical_core_count, physical_core_count
+from numpy_groupies.benchmarks import _release_numba_resources
 
 BYTES_PER_ELEMENT = 16.0  # a float64 value and an int64 index
 
@@ -1330,29 +1331,6 @@ def _package_decision(row: dict) -> tuple[bool | None, float]:
 # the calibration of the machine is a run of minutes, and an interrupt has
 # to end it cleanly - the mechanism for that lives in the ``__main__`` block
 # at the end of this module, where the run is started.
-
-
-def _release_numba_resources() -> None:
-    """Release the semaphore the threading layer of numba leaves behind.
-
-    The lock of the threading-layer initialization is a semaphore of
-    multiprocessing, and the resource tracker of it reports the semaphore
-    as leaked when the process leaves without releasing it - an interrupt
-    leaves exactly like that.  The lock is dropped, and the finalizer that
-    multiprocessing registered when the lock was created then unlinks its
-    name from /dev/shm and unregisters it from the tracker - the very
-    cleanup the shutdown of a normal exit runs.
-    """
-    import gc
-
-    from numba.np.ufunc import parallel as numba_parallel
-
-    # dropping the reference of numba runs the dealloc of the lock, and the
-    # dealloc is what calls the finalizer - the finalizer of the lock is the
-    # one that unlinks and unregisters, and calling it here as well would
-    # unlink the name twice
-    numba_parallel._backend_init_process_lock = None
-    gc.collect()
 
 
 def main(argv=None) -> int:

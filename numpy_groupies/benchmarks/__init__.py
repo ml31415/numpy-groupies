@@ -28,6 +28,37 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.tests.reference import aggregate_ref
 
+# ---------------------------------------------------------------------------
+# the cleanup of the tools: an interrupt ends the run without the shutdown
+# of the interpreter, and the semaphore of the threading-layer
+# initialization of numba would then be reported as leaked by the resource
+# tracker of multiprocessing.  Releasing it is the shared business of both
+# tools, the benchmark and the calibration.
+
+
+def _release_numba_resources() -> None:
+    """Release the semaphore the threading layer of numba leaves behind.
+
+    The lock of the threading-layer initialization is a semaphore of
+    multiprocessing, and the resource tracker of it reports the semaphore
+    as leaked when the process leaves without releasing it - an interrupt
+    leaves exactly like that.  The lock is dropped, and the finalizer that
+    multiprocessing registered when the lock was created then unlinks its
+    name from /dev/shm and unregisters it from the tracker - the very
+    cleanup the shutdown of a normal exit runs.
+    """
+    import gc
+
+    from numba.np.ufunc import parallel as numba_parallel
+
+    # dropping the reference of numba runs the dealloc of the lock, and the
+    # dealloc is what calls the finalizer - the finalizer of the lock is the
+    # one that unlinks and unregisters, and calling it here as well would
+    # unlink the name twice
+    numba_parallel._backend_init_process_lock = None
+    gc.collect()
+
+
 try:
     from numpy_groupies import aggregate_numba
 except ImportError:
