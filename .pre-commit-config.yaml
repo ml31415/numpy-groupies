@@ -16,7 +16,7 @@ repos:
         exclude: (.pre-commit-config\.yaml)
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.1
+    rev: v0.17.2
     hooks:
       - id: ruff
         args: [--fix]
@@ -35,7 +35,7 @@ repos:
         additional_dependencies: ["numpy", "numba"]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.1
+    rev: 0.13.5
     hooks:
       - id: uv-lock
 
@@ -45,7 +45,7 @@ repos:
       - id: codespell
 
   - repo: https://github.com/rvben/rumdl-pre-commit
-    rev: v0.2.79
+    rev: v0.3.0
     hooks:
       - id: rumdl-check
         args: [--fix]
