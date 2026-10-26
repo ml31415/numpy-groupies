@@ -135,6 +135,10 @@ def pytest_collection_modifyitems(config, items):
     ``NotImplementedError``, which the ``impl`` proxy turns into a skip at
     runtime, and a backend that deviates without raising is measured against the
     group loop like any other and called out where it differs.
+
+    The tests that ask for the same function are put into one group, so that
+    the workers of a parallel run share the compiled kernel of that function
+    (see :func:`_group_of`).
     """
     removed, kept = [], []
     for item in items:
@@ -143,7 +147,33 @@ def pytest_collection_modifyitems(config, items):
         if "impl" in params and "func" in params and not is_supported(params["impl"], params["func"]):
             removed.append(item)
             continue
+        group = _group_of(params)
+        if group is not None:
+            item.add_marker(pytest.mark.xdist_group(name=group))
         kept.append(item)
     if removed:
         config.hook.pytest_deselected(items=removed)
         items[:] = kept
+
+
+# the parameters that name the function a test asks for
+_FUNCTION_PARAMS = ("func", "kernel_name", "name")
+
+
+def _group_of(params):
+    """The group a test belongs to: the function it asks for.
+
+    The workers of a parallel run share one cache of the compiled kernels on
+    the disk, but they write to it at the same time: two workers that need the
+    same kernel at the same moment compile it both, and the cache only saves
+    the one that comes second.  The tests of one function are therefore given
+    to one worker, which compiles the kernel once and writes it to the cache -
+    the others load it from there.
+
+    A test that asks for no function at all is left to the scheduler.
+    """
+    for name in _FUNCTION_PARAMS:
+        value = params.get(name)
+        if isinstance(value, str):
+            return value
+    return None

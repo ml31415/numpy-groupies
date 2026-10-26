@@ -86,7 +86,9 @@ omit = ["numpy_groupies/benchmarks/*"]
 [tool.pytest.ini_options]
 # the suite is dominated by numba compilation, which splits across processes
 # -n 0 runs single tests in the controlling process again (pdb, -s)
-addopts = "-n auto"
+# the workers are given the tests of one function together (loadgroup), so that
+# the kernel of a function is compiled once and not once per worker
+addopts = "-n auto --dist loadgroup"
 
 [tool.ruff.lint]
 # relative imports are not used anywhere in the package
