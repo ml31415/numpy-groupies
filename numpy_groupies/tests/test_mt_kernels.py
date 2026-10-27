@@ -821,3 +821,108 @@ def test_the_number_of_the_threads_does_not_change_the_result_of_the_callable(fu
     # to exactly one of them whichever number they are cut into
     for result in results[1:]:
         _same(results[0], result, 0)
+
+
+# ---------------------------------------------------------------------------
+# the argmax and the argmin: the index of the best value of every group
+#
+# They cannot be reduced in chunks the way the sums are: the value of a
+# group is the one that wins, and the winner of two chunks is not the sum of
+# the two.  Their parallel path splits the data into chunks, lets every
+# chunk look for the best value of every group, and folds the chunks in the
+# order of their index - the chunk with the better value wins, and a tie is
+# won by the chunk that comes first, the way the sequential kernel keeps the
+# first of two equal values.
+#
+# The result is the one of the sequential path bit for bit.
+
+
+ARGUMENTS = ["argmax", "argmin", "nanargmax", "nanargmin"]
+
+
+def _reference_arg(group_idx: np.ndarray, values: np.ndarray, func: str, n_groups: int) -> np.ndarray:
+    """The index of the best value of every group, the long way round.
+
+    The plain variants are poisoned by a nan: a group that has one keeps
+    the fill value, and the nan variants leave the nans out.
+    """
+    out = np.full(n_groups, -1, dtype=np.int64)
+    for g in range(n_groups):
+        where = np.where(group_idx == g)[0]
+        block = values[where]
+        if func.startswith("nan"):
+            keep = ~np.isnan(block)
+            where = where[keep]
+            block = block[keep]
+        elif np.isnan(block).any():
+            # a nan poisons its group
+            continue
+        if block.size == 0:
+            continue
+        best = block.max() if "max" in func else block.min()
+        # the first of the values that are the best one
+        out[g] = where[np.argmax(block == best)]
+    return out
+
+
+def test_the_arguments_take_the_parallel_path(data):
+    # the tests below compare the two paths with each other, and they would
+    # compare the sequential path with itself if the cost model kept the
+    # call single threaded
+    _group_idx, values = data
+    assert mt.should_use_mt(N_GROUPS, 2, len(values), 2)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_arguments_give_the_result_of_the_sequential_one(func, data):
+    group_idx, values = data
+    parallel, sequential = _both_ways(group_idx, values, func)
+    _same(parallel, sequential, 0)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_argument_of_every_group_is_the_index_of_its_best_value(func, group_data):
+    # the reference is the definition itself: the index of the best value of
+    # the group, and the first of them if there are several
+    group_idx, values = group_data
+    parallel, _ = _both_ways(group_idx, values, func)
+    wanted = _reference_arg(group_idx, values, func, N_GROUPS)
+    _same(parallel, wanted, 0)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_one_thread_gives_the_sequential_result_of_the_arguments(func, data):
+    group_idx, values = data
+    nb.set_num_threads(1)
+    one = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(2)
+    many = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(1)
+    sequential = aggregate(group_idx, values, func=func)
+    # with one thread the sequential path runs, and it is the one that has
+    # always run - bit for bit
+    _same(one, sequential, 0)
+    _same(many, sequential, 0)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_arguments_keep_the_fill_value_of_the_empty_groups(func, rng):
+    group_idx = rng.integers(0, 10, 200_000)
+    values = rng.random(200_000)
+    for fill in (DEFAULT_FILL_VALUE, -7.0):
+        parallel, sequential = _both_ways(group_idx, values, func, size=100, fill_value=fill)
+        _same(parallel, sequential, 0)
+        if fill != DEFAULT_FILL_VALUE:
+            assert (parallel[10:] == -7.0).all()
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_arguments_complain_about_a_fault_of_the_indices(func, data):
+    # the parallel path cannot raise out of its region, so the complaint of
+    # the sequential path has to be made after it
+    group_idx, values = data
+    group_idx = group_idx.copy()
+    group_idx[17] = -1
+    nb.set_num_threads(2)
+    with pytest.raises(ValueError, match="negative indices"):
+        aggregate(group_idx, values, func=func)
