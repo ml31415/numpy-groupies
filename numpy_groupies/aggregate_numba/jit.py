@@ -87,6 +87,10 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
         return os.path.join(self._cache_path, f"{self._index_name}.lock")
 
     def save(self, key: Any, data: Any) -> None:
+        # The directory of the cache may be gone: ``purge()`` removes it, and
+        # a process that compiles while the purge runs would write into a
+        # directory that is not there any more.
+        os.makedirs(self._cache_path, exist_ok=True)
         with _advisory_lock(self._lock_path(), shared=False):
             return super().save(key, data)  # type: ignore[no-any-return]  # numba leaves caching.py unannotated
 

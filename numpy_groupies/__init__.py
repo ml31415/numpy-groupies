@@ -321,7 +321,7 @@ if TYPE_CHECKING:
 
 # ``purge()`` removes the cached compiles of the package - it is the tool for
 # the cache of the numba backend, which lives in a directory of its own (see
-# ``numpy_groupies.utils_np.numba_cache_dir``) and which numba never cleans
+# ``numpy_groupies.utils_cache.numba_cache_dir``) and which numba never cleans
 # up.
 
 

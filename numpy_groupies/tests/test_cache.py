@@ -69,3 +69,62 @@ def test_purge_removes_the_cache_and_the_leftovers_in_the_source_tree(monkeypatc
 
 def test_the_package_hands_out_the_purge():
     assert numpy_groupies.purge is purge
+
+
+def test_every_dispatcher_caches_in_the_directory_of_the_package():
+    """The kernel of every operation caches in the directory of the package.
+
+    The cache of numba lives next to the source of the kernel - in the
+    installation directory of an installed package, where it survives the
+    uninstallation and leaves a broken installation behind (numba #9312).
+    """
+    from numba.core.caching import NullCache
+
+    from numpy_groupies.tests.test_numba import _walk_dispatchers
+
+    wanted = numba_cache_dir()
+    checked = 0
+    for dispatcher in _walk_dispatchers():
+        cache = dispatcher._cache
+        if isinstance(cache, NullCache):
+            # the cache is switched off - there is nothing to check then
+            continue
+        assert cache._cache_path == wanted
+        assert cache._cache_file._cache_path == wanted
+        checked += 1
+    assert checked > 0
+
+
+def test_the_cache_of_a_kernel_lands_in_the_directory_and_is_used(tmp_path):
+    """A kernel compiles into the directory, and the next process finds it there."""
+    import subprocess
+    import sys
+
+    script = (
+        "import numpy as np\n"
+        "from numpy_groupies.aggregate_numba import aggregate\n"
+        "aggregate(np.arange(1000), np.random.random(1000), func='sum')\n"
+    )
+    env = {**os.environ, "NUMBA_CACHE_DIR": str(tmp_path)}
+
+    def run() -> None:
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(PACKAGE.parent),
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+
+    run()
+    cache = tmp_path / "numpy_groupies"
+    assert list(cache.glob("*.nbi")), "der Cache des Kernels liegt nicht im Verzeichnis"
+    assert list(cache.glob("*.nbc")), "der Cache des Kernels liegt nicht im Verzeichnis"
+    before = {p.name: p.stat().st_mtime_ns for p in cache.iterdir()}
+    run()
+    after = {p.name: p.stat().st_mtime_ns for p in cache.iterdir()}
+    # the second run hits the cache: no file is added and none is written
+    # anew
+    assert after == before

@@ -55,6 +55,11 @@ def _user_cache_dir() -> str:
     return os.path.join(base, "numba")
 
 
+def _count_files(directory: str) -> int:
+    """The number of the files below a directory."""
+    return sum(len(files) for _root, _dirs, files in os.walk(directory))
+
+
 def purge() -> int:
     """Remove the cached compiles of this package.
 
@@ -72,9 +77,11 @@ def purge() -> int:
     removed = 0
     cache = numba_cache_dir()
     if os.path.isdir(cache):
-        for _root, _dirs, files in os.walk(cache):
-            removed += len(files)
+        before = _count_files(cache)
         shutil.rmtree(cache, ignore_errors=True)
+        # the files the removal did not reach are not counted: the counter is
+        # the number of the files that are really gone
+        removed += before - _count_files(cache)
     package = os.path.dirname(os.path.abspath(__file__))
     for root, _dirs, files in os.walk(package):
         for name in files:
