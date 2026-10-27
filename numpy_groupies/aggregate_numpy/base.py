@@ -32,6 +32,25 @@ from numpy_groupies.utils_np import (
 from numpy_groupies.validation import is_scalar_input
 
 
+def numpy_fallback(
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
+    func: FuncName,
+    size: int | Sequence[int] | npt.NDArray[np.integer] | None,
+    fill_value: AFillValue,
+    order: RavelOrder,
+    dtype: npt.DTypeLike | None,
+    axis: int | None,
+) -> AResult:
+    """The numpy implementation, for the input a compiled driver refuses.
+
+    The compiled drivers of the numba backend hand some of their input over
+    to the numpy implementation - the dtypes they cannot place, the values
+    they cannot compare - and the fallback of an operation is this call.
+    """
+    return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
+
+
 def _aggregate_base(
     group_idx: npt.NDArray[np.integer],
     a: AValue,

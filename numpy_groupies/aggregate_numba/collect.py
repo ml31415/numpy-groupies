@@ -19,7 +19,7 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numba.compose import build_custom_kernel, output_size, rule_object
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
+from numpy_groupies.aggregate_numpy.base import numpy_fallback
 from numpy_groupies.aggregate_numpy.collect import blocks_to_object_array
 from numpy_groupies.registry import (
     FuncName,
@@ -118,7 +118,7 @@ def _numpy_fallback(
     """
     return cast(
         "npt.NDArray[np.object_]",
-        _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis),
+        numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis),
     )
 
 

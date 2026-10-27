@@ -19,7 +19,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
+from numpy_groupies.aggregate_numpy.base import numpy_fallback
 from numpy_groupies.registry import FuncName
 from numpy_groupies.utils_np import AFillValue, AResult, AValue, RavelOrder
 from numpy_groupies.validation import (
@@ -447,7 +447,7 @@ def _numpy_fallback(
     therefore goes to the numpy implementation, which refuses it with the
     very same complaint.
     """
-    return _aggregate_base(group_idx, a, func, size=size, fill_value=fill_value, order=order, dtype=dtype, axis=axis)
+    return numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
 
 
 def _skew_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
