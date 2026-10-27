@@ -628,3 +628,102 @@ def test_the_moments_refuse_the_complex_input(func, rng):
         nb.set_num_threads(threads)
         with pytest.raises(TypeError, match="not defined for complex values"):
             aggregate(group_idx, values, func=func)
+
+
+# ---------------------------------------------------------------------------
+# the first and the last: the values that depend on the order of the input
+#
+# They cannot be reduced in chunks the way the sums are: the value of a
+# group is the one that comes first (or last) in the input.  Their parallel
+# path splits the data into chunks, lets every chunk look for the value of
+# its own and folds the chunks in the order of their index - the first chunk
+# that has a value for a group wins for the first, the last one for the
+# last.
+#
+# The result is the one of the sequential path bit for bit: every chunk looks
+# at its own values in the order they come, and the fold picks the value of
+# the chunk that comes first (or last) in the input.
+
+
+ORDERED = ["first", "last", "nanfirst", "nanlast"]
+
+
+def test_the_ordered_values_take_the_parallel_path(data):
+    # the tests below compare the two paths with each other, and they would
+    # compare the sequential path with itself if the cost model kept the
+    # call single threaded
+    _group_idx, values = data
+    assert mt.should_use_mt(N_GROUPS, 2, len(values), 1)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_values_give_the_result_of_the_sequential_one(func, data):
+    group_idx, values = data
+    parallel, sequential = _both_ways(group_idx, values, func)
+    # not "to the last bits": every value of a group is looked for by the
+    # one chunk that has it, and the fold picks the chunk that comes first
+    # (or last) in the input - the very same value the sequential path
+    # finds
+    _same(parallel, sequential, 0)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_value_of_every_group_is_the_value_of_that_group(func, data):
+    # the reference is the definition itself: the first (or the last) value
+    # of the group in the order of the input
+    group_idx, values = data
+    parallel, _ = _both_ways(group_idx, values, func)
+    wanted = []
+    for g in range(N_GROUPS):
+        block = values[group_idx == g]
+        if func.startswith("nan"):
+            # the nan variants look for the first (the last) value that is
+            # not a nan
+            block = block[~np.isnan(block)]
+        if block.size == 0:
+            wanted.append(np.nan)
+        elif func.endswith("first"):
+            wanted.append(block[0])
+        else:
+            wanted.append(block[-1])
+    _same(parallel, np.array(wanted), 0)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_one_thread_gives_the_sequential_result_of_the_ordered_values(func, data):
+    group_idx, values = data
+    nb.set_num_threads(1)
+    one = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(2)
+    many = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(1)
+    sequential = aggregate(group_idx, values, func=func)
+    # with one thread the sequential path runs, and it is the one that has
+    # always run - bit for bit
+    _same(one, sequential, 0)
+    _same(many, sequential, 0)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_values_keep_the_fill_value_of_the_empty_groups(func, rng):
+    # the groups that no value reached keep the fill value, and the fill
+    # value has to reach them in both paths alike
+    group_idx = rng.integers(0, 10, 200_000)
+    values = rng.random(200_000)
+    for fill in (DEFAULT_FILL_VALUE, -7.0):
+        parallel, sequential = _both_ways(group_idx, values, func, size=100, fill_value=fill)
+        _same(parallel, sequential, 0)
+        if fill != DEFAULT_FILL_VALUE:
+            assert (parallel[10:] == -7.0).all()
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_values_complain_about_a_fault_of_the_indices(func, data):
+    # the parallel path cannot raise out of its region, so the complaint of
+    # the sequential path has to be made after it
+    group_idx, values = data
+    group_idx = group_idx.copy()
+    group_idx[17] = -1
+    nb.set_num_threads(2)
+    with pytest.raises(ValueError, match="negative indices"):
+        aggregate(group_idx, values, func=func)

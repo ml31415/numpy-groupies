@@ -1,7 +1,9 @@
 """Streaming one-pass reductions: sums, products, lengths, logic, min/max."""
 
+from collections.abc import Callable
 from typing import Any, NamedTuple
 
+import numba as nb
 import numpy as np
 import numpy.typing as npt
 
@@ -18,6 +20,7 @@ from numpy_groupies.aggregate_numba.compose import (
     rule_widen_int,
 )
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.aggregate_numba.mt import chunk_count, should_use_mt
 from numpy_groupies.validation import NEGATIVE_INDICES
 
 
@@ -341,42 +344,156 @@ any = build_kernel(
 )
 
 
-class LastState(NamedTuple):
-    """The output array carries the last value of each group itself."""
-
-    out: npt.NDArray[np.number]
-
-
-def _last_init(
-    size: int,
-    n_input: int,
-    out_dtype: np.dtype,
-    aux_dtype: np.dtype,
-    in_dtype: np.dtype,
-    fill_value: float,
-    forced_fill: float,
-) -> LastState:
-    # untouched groups keep the fill value
-    return LastState(np.full(size, fill_value, out_dtype))
+# The state of the parallel path of the first and the last: the value of
+# every group and the groups that have one.  The two operations cannot be
+# reduced in chunks the way the sums are - the value of a group depends on
+# the order of the values - so the chunks are folded in the order of their
+# index: the first chunk that has a value for a group wins for the first,
+# the last one for the last.
+#
+# The result is the one of the sequential path bit for bit: every chunk
+# looks at its own values in the order they come, and the fold picks the
+# value of the chunk that comes first (or last) in the input.
+#
+# The state of a chunk holds one array of the size of the groups and one
+# flag per group - the same shape as the state of the sum, and the same
+# weight for the cost model.
+_MT_STATE_SIZE = 1
 
 
-def _last_update(st: LastState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
-    st.out[ri] = val
+def _last_driver_factory(nan_variant: bool) -> Any:
+    """The compiled driver of the last value of every group.
+
+    The value of a group is the one that comes last in the input - the
+    repeated indexing of the numpy implementation, in a loop of its own: the
+    composed driver plus a separate njit update call compiles slower here
+    (see the note at ``_first_driver_factory``).
+    """
+
+    def driver(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+    ) -> npt.NDArray[np.number]:
+        size = output_size(group_idx, size_arg)
+        out = np.full(size, fill_value, out_dtype)
+        # negative indices are flagged in the loop and raised after it: a
+        # raise is a call, and a call inside the loop stops LLVM from sinking
+        # the value loads into the short-circuit
+        bad = False
+        for i in range(group_idx.shape[0]):
+            ri = group_idx[i]
+            if ri < 0:
+                bad = True
+                continue
+            val = a[i]
+            if nan_variant and val != val:
+                # a nan does not take the group over: the last valid value
+                # is the one that is wanted
+                continue
+            out[ri] = val
+        if bad:
+            raise ValueError(NEGATIVE_INDICES)
+        return out
+
+    return njit_stable(driver, name=f"{'nan' if nan_variant else ''}last_driver")
 
 
-def _last_update_nan(st: LastState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
-    # select-form twin of _last_update - the current value must be read into
-    # a local first, repeating the subscript expression in the else branch
-    # keeps the slow codegen (aliasing, see the note in _max_update)
-    cur = st.out[ri]
-    st.out[ri] = val if val == val else cur
+def _last_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+    """The parallel passes of the last: the data is split into chunks, every
+    chunk looks for the last value of every group, and the chunks are folded
+    in the order of their index - the last chunk that has a value for a group
+    is the one that wins.
+
+    The chunk looks for its value backwards: the last value of a group in a
+    chunk is the first one the scan meets when it walks the chunk from its
+    end.  A scan that walks it forwards would write the value of every value
+    it meets, and a scatter write that the threads cannot keep apart is a
+    write the threads do one after another - the chunk scan of the first is
+    the other way round for the same reason.
+    """
+
+    @njit_stable(name=f"{'nan' if nans else ''}last_chunk_scan")
+    def scan_chunk(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        out_c: npt.NDArray[np.number],
+        seen_c: npt.NDArray[np.bool_],
+    ) -> int:
+        """The last value of every group within one chunk of the data.
+
+        The fault of the indices travels as a number and not as a flag in an
+        array: an exception cannot leave the parallel region, so the
+        complaint is made after it.
+        """
+        fault = 0
+        for i in range(group_idx.shape[0] - 1, -1, -1):
+            ri = group_idx[i]
+            if ri < 0:
+                fault = 1
+                continue
+            if not seen_c[ri]:
+                val = a[i]
+                if nans and val != val:
+                    # a nan does not take the group over: the last valid
+                    # value is the one that is wanted
+                    continue
+                seen_c[ri] = True
+                out_c[ri] = val
+        return fault
+
+    def mt_passes(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        extra: Any,
+        n_threads: int,
+    ) -> npt.NDArray[np.number]:
+        size = output_size(group_idx, size_arg)
+        n_values = group_idx.shape[0]
+        if not should_use_mt(size, n_threads, n_values, _MT_STATE_SIZE):
+            # not worth it, or only one thread to do it with: the sequential
+            # driver, with its result bit for bit
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
+        n_chunks = chunk_count(n_threads, n_values)
+        chunk = (n_values + n_chunks - 1) // n_chunks
+        # The state of every chunk: the value of every group and the groups
+        # that have one.  The states are the rows of two arrays and not a
+        # list of arrays: a list of them inside the parallel region costs
+        # more than the region saves (measured 160us against 96us per 200k
+        # values on four threads).
+        outs = np.full((n_chunks, size), fill_value, out_dtype)
+        seen = np.zeros((n_chunks, size), np.bool_)
+        # the fault of the indices of every chunk
+        faults = np.zeros(n_chunks, np.int64)
+        for c in nb.prange(n_chunks):
+            start = c * chunk
+            # np.minimum and not min: the module global 'min' is the min
+            # kernel, not the builtin
+            stop = np.minimum(start + chunk, n_values)
+            faults[c] = scan_chunk(group_idx[start:stop], a[start:stop], outs[c], seen[c])
+        # the fold in the order of the chunks: the last chunk that has a
+        # value for a group wins
+        acc: npt.NDArray[np.number] = outs[0]
+        for c in range(1, n_chunks):
+            acc[:] = np.where(seen[c], outs[c], acc)
+        if faults.any():
+            raise ValueError(NEGATIVE_INDICES)
+        return acc
+
+    return njit_stable(mt_passes, name=f"{'nan' if nans else ''}last_mt_passes", parallel=True)
 
 
-last = build_kernel(
+last = build_custom_kernel(
     "last",
-    init=_last_init,
-    update=_last_update,
-    update_nan=_last_update_nan,
+    driver_factory=_last_driver_factory,
+    mt_driver_factory=_last_mt_factory,
     rule=rule_same,
     fill_default=np.nan,
     doc="Last value of every group",
@@ -430,9 +547,94 @@ def _first_driver_factory(nan_variant: bool) -> Any:
     return njit_stable(driver, name=f"{'nan' if nan_variant else ''}first_driver")
 
 
+def _first_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+    """The parallel passes of the first: the data is split into chunks, every
+    chunk looks for the first value of every group, and the chunks are
+    folded in the order of their index - the first chunk that has a value for
+    a group is the one that wins.
+    """
+
+    @njit_stable(name=f"{'nan' if nans else ''}first_chunk_scan")
+    def scan_chunk(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        out_c: npt.NDArray[np.number],
+        seen_c: npt.NDArray[np.bool_],
+    ) -> int:
+        """The first value of every group within one chunk of the data.
+
+        The fault of the indices travels as a number and not as a flag in an
+        array: an exception cannot leave the parallel region, so the
+        complaint is made after it.
+        """
+        fault = 0
+        for i in range(group_idx.shape[0]):
+            ri = group_idx[i]
+            if ri < 0:
+                fault = 1
+                continue
+            if not seen_c[ri]:
+                val = a[i]
+                if nans and val != val:
+                    # a nan does not take the group over: the first valid
+                    # value is the one that is wanted
+                    continue
+                seen_c[ri] = True
+                out_c[ri] = val
+        return fault
+
+    def mt_passes(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        extra: Any,
+        n_threads: int,
+    ) -> npt.NDArray[np.number]:
+        size = output_size(group_idx, size_arg)
+        n_values = group_idx.shape[0]
+        if not should_use_mt(size, n_threads, n_values, _MT_STATE_SIZE):
+            # not worth it, or only one thread to do it with: the sequential
+            # driver, with its result bit for bit
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
+        n_chunks = chunk_count(n_threads, n_values)
+        chunk = (n_values + n_chunks - 1) // n_chunks
+        # The state of every chunk: the value of every group and the groups
+        # that have one.  The states are the rows of two arrays and not a
+        # list of arrays: a list of them inside the parallel region costs
+        # more than the region saves (measured 160us against 96us per 200k
+        # values on four threads).
+        outs = np.full((n_chunks, size), fill_value, out_dtype)
+        seen = np.zeros((n_chunks, size), np.bool_)
+        # the fault of the indices of every chunk
+        faults = np.zeros(n_chunks, np.int64)
+        for c in nb.prange(n_chunks):
+            start = c * chunk
+            # np.minimum and not min: the module global 'min' is the min
+            # kernel, not the builtin
+            stop = np.minimum(start + chunk, n_values)
+            faults[c] = scan_chunk(group_idx[start:stop], a[start:stop], outs[c], seen[c])
+        # the fold in the order of the chunks: the first chunk that has a
+        # value for a group wins
+        acc: npt.NDArray[np.number] = outs[0]
+        acc_seen = seen[0]
+        for c in range(1, n_chunks):
+            take = np.logical_and(np.logical_not(acc_seen), seen[c])
+            acc[:] = np.where(take, outs[c], acc)
+            acc_seen[:] = np.logical_or(acc_seen, seen[c])
+        if faults.any():
+            raise ValueError(NEGATIVE_INDICES)
+        return acc
+
+    return njit_stable(mt_passes, name=f"{'nan' if nans else ''}first_mt_passes", parallel=True)
+
+
 first = build_custom_kernel(
     "first",
     driver_factory=_first_driver_factory,
+    mt_driver_factory=_first_mt_factory,
     rule=rule_same,
     fill_default=np.nan,
     doc="First value of every group",
