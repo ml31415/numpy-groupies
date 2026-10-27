@@ -727,3 +727,97 @@ def test_the_ordered_values_complain_about_a_fault_of_the_indices(func, data):
     nb.set_num_threads(2)
     with pytest.raises(ValueError, match="negative indices"):
         aggregate(group_idx, values, func=func)
+
+
+# ---------------------------------------------------------------------------
+# the callable of the caller: the generic aggregation loop
+#
+# The loop applies the callable of the caller to the values of every group.
+# The counting sort that places the values of a group together stays single
+# threaded - the values have to be together where the callable is called on
+# them - and the loop over the groups, which is the expensive part, is cut
+# into ranges the threads work on one after another.
+#
+# Every group belongs to exactly one range and is worked on by one thread,
+# with the same code the sequential loop runs - so the result is the one of
+# the sequential loop bit for bit.
+
+
+CUSTOM = [
+    lambda x: x.sum(),
+    lambda x: float(np.sort(x)[len(x) // 2]),
+    lambda x: x.max() - x.min(),
+]
+
+
+def _both_ways_with_the_pool(group_idx: np.ndarray, values: np.ndarray, func, **kwargs: object) -> tuple:
+    """The result of the callable with the whole pool of threads and with one.
+
+    The path over the groups needs three threads to pay for the region of
+    the pool - the model of the package says so - so a machine with fewer of
+    them cannot run the test.
+    """
+    threads = nb.config.NUMBA_NUM_THREADS
+    if threads < 4:
+        pytest.skip("the machine has too few threads for the path over the groups")
+    nb.set_num_threads(threads)
+    parallel = aggregate(group_idx, values, func=func, **kwargs)
+    nb.set_num_threads(1)
+    sequential = aggregate(group_idx, values, func=func, **kwargs)
+    return parallel, sequential
+
+
+def test_the_callable_of_the_caller_takes_the_parallel_path(group_data):
+    # the tests below compare the two paths with each other, and they would
+    # compare the sequential path with itself if the cost model kept the
+    # call single threaded
+    _group_idx, values = group_data
+    threads = nb.config.NUMBA_NUM_THREADS
+    if threads < 4:
+        pytest.skip("the machine has too few threads for the path over the groups")
+    assert mt.should_use_group_mt(N_GROUPS, threads, len(values), 18.0)
+
+
+@pytest.mark.parametrize("func", CUSTOM)
+def test_the_callable_of_the_caller_gives_the_result_of_the_sequential_one(func, group_data):
+    group_idx, values = group_data
+    parallel, sequential = _both_ways_with_the_pool(group_idx, values, func)
+    _same(parallel, sequential, 0)
+
+
+@pytest.mark.parametrize("func", CUSTOM)
+def test_the_callable_of_the_caller_gives_the_value_of_every_group(func, group_data):
+    # the reference is the callable applied to the values of the group, the
+    # long way round
+    group_idx, values = group_data
+    parallel, _ = _both_ways_with_the_pool(group_idx, values, func)
+    wanted = np.array([func(values[group_idx == g]) for g in range(N_GROUPS)])
+    _same(parallel, wanted, 0)
+
+
+@pytest.mark.parametrize("func", CUSTOM)
+def test_the_callable_of_the_caller_complains_about_a_fault_of_the_indices(func, group_data):
+    # the counting sort that places the values stays single threaded, and it
+    # is the one that complains about the indices - the same complaint in
+    # both paths
+    group_idx, values = group_data
+    group_idx = group_idx.copy()
+    group_idx[17] = -1
+    with pytest.raises(ValueError, match="negative indices"):
+        aggregate(group_idx, values, func=func)
+    group_idx[17] = N_GROUPS
+    with pytest.raises(ValueError, match="too large"):
+        aggregate(group_idx, values, func=func, size=N_GROUPS)
+
+
+@pytest.mark.parametrize("func", CUSTOM)
+def test_the_number_of_the_threads_does_not_change_the_result_of_the_callable(func, group_data):
+    group_idx, values = group_data
+    results = []
+    for threads in _thread_counts():
+        nb.set_num_threads(threads)
+        results.append(aggregate(group_idx, values, func=func))
+    # the ranges are the units of work and nothing else: every group belongs
+    # to exactly one of them whichever number they are cut into
+    for result in results[1:]:
+        _same(results[0], result, 0)

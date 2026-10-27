@@ -21,8 +21,13 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.aggregate_numba.compose import KernelHandle
-from numpy_groupies.aggregate_numba.mt import mt_thread_count
-from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
+from numpy_groupies.aggregate_numba.mt import (
+    GROUP_MT_MIN_VALUES,
+    group_chunk_count,
+    mt_thread_count,
+    should_use_group_mt,
+)
+from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
 from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.common import (
     resolve_fill_value,
@@ -63,6 +68,16 @@ _N_DEPENDENT_ADTYPES = frozenset(
 # the hashable ones - a list is not, and the cache raises a TypeError for it
 _KeyedDType: TypeAlias = str | type | np.dtype | None
 _HashableFillValue: TypeAlias = AScalar | None | tuple[AScalar, ...] | DefaultFillValue
+
+
+# The cost of a value of a callable of the caller's own is not known: the
+# callable is the caller's own, and the model of the path over the groups
+# needs a number.  The number of the median is taken - the select of a group
+# is what the order statistics cost per value - and a callable that costs
+# less than that is the cheap one, which the serial part of the call (the
+# counting sort that places the values) dominates anyway.  A callable that
+# costs more only makes the parallel path pay off sooner.
+_NS_PER_VALUE_CUSTOM = 18.0
 
 
 @functools.lru_cache(maxsize=256)
@@ -378,8 +393,15 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
     return aggregate
 
 
-def _compiled_group_loop(func: Callable[..., AScalar]) -> Callable[..., None]:
-    """Compile a user callable and wrap the per-group loop around it."""
+def _compiled_group_loop(func: Callable[..., AScalar]) -> tuple[Callable[..., None], Callable[..., None]]:
+    """Compile a user callable and wrap the per-group loop around it.
+
+    Two loops come out of it: the sequential one, and the parallel one that
+    cuts the *groups* into ranges the threads work on one after another.
+    The counting sort that places the values stays single threaded in both -
+    it is the third of the work of the call, and the values of a group have
+    to be together where the callable is called on them.
+    """
     nb_func = nb.njit(func)
     # the counting sort of the steps module, compiled for this loop alone:
     # the compiled specialization of a helper must not reach into the
@@ -387,6 +409,7 @@ def _compiled_group_loop(func: Callable[..., AScalar]) -> Callable[..., None]:
     count = nb.njit(group_count)
     starts_of = nb.njit(group_starts)
     place = nb.njit(group_place)
+    ranges = nb.njit(group_ranges)
 
     @nb.njit
     def loop(group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number], ret: npt.NDArray[np.number]) -> None:
@@ -404,7 +427,41 @@ def _compiled_group_loop(func: Callable[..., AScalar]) -> Callable[..., None]:
             if n > 0:
                 ret[g] = nb_func(a_sorted[starts[g] : starts[g] + n])
 
-    return loop
+    @nb.njit(parallel=True)
+    def mt_loop(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        ret: npt.NDArray[np.number],
+        n_threads: int,
+    ) -> None:
+        size = len(ret)
+        counts = count(group_idx, size)
+        starts = starts_of(counts)
+        a_sorted = np.empty(a.size, a.dtype)
+        place(group_idx, a, starts.copy(), a_sorted)
+        if not should_use_group_mt(size, n_threads, group_idx.shape[0], _NS_PER_VALUE_CUSTOM):
+            # not worth it, or only one thread to do it with: the sequential
+            # loop, with its result bit for bit
+            for g in range(size):
+                n = counts[g]
+                if n > 0:
+                    ret[g] = nb_func(a_sorted[starts[g] : starts[g] + n])
+            return
+        # the groups are cut into ranges of about equal value count, and
+        # every group belongs to exactly one of them - so no two threads
+        # ever work on the same group, nothing is folded afterwards and the
+        # result is the one of the sequential loop bit for bit
+        n_ranges = group_chunk_count(n_threads, size)
+        # the largest block of every range is not needed here: the callable
+        # is called on the block of the group itself
+        edges, _largest = ranges(counts, n_ranges)
+        for r in nb.prange(n_ranges):
+            for g in range(edges[r], edges[r + 1]):
+                n = counts[g]
+                if n > 0:
+                    ret[g] = nb_func(a_sorted[starts[g] : starts[g] + n])
+
+    return loop, mt_loop
 
 
 def build_generic_aggregate(func: Callable[..., AScalar]) -> Callable[..., AResult]:
@@ -416,7 +473,7 @@ def build_generic_aggregate(func: Callable[..., AScalar]) -> Callable[..., AResu
     so numba's on-disk cache could neither be relied upon to hit, nor be
     trusted against false hits.
     """
-    jitfunc = _compiled_group_loop(func)
+    jitfunc, mt_jitfunc = _compiled_group_loop(func)
 
     def aggregate(
         group_idx: npt.NDArray[np.integer],
@@ -440,7 +497,15 @@ def build_generic_aggregate(func: Callable[..., AScalar]) -> Callable[..., AResu
         ret = np.full(flat_size, fill_value, dtype=dtype)
         group_idx = np.ascontiguousarray(group_idx)
 
-        jitfunc(group_idx, a, ret)
+        # The parallel path cuts the groups into ranges the threads work on.
+        # The number of the threads is asked of every call that is big
+        # enough for the parallel path at all - a call that is too small
+        # should not pay for the call into the runtime of numba.
+        n_threads = mt_thread_count()
+        if n_threads > 1 and len(group_idx) >= GROUP_MT_MIN_VALUES:
+            mt_jitfunc(group_idx, a, ret, n_threads)
+        else:
+            jitfunc(group_idx, a, ret)
 
         # Deal with ndimensional indexing
         if ndim_idx > 1:
