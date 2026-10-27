@@ -7,15 +7,20 @@ of an installed package would sit in the installation directory, where it
 survives the uninstallation and leaves a broken installation behind
 (numba #9312).
 
-``purge()`` removes both that directory and the leftovers of the versions that
+``purge_cache()`` removes both that directory and the leftovers of the versions that
 cached next to their source.
 """
 
 import os
 import pathlib
+import subprocess
+import sys
+
+from numba.core.caching import NullCache
 
 import numpy_groupies
-from numpy_groupies.utils_cache import numba_cache_dir, purge
+from numpy_groupies.tests.test_numba import _walk_dispatchers
+from numpy_groupies.utils_cache import numba_cache_dir, purge_cache
 
 PACKAGE = pathlib.Path(numpy_groupies.__file__).parent
 
@@ -33,7 +38,7 @@ def test_the_cache_directory_is_the_user_wide_one_without_the_environment(monkey
     assert os.path.isabs(path)
 
 
-def test_purge_removes_the_cache_and_the_leftovers_in_the_source_tree(monkeypatch, tmp_path):
+def test_purge_cache_removes_the_cache_and_the_leftovers_in_the_source_tree(monkeypatch, tmp_path):
     # both parts in one test: they touch the same files, and two tests
     # that do so get in each other's way under xdist
     monkeypatch.setenv("NUMBA_CACHE_DIR", str(tmp_path))
@@ -54,7 +59,7 @@ def test_purge_removes_the_cache_and_the_leftovers_in_the_source_tree(monkeypatc
     bytecode = tree / "keep.pyc"
     bytecode.write_bytes(b"\x00")
     try:
-        removed = purge()
+        removed = purge_cache()
         assert removed >= 5
         assert not cache.exists()
         assert not (tree / "old.nbi").exists()
@@ -67,8 +72,8 @@ def test_purge_removes_the_cache_and_the_leftovers_in_the_source_tree(monkeypatc
             (tree / name).unlink(missing_ok=True)
 
 
-def test_the_package_hands_out_the_purge():
-    assert numpy_groupies.purge is purge
+def test_the_package_hands_out_the_purge_cache():
+    assert numpy_groupies.purge_cache is purge_cache
 
 
 def test_every_dispatcher_caches_in_the_directory_of_the_package():
@@ -78,10 +83,6 @@ def test_every_dispatcher_caches_in_the_directory_of_the_package():
     installation directory of an installed package, where it survives the
     uninstallation and leaves a broken installation behind (numba #9312).
     """
-    from numba.core.caching import NullCache
-
-    from numpy_groupies.tests.test_numba import _walk_dispatchers
-
     wanted = numba_cache_dir()
     checked = 0
     for dispatcher in _walk_dispatchers():
@@ -97,9 +98,6 @@ def test_every_dispatcher_caches_in_the_directory_of_the_package():
 
 def test_the_cache_of_a_kernel_lands_in_the_directory_and_is_used(tmp_path):
     """A kernel compiles into the directory, and the next process finds it there."""
-    import subprocess
-    import sys
-
     script = (
         "import numpy as np\n"
         "from numpy_groupies.aggregate_numba import aggregate\n"

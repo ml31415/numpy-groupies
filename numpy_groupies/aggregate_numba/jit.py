@@ -87,7 +87,7 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
         return os.path.join(self._cache_path, f"{self._index_name}.lock")
 
     def save(self, key: Any, data: Any) -> None:
-        # The directory of the cache may be gone: ``purge()`` removes it, and
+        # The directory of the cache may be gone: ``purge_cache()`` removes it, and
         # a process that compiles while the purge runs would write into a
         # directory that is not there any more.
         os.makedirs(self._cache_path, exist_ok=True)

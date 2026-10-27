@@ -10,7 +10,7 @@ survives the uninstallation and leaves a broken installation behind (numba
 
 The cache of this package therefore lives in a directory of its own: the one
 ``NUMBA_CACHE_DIR`` names, or the user-wide cache directory of numba otherwise.
-``purge()`` removes it - and the leftovers of the versions that cached next to
+``purge_cache()`` removes it - and the leftovers of the versions that cached next to
 their source.
 
 The module imports nothing but the standard library: the package has to be
@@ -60,7 +60,7 @@ def _count_files(directory: str) -> int:
     return sum(len(files) for _root, _dirs, files in os.walk(directory))
 
 
-def purge() -> int:
+def purge_cache() -> int:
     """Remove the cached compiles of this package.
 
     Both the cache of the package - the directory ``NUMBA_CACHE_DIR`` names or
