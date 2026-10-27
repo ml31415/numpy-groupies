@@ -17,6 +17,8 @@ from typing import Any, TypeVar, overload
 import numba as nb
 from numba.core import caching
 
+from numpy_groupies.utils_cache import numba_cache_dir
+
 # the decorated function is a dispatcher that keeps the signature of its
 # python function - the overloads below hand that signature through
 # ``njit_stable`` for the type checker, the way ``nb.njit`` does
@@ -85,6 +87,10 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
         return os.path.join(self._cache_path, f"{self._index_name}.lock")
 
     def save(self, key: Any, data: Any) -> None:
+        # The directory of the cache may be gone: ``purge_cache()`` removes it, and
+        # a process that compiles while the purge runs would write into a
+        # directory that is not there any more.
+        os.makedirs(self._cache_path, exist_ok=True)
         with _advisory_lock(self._lock_path(), shared=False):
             return super().save(key, data)  # type: ignore[no-any-return]  # numba leaves caching.py unannotated
 
@@ -185,8 +191,16 @@ def njit_stable(
             # and could load each other's compiled artifacts.
             cache_impl = disp._cache._impl
             cache_impl._filename_base = f"{cache_impl._filename_base}-r{_cache_revision}-{uuid}"
+            # The cache of the kernel does not live next to its source but in
+            # a directory of the package: the cache of numba is never cleaned
+            # up, and the one of an installed package sits in the installation
+            # directory - where it survives the uninstallation and leaves a
+            # broken installation behind (numba #9312).
+            cache_path = numba_cache_dir()
+            os.makedirs(cache_path, exist_ok=True)
+            disp._cache._cache_path = cache_path
             disp._cache._cache_file = _ProcessSafeCacheFile(
-                cache_path=disp._cache._cache_path,
+                cache_path=cache_path,
                 filename_base=cache_impl.filename_base,
                 source_stamp=cache_impl.locator.get_source_stamp(),
             )

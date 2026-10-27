@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from numpy_groupies import aggregate_purepy
 from numpy_groupies.registry import bind_functions, function_names
+from numpy_groupies.utils_cache import purge_cache
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -316,6 +317,12 @@ if TYPE_CHECKING:
     nancumprod: EntryPoint
     nancummax: EntryPoint
     nancummin: EntryPoint
+
+
+# ``purge_cache()`` removes the cached compiles of the package - it is the tool for
+# the cache of the numba backend, which lives in a directory of its own (see
+# ``numpy_groupies.utils_cache.numba_cache_dir``) and which numba never cleans
+# up.
 
 
 try:
