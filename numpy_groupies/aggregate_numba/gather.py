@@ -11,14 +11,26 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.utils_np import AResult
 
 
-# the annotations of the jitted function below are documentation only - numba
+# the annotations of the jitted functions below are documentation only - numba
 # compiles from the argument types and ignores them, the type checker needs them
+@njit_stable
+def _gather_chunk(
+    ret: npt.NDArray[np.generic],
+    group_idx: npt.NDArray[np.integer],
+    out: npt.NDArray[np.generic],
+    start: int,
+    stop: int,
+) -> None:
+    """The gather of the values of a range of positions."""
+    for i in range(start, stop):
+        out[i] = ret[group_idx[i]]
+
+
 @njit_stable
 def _gather_1d(
     ret: npt.NDArray[np.generic], group_idx: npt.NDArray[np.integer], out: npt.NDArray[np.generic]
 ) -> npt.NDArray[np.generic]:
-    for i in range(group_idx.size):
-        out[i] = ret[group_idx[i]]
+    _gather_chunk(ret, group_idx, out, 0, group_idx.size)
     return out
 
 
@@ -43,8 +55,7 @@ def _gather_1d_mt(
     for c in nb.prange(chunks):
         start = c * chunk
         stop = min(start + chunk, n_values)
-        for i in range(start, stop):
-            out[i] = ret[group_idx[i]]
+        _gather_chunk(ret, group_idx, out, start, stop)
     return out
 
 

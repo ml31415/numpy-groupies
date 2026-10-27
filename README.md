@@ -260,22 +260,22 @@ Best of three passes, every cell measured in one block of five runs, in millisec
 
 | function        | numpy  |  numba  | numbagg | polars | pandas |
 | --------------- | -----: | ------: | ------: | -----: | ------: |
-| `sum`           |  0.912 |  0.253 |  0.483 |  3.102 |  6.486 |
-| `mean`          |  1.548 |  0.281 |  0.548 |  2.818 |  7.163 |
-| `max`           |  1.741 |  0.305 |  0.908 |  3.751 |  6.240 |
-| `std`           |  3.168 |  0.418 |  0.741 |  2.357 |  7.778 |
-| `nansum`        |  4.202 |  0.273 |  1.813 |  6.504 |  8.058 |
-| `median`        | 14.083 |  2.887 |   ---- |  4.460 | 15.915 |
-| `skew`          |  5.581 |  2.636 |   ---- |  4.265 |  9.668 |
-| `kurt`          |  5.638 |  2.562 |   ---- |  3.872 | 10.630 |
-| `quantile`      | 15.486 |  2.750 |   ---- |  4.095 | 23.809 |
-| `nunique`       | 15.796 |  3.838 |   ---- | 14.059 | 59.548 |
-| `sort`          | 72.128 |  7.192 |   ---- |   ---- |   ---- |
-| `cumsum`        | 15.371 |  0.572 |   ---- | 10.231 |  6.954 |
-| `array`         |  7.445 |  1.947 |   ---- |   ---- |   ---- |
-| custom callable | 114.729 |  6.023 |   ---- | 85.638 | 97.647 |
+| `sum`           |  0.941 |  0.248 |  0.486 |  2.932 |  6.798 |
+| `mean`          |  1.520 |  0.282 |  0.539 |  2.219 |  7.306 |
+| `max`           |  1.705 |  0.331 |  0.890 |  3.553 |  6.840 |
+| `std`           |  3.147 |  0.359 |  0.689 |  2.841 |  7.556 |
+| `nansum`        |  4.101 |  0.263 |  1.780 |  6.058 |  8.417 |
+| `median`        | 12.599 |  2.775 |   ---- |  4.145 | 15.699 |
+| `skew`          |  5.578 |  1.015 |   ---- |  3.160 |  9.080 |
+| `kurt`          |  5.655 |  0.989 |   ---- |  4.096 | 10.263 |
+| `quantile`      | 15.341 |  2.756 |   ---- |  3.669 | 22.869 |
+| `nunique`       | 15.567 |  2.952 |   ---- | 12.481 | 56.930 |
+| `sort`          | 71.208 |  6.277 |   ---- |   ---- |   ---- |
+| `cumsum`        | 15.739 |  0.583 |   ---- |  9.976 |  7.241 |
+| `array`         |  7.562 |  1.952 |   ---- |   ---- |   ---- |
+| custom callable | 112.480 |  2.842 |   ---- | 81.065 | 98.810 |
 
-The `numba` column is the backend of this package, optimized as far as we could get it: it uses the threads of the machine where that pays for itself. The operations that can be reduced in chunks - the sums, the products, the counts, the extremes and the mean - split their data into chunks that are reduced separately and folded afterwards. The operations that cannot - the order statistics (the median, the quantile, the sort, the number of the distinct values) - cut their *groups* into ranges instead and let the threads work on the ranges one after another; every group belongs to one range, so nothing is folded afterwards and the result is the one of the sequential kernel bit for bit. The chunks and the ranges are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the pieces that are left. The operations that give an output per value (the cumulatives) stay single-threaded.
+The `numba` column is the backend of this package, optimized as far as we could get it: it uses the threads of the machine where that pays for itself. The operations that can be reduced in chunks - the sums, the products, the counts, the extremes, the mean, the moments (the skewness and the kurtosis), the first and the last value of a group and the index of its best value (the argmax and the argmin) - split their data into chunks that are reduced separately and folded afterwards. The operations that cannot - the order statistics (the median, the quantile, the sort, the number of the distinct values) and the callables of the caller - cut their *groups* into ranges instead and let the threads work on the ranges one after another; every group belongs to one range, so nothing is folded afterwards and the result is the one of the sequential kernel bit for bit. The chunks and the ranges are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the pieces that are left. The operations that give an output per value (the cumulatives) stay single-threaded.
 
 Every participant gets the same data, the same arguments and the same machine, and the threads of the machine are as much theirs as ours - the comparison is meant to be a fair one.
 

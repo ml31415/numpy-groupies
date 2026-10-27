@@ -33,9 +33,9 @@ forced_fill) -> state``
 ``combine(acc, other, fill_value, extra)``
     optional fold of the states of two chunks of the data into one - the
     operations that can be reduced in chunks (the sums, the products, the
-    counts, the extremes, the logic) provide one, and their driver then has a
-    parallel path: the data is split into chunks that are reduced separately,
-    and the states are folded afterwards
+    counts, the extremes, the logic, the moments) provide one, and their
+    driver then has a parallel path: the data is split into chunks that are
+    reduced separately, and the states are folded afterwards
 
 The parallel path has one state per chunk or one per thread and more chunks
 than threads: the threads take the chunks from the queue of the pool, so a
@@ -1063,7 +1063,10 @@ def build_kernel(
 
     ``combine`` folds the states of two chunks of the data into one - the
     operations that provide one can be reduced in chunks, and their driver
-    then has a parallel path (see ``combine`` in the module docstring).
+    then has a parallel path (see ``combine`` in the module docstring).  The
+    moments of the skewness and the kurtosis are such an operation: their
+    states are the running moments of Welford, and the fold of two of them
+    is the merge of Chan et al. and not a plain addition.
 
     ``state_size`` is the number of the arrays the state of the operation
     holds, counted against the two of the sum: the state of every thread
@@ -1136,6 +1139,25 @@ def build_kernel(
             pass
 
     fill_untouched = njit_stable(fill_untouched, name=f"{name}_fill_untouched")
+
+    @njit_stable(name=f"{name}_finish_pass")
+    def finish_pass(st: Any, size: int, n_values: int, fill_value: float, extra: Any) -> Any:
+        """The gate, the finishing pass and the fill of the untouched groups.
+
+        The last third of the work of an aggregation - the exactness gate,
+        the value of every group and the fill value of the groups that
+        received none - and the same in the sequential path and in the
+        parallel one.
+        """
+        gate_c(st, n_values)
+        # the array of the state is bound to a local: a write through the
+        # field of a state that came out of a list lands in a copy of it and
+        # is lost
+        out = st.out
+        for g in range(size):
+            out[g] = finish_c(st, g, fill_value, extra)
+        fill_untouched(st, size, fill_value)
+        return out
 
     def build(nan_variant: bool) -> KernelHandle:
         # plain and nan variant are two compiled artifacts of the same source
@@ -1238,11 +1260,7 @@ def build_kernel(
             seed_c(st, a)
             fault = kernel(group_idx, a, st, fill_value, extra, size)
             _raise_fault(fault)
-            gate_c(st, len(group_idx))
-            for g in range(size):
-                st.out[g] = finish_c(st, g, fill_value, extra)
-            fill_untouched(st, size, fill_value)
-            return st.out
+            return finish_pass(st, size, len(group_idx), fill_value, extra)
 
         passes = njit_stable(passes, name=f"{op_name}_passes")
         driver = build_driver(op_name, passes, "_driver")
@@ -1329,15 +1347,7 @@ def build_kernel(
                 for c in range(1, n_chunks):
                     fault |= faults[c]
                 _raise_fault(fault)
-                gate_c(acc, n_values)
-                # the array of the state is bound to a local: a write through
-                # the field of a state that came out of a list lands in a copy
-                # of it and is lost
-                out = acc.out
-                for g in range(size):
-                    out[g] = finish_c(acc, g, fill_value, extra)
-                fill_untouched(acc, size, fill_value)
-                return out
+                return finish_pass(acc, size, n_values, fill_value, extra)
 
             mt_passes = njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
             mt_driver = build_driver(op_name, mt_passes, "_mt_driver", multi_threading=True)

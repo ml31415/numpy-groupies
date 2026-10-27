@@ -24,6 +24,9 @@ of the groups hides a group that no range worked on - which is where a range
 that is one group too short, or one too long, would show.
 """
 
+from collections.abc import Callable
+from typing import Any
+
 import numba as nb
 import numpy as np
 import pytest
@@ -512,3 +515,493 @@ def test_the_group_path_complains_about_a_fault_of_the_indices(func, group_data)
     group_idx[17] = N_GROUPS
     with pytest.raises(ValueError, match=f"too large for size {N_GROUPS}"):
         aggregate(group_idx, values, func=func, size=N_GROUPS)
+
+
+# ---------------------------------------------------------------------------
+# the moments: the skewness and the kurtosis
+#
+# Their state is the running central moment of Welford, and two states of
+# two chunks of the data cannot be added up like the sums of the mean can:
+# the moments of a chunk are the moments about the mean of that chunk, and
+# the merge of Chan et al. is what puts the two together.
+#
+# The merge is not the same arithmetic as the accumulation of one value at a
+# time, so the result of the parallel path is not the one of the sequential
+# path bit for bit - it is the one of the sequential path to the last bits of
+# the moments.  The kurtosis is a ratio of two moments and the skewness a
+# ratio of a moment and a power of another one, and a ratio of two nearly
+# equal numbers is where the difference shows: the tests below compare the
+# two results with a tolerance and not with the last bits.
+
+
+MOMENTS = ["skew", "kurt", "nanskew", "nankurt"]
+
+
+def _reference_moment(group_idx: np.ndarray, values: np.ndarray, func: str, n_groups: int) -> np.ndarray:
+    """The moment of every group, computed the long way round.
+
+    The central moments of the group are taken from the deviations of its
+    values from their mean - the plain definition, without the recurrence
+    that keeps the running mean.
+    """
+    wanted = 3 if func.endswith("skew") else 4
+    out = np.full(n_groups, np.nan)
+    for g in range(n_groups):
+        block = values[group_idx == g]
+        if func.startswith("nan"):
+            block = block[~np.isnan(block)]
+        n = len(block)
+        if n < wanted:
+            continue
+        deviations = block - block.mean()
+        m2 = (deviations**2).sum()
+        if m2 == 0:
+            # a group whose values are all the same has no spread - and no
+            # skewness or kurtosis either, which pandas answers with a zero
+            out[g] = 0.0
+            continue
+        if func.endswith("skew"):
+            m3 = (deviations**3).sum()
+            out[g] = n * np.sqrt(n - 1) / (n - 2) * m3 / m2**1.5
+        else:
+            m4 = (deviations**4).sum()
+            out[g] = n * (n + 1) * (n - 1) * m4 / ((n - 2) * (n - 3) * m2**2) - 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
+    return out
+
+
+def test_the_moments_take_the_parallel_path(data):
+    # the tests below compare the two paths with each other, and they would
+    # compare the sequential path with itself if the cost model kept the
+    # call single threaded - the state of the moments is the widest of the
+    # package, and the model counts it
+    _group_idx, values = data
+    assert mt.should_use_mt(N_GROUPS, 2, len(values), 5)
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_the_moments_give_the_result_of_the_sequential_one(func, data):
+    group_idx, values = data
+    parallel, sequential = _both_ways(group_idx, values, func)
+    np.testing.assert_allclose(parallel, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_the_moments_of_every_group_are_the_moments_of_that_group(func, group_data):
+    # the reference of the moments is the definition itself - the merge of
+    # the states of the chunks has to give the moment of the group and not
+    # the moment of a chunk of it
+    group_idx, values = group_data
+    parallel, _ = _both_ways(group_idx, values, func)
+    wanted = _reference_moment(group_idx, values, func, N_GROUPS)
+    np.testing.assert_allclose(parallel, wanted, rtol=1e-9, atol=1e-9, equal_nan=True)
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_one_thread_gives_the_sequential_result_of_the_moments(func, data):
+    group_idx, values = data
+    nb.set_num_threads(1)
+    one = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(2)
+    many = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(1)
+    sequential = aggregate(group_idx, values, func=func)
+    # with one thread the sequential path runs, and it is the one that has
+    # always run - bit for bit
+    np.testing.assert_allclose(one, sequential, rtol=0, atol=0, equal_nan=True)
+    np.testing.assert_allclose(many, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
+
+
+@pytest.mark.parametrize("func", ["skew", "kurt"])
+def test_the_moments_keep_the_result_of_the_integer_input(func, rng):
+    # the integer input is tracked by the extrema that feed the exactness
+    # gate, and the extrema of the chunks have to be folded as well
+    group_idx = rng.integers(0, 100, 200_000)
+    values = rng.integers(-1000, 1000, 200_000)
+    parallel, sequential = _both_ways(group_idx, values, func)
+    np.testing.assert_allclose(parallel, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
+
+
+def test_the_fold_of_the_moments_takes_over_the_extrema_of_an_empty_chunk():
+    # A chunk that received no value at all has no extrema: its scratch is
+    # never seeded, and it holds whatever the allocator left there.  The
+    # fold of two such states has to take the extrema of the one that has
+    # values, and it has to leave the ones of the other alone.
+    from numpy_groupies.aggregate_numba import averaging
+
+    def state(count: int, low: int, high: int) -> np.ndarray:
+        return averaging.MomentState(
+            np.zeros(1),
+            np.zeros(1),
+            np.zeros(1),
+            np.zeros(1),
+            np.zeros(1),
+            np.array([count], np.int64),
+            np.array([low]),
+            np.array([high]),
+        )
+
+    # the accumulator has no values: the extrema of the other chunk are
+    # taken over as they are, the ones of the allocator left behind are not
+    # compared with anything - the garbage is the way round here, so that a
+    # comparison of the two would keep it
+    acc = state(0, -999, 999)
+    averaging._moment_combine(acc, state(5, 7, -7), 0.0, 0)
+    assert acc.low[0] == 7
+    assert acc.high[0] == -7
+    assert acc.count[0] == 5
+
+    # the other chunk has no values: its extrema are left out of the fold
+    acc = state(5, 7, -7)
+    averaging._moment_combine(acc, state(0, 999, -999), 0.0, 0)
+    assert acc.low[0] == 7
+    assert acc.high[0] == -7
+    assert acc.count[0] == 5
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_the_moments_keep_the_fill_value_of_the_empty_groups(func, rng):
+    # the groups that received no value keep the fill value, and the fill
+    # value has to reach them in both paths alike
+    group_idx = rng.integers(0, 10, 200_000)
+    values = rng.random(200_000)
+    for fill in (DEFAULT_FILL_VALUE, -7.0):
+        parallel, sequential = _both_ways(group_idx, values, func, size=100, fill_value=fill)
+        np.testing.assert_allclose(parallel, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
+        if fill != DEFAULT_FILL_VALUE:
+            assert (parallel[10:] == -7.0).all()
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_the_moments_refuse_the_complex_input(func, rng):
+    # the skewness and the kurtosis are not defined for the complex values,
+    # and the complaint has to be the same one whichever path the call takes
+    group_idx = rng.integers(0, 10, 1000)
+    values = rng.random(1000) + 1j * rng.random(1000)
+    for threads in (1, 2):
+        nb.set_num_threads(threads)
+        with pytest.raises(TypeError, match="not defined for complex values"):
+            aggregate(group_idx, values, func=func)
+
+
+# ---------------------------------------------------------------------------
+# the first and the last: the values that depend on the order of the input
+#
+# They cannot be reduced in chunks the way the sums are: the value of a
+# group is the one that comes first (or last) in the input.  Their parallel
+# path splits the data into chunks, lets every chunk look for the value of
+# its own and folds the chunks in the order of their index - the first chunk
+# that has a value for a group wins for the first, the last one for the
+# last.
+#
+# The result is the one of the sequential path bit for bit: every chunk looks
+# at its own values in the order they come, and the fold picks the value of
+# the chunk that comes first (or last) in the input.
+
+
+ORDERED = ["first", "last", "nanfirst", "nanlast"]
+
+
+def test_the_ordered_values_take_the_parallel_path(data):
+    # the tests below compare the two paths with each other, and they would
+    # compare the sequential path with itself if the cost model kept the
+    # call single threaded
+    _group_idx, values = data
+    assert mt.should_use_mt(N_GROUPS, 2, len(values), 1)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_values_give_the_result_of_the_sequential_one(func, data):
+    group_idx, values = data
+    parallel, sequential = _both_ways(group_idx, values, func)
+    # not "to the last bits": every value of a group is looked for by the
+    # one chunk that has it, and the fold picks the chunk that comes first
+    # (or last) in the input - the very same value the sequential path
+    # finds
+    _same(parallel, sequential, 0)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_value_of_every_group_is_the_value_of_that_group(func, data):
+    # the reference is the definition itself: the first (or the last) value
+    # of the group in the order of the input
+    group_idx, values = data
+    parallel, _ = _both_ways(group_idx, values, func)
+    wanted = []
+    for g in range(N_GROUPS):
+        block = values[group_idx == g]
+        if func.startswith("nan"):
+            # the nan variants look for the first (the last) value that is
+            # not a nan
+            block = block[~np.isnan(block)]
+        if block.size == 0:
+            wanted.append(np.nan)
+        elif func.endswith("first"):
+            wanted.append(block[0])
+        else:
+            wanted.append(block[-1])
+    _same(parallel, np.array(wanted), 0)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_values_with_nans_give_the_result_of_the_sequential_one(func, group_data):
+    # die nan-Varianten lassen die NaNs aus, die plain-Varianten nicht - und
+    # beide muessen auf dem parallelen Pfad das sagen, was der sequentielle
+    # sagt
+    group_idx, values = group_data
+    parallel, sequential = _both_ways(group_idx, values, func)
+    _same(parallel, sequential, 0)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_one_thread_gives_the_sequential_result_of_the_ordered_values(func, data):
+    group_idx, values = data
+    nb.set_num_threads(1)
+    one = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(2)
+    many = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(1)
+    sequential = aggregate(group_idx, values, func=func)
+    # with one thread the sequential path runs, and it is the one that has
+    # always run - bit for bit
+    _same(one, sequential, 0)
+    _same(many, sequential, 0)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_values_keep_the_fill_value_of_the_empty_groups(func, rng):
+    # the groups that no value reached keep the fill value, and the fill
+    # value has to reach them in both paths alike
+    group_idx = rng.integers(0, 10, 200_000)
+    values = rng.random(200_000)
+    for fill in (DEFAULT_FILL_VALUE, -7.0):
+        parallel, sequential = _both_ways(group_idx, values, func, size=100, fill_value=fill)
+        _same(parallel, sequential, 0)
+        if fill != DEFAULT_FILL_VALUE:
+            assert (parallel[10:] == -7.0).all()
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_values_complain_about_a_fault_of_the_indices(func, data):
+    # the parallel path cannot raise out of its region, so the complaint of
+    # the sequential path has to be made after it
+    group_idx, values = data
+    group_idx = group_idx.copy()
+    group_idx[17] = -1
+    nb.set_num_threads(2)
+    with pytest.raises(ValueError, match="negative indices"):
+        aggregate(group_idx, values, func=func)
+
+
+# ---------------------------------------------------------------------------
+# the callable of the caller: the generic aggregation loop
+#
+# The loop applies the callable of the caller to the values of every group.
+# The counting sort that places the values of a group together stays single
+# threaded - the values have to be together where the callable is called on
+# them - and the loop over the groups, which is the expensive part, is cut
+# into ranges the threads work on one after another.
+#
+# Every group belongs to exactly one range and is worked on by one thread,
+# with the same code the sequential loop runs - so the result is the one of
+# the sequential loop bit for bit.
+
+
+CUSTOM = [
+    lambda x: x.sum(),
+    lambda x: float(np.sort(x)[len(x) // 2]),
+    lambda x: x.max() - x.min(),
+]
+
+
+def _both_ways_with_the_pool(
+    group_idx: np.ndarray, values: np.ndarray, func: str | Callable[..., Any], **kwargs: object
+) -> tuple:
+    """The result of the callable with the whole pool of threads and with one.
+
+    The path over the groups needs three threads to pay for the region of
+    the pool - the model of the package says so - so a machine with fewer of
+    them cannot run the test.
+    """
+    threads = nb.config.NUMBA_NUM_THREADS
+    if threads < 4:
+        pytest.skip("the machine has too few threads for the path over the groups")
+    nb.set_num_threads(threads)
+    parallel = aggregate(group_idx, values, func=func, **kwargs)
+    nb.set_num_threads(1)
+    sequential = aggregate(group_idx, values, func=func, **kwargs)
+    return parallel, sequential
+
+
+def test_the_callable_of_the_caller_takes_the_parallel_path(group_data):
+    # the tests below compare the two paths with each other, and they would
+    # compare the sequential path with itself if the cost model kept the
+    # call single threaded
+    _group_idx, values = group_data
+    threads = nb.config.NUMBA_NUM_THREADS
+    if threads < 4:
+        pytest.skip("the machine has too few threads for the path over the groups")
+    assert mt.should_use_group_mt(N_GROUPS, threads, len(values), 18.0)
+
+
+@pytest.mark.parametrize("func", CUSTOM)
+def test_the_callable_of_the_caller_gives_the_result_of_the_sequential_one(func, group_data):
+    group_idx, values = group_data
+    parallel, sequential = _both_ways_with_the_pool(group_idx, values, func)
+    _same(parallel, sequential, 0)
+
+
+@pytest.mark.parametrize("func", CUSTOM)
+def test_the_callable_of_the_caller_gives_the_value_of_every_group(func, group_data):
+    # the reference is the callable applied to the values of the group, the
+    # long way round
+    group_idx, values = group_data
+    parallel, _ = _both_ways_with_the_pool(group_idx, values, func)
+    wanted = np.array([func(values[group_idx == g]) for g in range(N_GROUPS)])
+    _same(parallel, wanted, 0)
+
+
+@pytest.mark.parametrize("func", CUSTOM)
+def test_the_callable_of_the_caller_complains_about_a_fault_of_the_indices(func, group_data):
+    # the counting sort that places the values stays single threaded, and it
+    # is the one that complains about the indices - the same complaint in
+    # both paths
+    group_idx, values = group_data
+    group_idx = group_idx.copy()
+    group_idx[17] = -1
+    with pytest.raises(ValueError, match="negative indices"):
+        aggregate(group_idx, values, func=func)
+    group_idx[17] = N_GROUPS
+    with pytest.raises(ValueError, match="too large"):
+        aggregate(group_idx, values, func=func, size=N_GROUPS)
+
+
+@pytest.mark.parametrize("func", CUSTOM)
+def test_the_number_of_the_threads_does_not_change_the_result_of_the_callable(func, group_data):
+    group_idx, values = group_data
+    results = []
+    for threads in _thread_counts():
+        nb.set_num_threads(threads)
+        results.append(aggregate(group_idx, values, func=func))
+    # the ranges are the units of work and nothing else: every group belongs
+    # to exactly one of them whichever number they are cut into
+    for result in results[1:]:
+        _same(results[0], result, 0)
+
+
+# ---------------------------------------------------------------------------
+# the argmax and the argmin: the index of the best value of every group
+#
+# They cannot be reduced in chunks the way the sums are: the value of a
+# group is the one that wins, and the winner of two chunks is not the sum of
+# the two.  Their parallel path splits the data into chunks, lets every
+# chunk look for the best value of every group, and folds the chunks in the
+# order of their index - the chunk with the better value wins, and a tie is
+# won by the chunk that comes first, the way the sequential kernel keeps the
+# first of two equal values.
+#
+# The result is the one of the sequential path bit for bit.
+
+
+ARGUMENTS = ["argmax", "argmin", "nanargmax", "nanargmin"]
+
+
+def _reference_arg(group_idx: np.ndarray, values: np.ndarray, func: str, n_groups: int) -> np.ndarray:
+    """The index of the best value of every group, the long way round.
+
+    The plain variants are poisoned by a nan: a group that has one keeps
+    the fill value, and the nan variants leave the nans out.
+    """
+    out = np.full(n_groups, -1, dtype=np.int64)
+    for g in range(n_groups):
+        where = np.where(group_idx == g)[0]
+        block = values[where]
+        if func.startswith("nan"):
+            keep = ~np.isnan(block)
+            where = where[keep]
+            block = block[keep]
+        elif np.isnan(block).any():
+            # a nan poisons its group
+            continue
+        if block.size == 0:
+            continue
+        best = block.max() if "max" in func else block.min()
+        # the first of the values that are the best one
+        out[g] = where[np.argmax(block == best)]
+    return out
+
+
+def test_the_arguments_take_the_parallel_path(data):
+    # the tests below compare the two paths with each other, and they would
+    # compare the sequential path with itself if the cost model kept the
+    # call single threaded
+    _group_idx, values = data
+    assert mt.should_use_mt(N_GROUPS, 2, len(values), 2)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_arguments_give_the_result_of_the_sequential_one(func, data):
+    group_idx, values = data
+    parallel, sequential = _both_ways(group_idx, values, func)
+    _same(parallel, sequential, 0)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_arguments_keep_the_first_of_two_equal_values(func, rng):
+    # two equal values in a group: the first of them wins - and that is the
+    # delicate part of the fold of the chunks, where a tie is won by the
+    # chunk that comes first
+    group_idx = rng.integers(0, N_GROUPS, 200_000)
+    # a handful of values only, so that the groups hold many equal values
+    values = np.round(rng.random(200_000) * 3)
+    parallel, sequential = _both_ways(group_idx, values, func)
+    _same(parallel, sequential, 0)
+    wanted = _reference_arg(group_idx, values, func, N_GROUPS)
+    _same(parallel, wanted, 0)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_argument_of_every_group_is_the_index_of_its_best_value(func, group_data):
+    # the reference is the definition itself: the index of the best value of
+    # the group, and the first of them if there are several
+    group_idx, values = group_data
+    parallel, _ = _both_ways(group_idx, values, func)
+    wanted = _reference_arg(group_idx, values, func, N_GROUPS)
+    _same(parallel, wanted, 0)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_one_thread_gives_the_sequential_result_of_the_arguments(func, data):
+    group_idx, values = data
+    nb.set_num_threads(1)
+    one = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(2)
+    many = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(1)
+    sequential = aggregate(group_idx, values, func=func)
+    # with one thread the sequential path runs, and it is the one that has
+    # always run - bit for bit
+    _same(one, sequential, 0)
+    _same(many, sequential, 0)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_arguments_keep_the_fill_value_of_the_empty_groups(func, rng):
+    group_idx = rng.integers(0, 10, 200_000)
+    values = rng.random(200_000)
+    for fill in (DEFAULT_FILL_VALUE, -7.0):
+        parallel, sequential = _both_ways(group_idx, values, func, size=100, fill_value=fill)
+        _same(parallel, sequential, 0)
+        if fill != DEFAULT_FILL_VALUE:
+            assert (parallel[10:] == -7.0).all()
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_arguments_complain_about_a_fault_of_the_indices(func, data):
+    # the parallel path cannot raise out of its region, so the complaint of
+    # the sequential path has to be made after it
+    group_idx, values = data
+    group_idx = group_idx.copy()
+    group_idx[17] = -1
+    nb.set_num_threads(2)
+    with pytest.raises(ValueError, match="negative indices"):
+        aggregate(group_idx, values, func=func)

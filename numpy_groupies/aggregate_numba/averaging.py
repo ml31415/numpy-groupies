@@ -1,5 +1,9 @@
 """Two-pass averaging: mean, std and var, including the integer exactness policy.
 
+The skewness and the kurtosis live here as well: they are the moments of
+Welford, and their state is the running mean and the running central moments
+around it.
+
 Integer input is centered on the first value of each group and the global
 min/max is tracked in the same accumulation pass; the exactness gates run
 between the passes and raise ``OverflowError`` for the same inputs in every
@@ -15,6 +19,9 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.aggregate_numpy.base import numpy_fallback
+from numpy_groupies.registry import FuncName
+from numpy_groupies.utils_np import AFillValue, AResult, AValue, RavelOrder
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
@@ -339,6 +346,110 @@ def _moment_gate(st: MomentState, n_values: int) -> None:
     _mean_limit_check(st.low[0], st.high[0], n_values)
 
 
+def _moment_combine(acc: MomentState, other: MomentState, fill_value: float, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one.
+
+    The moments of Welford cannot be added up like the sum of the mean can:
+    they are the moments *about the mean of their own chunk*, and two chunks
+    have two means.  The merge of Chan et al. puts the two together - the
+    moments of the union are the moments of the two chunks plus the
+    correction of the distance between their means, and that correction is
+    what makes the merged state the state of the whole group.
+
+    The groups that only one of the two chunks saw need no correction, and
+    the arithmetic below says so by itself: the count of the other chunk is
+    zero there, and every term that carries a correction has a count in it.
+
+    The merge is not the same arithmetic as the accumulation of one value at
+    a time - it adds a correction the accumulation does not have - so the
+    result of the parallel path differs from the sequential one in the last
+    bits, the way the sum of the floats does.
+    """
+    n_a = acc.count
+    n_b = other.count
+    total = n_a + n_b
+    # whether the accumulator has seen a value at all: a chunk that received
+    # none has no extrema of its own - its scratch is never seeded, and it
+    # holds whatever the allocator left there.  The question is asked before
+    # the counts are merged, because after the merge they are the counts of
+    # both chunks.
+    acc_empty = acc.count.sum() == 0
+    # the counts as floats - the arithmetic below divides by them
+    fa = n_a.astype(np.float64)
+    fb = n_b.astype(np.float64)
+    # the divisor of the groups that no chunk received a value for: the
+    # arithmetic would divide by zero there, and every value it computes
+    # for them is thrown away by the counts
+    safe = np.where(total > 0, total.astype(np.float64), 1.0)
+
+    delta = other.m1 - acc.m1
+    d2 = delta * delta
+    m1 = acc.m1 + delta * fb / safe
+    m2 = acc.m2 + other.m2 + d2 * fa * fb / safe
+    m3 = (
+        acc.m3
+        + other.m3
+        + delta * d2 * fa * fb * (fa - fb) / (safe * safe)
+        + 3.0 * delta * (fa * other.m2 - fb * acc.m2) / safe
+    )
+    m4 = (
+        acc.m4
+        + other.m4
+        + d2 * d2 * fa * fb * (fa * fa - fa * fb + fb * fb) / (safe * safe * safe)
+        + 6.0 * d2 * (fa * fa * other.m2 + fb * fb * acc.m2) / (safe * safe)
+        + 4.0 * delta * (fa * other.m3 - fb * acc.m3) / safe
+    )
+    acc.m1[:] = m1
+    acc.m2[:] = m2
+    acc.m3[:] = m3
+    acc.m4[:] = m4
+    acc.count[:] = total
+
+    # the global extrema that feed the exactness gate: the ones of both
+    # chunks.  A chunk that received no value at all has none - its scratch
+    # is never seeded, and it holds whatever the allocator left there - so
+    # its extrema are left out of the fold.
+    #
+    # The extrema are tracked for the integer input only, and the integer
+    # input has no nan values: a count of zero means that the chunk was
+    # empty.
+    if other.count.sum() > 0:
+        if acc_empty:
+            # the accumulator has no extrema of its own: the ones of the
+            # other chunk are taken over as they are
+            acc.low[0] = other.low[0]
+            acc.high[0] = other.high[0]
+        else:
+            # the extrema are compared the way the kernel compares them:
+            # min() and max() have no meaning for complex values
+            if complex_less(other.low[0], acc.low[0]):
+                acc.low[0] = other.low[0]
+            if complex_less(acc.high[0], other.high[0]):
+                acc.high[0] = other.high[0]
+
+
+def _numpy_fallback(
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
+    func: FuncName,
+    size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
+    fill_value: AFillValue,
+    order: RavelOrder,
+    dtype: npt.DTypeLike | None,
+    axis: int | None,
+) -> AResult:
+    """The numpy implementation, for the input the compiled kernel refuses.
+
+    The skewness and the kurtosis are not defined for the complex values,
+    and the compiled kernel says so with a ``TypeError`` from inside its
+    accumulation loop - a loop that runs inside the parallel region of the
+    parallel path, where an exception cannot leave.  The complex input
+    therefore goes to the numpy implementation, which refuses it with the
+    very same complaint.
+    """
+    return numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
+
+
 def _skew_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
     n = st.count[g]
     if n == 0:
@@ -375,9 +486,22 @@ skew = build_kernel(
     seed=_moment_seed,
     gate=_moment_gate,
     finish=_skew_finish,
+    combine=_moment_combine,
+    # The state of the moments holds eight arrays - six of the size of the
+    # groups (the result, the running mean, the three moments and the count)
+    # and the two extrema of the exactness gate - against the two of the
+    # sum: four by the number of the arrays.
+    #
+    # The fill and the fold of the partial states cost more than that number
+    # says, and the measurement of the shapes with many groups puts the
+    # number at five: the parallel path of the moments is 2.35 times faster
+    # with 3000 groups and a million values, and slower than the sequential
+    # one with 8000 of them (measured with six threads).
+    state_size=5,
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,
+    fallback=_numpy_fallback,
     doc="Skewness of the values of every group",
 )
 
@@ -390,9 +514,22 @@ kurt = build_kernel(
     seed=_moment_seed,
     gate=_moment_gate,
     finish=_kurt_finish,
+    combine=_moment_combine,
+    # The state of the moments holds eight arrays - six of the size of the
+    # groups (the result, the running mean, the three moments and the count)
+    # and the two extrema of the exactness gate - against the two of the
+    # sum: four by the number of the arrays.
+    #
+    # The fill and the fold of the partial states cost more than that number
+    # says, and the measurement of the shapes with many groups puts the
+    # number at five: the parallel path of the moments is 2.35 times faster
+    # with 3000 groups and a million values, and slower than the sequential
+    # one with 8000 of them (measured with six threads).
+    state_size=5,
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,
+    fallback=_numpy_fallback,
     doc="Excess kurtosis of the values of every group",
 )
 
