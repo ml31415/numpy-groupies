@@ -569,10 +569,10 @@ def _reference_moment(group_idx: np.ndarray, values: np.ndarray, func: str, n_gr
 def test_the_moments_take_the_parallel_path(data):
     # the tests below compare the two paths with each other, and they would
     # compare the sequential path with itself if the cost model kept the
-    # call single threaded - the state of the moments holds six arrays of the
-    # size of the groups, and the model counts them
+    # call single threaded - the state of the moments is the widest of the
+    # package, and the model counts it
     _group_idx, values = data
-    assert mt.should_use_mt(N_GROUPS, 2, len(values), 6)
+    assert mt.should_use_mt(N_GROUPS, 2, len(values), 5)
 
 
 @pytest.mark.parametrize("func", MOMENTS)
@@ -616,6 +616,56 @@ def test_the_moments_keep_the_result_of_the_integer_input(func, rng):
     values = rng.integers(-1000, 1000, 200_000)
     parallel, sequential = _both_ways(group_idx, values, func)
     np.testing.assert_allclose(parallel, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
+
+
+def test_the_fold_of_the_moments_takes_over_the_extrema_of_an_empty_chunk():
+    # A chunk that received no value at all has no extrema: its scratch is
+    # never seeded, and it holds whatever the allocator left there.  The
+    # fold of two such states has to take the extrema of the one that has
+    # values, and it has to leave the ones of the other alone.
+    from numpy_groupies.aggregate_numba import averaging
+
+    def state(count: int, low: int, high: int) -> np.ndarray:
+        return averaging.MomentState(
+            np.zeros(1),
+            np.zeros(1),
+            np.zeros(1),
+            np.zeros(1),
+            np.zeros(1),
+            np.array([count], np.int64),
+            np.array([low]),
+            np.array([high]),
+        )
+
+    # the accumulator has no values: the extrema of the other chunk are
+    # taken over as they are, the ones of the allocator left behind are not
+    # compared with anything - the garbage is the way round here, so that a
+    # comparison of the two would keep it
+    acc = state(0, -999, 999)
+    averaging._moment_combine(acc, state(5, 7, -7), 0.0, 0)
+    assert acc.low[0] == 7
+    assert acc.high[0] == -7
+    assert acc.count[0] == 5
+
+    # the other chunk has no values: its extrema are left out of the fold
+    acc = state(5, 7, -7)
+    averaging._moment_combine(acc, state(0, 999, -999), 0.0, 0)
+    assert acc.low[0] == 7
+    assert acc.high[0] == -7
+    assert acc.count[0] == 5
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_the_moments_keep_the_fill_value_of_the_empty_groups(func, rng):
+    # the groups that received no value keep the fill value, and the fill
+    # value has to reach them in both paths alike
+    group_idx = rng.integers(0, 10, 200_000)
+    values = rng.random(200_000)
+    for fill in (DEFAULT_FILL_VALUE, -7.0):
+        parallel, sequential = _both_ways(group_idx, values, func, size=100, fill_value=fill)
+        np.testing.assert_allclose(parallel, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
+        if fill != DEFAULT_FILL_VALUE:
+            assert (parallel[10:] == -7.0).all()
 
 
 @pytest.mark.parametrize("func", MOMENTS)
@@ -687,6 +737,16 @@ def test_the_ordered_value_of_every_group_is_the_value_of_that_group(func, data)
         else:
             wanted.append(block[-1])
     _same(parallel, np.array(wanted), 0)
+
+
+@pytest.mark.parametrize("func", ORDERED)
+def test_the_ordered_values_with_nans_give_the_result_of_the_sequential_one(func, group_data):
+    # die nan-Varianten lassen die NaNs aus, die plain-Varianten nicht - und
+    # beide muessen auf dem parallelen Pfad das sagen, was der sequentielle
+    # sagt
+    group_idx, values = group_data
+    parallel, sequential = _both_ways(group_idx, values, func)
+    _same(parallel, sequential, 0)
 
 
 @pytest.mark.parametrize("func", ORDERED)

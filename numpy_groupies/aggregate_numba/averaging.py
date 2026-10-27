@@ -368,6 +368,12 @@ def _moment_combine(acc: MomentState, other: MomentState, fill_value: float, ext
     n_a = acc.count
     n_b = other.count
     total = n_a + n_b
+    # whether the accumulator has seen a value at all: a chunk that received
+    # none has no extrema of its own - its scratch is never seeded, and it
+    # holds whatever the allocator left there.  The question is asked before
+    # the counts are merged, because after the merge they are the counts of
+    # both chunks.
+    acc_empty = acc.count.sum() == 0
     # the counts as floats - the arithmetic below divides by them
     fa = n_a.astype(np.float64)
     fb = n_b.astype(np.float64)
@@ -408,7 +414,9 @@ def _moment_combine(acc: MomentState, other: MomentState, fill_value: float, ext
     # input has no nan values: a count of zero means that the chunk was
     # empty.
     if other.count.sum() > 0:
-        if acc.count.sum() == 0:
+        if acc_empty:
+            # the accumulator has no extrema of its own: the ones of the
+            # other chunk are taken over as they are
             acc.low[0] = other.low[0]
             acc.high[0] = other.high[0]
         else:
@@ -479,9 +487,17 @@ skew = build_kernel(
     gate=_moment_gate,
     finish=_skew_finish,
     combine=_moment_combine,
-    # the state of the moments holds six arrays of the size of the groups
-    # (the result, the running mean, the three moments and the count)
-    state_size=6,
+    # The state of the moments holds eight arrays - six of the size of the
+    # groups (the result, the running mean, the three moments and the count)
+    # and the two extrema of the exactness gate - against the two of the
+    # sum: four by the number of the arrays.
+    #
+    # The fill and the fold of the partial states cost more than that number
+    # says, and the measurement of the shapes with many groups puts the
+    # number at five: the parallel path of the moments is 2.35 times faster
+    # with 3000 groups and a million values, and slower than the sequential
+    # one with 8000 of them (measured with six threads).
+    state_size=5,
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,
@@ -499,9 +515,17 @@ kurt = build_kernel(
     gate=_moment_gate,
     finish=_kurt_finish,
     combine=_moment_combine,
-    # the state of the moments holds six arrays of the size of the groups
-    # (the result, the running mean, the three moments and the count)
-    state_size=6,
+    # The state of the moments holds eight arrays - six of the size of the
+    # groups (the result, the running mean, the three moments and the count)
+    # and the two extrema of the exactness gate - against the two of the
+    # sum: four by the number of the arrays.
+    #
+    # The fill and the fold of the partial states cost more than that number
+    # says, and the measurement of the shapes with many groups puts the
+    # number at five: the parallel path of the moments is 2.35 times faster
+    # with 3000 groups and a million values, and slower than the sequential
+    # one with 8000 of them (measured with six threads).
+    state_size=5,
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,

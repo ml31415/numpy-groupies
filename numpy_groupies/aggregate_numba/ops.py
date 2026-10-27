@@ -501,8 +501,11 @@ def build_generic_aggregate(func: Callable[..., AScalar]) -> Callable[..., AResu
         # The number of the threads is asked of every call that is big
         # enough for the parallel path at all - a call that is too small
         # should not pay for the call into the runtime of numba.
-        n_threads = mt_thread_count()
-        if n_threads > 1 and len(group_idx) >= GROUP_MT_MIN_VALUES:
+        if len(group_idx) >= GROUP_MT_MIN_VALUES:
+            n_threads = mt_thread_count()
+        else:
+            n_threads = 1
+        if n_threads > 1:
             mt_jitfunc(group_idx, a, ret, n_threads)
         else:
             jitfunc(group_idx, a, ret)
