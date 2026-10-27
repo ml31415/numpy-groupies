@@ -65,7 +65,7 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
     def scan(
         group_idx: npt.NDArray[np.integer],
         a: npt.NDArray[np.number],
-        out: npt.NDArray[np.integer],
+        out: npt.NDArray[np.int64],
         running: npt.NDArray[np.number],
         pending: npt.NDArray[np.bool_],
         fill_value: float,
@@ -146,7 +146,7 @@ def _arg_driver_factory(nans: bool, greater: bool) -> Any:
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
-    ) -> npt.NDArray[np.integer]:
+    ) -> npt.NDArray[np.int64]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
         # the state of the scan is allocated here and not in the scan itself:
@@ -180,16 +180,16 @@ def _arg_driver_factory(nans: bool, greater: bool) -> Any:
 def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
     """The parallel passes of the argmax (the greater one) and the argmin."""
 
-    def factory(nans: bool, driver: Callable[..., npt.NDArray[np.integer]]) -> Any:
+    def factory(nans: bool, driver: Callable[..., npt.NDArray[np.int64]]) -> Any:
         scan = _arg_scan(nans, greater)
         name = "argmax" if greater else "argmin"
 
         @njit_stable(name=f"{'nan' if nans else ''}{name}_fold")
         def fold(
-            outs: npt.NDArray[np.integer],
+            outs: npt.NDArray[np.int64],
             runs: npt.NDArray[np.number],
             pends: npt.NDArray[np.bool_],
-        ) -> npt.NDArray[np.integer]:
+        ) -> npt.NDArray[np.int64]:
             """The states of the chunks, folded in the order of their index.
 
             Every chunk holds the index of the best value of every group and
@@ -198,7 +198,7 @@ def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
             chunk says that the group is poisoned - the fill value the chunk
             wrote for it stands, and nothing wins the group any more.
             """
-            acc_out: npt.NDArray[np.integer] = outs[0]
+            acc_out: npt.NDArray[np.int64] = outs[0]
             acc_run = runs[0]
             acc_pend = pends[0]
             for c in range(1, outs.shape[0]):
@@ -247,7 +247,7 @@ def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
             fill_value: float,
             extra: Any,
             n_threads: int,
-        ) -> npt.NDArray[np.integer]:
+        ) -> npt.NDArray[np.int64]:
             size = output_size(group_idx, size_arg)
             n_values = group_idx.shape[0]
             if not should_use_mt(size, n_threads, n_values, _MT_STATE_SIZE):

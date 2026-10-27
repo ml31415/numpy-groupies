@@ -24,6 +24,9 @@ of the groups hides a group that no range worked on - which is where a range
 that is one group too short, or one too long, would show.
 """
 
+from collections.abc import Callable
+from typing import Any
+
 import numba as nb
 import numpy as np
 import pytest
@@ -810,7 +813,9 @@ CUSTOM = [
 ]
 
 
-def _both_ways_with_the_pool(group_idx: np.ndarray, values: np.ndarray, func, **kwargs: object) -> tuple:
+def _both_ways_with_the_pool(
+    group_idx: np.ndarray, values: np.ndarray, func: str | Callable[..., Any], **kwargs: object
+) -> tuple:
     """The result of the callable with the whole pool of threads and with one.
 
     The path over the groups needs three threads to pay for the region of
