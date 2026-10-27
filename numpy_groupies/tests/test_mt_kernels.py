@@ -941,6 +941,20 @@ def test_the_arguments_give_the_result_of_the_sequential_one(func, data):
 
 
 @pytest.mark.parametrize("func", ARGUMENTS)
+def test_the_arguments_keep_the_first_of_two_equal_values(func, rng):
+    # two equal values in a group: the first of them wins - and that is the
+    # delicate part of the fold of the chunks, where a tie is won by the
+    # chunk that comes first
+    group_idx = rng.integers(0, N_GROUPS, 200_000)
+    # a handful of values only, so that the groups hold many equal values
+    values = np.round(rng.random(200_000) * 3)
+    parallel, sequential = _both_ways(group_idx, values, func)
+    _same(parallel, sequential, 0)
+    wanted = _reference_arg(group_idx, values, func, N_GROUPS)
+    _same(parallel, wanted, 0)
+
+
+@pytest.mark.parametrize("func", ARGUMENTS)
 def test_the_argument_of_every_group_is_the_index_of_its_best_value(func, group_data):
     # the reference is the definition itself: the index of the best value of
     # the group, and the first of them if there are several
