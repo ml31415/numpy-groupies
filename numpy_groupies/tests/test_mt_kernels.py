@@ -512,3 +512,119 @@ def test_the_group_path_complains_about_a_fault_of_the_indices(func, group_data)
     group_idx[17] = N_GROUPS
     with pytest.raises(ValueError, match=f"too large for size {N_GROUPS}"):
         aggregate(group_idx, values, func=func, size=N_GROUPS)
+
+
+# ---------------------------------------------------------------------------
+# the moments: the skewness and the kurtosis
+#
+# Their state is the running central moment of Welford, and two states of
+# two chunks of the data cannot be added up like the sums of the mean can:
+# the moments of a chunk are the moments about the mean of that chunk, and
+# the merge of Chan et al. is what puts the two together.
+#
+# The merge is not the same arithmetic as the accumulation of one value at a
+# time, so the result of the parallel path is not the one of the sequential
+# path bit for bit - it is the one of the sequential path to the last bits of
+# the moments.  The kurtosis is a ratio of two moments and the skewness a
+# ratio of a moment and a power of another one, and a ratio of two nearly
+# equal numbers is where the difference shows: the tests below compare the
+# two results with a tolerance and not with the last bits.
+
+
+MOMENTS = ["skew", "kurt", "nanskew", "nankurt"]
+
+
+def _reference_moment(group_idx: np.ndarray, values: np.ndarray, func: str, n_groups: int) -> np.ndarray:
+    """The moment of every group, computed the long way round.
+
+    The central moments of the group are taken from the deviations of its
+    values from their mean - the plain definition, without the recurrence
+    that keeps the running mean.
+    """
+    wanted = 3 if func.endswith("skew") else 4
+    out = np.full(n_groups, np.nan)
+    for g in range(n_groups):
+        block = values[group_idx == g]
+        if func.startswith("nan"):
+            block = block[~np.isnan(block)]
+        n = len(block)
+        if n < wanted:
+            continue
+        deviations = block - block.mean()
+        m2 = (deviations**2).sum()
+        if m2 == 0:
+            # a group whose values are all the same has no spread - and no
+            # skewness or kurtosis either, which pandas answers with a zero
+            out[g] = 0.0
+            continue
+        if func.endswith("skew"):
+            m3 = (deviations**3).sum()
+            out[g] = n * np.sqrt(n - 1) / (n - 2) * m3 / m2**1.5
+        else:
+            m4 = (deviations**4).sum()
+            out[g] = n * (n + 1) * (n - 1) * m4 / ((n - 2) * (n - 3) * m2**2) - 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
+    return out
+
+
+def test_the_moments_take_the_parallel_path(data):
+    # the tests below compare the two paths with each other, and they would
+    # compare the sequential path with itself if the cost model kept the
+    # call single threaded - the state of the moments holds six arrays of the
+    # size of the groups, and the model counts them
+    _group_idx, values = data
+    assert mt.should_use_mt(N_GROUPS, 2, len(values), 6)
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_the_moments_give_the_result_of_the_sequential_one(func, data):
+    group_idx, values = data
+    parallel, sequential = _both_ways(group_idx, values, func)
+    np.testing.assert_allclose(parallel, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_the_moments_of_every_group_are_the_moments_of_that_group(func, group_data):
+    # the reference of the moments is the definition itself - the merge of
+    # the states of the chunks has to give the moment of the group and not
+    # the moment of a chunk of it
+    group_idx, values = group_data
+    parallel, _ = _both_ways(group_idx, values, func)
+    wanted = _reference_moment(group_idx, values, func, N_GROUPS)
+    np.testing.assert_allclose(parallel, wanted, rtol=1e-9, atol=1e-9, equal_nan=True)
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_one_thread_gives_the_sequential_result_of_the_moments(func, data):
+    group_idx, values = data
+    nb.set_num_threads(1)
+    one = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(2)
+    many = aggregate(group_idx, values, func=func)
+    nb.set_num_threads(1)
+    sequential = aggregate(group_idx, values, func=func)
+    # with one thread the sequential path runs, and it is the one that has
+    # always run - bit for bit
+    np.testing.assert_allclose(one, sequential, rtol=0, atol=0, equal_nan=True)
+    np.testing.assert_allclose(many, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
+
+
+@pytest.mark.parametrize("func", ["skew", "kurt"])
+def test_the_moments_keep_the_result_of_the_integer_input(func, rng):
+    # the integer input is tracked by the extrema that feed the exactness
+    # gate, and the extrema of the chunks have to be folded as well
+    group_idx = rng.integers(0, 100, 200_000)
+    values = rng.integers(-1000, 1000, 200_000)
+    parallel, sequential = _both_ways(group_idx, values, func)
+    np.testing.assert_allclose(parallel, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
+
+
+@pytest.mark.parametrize("func", MOMENTS)
+def test_the_moments_refuse_the_complex_input(func, rng):
+    # the skewness and the kurtosis are not defined for the complex values,
+    # and the complaint has to be the same one whichever path the call takes
+    group_idx = rng.integers(0, 10, 1000)
+    values = rng.random(1000) + 1j * rng.random(1000)
+    for threads in (1, 2):
+        nb.set_num_threads(threads)
+        with pytest.raises(TypeError, match="not defined for complex values"):
+            aggregate(group_idx, values, func=func)

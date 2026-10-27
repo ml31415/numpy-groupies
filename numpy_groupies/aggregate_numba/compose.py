@@ -33,9 +33,9 @@ forced_fill) -> state``
 ``combine(acc, other, fill_value, extra)``
     optional fold of the states of two chunks of the data into one - the
     operations that can be reduced in chunks (the sums, the products, the
-    counts, the extremes, the logic) provide one, and their driver then has a
-    parallel path: the data is split into chunks that are reduced separately,
-    and the states are folded afterwards
+    counts, the extremes, the logic, the moments) provide one, and their
+    driver then has a parallel path: the data is split into chunks that are
+    reduced separately, and the states are folded afterwards
 
 The parallel path has one state per chunk or one per thread and more chunks
 than threads: the threads take the chunks from the queue of the pool, so a
@@ -1063,7 +1063,10 @@ def build_kernel(
 
     ``combine`` folds the states of two chunks of the data into one - the
     operations that provide one can be reduced in chunks, and their driver
-    then has a parallel path (see ``combine`` in the module docstring).
+    then has a parallel path (see ``combine`` in the module docstring).  The
+    moments of the skewness and the kurtosis are such an operation: their
+    states are the running moments of Welford, and the fold of two of them
+    is the merge of Chan et al. and not a plain addition.
 
     ``state_size`` is the number of the arrays the state of the operation
     holds, counted against the two of the sum: the state of every thread
