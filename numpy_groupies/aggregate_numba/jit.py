@@ -17,6 +17,8 @@ from typing import Any, TypeVar, overload
 import numba as nb
 from numba.core import caching
 
+from numpy_groupies.utils_cache import numba_cache_dir
+
 # the decorated function is a dispatcher that keeps the signature of its
 # python function - the overloads below hand that signature through
 # ``njit_stable`` for the type checker, the way ``nb.njit`` does
@@ -185,8 +187,16 @@ def njit_stable(
             # and could load each other's compiled artifacts.
             cache_impl = disp._cache._impl
             cache_impl._filename_base = f"{cache_impl._filename_base}-r{_cache_revision}-{uuid}"
+            # The cache of the kernel does not live next to its source but in
+            # a directory of the package: the cache of numba is never cleaned
+            # up, and the one of an installed package sits in the installation
+            # directory - where it survives the uninstallation and leaves a
+            # broken installation behind (numba #9312).
+            cache_path = numba_cache_dir()
+            os.makedirs(cache_path, exist_ok=True)
+            disp._cache._cache_path = cache_path
             disp._cache._cache_file = _ProcessSafeCacheFile(
-                cache_path=disp._cache._cache_path,
+                cache_path=cache_path,
                 filename_base=cache_impl.filename_base,
                 source_stamp=cache_impl.locator.get_source_stamp(),
             )

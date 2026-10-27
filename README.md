@@ -216,7 +216,17 @@ npg.uaggregate(group_idx, a, func="mean")
 a - npg.uaggregate(group_idx, a, func="mean")  # demean within each group
 ```
 
-The rest of the exports are small and situational: `unpack` (broadcast a per-group result back) and `unpack_into` (the same, into a preallocated array — Numba only), `step_count` and `step_indices` (runs of equal labels), `multi_arange`, `label_contiguous_1d`, `relabel_groups_unique` and `relabel_groups_masked` (close gaps in sparse labels), and `default_fill_value`. All of them are described in the [reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md#helper-functions).
+The rest of the exports are small and situational: `unpack` (broadcast a per-group result back) and `unpack_into` (the same, into a preallocated array — Numba only), `step_count` and `step_indices` (runs of equal labels), `multi_arange`, `label_contiguous_1d`, `relabel_groups_unique` and `relabel_groups_masked` (close gaps in sparse labels), `default_fill_value` and `purge` (remove the cached compiles of the Numba backend, see below). All of them are described in the [reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md#helper-functions).
+
+### The cache of the compiled kernels
+
+The Numba backend compiles its kernels on the first call and caches them on the disk, so that the next process starts without compiling them again. The cache lives in `$NUMBA_CACHE_DIR` if that variable is set and in `~/.cache/numba/numpy_groupies` otherwise — *not* next to the source, where the cache of Numba would put it: Numba never cleans its cache up, and the cache of an installed package would sit in the installation directory, survive the uninstallation and leave a broken installation behind ([numba #9312](https://github.com/numba/numba/issues/9312)).
+
+`npg.purge()` removes the cache of the package — both the directory above and the leftovers of the versions that cached next to their source — and returns the number of the files it removed:
+
+```python
+npg.purge()   # die Kompilate sind weg, der naechste Aufruf kompiliert neu
+```
 
 ## Implementations
 
