@@ -369,6 +369,28 @@ _place = njit_stable(group_place)
 _ranges = njit_stable(group_ranges)
 
 
+@njit_stable
+def _place_values(
+    group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number], size: int
+) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[np.number]]:
+    """The counting sort that places the values of every group in a block.
+
+    It hands back the number of the values of every group, where the block
+    of every group starts, and the values themselves in that order - the
+    order they appear in the input (the same order a stable argsort would
+    give them, at a fraction of the cost).
+
+    The four blocks it is built of have no closure of their own, so ONE
+    compiled artifact serves every operation that uses them - and so does
+    this one, which is the only place where they are put together.
+    """
+    counts = _count(group_idx, size)
+    starts = _starts(counts)
+    a_sorted = np.empty(group_idx.size, a.dtype)
+    _place(group_idx, a, starts.copy(), a_sorted)
+    return counts, starts, a_sorted
+
+
 class GroupMTSetup(NamedTuple):
     """what the shared setup of the parallel passes that cut the GROUPS into ranges
 
@@ -411,12 +433,9 @@ def _group_mt_setup(
     """
     size = output_size(group_idx, size_arg)
     n_values = group_idx.size
-    counts = _count(group_idx, size)
-    starts = _starts(counts)
     if not should_use_group_mt(size, n_threads, n_values, ns_per_value):
         return None
-    a_sorted = np.empty(n_values, a.dtype)
-    _place(group_idx, a, starts.copy(), a_sorted)
+    counts, starts, a_sorted = _place_values(group_idx, a, size)
     n_ranges = group_chunk_count(n_threads, size)
     edges, largest = _ranges(counts, n_ranges)
     return GroupMTSetup(counts, starts, a_sorted, edges, largest)
@@ -454,12 +473,9 @@ def _median_driver_factory(nans: bool) -> Any:
         # median is order-insensitive and takes nothing of its own
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
-        counts = _count(group_idx, size)
-        starts = _starts(counts)
         # counting-sort placement into contiguous group-blocks (the order
         # within a block is arbitrary, which the median ignores)
-        a_sorted = np.empty(group_idx.size, a.dtype)
-        _place(group_idx, a, starts.copy(), a_sorted)
+        counts, starts, a_sorted = _place_values(group_idx, a, size)
         # the nan variant filters the nans out into a buffer of its own, the
         # plain one leaves the values where they are and needs none
         buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
@@ -550,12 +566,9 @@ def _quantile_driver_factory(nans: bool) -> Any:
         # the quantile is order-insensitive and takes its quantile
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
-        counts = _count(group_idx, size)
-        starts = _starts(counts)
         # counting-sort placement into contiguous group-blocks (the order
         # within a block is arbitrary, which the quantile ignores)
-        a_sorted = np.empty(group_idx.size, a.dtype)
-        _place(group_idx, a, starts.copy(), a_sorted)
+        counts, starts, a_sorted = _place_values(group_idx, a, size)
         # the nan variant filters the nans out into a buffer of its own, the
         # plain one leaves the values where they are and needs none
         buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
@@ -730,10 +743,7 @@ def _sort_driver_factory(nans: bool) -> Any:
         # sort emits one value per input item, so neither the group count nor
         # the fill value is of any use here
         size = output_size(group_idx, size_arg)
-        counts = _count(group_idx, size)
-        starts = _starts(counts)
-        a_sorted = np.empty(group_idx.size, a.dtype)
-        _place(group_idx, a, starts.copy(), a_sorted)
+        counts, starts, a_sorted = _place_values(group_idx, a, size)
         _blocks(a_sorted, counts, starts, reverse)
         out = np.empty(group_idx.size, out_dtype)
         _scatter(group_idx, a_sorted, starts, out)
@@ -950,11 +960,8 @@ def _nunique_driver_factory(nans: bool) -> Any:
         # the number of the distinct values takes nothing of its own
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
-        counts = _count(group_idx, size)
-        starts = _starts(counts)
         # counting-sort placement into contiguous group-blocks
-        a_sorted = np.empty(group_idx.size, a.dtype)
-        _place(group_idx, a, starts.copy(), a_sorted)
+        counts, starts, a_sorted = _place_values(group_idx, a, size)
         max_count = 0
         for g in range(size):
             max_count = max(max_count, counts[g])

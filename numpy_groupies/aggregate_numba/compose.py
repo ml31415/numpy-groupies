@@ -1140,6 +1140,25 @@ def build_kernel(
 
     fill_untouched = njit_stable(fill_untouched, name=f"{name}_fill_untouched")
 
+    @njit_stable(name=f"{name}_finish_pass")
+    def finish_pass(st: Any, size: int, n_values: int, fill_value: float, extra: Any) -> Any:
+        """The gate, the finishing pass and the fill of the untouched groups.
+
+        The last third of the work of an aggregation - the exactness gate,
+        the value of every group and the fill value of the groups that
+        received none - and the same in the sequential path and in the
+        parallel one.
+        """
+        gate_c(st, n_values)
+        # the array of the state is bound to a local: a write through the
+        # field of a state that came out of a list lands in a copy of it and
+        # is lost
+        out = st.out
+        for g in range(size):
+            out[g] = finish_c(st, g, fill_value, extra)
+        fill_untouched(st, size, fill_value)
+        return out
+
     def build(nan_variant: bool) -> KernelHandle:
         # plain and nan variant are two compiled artifacts of the same source
         # block - without the prefix in the name their drivers share a symbol
@@ -1241,11 +1260,7 @@ def build_kernel(
             seed_c(st, a)
             fault = kernel(group_idx, a, st, fill_value, extra, size)
             _raise_fault(fault)
-            gate_c(st, len(group_idx))
-            for g in range(size):
-                st.out[g] = finish_c(st, g, fill_value, extra)
-            fill_untouched(st, size, fill_value)
-            return st.out
+            return finish_pass(st, size, len(group_idx), fill_value, extra)
 
         passes = njit_stable(passes, name=f"{op_name}_passes")
         driver = build_driver(op_name, passes, "_driver")
@@ -1332,15 +1347,7 @@ def build_kernel(
                 for c in range(1, n_chunks):
                     fault |= faults[c]
                 _raise_fault(fault)
-                gate_c(acc, n_values)
-                # the array of the state is bound to a local: a write through
-                # the field of a state that came out of a list lands in a copy
-                # of it and is lost
-                out = acc.out
-                for g in range(size):
-                    out[g] = finish_c(acc, g, fill_value, extra)
-                fill_untouched(acc, size, fill_value)
-                return out
+                return finish_pass(acc, size, n_values, fill_value, extra)
 
             mt_passes = njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
             mt_driver = build_driver(op_name, mt_passes, "_mt_driver", multi_threading=True)
