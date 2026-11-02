@@ -328,10 +328,10 @@ def resolve_output_dtype(
             else:
                 if func_str == "sum":
                     # Try to guess the minimally required int size
-                    if np.issubdtype(a_dtype, np.int64):
+                    if a_dtype in (np.dtype(np.int64), np.dtype(np.uint64)):
                         # It's not getting bigger anymore
                         # TODO: strictly speaking it might need float
-                        return np.dtype(np.int64)
+                        return a_dtype
                     elif np.issubdtype(a_dtype, np.integer):
                         # the summing path arrives with a flat count, the one-out
                         # per-in path never reaches this branch

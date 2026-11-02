@@ -160,13 +160,15 @@ def rule_same(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
 
 
 def rule_sum(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
-    """sum: integers and bools widen to int64.
+    """sum: narrow integers and bools widen to int64; uint64 stays unsigned.
 
     This is the njit-kernel approximation - the python-level ``aggregate()``
     keeps the exact narrow-dtype overflow guesses, which depend on the value
     count and therefore cannot be resolved at compile time.
     """
     dt = _as_np_dtype(a_type)
+    if dt == np.dtype(np.uint64):
+        return dt, dt
     if dt.kind in "iub":
         return np.dtype(np.int64), np.dtype(np.int64)
     return dt, dt
