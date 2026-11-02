@@ -86,6 +86,19 @@ def test_purepy_integer_sum_does_not_overflow():
     assert res[0] == 2**65 - 2
 
 
+@pytest.mark.parametrize("func", ["sum", "nansum"])
+@pytest.mark.parametrize("large", [10**18, 2**63, 2**64 - 2])
+@pytest.mark.parametrize("fill_value", [0, 7])
+def test_uint64_sum_keeps_integer_precision(impl, func, large, fill_value):
+    values = np.array([large, 3, 1, 4], dtype=np.uint64)
+    groups = np.array([0, 2, 0, 2])
+    result = impl.aggregate(groups, values, func=func, size=4, fill_value=fill_value)
+    # Comparing float arrays to float-cast expectations hides lost low bits.
+    assert [int(value) for value in result] == [large + 1, fill_value, 7, fill_value]
+    if not isinstance(result, list):
+        assert result.dtype == np.uint64
+
+
 @pytest.mark.parametrize("floatfunc", float_funcs, ids=lambda x: x.__name__)
 def test_float_enforcement(impl, floatfunc):
     group_idx = np.arange(10).repeat(3)

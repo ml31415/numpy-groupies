@@ -35,6 +35,24 @@ FLOAT_A = np.array([3.0, 1.0, np.nan, 2.0, 5.0, 4.0])
 INT_A = np.array([3, 1, 7, 2, 5, 4], dtype=np.int64)
 BOOL_A = np.array([True, False, True, True, False, True])
 
+
+@pytest.mark.parametrize("name", ["sum", "nansum"])
+@pytest.mark.parametrize("large", [10**18, 2**63, 2**64 - 2])
+def test_uint64_sum_kernel_keeps_integer_precision(name, large):
+    kernel = getattr(aggregate_numba, name)
+
+    @nb.njit
+    def compiled(groups, values, size, fill):
+        return kernel(groups, values, size, fill)
+
+    groups = np.array([0, 0])
+    values = np.array([large, 1], dtype=np.uint64)
+    for call in (kernel, compiled):
+        result = call(groups, values, 3, 7)
+        assert result.dtype == np.uint64
+        assert [int(value) for value in result] == [large + 1, 7, 7]
+
+
 # the kernels of ``make_stub``, which is where the input checks are written - as
 # many of the tests below ask them all.  ``step_count`` and ``step_indices`` are
 # jitted functions with a signature of their own, ``unpack`` and ``unpack_into``
