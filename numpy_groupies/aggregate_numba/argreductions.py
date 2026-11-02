@@ -106,17 +106,29 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
             # The direction of the comparison is the one of the operation:
             # the greater value wins for the argmax, the smaller one for
             # the argmin.
+            # temporal input: a NaT in the running value poisons its group -
+            # numpy answers no position behind the first NaT - which the
+            # guard keeps from letting a later value win.  The isinstance is
+            # dead code for the numeric dtypes.
+            holds = isinstance(cur, (np.datetime64, np.timedelta64)) and np.isnat(cur)
             if greater:
-                best = complex_less(cur, val)
+                best = (not holds) and complex_less(cur, val)
             else:
-                best = complex_less(val, cur)
+                best = (not holds) and complex_less(val, cur)
             if val != val:
                 if not nans:
-                    # a nan poisons its group: it wins outright and the
-                    # result falls back to the fill value
                     pending[ri] = False
                     running[ri] = val
-                    out[ri] = fill_value
+                    if isinstance(val, (np.datetime64, np.timedelta64)):
+                        # temporal input: NaT is a value, not a missing one -
+                        # numpy answers the position of its first occurrence
+                        # for both argreductions, and the comparison of no
+                        # later value can beat the smallest tick
+                        out[ri] = start + i
+                    else:
+                        # a nan poisons its group: it wins outright and the
+                        # result falls back to the fill value
+                        out[ri] = fill_value
                 # the nan variant leaves the nans out
                 continue
             if pending[ri] or best:

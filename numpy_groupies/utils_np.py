@@ -900,6 +900,30 @@ def _temporal_fill_tick(fill_value: Any, a_dtype: np.dtype, default_is_nat: bool
     return int(np.asarray(fill_value, dtype=a_dtype).view(np.int64))
 
 
+def _per_group_running_mask(group_idx: npt.NDArray[np.integer], nat: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
+    """The positions from the first NaT of their group on.
+
+    The accumulation of a group carries a NaT through to its end (numpy does
+    the same), but the groups are interleaved in the input - a mask that
+    accumulates over the whole input would poison the groups that follow a
+    group with a NaT as well.  The positions are therefore ranked inside
+    their group, and every group is masked from the rank of its first NaT on.
+    """
+    n = nat.size
+    counts = np.bincount(group_idx)
+    starts = np.zeros(counts.size, dtype=np.intp)
+    np.cumsum(counts[:-1], out=starts[1:])
+    # the rank of every position inside its group, in the order of the input
+    order = np.argsort(group_idx, kind="stable")
+    ranks = np.empty(n, dtype=np.intp)
+    ranks[order] = np.arange(n, dtype=np.intp) - starts[group_idx[order]]
+    # the rank of the first NaT of every group
+    unranked = np.iinfo(np.intp).max
+    first_nat = np.full(counts.size, unranked, dtype=np.intp)
+    np.minimum.at(first_nat, group_idx, np.where(nat, ranks, unranked))
+    return cast("npt.NDArray[np.bool_]", ranks >= first_nat[group_idx])
+
+
 def _groups_holding(group_idx: npt.NDArray[np.integer], mask: npt.NDArray[np.bool_]) -> npt.NDArray[np.integer]:
     """The sorted labels of the groups where ``mask`` holds at least once."""
     return np.unique(group_idx[mask])
@@ -1159,8 +1183,9 @@ def prepare_temporal(
         plan.sort_nat_restore = True
     if base in ("cumsum", "cummax", "cummin") and nat is not None and nat.any():
         # the accumulation carries the NaT through to the end of its group,
-        # nancumsum included - numpy propagates it for temporal input
-        plan.running_nat = np.maximum.accumulate(nat)
+        # nancumsum included - numpy propagates it for temporal input, and
+        # the groups are poisoned one by one
+        plan.running_nat = _per_group_running_mask(group_idx, nat)
     if base == "mean":
         fill_tick = _temporal_fill_tick(fill_value, plan.result_dtype, True)
         out_user = np.dtype(dtype) if dtype is not None else None

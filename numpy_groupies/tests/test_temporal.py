@@ -12,6 +12,7 @@ numpy there are none, so its parameterizations are skipped here.
 
 from fractions import Fraction
 
+import numba as nb
 import numpy as np
 import pytest
 
@@ -431,3 +432,145 @@ def test_custom_callable_sees_the_values(impl):
 def test_timedelta_scalar_sum(impl):
     res = impl.aggregate(np.array([0]), np.timedelta64(5, "s"), func="sum", size=1)
     assert res[0] == np.timedelta64(5, "s")
+
+
+# ---------------------------------------------------------------------------
+# the bare numba kernels
+#
+# The kernels are the low-level entry of the numba backend: they take flat
+# one-dimensional input and answer in compiled code.  The temporal dtypes
+# reach them as they are - the comparisons of compiled code order datetime64
+# and timedelta64 values, and ``val != val`` detects NaT like a nan - so the
+# selection and the reduction kernels aggregate them directly.  The ones that
+# cannot (the arithmetic of the moments, the partitions, the truthiness) say
+# so by name.
+
+
+@pytest.mark.parametrize(
+    "func, expected",
+    [
+        # NaT is the smallest tick, so it wins the minimum of its group -
+        # numpy answers NaT for the minimum of a group that holds one - and
+        # it poisons the maximum of its group
+        ("min", ["NaT", "NaT"]),
+        ("max", ["NaT", "NaT"]),
+        ("nanmin", ["2011-01-01", "2011-02-01"]),
+        ("nanmax", ["2011-01-03", "2011-05-01"]),
+        ("first", ["2011-01-03", "2011-02-01"]),
+        ("last", ["2011-01-01", "2011-05-01"]),
+        ("nanfirst", ["2011-01-03", "2011-02-01"]),
+        ("nanlast", ["2011-01-01", "2011-05-01"]),
+    ],
+)
+def test_bare_kernel_aggregates_datetime_values(func, expected):
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0, 0, 1, 1, 1])
+    a = np.array(
+        ["2011-01-03", "NaT", "2011-01-01", "2011-02-01", "NaT", "2011-05-01"],
+        dtype="M8[s]",
+    )
+    kernel = getattr(aggregate_numba, func)
+    res = kernel(group_idx, a, 2)
+    assert res.dtype == a.dtype
+    np.testing.assert_array_equal(res, np.array(expected, dtype="M8[s]"))
+
+
+@pytest.mark.parametrize(
+    "func, expected",
+    [
+        ("argmin", [1, 4]),
+        ("argmax", [1, 4]),
+        ("nanargmin", [2, 3]),
+        ("nanargmax", [0, 5]),
+    ],
+)
+def test_bare_kernel_names_the_nat_position(func, expected):
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0, 0, 1, 1, 1])
+    a = np.array(
+        ["2011-01-03", "NaT", "2011-01-01", "2011-02-01", "NaT", "2011-05-01"],
+        dtype="M8[s]",
+    )
+    kernel = getattr(aggregate_numba, func)
+    assert list(kernel(group_idx, a, 2)) == expected
+
+
+@pytest.mark.parametrize("func", ["allnan", "anynan", "len", "nanlen"])
+def test_bare_kernel_counts_the_temporal_values(func):
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0, 0, 1, 1])
+    a = np.array(["2011-01-03", "NaT", "2011-01-01", "2011-02-01", "NaT"], dtype="M8[s]")
+    kernel = getattr(aggregate_numba, func)
+    res = kernel(group_idx, a, 2)
+    expected = {
+        "allnan": [False, False],
+        "anynan": [True, True],
+        "len": [3, 2],
+        "nanlen": [2, 1],
+    }[func]
+    assert list(res) == expected
+
+
+def test_bare_kernel_sums_the_durations():
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0, 0, 1, 1])
+    a = np.array([5, "NaT", 3, 1, 7], dtype="m8[s]")
+    # the plain sum carries the NaT (numpy adds it into the sum), the nan
+    # variant skips it
+    np.testing.assert_array_equal(aggregate_numba.sum(group_idx, a, 2), np.array(["NaT", 8], dtype="m8[s]"))
+    np.testing.assert_array_equal(aggregate_numba.nansum(group_idx, a, 2), np.array([8, 8], dtype="m8[s]"))
+
+
+def test_bare_kernel_accumulates_the_durations_with_the_nat():
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0, 0, 1, 1])
+    a = np.array([5, "NaT", 3, 1, 7], dtype="m8[s]")
+    # the NaT poisons the rest of its own group and of no other one
+    np.testing.assert_array_equal(
+        aggregate_numba.cumsum(group_idx, a),
+        np.array([5, "NaT", "NaT", 1, 8], dtype="m8[s]"),
+    )
+
+
+@pytest.mark.parametrize("func", ["mean", "nanmean", "median", "quantile", "sort", "var", "std"])
+def test_bare_kernel_refuses_what_it_cannot_compute(func):
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0])
+    a = np.array(["2011-01-03", "2011-01-01"], dtype="M8[s]")
+    kernel = getattr(aggregate_numba, func)
+    with pytest.raises((TypeError, nb.TypingError), match="takes no datetime64"):
+        kernel(group_idx, a, 2)
+
+
+def test_bare_kernel_refuses_the_mean_of_the_durations():
+    # numba's division of durations truncates, and the package rounds the
+    # mean of a duration half to even - only aggregate() computes that
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0])
+    a = np.array([1, 2], dtype="m8[s]")
+    with pytest.raises((TypeError, nb.TypingError), match="takes no timedelta64"):
+        aggregate_numba.mean(group_idx, a, 2)
+
+
+def test_the_bare_kernels_and_the_aggregate_entry_agree():
+    # the low-level entry and the high-level one answer the same temporal
+    # questions the same way
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0, 0, 1, 1, 2])
+    a = np.array(
+        ["2011-01-03", "NaT", "2011-01-01", "2011-02-01", "NaT", "2011-05-01"],
+        dtype="M8[s]",
+    )
+    for func in ["min", "max", "nanmin", "nanmax", "first", "last", "nanfirst", "nanlast"]:
+        kernel = getattr(aggregate_numba, func)
+        bare = kernel(group_idx, a, 3)
+        called = aggregate_numba.aggregate(group_idx, a, func=func, size=3)
+        np.testing.assert_array_equal(bare, called)

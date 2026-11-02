@@ -424,8 +424,42 @@ _STRICT_ONLY = [
     (GROUP_IDX.astype(np.float64), FLOAT_A, "group_idx must be of integer type", -1, TypeError),
     (GROUP_IDX.astype(bool), FLOAT_A, "group_idx must be of integer type", -1, TypeError),
     (GROUP_IDX, FLOAT_A.astype(np.str_), "numeric values", -1, ValueError),
-    (GROUP_IDX, np.array(["2000-01-01", "2000-01-02"], dtype="datetime64[D]"), "numeric values", -1, ValueError),
 ]
+
+# the temporal dtypes a kernel takes: the comparisons of compiled code order
+# datetime64 and timedelta64 values (NaT is the smallest tick) and ``val !=
+# val`` detects NaT like a nan, so the selection and the reduction kernels run
+# on temporal values directly.  The mean and the sum of a datetime64 have no
+# unit to accumulate, and the arithmetic of the squared moments has no
+# temporal unit at all - numpy refuses those as well.
+_TEMPORAL_KERNELS = frozenset(
+    {
+        "allnan",
+        "anynan",
+        "argmax",
+        "argmin",
+        "array",
+        "cummax",
+        "cummin",
+        "first",
+        "last",
+        "len",
+        "max",
+        "min",
+        "nanargmax",
+        "nanargmin",
+        "nancummax",
+        "nancummin",
+        "nanfirst",
+        "nanlast",
+        "nanlen",
+        "nanmax",
+        "nanmin",
+    }
+)
+# the durations add up (NaT included, which the addition propagates), so the
+# sum and the cumulative sums of a timedelta64 are taken as well
+_TEMPORAL_TIMEDELTA_KERNELS = frozenset({"cumsum", "nancumsum", "nansum", "sum"})
 
 
 @pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
@@ -473,20 +507,41 @@ def test_every_call_refuses_the_input_the_driver_cannot_read(
 def test_every_kernel_refuses_the_input_it_cannot_take(
     kernel_name, style, group_idx, values, message, size, python_error
 ):
-    """The shape and dtype checks, as a python call and as a jitted one.
-
-    A two-dimensional ``group_idx`` the driver walks by row is answered with a
-    quietly wrong result (the labels of one dimension index as well as the flat
-    ones), a float or a bool dtype with labels that are not labels, and a dtype
-    the drivers were never written for with a numba error that is harder to read
-    than this one.
-    """
     call = _styles(kernel_name)[style]
     # the jitted style is answered before anything runs, by the typing function
     # of the kernel, which knows the shape and the dtype at compile time
     error = nb.TypingError if style == 1 else python_error
     with pytest.raises(error, match=message):
         call(group_idx, values, size)
+
+
+@pytest.mark.parametrize("style", [0, 1], ids=["python", "jitted"])
+@pytest.mark.parametrize("kernel_name", sorted(_ALL_KERNELS))
+def test_every_kernel_says_whether_it_takes_temporal_values(kernel_name, style):
+    """The temporal dtypes a kernel takes, and the ones it refuses.
+
+    The comparisons of compiled code order datetime64 and timedelta64 values
+    (NaT is the smallest tick), and ``val != val`` detects NaT like a nan, so
+    the selection and the reduction kernels run on temporal values directly -
+    as a python call and as a jitted one.  The kernels that cannot take them
+    say so by name, instead of refusing every temporal value alike.
+    """
+    call = _styles(kernel_name)[style]
+    group_idx = np.array([0, 0, 1, 1])
+    datetime_a = np.array(["2011-01-03", "NaT", "2011-01-01", "2011-02-01"], dtype="datetime64[s]")
+    timedelta_a = np.array([5, "NaT", 3, 1], dtype="timedelta64[s]")
+    takes_datetime = kernel_name in _TEMPORAL_KERNELS
+    takes_timedelta = takes_datetime or kernel_name in _TEMPORAL_TIMEDELTA_KERNELS
+    if takes_datetime:
+        call(group_idx, datetime_a, 2)
+    else:
+        with pytest.raises((TypeError, nb.TypingError), match="takes no datetime64"):
+            call(group_idx, datetime_a, 2)
+    if takes_timedelta:
+        call(group_idx, timedelta_a, 2)
+    else:
+        with pytest.raises((TypeError, nb.TypingError), match="takes no timedelta64"):
+            call(group_idx, timedelta_a, 2)
 
 
 # the fill value of a call has to fit the output it fills - the same rule the

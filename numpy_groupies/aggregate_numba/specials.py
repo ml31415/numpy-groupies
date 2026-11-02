@@ -20,6 +20,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import (
+    _fill_differs,
     build_custom_kernel,
     build_kernel,
     complex_less,
@@ -1048,7 +1049,7 @@ def _trapezoid_init(
     fill_value: float,
     forced_fill: float,
 ) -> TrapezoidState:
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return TrapezoidState(
         np.zeros(size, out_dtype),

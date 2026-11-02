@@ -147,7 +147,12 @@ def _cummax_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value:
     # expression - reaching it as a call defeats the branchless
     # form (measured 2.5ms against 0.8ms per 500k values)
     best = complex_less(cur, val)
-    st.running[ri] = val if (first or val != val or best) else cur
+    # temporal input: a NaT poisons the rest of its group (numpy carries it
+    # through the running maximum), which the guard below keeps - the
+    # comparison alone would order NaT as the smallest tick and let the next
+    # value win.  The isinstance is dead code for the numeric dtypes.
+    holds = isinstance(cur, (np.datetime64, np.timedelta64)) and np.isnat(cur)
+    st.running[ri] = val if (first or val != val or (best and not holds)) else cur
 
 
 def _cummax_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
