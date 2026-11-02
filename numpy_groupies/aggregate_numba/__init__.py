@@ -53,8 +53,17 @@ narrow integers are approximated by widening to int64 - ``aggregate()`` keeps
 the exact length-dependent dtype rules.  The float16 input is what numba
 cannot do at all: ``aggregate()`` runs it on float32 and rounds the result
 back, a kernel of its own has nothing to run it on.
+
+Datetime64 and timedelta64 input is aggregated on its int64 ticks: the
+``aggregate()`` entry takes temporal values apart ahead of the kernels (the
+NaT semantics included), and turns the tick results back - see the temporal
+section of ``utils_np`` for the policy.  The kernels themselves take numeric
+values only, so a temporal array reaches them as the int64 ticks, and a mean
+that float64 accumulation would round answers from the exact limb sums of the
+ticks instead of refusing.
 """
 
+import builtins
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
@@ -74,7 +83,18 @@ from numpy_groupies.registry import (
     funcs_collecting,
     missing_impl_error,
 )
-from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
+from numpy_groupies.utils_np import (
+    AFillValue,
+    AResult,
+    AScalar,
+    AValue,
+    RavelOrder,
+    exact_integer_group_mean,
+    finalize_temporal,
+    is_temporal_input,
+    prepare_temporal,
+)
+from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
 
 
 def aggregate(
@@ -97,6 +117,31 @@ def aggregate(
         # caller's own
         funcname, op = _dispatch.custom(func)
 
+    # datetime64 and timedelta64 run on their int64 ticks - the temporal
+    # wrapper takes the input apart, refuses what numpy refuses, and the plan
+    # turns the tick result of the kernels back into a temporal answer.  A
+    # callable of the caller's own sees the values as they came.
+    temporal_plan = None
+    if isinstance(funcname, str) and is_temporal_input(a):
+        if size is None and group_idx.size:
+            # the NaT rows the nan-variants drop would shrink the group count
+            # the kernels detect from the labels - pin it before the filter
+            size = int(group_idx.max()) + 1
+        requested = funcname
+        funcname, group_idx, a, fill_value, dtype, temporal_plan = prepare_temporal(
+            funcname,
+            group_idx,
+            cast("AValue", a),
+            fill_value,
+            dtype,
+            int(group_idx.max()) + 1 if size is None else cast("int", size),
+            kwargs,
+        )
+        if funcname != requested:
+            # the flags of the missing values are the plain any/all of the
+            # NaT mask - the operation follows the name
+            funcname, op = _dispatch[funcname]
+
     # numba has no float16: the values survive the widening cast to float32
     # exactly, so the kernels run on float32 and an inexact result is rounded
     # back - like the numpy twin does, whose bincount accumulates in float64
@@ -111,19 +156,58 @@ def aggregate(
     if op is None:
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
-    if isinstance(funcname, str):
-        ret = cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
+    exact_mean: npt.NDArray[Any] | None = None
+    if temporal_plan is not None and temporal_plan.computed is not None:
+        # the temporal wrapper has finished this one - the mean, the median
+        # and the quantiles of temporal input compute on their own, exact
+        ret = cast(AResult, temporal_plan.computed)
     else:
-        # a callable of the caller's own: it has no output array of its own,
-        # and its compiled loop is memoized in the bounded LRU of this backend
-        if out is not None:
-            raise NotImplementedError("out= is only supported for named functions") from None
-        ret = cast(
-            "AResult",
-            op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs),
-        )
+        if (
+            temporal_plan is None
+            and isinstance(funcname, str)
+            and funcname in ("mean", "nanmean")
+            and isinstance(a, np.ndarray)
+            and a.dtype.kind in "iu"
+            and a.size
+        ):
+            # the sums of these integers can leave the window float64
+            # represents exactly and the compiled kernel would refuse the
+            # mean - the limb sums answer it exactly instead, like the numpy
+            # backend does (the module exports its own max, so no builtin
+            # max here)
+            # (the module exports its own max as a kernel, so the builtin
+            # comes from the builtins module)
+            bound = builtins.max(int(a.max()), -int(a.min()))
+            if bound * a.size > EXACT_FLOAT64_INTEGER_LIMIT:
+                n = int(group_idx.max()) + 1 if size is None else cast("int", size)
+                out_dtype = np.dtype(dtype) if dtype is not None else np.dtype(np.float64)
+                exact_mean = cast(
+                    "npt.NDArray[Any]",
+                    exact_integer_group_mean(
+                        group_idx,
+                        cast("npt.NDArray[np.integer]", a),
+                        n,
+                        cast("AScalar", fill_value),
+                        out_dtype,
+                    ),
+                )
+        if exact_mean is not None:
+            ret = cast(AResult, exact_mean)
+        elif isinstance(funcname, str):
+            ret = cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
+        else:
+            # a callable of the caller's own: it has no output array of its own,
+            # and its compiled loop is memoized in the bounded LRU of this backend
+            if out is not None:
+                raise NotImplementedError("out= is only supported for named functions") from None
+            ret = cast(
+                "AResult",
+                op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs),
+            )
     if is16 and dtype is None and ret.dtype.kind == "f":
         ret = ret.astype(np.float16)
+    if temporal_plan is not None:
+        ret = cast(AResult, finalize_temporal(ret, temporal_plan))
     if out is not None:
         if out.shape != ret.shape or out.dtype != ret.dtype:
             raise TypeError(

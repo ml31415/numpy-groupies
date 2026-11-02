@@ -28,6 +28,7 @@ from numpy_groupies.validation import (
     check_filling_with_none,
     is_complex_dtype,
     is_inexact_dtype,
+    is_integer_dtype,
 )
 
 if TYPE_CHECKING:
@@ -178,8 +179,12 @@ def resolve_fill_value(
         return fill_value
     key = fill_value_key(func)
     # nan only fits where the output can hold it - the averaging and
-    # dispersion functions coerce their result to a float type anyway
-    fits = dtype is None or key in forced_float_types or key in forced_real_float_types or is_inexact_dtype(dtype)
+    # dispersion functions coerce their result to a float type anyway, but an
+    # explicitly requested integer output holds no nan, whatever the function
+    # answers by default
+    fits = not is_integer_dtype(dtype) and (
+        dtype is None or key in forced_float_types or key in forced_real_float_types or is_inexact_dtype(dtype)
+    )
     value = default_fill_values.get(key)
     if value is None:
         # a custom callable has no function specific default

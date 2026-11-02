@@ -2,12 +2,13 @@
 
 import platform
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Literal, TypeAlias, cast
+from typing import Any, Literal, SupportsFloat, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.registry import (
+    DEFAULT_FILL_VALUE,
     DefaultFillValue,
     forced_float_types,
     forced_real_float_types,
@@ -765,3 +766,482 @@ def iscomplexobj(x: Any) -> bool:
     except AttributeError:
         type_ = np.asarray(x).dtype.type
     return issubclass(type_, np.complexfloating)
+
+
+# ---------------------------------------------------------------------------
+# datetime64 and timedelta64 support
+#
+# Temporal arrays never reach the kernels as datetime values: the wrapper
+# below takes them apart into their int64 ticks ahead of the kernels and
+# turns the results back afterwards.  NaT is the int64 tick ``-2**63``, so
+# every value a kernel computes on the ticks is a tick again - the plan
+# carries what the wrapper has to do to a tick result to make it temporal.
+#
+# The policy follows numpy:
+# - plain reductions propagate NaT (a group holding one answers NaT), the
+#   nan-variants skip it,
+# - what numpy refuses, we refuse: datetime64 has no sum, prod, cumsum,
+#   cumprod, median, quantile, var, std, skew, kurt or trapezoid, and
+#   timedelta64 has no prod, cumprod, var, std, skew, kurt or trapezoid - in
+#   both cases numpy itself raises,
+# - the unit of the input is the unit of the answer, and NaT is the fill
+#   value.
+
+TEMPORAL_KINDS = "Mm"
+NAT_TICK: int = -(2**63)
+
+# the functions whose result holds ticks of the input again - their answer is
+# viewed back into the dtype of the input.  datetime64 has no sum and no
+# median, but both raise before anything is viewed back.
+TEMPORAL_VALUE_FUNCS = frozenset(
+    {
+        "min",
+        "max",
+        "sum",
+        "mean",
+        "median",
+        "quantile",
+        "percentile",
+        "first",
+        "last",
+        "sort",
+        "cumsum",
+        "cummax",
+        "cummin",
+    }
+)
+# the functions numpy refuses for datetime64 - the plain and the nan variant
+# share their fate
+TEMPORAL_DATETIME_REJECTED = frozenset(
+    {
+        "sum",
+        "prod",
+        "cumsum",
+        "cumprod",
+        "median",
+        "quantile",
+        "percentile",
+        "var",
+        "std",
+        "skew",
+        "kurt",
+        "trapezoid",
+        "sumofsquares",
+    }
+)
+# and the ones numpy refuses for timedelta64 - sum, cumsum, mean, median and
+# the quantiles work there like they do on integers
+TEMPORAL_TIMEDELTA_REJECTED = frozenset({"prod", "cumprod", "var", "std", "skew", "kurt", "trapezoid", "sumofsquares"})
+# plain variants of these poison their whole group with a single NaT - the
+# group answers NaT rather than the value of its ticks.  The sum of the
+# durations joins them: numpy adds NaT into a temporal sum and the answer is
+# NaT, while the ticks would wrap around in the int64 accumulation.
+TEMPORAL_NAT_POISON = frozenset({"sum", "mean", "max", "median", "quantile", "percentile"})
+# the value functions whose default fill is nan - the temporal answer of an
+# empty group is NaT for them, and 0 (the epoch, or no duration) for the
+# functions that fill with zero, like the sum of the durations
+TEMPORAL_NAT_FILL = frozenset({"min", "max", "mean", "median", "quantile", "percentile", "first", "last"})
+
+
+class TemporalPlan:
+    """What :func:`finalize_temporal` has to do with a tick result.
+
+    ``computed`` holds an already finished int64 result for the functions
+    whose kernel path cannot stay exact on ticks: the temporal mean adds up
+    ticks beyond the window float64 represents exactly, so the wrapper
+    computes it on the limb sums of the ticks itself, and the median and the
+    quantiles of timedelta64 average their middles as python integers.
+    """
+
+    __slots__ = (
+        "children",
+        "computed",
+        "computed_final",
+        "nat_groups",
+        "nat_positions",
+        "result_dtype",
+        "running_nat",
+        "sort_nat_restore",
+        "user_dtype",
+        "value_result",
+    )
+
+    def __init__(self, result_dtype: np.dtype) -> None:
+        self.result_dtype = result_dtype
+        self.user_dtype: np.dtype | None = None
+        self.computed: npt.NDArray[np.int64] | None = None
+        self.computed_final = False
+        self.nat_groups: npt.NDArray[np.integer] | None = None
+        self.nat_positions: npt.NDArray[np.intp] | None = None
+        self.running_nat: npt.NDArray[np.bool_] | None = None
+        self.children = False
+        self.value_result = False
+        self.sort_nat_restore = False
+
+
+def is_temporal_input(a: Any) -> bool:
+    """Whether the input carries datetime64 or timedelta64 values - an array
+    of them, or the one scalar standing for a value of every group."""
+    dtype = getattr(a, "dtype", None)
+    return dtype is not None and np.dtype(dtype).kind in TEMPORAL_KINDS
+
+
+def _temporal_fill_tick(fill_value: Any, a_dtype: np.dtype, default_is_nat: bool) -> int:
+    """The tick of the fill value - NaT where the default of the function is
+    nan, zero where it fills with zero, unless the caller asks for a date."""
+    if fill_value is None or fill_value is DEFAULT_FILL_VALUE:
+        return NAT_TICK if default_is_nat else 0
+    if isinstance(fill_value, float) and fill_value != fill_value:
+        return NAT_TICK if default_is_nat else 0
+    if isinstance(fill_value, (int, np.integer)):
+        return int(fill_value)
+    # a datetime64/timedelta64, or anything numpy reads as one: its tick in
+    # the unit of the input
+    return int(np.asarray(fill_value, dtype=a_dtype).view(np.int64))
+
+
+def _groups_holding(group_idx: npt.NDArray[np.integer], mask: npt.NDArray[np.bool_]) -> npt.NDArray[np.integer]:
+    """The sorted labels of the groups where ``mask`` holds at least once."""
+    return np.unique(group_idx[mask])
+
+
+def _first_true_position_per_group(
+    group_idx: npt.NDArray[np.integer], mask: npt.NDArray[np.bool_]
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.intp]]:
+    """The labels of the masked groups and the first masked position of each.
+
+    numpy answers the position of the first NaT for both argmin and argmax of
+    a group that holds one - the argreductions on the ticks deliver the first
+    NaT for argmin on their own (NaT is the smallest tick), argmax is
+    corrected with this.
+    """
+    positions = np.flatnonzero(mask)
+    labels = group_idx[positions]
+    # a stable sort keeps the positions of every group in ascending order, so
+    # the first of each run is the first NaT of the group
+    order = np.argsort(labels, kind="stable")
+    labels, positions = labels[order], positions[order]
+    starts = np.concatenate(([True], labels[1:] != labels[:-1]))
+    return labels[starts], positions[starts]
+
+
+def _round_half_even(total: int, count: int) -> int:
+    """The exact integer division of ``total`` by ``count``, half to even."""
+    q, r = divmod(total, count)
+    if 2 * r > count or (2 * r == count and q % 2 == 1):
+        q += 1
+    return q
+
+
+def exact_integer_group_mean(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.integer],
+    size: int,
+    fill_value: AScalar,
+    dtype: np.dtype,
+) -> npt.NDArray[np.floating] | npt.NDArray[np.integer]:
+    """The mean of integer values per group, exact where float64 would round.
+
+    The ticks of datetime input add up beyond the +/-2**53 window float64
+    represents exactly, and so can the sums of plain integers - instead of
+    refusing the mean, the values are split into four 16-bit limbs, every
+    limb accumulates in an exact sum through ``bincount``, and the totals of
+    the groups are combined as python integers.  The division is exact and
+    the remainder rounds half to even.
+
+    An integer mean of small magnitudes keeps coming back as float64 - the
+    quotient is exact in float64 there, so its answer does not change - and a
+    caller asking for an integer dtype gets the exact rounded quotient.
+    """
+    u = np.ascontiguousarray(a).view(np.uint64)
+    limb_sums = [
+        np.bincount(group_idx, weights=(u >> np.uint64(shift)) & np.uint64(0xFFFF), minlength=size).astype(np.int64)
+        for shift in (0, 16, 32, 48)
+    ]
+    counts = np.bincount(group_idx, minlength=size)
+    total: npt.NDArray[Any] = (
+        (limb_sums[3].astype(object) << 48)
+        + (limb_sums[2].astype(object) << 32)
+        + (limb_sums[1].astype(object) << 16)
+        + limb_sums[0].astype(object)
+    )
+    if a.dtype.kind == "i":
+        # signed values sum to the two's-complement limb sum of their bit
+        # pattern plus one 2**64 per negative value - the pattern sums are
+        # corrected by the count of the negatives of every group
+        negatives = np.bincount(group_idx, weights=u >= np.uint64(2**63), minlength=size)
+        total -= negatives.astype(np.int64).astype(object) << 64
+    present = counts > 0
+    quotients = np.zeros(size, dtype=object)
+    remainders = np.zeros(size, dtype=object)
+    quotients[present], remainders[present] = (
+        np.floor_divide(total[present], counts[present].astype(object)),
+        np.remainder(total[present], counts[present].astype(object)),
+    )
+    # the fill of the empty groups: the default of the dtype unless the caller
+    # asked for a number - the nan of a float result and the sentinel of the
+    # call both mean "default"
+    fill: int | float | None
+    if isinstance(fill_value, (float, np.floating)) and fill_value != fill_value:
+        fill = None  # a nan asks for the default
+    elif isinstance(fill_value, (bool, np.bool_, int, np.integer)):
+        fill = int(fill_value)
+    elif fill_value is None or fill_value.__class__.__name__ == "DefaultFillValue":
+        fill = None  # the sentinel of the call asks for the default
+    else:
+        fill = float(cast("SupportsFloat", fill_value))
+    if np.issubdtype(dtype, np.integer):
+        rounded = quotients.copy()
+        bump = (2 * remainders > counts) | ((2 * remainders == counts) & (quotients % 2 == 1))
+        rounded[bump] += 1
+        ret = rounded.astype(np.int64)
+    else:
+        # the float64 answer: the exact quotient and remainder of the python
+        # integers, so the total itself can never round - the 64-bit mantissa
+        # of the long double holds every int64 quotient exactly, and the two
+        # roundings of the assembly stay within half an ulp of the exact
+        # quotient
+        quotients = quotients.astype(np.longdouble)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fractions = np.true_divide(remainders.astype(np.longdouble), counts.astype(np.longdouble))
+        ret = (quotients + fractions).astype(np.float64)
+        if fill is not None:
+            ret[~present] = fill
+        return ret
+    if fill is not None and fill != 0:
+        ret[~present] = fill
+    return ret
+
+
+def _temporal_group_median(
+    group_idx: npt.NDArray[np.integer],
+    ticks: npt.NDArray[np.int64],
+    size: int,
+    fill_tick: int,
+) -> npt.NDArray[np.int64]:
+    """The median of the ticks of a timedelta64 input, exact.
+
+    The middles of an even group average to their exact mean rounded half to
+    even - the two add up as python integers, so even ticks at the edges of
+    int64 cannot wrap the sum.
+    """
+    order = np.argsort(group_idx, kind="stable")
+    values = ticks[order]
+    counts = np.bincount(group_idx, minlength=size)
+    starts = np.zeros(size, dtype=np.intp)
+    np.cumsum(counts[:-1], out=starts[1:])
+    ret = np.full(size, NAT_TICK, dtype=np.int64)
+    for grp in np.flatnonzero(counts):
+        count = int(counts[grp])
+        part = np.partition(values[starts[grp] : starts[grp] + count], count // 2)
+        if count % 2 == 1:
+            ret[grp] = part[count // 2]
+        else:
+            ret[grp] = _round_half_even(int(part[: count // 2].max()) + int(part[count // 2]), 2)
+    ret[counts == 0] = fill_tick
+    return ret
+
+
+def _temporal_group_quantile(
+    group_idx: npt.NDArray[np.integer],
+    ticks: npt.NDArray[np.int64],
+    size: int,
+    fill_tick: int,
+    q: float,
+) -> npt.NDArray[np.int64]:
+    """The quantile of the ticks of a timedelta64 input.
+
+    Like numpy's ``linear`` method, the two ticks around the quantile
+    position interpolate linearly - their difference is exact as a python
+    integer, and the rounded product keeps the answer on the tick grid.
+    """
+    order = np.argsort(group_idx, kind="stable")
+    values = ticks[order]
+    counts = np.bincount(group_idx, minlength=size)
+    starts = np.zeros(size, dtype=np.intp)
+    np.cumsum(counts[:-1], out=starts[1:])
+    ret = np.full(size, NAT_TICK, dtype=np.int64)
+    for grp in np.flatnonzero(counts):
+        count = int(counts[grp])
+        part = np.partition(values[starts[grp] : starts[grp] + count], [0, count - 1] if count > 1 else 0)
+        position = q * (count - 1)
+        low = min(int(np.floor(position)), count - 1)
+        high = min(low + 1, count - 1)
+        difference = int(part[high]) - int(part[low])
+        ret[grp] = int(part[low]) + int(np.rint((position - low) * difference))
+    ret[counts == 0] = fill_tick
+    return ret
+
+
+def prepare_temporal(
+    funcname: str,
+    group_idx: npt.NDArray[np.integer],
+    a: Any,
+    fill_value: AFillValue,
+    dtype: npt.DTypeLike | None,
+    size: int,
+    kwargs: dict[str, Any],
+) -> tuple[str, npt.NDArray[np.integer], AValue, AFillValue, np.dtype | None, TemporalPlan]:
+    """Take temporal input apart into the tick input of the kernels.
+
+    Answers the ``funcname``, the (possibly NaT-filtered) ``group_idx``, the
+    int64 ticks standing in for the values, the fill value as a tick, the
+    output dtype the kernels are asked for, and the plan that turns a tick
+    result back into a temporal one.  The functions numpy refuses raise here,
+    and the functions the wrapper computes on its own carry their finished
+    int64 result in the plan.
+    """
+    base = funcname.removeprefix("nan")
+    is_datetime = np.dtype(a.dtype).kind == "M"
+    rejected = TEMPORAL_DATETIME_REJECTED if is_datetime else TEMPORAL_TIMEDELTA_REJECTED
+    if base in rejected:
+        raise TypeError(
+            f"aggregate {funcname!r} is not supported for {np.dtype(a.dtype).name} input - "
+            f"numpy refuses {base} of {'datetime64' if is_datetime else 'timedelta64'} values as well"
+        )
+    plan = TemporalPlan(np.dtype(a.dtype))
+    nat: npt.NDArray[np.bool_] | None = None
+    if isinstance(a, np.ndarray):
+        nat = np.isnat(a)
+        if funcname.startswith("nan") and base in ("argmin", "argmax"):
+            # the nan-variants of the argreductions keep every row - the
+            # positions they name are the ones of the input - so the NaT rows
+            # stand in as the extreme tick the reduction skips.  A group of
+            # nothing but NaT holds no tick of its own after the swap, and is
+            # left to the fill value like its float counterpart
+            skip = np.iinfo(np.int64).max if base == "argmin" else NAT_TICK + 1
+            a = np.where(nat, np.int64(skip), np.asarray(a).view(np.int64)).view(a.dtype)
+            nat = None
+        elif funcname.startswith("nan") and base != "cumsum":
+            # the nan-variants skip NaT like they skip nan - the plain ones
+            # propagate it, and numpy propagates it in nancumsum as well, so
+            # the cumulative functions keep their rows
+            if nat.any():
+                good = ~nat
+                a = a[good]
+                group_idx = group_idx[good]
+                nat = None
+    else:
+        # a temporal scalar comes through as its tick - sum and len of a
+        # scalar timedelta64 answer in int64, like a plain integer scalar
+        return (
+            funcname,
+            group_idx,
+            cast("AValue", np.int64(np.asarray(a).view(np.int64))),
+            fill_value,
+            None,
+            plan,
+        )
+    if base in ("all", "any"):
+        # the truth of a temporal value is its tick being non-zero and the
+        # value not being NaT - a NaT is no value at all
+        truth: npt.NDArray[np.bool_] = np.asarray(a).view(np.int64) != 0
+        if nat is not None:
+            truth = truth & ~nat
+        return funcname, group_idx, truth, fill_value, None, plan
+    if base in ("allnan", "anynan"):
+        # the missing-value flags read the NaT mask directly, and the flags
+        # are the plain any/all of that mask
+        return ("any" if base == "anynan" else "all"), group_idx, np.isnat(a), fill_value, None, plan
+    if base == "argmax" and nat is not None and nat.any():
+        # numpy answers the position of the first NaT of the group
+        plan.nat_groups, plan.nat_positions = _first_true_position_per_group(group_idx, nat)
+    elif base in TEMPORAL_NAT_POISON and nat is not None and nat.any():
+        # a single NaT poisons the mean, the maximum and - for the durations
+        # - the middles of its whole group
+        plan.nat_groups = _groups_holding(group_idx, nat)
+    ticks = np.asarray(a).view(np.int64)
+    if base == "sort" and nat is not None and nat.any():
+        # numpy sorts NaT to the end of its group although it compares as the
+        # smallest value everywhere else - the largest tick stands in for it
+        # on the way through the sort, and the plan turns it back into NaT
+        ticks = np.where(nat, np.iinfo(np.int64).max, ticks)
+        plan.sort_nat_restore = True
+    if base in ("cumsum", "cummax", "cummin") and nat is not None and nat.any():
+        # the accumulation carries the NaT through to the end of its group,
+        # nancumsum included - numpy propagates it for temporal input
+        plan.running_nat = np.maximum.accumulate(nat)
+    if base == "mean":
+        fill_tick = _temporal_fill_tick(fill_value, plan.result_dtype, True)
+        out_user = np.dtype(dtype) if dtype is not None else None
+        if out_user is not None and out_user.kind == "f":
+            # a float answer is the exact quotient itself, not the rounded tick
+            plan.computed = cast(
+                "npt.NDArray[np.int64]",
+                exact_integer_group_mean(group_idx, ticks, size, fill_tick, out_user),
+            )
+            plan.computed_final = True
+        else:
+            plan.computed = cast(
+                "npt.NDArray[np.int64]",
+                exact_integer_group_mean(group_idx, ticks, size, fill_tick, np.dtype(np.int64)),
+            )
+            plan.value_result = True
+    elif base in ("median", "quantile", "percentile"):
+        # only timedelta64 reaches this point - datetime64 has no middles
+        fill_tick = _temporal_fill_tick(fill_value, plan.result_dtype, True)
+        if base == "median":
+            plan.computed = _temporal_group_median(group_idx, ticks, size, fill_tick)
+        else:
+            fraction = cast("float", kwargs.get("q", 50.0 if base == "percentile" else 0.5))
+            if base == "percentile":
+                fraction = fraction / 100.0
+            plan.computed = _temporal_group_quantile(group_idx, ticks, size, fill_tick, fraction)
+        plan.value_result = True
+    elif base in TEMPORAL_VALUE_FUNCS:
+        plan.value_result = True
+    if base == "array":
+        plan.children = True
+        return funcname, group_idx, ticks, fill_value, np.dtype(dtype) if dtype is not None else None, plan
+    if plan.value_result:
+        # the kernels answer in ticks, the fill is a tick, and the dtype they
+        # are asked for is int64 - the plan carries the dtype of the answer
+        plan.user_dtype = np.dtype(dtype) if dtype is not None else None
+        is_nat_fill = base in TEMPORAL_NAT_FILL
+        return (
+            funcname,
+            group_idx,
+            ticks,
+            _temporal_fill_tick(fill_value, plan.result_dtype, is_nat_fill),
+            np.dtype(np.int64),
+            plan,
+        )
+    # positions, counts and flags: the kernels answer in their own dtypes
+    return funcname, group_idx, ticks, fill_value, np.dtype(dtype) if dtype is not None else None, plan
+
+
+def finalize_temporal(ret: AResult | list[npt.NDArray[np.int64]], plan: TemporalPlan) -> AResult:
+    """Turn the tick result of the kernels back into a temporal answer."""
+    if plan.computed is not None:
+        ret = plan.computed
+        if plan.computed_final:
+            return cast("AResult", ret)
+    if plan.running_nat is not None:
+        ret = np.asarray(ret)
+        ret[plan.running_nat] = NAT_TICK
+    if plan.sort_nat_restore:
+        # the largest tick stood in for NaT while sorting - hand it back
+        ret = np.asarray(ret)
+        ret[ret == np.iinfo(np.int64).max] = NAT_TICK
+    if plan.nat_groups is not None:
+        ret = np.asarray(ret)
+        ret[plan.nat_groups] = plan.nat_positions if plan.nat_positions is not None else NAT_TICK
+    if plan.children:
+        # the values of every group, back in the dtype they came in
+        if isinstance(ret, np.ndarray):
+            return cast(
+                "AResult",
+                np.array([np.asarray(one).view(plan.result_dtype) for one in ret], dtype=object),
+            )
+        return cast("AResult", type(ret)(np.asarray(one).view(plan.result_dtype) for one in ret))
+    if plan.value_result:
+        ret = np.asarray(ret)
+        if plan.user_dtype is not None:
+            if plan.user_dtype == np.dtype(np.int64):
+                return cast("AResult", ret)  # the ticks the caller asked for
+            if plan.user_dtype.kind in TEMPORAL_KINDS:
+                # rescale from the unit of the input to the one asked for
+                return cast("AResult", ret.view(plan.result_dtype).astype(plan.user_dtype))
+            return cast("AResult", ret.view(np.int64).astype(plan.user_dtype))
+        return cast("AResult", ret.view(plan.result_dtype))
+    return cast("AResult", ret)

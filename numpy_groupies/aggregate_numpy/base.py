@@ -27,7 +27,10 @@ from numpy_groupies.utils_np import (
     check_dtype,
     check_fill_value,
     check_nton_shape,
+    finalize_temporal,
     input_validation,
+    is_temporal_input,
+    prepare_temporal,
 )
 from numpy_groupies.validation import is_scalar_input
 
@@ -79,6 +82,26 @@ def _aggregate_base(
         # have): it names no known function either, so the registry answers it
         # as a callable of the caller's own
         funcname, op = _dispatch.custom(func)
+    # datetime64 and timedelta64 run on their int64 ticks - the temporal
+    # wrapper takes the input apart, refuses what numpy refuses, and the plan
+    # turns the tick result of the kernels back into a temporal answer.  A
+    # callable of the caller's own sees the values as they came.
+    temporal_plan = None
+    if isinstance(funcname, str) and is_temporal_input(a):
+        requested = funcname
+        funcname, group_idx, a, fill_value, dtype, temporal_plan = prepare_temporal(
+            funcname,
+            group_idx,
+            cast("AValue", a),
+            fill_value,
+            dtype,
+            flat_size,
+            kwargs,
+        )
+        if funcname != requested:
+            # the flags of the missing values are the plain any/all of the
+            # NaT mask - the operation follows the name
+            funcname, op = _dispatch[funcname]
     if op is None:
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
@@ -112,7 +135,14 @@ def _aggregate_base(
         # the one it gets
         fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
 
-    ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
+    if temporal_plan is not None and temporal_plan.computed is not None:
+        # the temporal wrapper has finished this one - the mean, the median
+        # and the quantiles of temporal input compute on their own
+        ret = cast("AResult", temporal_plan.computed)
+    else:
+        ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
+    if temporal_plan is not None:
+        ret = finalize_temporal(ret, temporal_plan)
 
     # deal with ndimensional indexing
     if ndim_idx > 1:
@@ -124,7 +154,7 @@ def _aggregate_base(
             assert axis is not None
             ret = cast(
                 "AResult",
-                np.unravel_index(ret, unravel_shape)[axis],
+                np.unravel_index(cast("npt.NDArray[np.integer]", ret), unravel_shape)[axis],
             )
             ret[mask] = cast("AScalar", fill_value)
         check_nton_shape(ret, size, funcname)
