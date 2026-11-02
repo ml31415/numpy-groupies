@@ -96,10 +96,10 @@ from numpy_groupies.utils_np import (
     AScalar,
     AValue,
     RavelOrder,
+    aggregate_temporal,
     exact_integer_group_mean,
-    finalize_temporal,
+    is_own_function,
     is_temporal_input,
-    prepare_temporal,
 )
 from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
 
@@ -125,29 +125,48 @@ def aggregate(
         funcname, op = _dispatch.custom(func)
 
     # datetime64 and timedelta64 run on their int64 ticks - the temporal
-    # wrapper takes the input apart, refuses what numpy refuses, and the plan
-    # turns the tick result of the kernels back into a temporal answer.  A
-    # callable of the caller's own sees the values as they came.
-    temporal_plan = None
-    if isinstance(funcname, str) and is_temporal_input(a):
+    # wrapper takes the input apart, refuses what numpy refuses, and answers
+    # with a temporal value.  Only the functions of the package go through it:
+    # a callable of the caller's own defines its own semantics and sees the
+    # values as they are.  The numpy functions that mean the same thing are
+    # aliases of the functions of the package, so np.mean is the mean of the
+    # package and gets its answer.
+    temporal = is_own_function(funcname) and is_temporal_input(a)
+    if temporal:
         if size is None and group_idx.size:
             # the NaT rows the nan-variants drop would shrink the group count
             # the kernels detect from the labels - pin it before the filter
             size = int(group_idx.max()) + 1
-        requested = funcname
-        funcname, group_idx, a, fill_value, dtype, temporal_plan = prepare_temporal(
-            funcname,
+
+        def temporal_op(name: str) -> Callable[..., AResult]:
+            # the compiled operation of a name, behind the signature the
+            # temporal wrapper calls it with
+            _, kernel = _dispatch[name]
+            if kernel is None:
+                raise missing_impl_error(name)
+
+            def call(
+                group_idx: npt.NDArray[np.integer],
+                values: AValue,
+                size_: int,
+                fill_value: AFillValue = None,
+                dtype: npt.DTypeLike | None = None,
+                **kw: Any,
+            ) -> AResult:
+                return cast(AResult, kernel(group_idx, values, size_, fill_value, order, dtype, axis, **kw))
+
+            return call
+
+        ret, fill_value = aggregate_temporal(
+            temporal_op,
+            cast("str", funcname),
             group_idx,
             cast("AValue", a),
+            int(group_idx.max()) + 1 if size is None else cast("int", size),
             fill_value,
             dtype,
-            int(group_idx.max()) + 1 if size is None else cast("int", size),
             kwargs,
         )
-        if funcname != requested:
-            # the flags of the missing values are the plain any/all of the
-            # NaT mask - the operation follows the name
-            funcname, op = _dispatch[funcname]
 
     # numba has no float16: the values survive the widening cast to float32
     # exactly, so the kernels run on float32 and an inexact result is rounded
@@ -164,14 +183,13 @@ def aggregate(
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
     exact_mean: npt.NDArray[Any] | None = None
-    if temporal_plan is not None and temporal_plan.computed is not None:
-        # the temporal wrapper has finished this one - the mean, the median
-        # and the quantiles of temporal input compute on their own, exact
-        ret = cast(AResult, temporal_plan.computed)
+    if temporal:
+        # the temporal wrapper has answered - the mean, the median and the
+        # quantiles of temporal input compute on their own, exact
+        pass
     else:
         if (
-            temporal_plan is None
-            and isinstance(funcname, str)
+            isinstance(funcname, str)
             and funcname in ("mean", "nanmean")
             and isinstance(a, np.ndarray)
             and a.dtype.kind in "iu"
@@ -213,8 +231,6 @@ def aggregate(
             )
     if is16 and dtype is None and ret.dtype.kind == "f":
         ret = ret.astype(np.float16)
-    if temporal_plan is not None:
-        ret = cast(AResult, finalize_temporal(ret, temporal_plan))
     if out is not None:
         if out.shape != ret.shape or out.dtype != ret.dtype:
             raise TypeError(

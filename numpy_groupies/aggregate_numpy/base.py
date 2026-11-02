@@ -24,13 +24,13 @@ from numpy_groupies.utils_np import (
     AScalar,
     AValue,
     RavelOrder,
+    aggregate_temporal,
     check_dtype,
     check_fill_value,
     check_nton_shape,
-    finalize_temporal,
     input_validation,
+    is_own_function,
     is_temporal_input,
-    prepare_temporal,
 )
 from numpy_groupies.validation import is_scalar_input
 
@@ -83,66 +83,58 @@ def _aggregate_base(
         # as a callable of the caller's own
         funcname, op = _dispatch.custom(func)
     # datetime64 and timedelta64 run on their int64 ticks - the temporal
-    # wrapper takes the input apart, refuses what numpy refuses, and the plan
-    # turns the tick result of the kernels back into a temporal answer.  A
-    # callable of the caller's own sees the values as they came.
-    temporal_plan = None
-    if isinstance(funcname, str) and is_temporal_input(a):
-        requested = funcname
-        funcname, group_idx, a, fill_value, dtype, temporal_plan = prepare_temporal(
-            funcname,
+    # wrapper takes the input apart, refuses what numpy refuses, and answers
+    # with a temporal value.  Only the functions of the package go through it:
+    # a callable of the caller's own defines its own semantics and sees the
+    # values as they are.  The numpy functions that mean the same thing are
+    # aliases of the functions of the package, so np.mean is the mean of the
+    # package and gets its answer.
+    if is_own_function(funcname) and is_temporal_input(a):
+        ret, fill_value = aggregate_temporal(
+            lambda name: cast("Callable[..., AResult]", _dispatch[name].op),
+            cast("str", funcname),
             group_idx,
             cast("AValue", a),
+            flat_size,
             fill_value,
             dtype,
-            flat_size,
             kwargs,
         )
-        if funcname != requested:
-            # the flags of the missing values are the plain any/all of the
-            # NaT mask - the operation follows the name
-            funcname, op = _dispatch[funcname]
-    if op is None:
-        # a function that is known but not implemented here
-        raise missing_impl_error(funcname)
-    if isinstance(funcname, str):
-        # a known function: the nan variants drop the nans of the input first
-        if funcname.startswith("nan"):
-            if is_scalar_input(a):
-                raise ValueError("nan-version not supported for scalar input.")
-            if "nan" in funcname:
-                if "arg" in funcname:
-                    kwargs["_nansqueeze"] = True
-                elif "cum" in funcname:
-                    pass
-                else:
-                    good = ~np.isnan(a)
-                    if "len" not in funcname or len_counts_values:
-                        # a is not needed for len, nanlen!
-                        # a scalar a raised a branch above, only columns remain
-                        a = cast("npt.NDArray[np.generic]", a)[good]
-                    group_idx = group_idx[good]
-
-        # the sum overflow guess needs the maximum number of values that can
-        # be summed into a single group, i.e. the (nan-filtered) input length
-        # - flat_size counts output groups and can be arbitrarily smaller
-        dtype = check_dtype(dtype, funcname, a, len(group_idx))
-        fill_value = resolve_fill_value(funcname, fill_value, dtype)
-        check_fill_value(fill_value, dtype, func=funcname)
     else:
-        # a callable of the caller's own: it sees the values as they are, and
-        # its result is a number of its own making - the dtype it asked for is
-        # the one it gets
-        fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
+        if op is None:
+            # a function that is known but not implemented here
+            raise missing_impl_error(funcname)
+        if isinstance(funcname, str):
+            # a known function: the nan variants drop the nans of the input first
+            if funcname.startswith("nan"):
+                if is_scalar_input(a):
+                    raise ValueError("nan-version not supported for scalar input.")
+                if "nan" in funcname:
+                    if "arg" in funcname:
+                        kwargs["_nansqueeze"] = True
+                    elif "cum" in funcname:
+                        pass
+                    else:
+                        good = ~np.isnan(a)
+                        if "len" not in funcname or len_counts_values:
+                            # a is not needed for len, nanlen!
+                            # a scalar a raised a branch above, only columns remain
+                            a = cast("npt.NDArray[np.generic]", a)[good]
+                        group_idx = group_idx[good]
 
-    if temporal_plan is not None and temporal_plan.computed is not None:
-        # the temporal wrapper has finished this one - the mean, the median
-        # and the quantiles of temporal input compute on their own
-        ret = cast("AResult", temporal_plan.computed)
-    else:
+            # the sum overflow guess needs the maximum number of values that can
+            # be summed into a single group, i.e. the (nan-filtered) input length
+            # - flat_size counts output groups and can be arbitrarily smaller
+            dtype = check_dtype(dtype, funcname, a, len(group_idx))
+            fill_value = resolve_fill_value(funcname, fill_value, dtype)
+            check_fill_value(fill_value, dtype, func=funcname)
+        else:
+            # a callable of the caller's own: it sees the values as they are, and
+            # its result is a number of its own making - the dtype it asked for is
+            # the one it gets
+            fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
+
         ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
-    if temporal_plan is not None:
-        ret = finalize_temporal(ret, temporal_plan)
 
     # deal with ndimensional indexing
     if ndim_idx > 1:
