@@ -81,6 +81,11 @@ from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cu
 from numpy_groupies.aggregate_numba.gather import unpack, unpack_into
 from numpy_groupies.aggregate_numba.ops import _dispatch, _driver_call
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
+from numpy_groupies.aggregate_numpy.temporal import (
+    _temporal_aggregation,
+    is_own_function,
+    is_temporal_input,
+)
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
@@ -96,10 +101,7 @@ from numpy_groupies.utils_np import (
     AScalar,
     AValue,
     RavelOrder,
-    aggregate_temporal,
     exact_integer_group_mean,
-    is_own_function,
-    is_temporal_input,
 )
 from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
 
@@ -157,7 +159,7 @@ def aggregate(
 
             return call
 
-        ret, fill_value = aggregate_temporal(
+        ret, fill_value = _temporal_aggregation(
             temporal_op,
             lambda group_idx, values, size_, fill_value=None, dtype=None, nan=False, **kw: _driver_call(
                 averaging.tick_mean.nan if nan else averaging.tick_mean.plain
@@ -171,6 +173,21 @@ def aggregate(
                 # the sample spacing and the quantile are no argument of the
                 # tick mean - the driver of the plain variant takes them and
                 # leaves them alone
+                0.0,
+                0.0,
+            ),
+            lambda group_idx, values, size_, fill_value=None, dtype=None, nan=False, **kw: _driver_call(
+                specials.tick_median.nan if nan else specials.tick_median.plain
+            )(
+                group_idx,
+                values,
+                size_,
+                np.dtype(np.int64),
+                np.dtype(np.int64),
+                fill_value,
+                # the sample spacing and the quantile are no argument of the
+                # tick median - the driver of the plain variant takes them
+                # and leaves them alone
                 0.0,
                 0.0,
             ),
@@ -315,6 +332,11 @@ nanmean = averaging.mean.nan.stub
 # stays exact and the answer is a tick again
 tick_mean = averaging.tick_mean.plain.stub
 nantick_mean = averaging.tick_mean.nan.stub
+# the median of the ticks of a temporal input - the exact middle of the
+# ticks, where the numeric kernel would promote the mean of the two
+# middles to float64 and round it off the tick grid
+tick_median = specials.tick_median.plain.stub
+nantick_median = specials.tick_median.nan.stub
 std = averaging.std.plain.stub
 nanstd = averaging.std.nan.stub
 var = averaging.var.plain.stub

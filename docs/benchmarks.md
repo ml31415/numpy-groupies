@@ -31,6 +31,71 @@ The participants get the data as it is - they must not write into it, since that
 - As in the numeric table, everything above a fifth of the window is set to the tick `0` (the falsy values of the boolean functions), and for the `nan…` functions about 20% of the remaining values are `NaT`.
 - The functions a dtype refuses are left out of its block: the sum, the accumulations and the middles belong to the durations alone, and the moments belong to neither. `--funcs` narrows both blocks by name, and a name neither dtype knows is an error.
 
+The result of a run on the machine of the numeric table (same conditions, `--runs=3`, milliseconds, lower is better):
+
+| function                |        numpy |        numba |
+| ----------------------- | -----------: | -----------: |
+| min datetime64          |        1.704 |        0.448 |
+| max datetime64          |        1.457 |        0.479 |
+| nanmin datetime64       |        5.023 |        0.461 |
+| nanmax datetime64       |        4.436 |        0.570 |
+| first datetime64        |        1.855 |        0.380 |
+| last datetime64         |        0.893 |        0.358 |
+| nanfirst datetime64     |        5.032 |        0.348 |
+| nanlast datetime64      |        4.306 |        0.361 |
+| argmin datetime64       |        4.984 |        0.525 |
+| argmax datetime64       |        2.901 |        0.484 |
+| nanargmin datetime64    |        6.311 |        0.605 |
+| nanargmax datetime64    |        4.344 |        0.608 |
+| len datetime64          |        0.797 |        0.342 |
+| nanlen datetime64       |        4.212 |        0.329 |
+| nunique datetime64      |       15.058 |        2.533 |
+| nannunique datetime64   |       16.241 |        2.831 |
+| all datetime64          |        1.905 |        0.982 |
+| any datetime64          |        2.789 |        0.931 |
+| allnan datetime64       |        2.236 |        0.406 |
+| anynan datetime64       |        1.328 |        0.375 |
+| mean datetime64         |        5.421 |        0.821 |
+| nanmean datetime64      |        7.733 |        0.884 |
+| sort datetime64         |       52.906 |        6.634 |
+| array datetime64        |        7.615 |        7.089 |
+| min timedelta64         |        1.737 |        0.487 |
+| max timedelta64         |        1.395 |        0.527 |
+| nanmin timedelta64      |        5.025 |        0.549 |
+| nanmax timedelta64      |        4.368 |        0.532 |
+| first timedelta64       |        1.777 |        0.361 |
+| last timedelta64        |        0.886 |        0.328 |
+| nanfirst timedelta64    |        4.976 |        0.351 |
+| nanlast timedelta64     |        4.365 |        0.341 |
+| argmin timedelta64      |        4.963 |        0.559 |
+| argmax timedelta64      |        2.919 |        0.509 |
+| nanargmin timedelta64   |        6.325 |        0.613 |
+| nanargmax timedelta64   |        4.325 |        0.640 |
+| len timedelta64         |        0.844 |        0.313 |
+| nanlen timedelta64      |        4.240 |        0.349 |
+| nunique timedelta64     |       14.812 |        2.634 |
+| nannunique timedelta64  |       16.313 |        2.488 |
+| all timedelta64         |        1.961 |        0.835 |
+| any timedelta64         |        2.881 |        0.825 |
+| allnan timedelta64      |        2.278 |        0.382 |
+| anynan timedelta64      |        1.056 |        0.341 |
+| mean timedelta64        |        5.462 |        0.690 |
+| nanmean timedelta64     |        7.879 |        0.742 |
+| sort timedelta64        |       54.591 |        6.113 |
+| array timedelta64       |        7.539 |        8.165 |
+| sum timedelta64         |        1.620 |        0.345 |
+| nansum timedelta64      |        4.795 |        0.345 |
+| cumsum timedelta64      |       13.908 |        0.787 |
+| nancumsum timedelta64   |       56.609 |        0.858 |
+| cummax timedelta64      |         ---- |        1.080 |
+| cummin timedelta64      |         ---- |        0.983 |
+| median timedelta64      |       40.260 |        2.967 |
+| nanmedian timedelta64   |       36.997 |        2.746 |
+| quantile timedelta64    |       44.694 |       44.904 |
+| nanquantile timedelta64 |       40.360 |       39.440 |
+
+The kernels of the temporal rows are the ones of the numeric table working on the values or their ticks: the selection of the extrema, the positions, the counts and the truth of the values orders them and finds their `NaT` as it finds a nan, the sums and the accumulations of the durations add in the compiled code, the mean and the median of the ticks answer in exact int64 arithmetic, and the quantiles interpolate on the python integers - that last one is the only temporal work neither backend compiles, because the product of its interpolation no int64 arithmetic holds. The nan variants sit at the level of their float counterparts: the check of the NaT costs what the check of the nan costs.
+
 ## The calibration of the parallel path
 
 Which calls of the numba kernels take the parallel path and which do not is

@@ -10,6 +10,11 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.averaging import _tick_mean
 from numpy_groupies.aggregate_numpy.ops import _dispatch
+from numpy_groupies.aggregate_numpy.temporal import (
+    _temporal_aggregation,
+    is_own_function,
+    is_temporal_input,
+)
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     resolve_fill_value,
@@ -25,13 +30,10 @@ from numpy_groupies.utils_np import (
     AScalar,
     AValue,
     RavelOrder,
-    aggregate_temporal,
     check_dtype,
     check_fill_value,
     check_nton_shape,
     input_validation,
-    is_own_function,
-    is_temporal_input,
 )
 from numpy_groupies.validation import is_scalar_input
 
@@ -91,9 +93,10 @@ def _aggregate_base(
     # aliases of the functions of the package, so np.mean is the mean of the
     # package and gets its answer.
     if is_own_function(funcname) and is_temporal_input(a):
-        ret, fill_value = aggregate_temporal(
+        ret, fill_value = _temporal_aggregation(
             lambda name: cast("Callable[..., AResult]", _dispatch[name].op),
             _tick_mean,
+            None,
             cast("str", funcname),
             group_idx,
             cast("AValue", a),

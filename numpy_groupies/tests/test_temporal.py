@@ -690,3 +690,87 @@ def test_the_bare_tick_mean_poisons_the_nat_of_a_group():
     np.testing.assert_array_equal(plain, np.array([np.iinfo(np.int64).min, 4], dtype=np.int64))
     nan = aggregate_numba.nantick_mean(group_idx, ticks, 2)
     np.testing.assert_array_equal(nan, np.array([10, 4], dtype=np.int64))
+
+
+def test_timedelta_median_of_huge_ticks_is_exact(impl):
+    # ticks around 2**62 carry more bits than the 53 of a float64 mantissa:
+    # the mean of the two middles of an even group rounds the answer off the
+    # tick grid where float64 averages it, as np.median and the numeric
+    # kernel of the numba backend do - the exact integer mean of the ticks
+    # does not
+    rng = np.random.default_rng(7)
+    group_idx = rng.integers(0, 40, 400).astype(np.int64)
+    ticks = rng.integers(2**62, 2**62 + 10**6, 400, dtype=np.int64)
+    a = ticks.view("m8[ns]")
+    res = impl.aggregate(group_idx, a, func="median", size=40)
+    counts = np.bincount(group_idx, minlength=40)
+    for g in range(40):
+        part = np.sort(ticks[group_idx == g])
+        m = counts[g]
+        want = (
+            int(part[m // 2])
+            if m % 2 == 1
+            else _round_half_even(Fraction(int(part[m // 2 - 1]) + int(part[m // 2]), 2))
+        )
+        assert int(np.asarray(res).view(np.int64)[g]) == want
+    # and the nan variant answers the same over the NaT it skips
+    a[::3] = np.datetime64("NaT", "ns")
+    res_nan = impl.aggregate(group_idx, a, func="nanmedian", size=40)
+    good = ~np.isnat(a)
+    res_nan_ref = impl.aggregate(group_idx[good], a[good], func="nanmedian", size=40)
+    np.testing.assert_array_equal(np.asarray(res_nan).view(np.int64), np.asarray(res_nan_ref).view(np.int64))
+
+
+def test_the_parallel_path_of_the_median_answers_the_same(impl):
+    # the groups are cut into ranges the threads work on alone - the answer
+    # must not depend on where the cut falls.  The data is big enough for the
+    # parallel path to run at all.
+    rng = np.random.default_rng(5)
+    size = 300_000
+    groups = 500
+    group_idx = rng.integers(0, groups, size).astype(np.int64)
+    ticks = rng.integers(-(2**62), 2**62, size, dtype=np.int64)
+    a = ticks.view("m8[ns]")
+    a[::5] = np.datetime64("NaT", "ns")
+    parallel = impl.aggregate(group_idx, a, func="median", size=groups)
+    parallel_nan = impl.aggregate(group_idx, a, func="nanmedian", size=groups)
+    if hasattr(impl, "tick_median"):
+        # the sequential kernel of the numba backend is the yardstick - the
+        # plain one averages the NaT tick like any other, so its groups that
+        # hold a NaT are compared as the kernel answers them, and the rest
+        # as the plain answer of the aggregation (the NaT of the wrapper)
+        nat_groups = np.zeros(groups, dtype=bool)
+        np.maximum.at(nat_groups, group_idx[a.view(np.int64) == np.iinfo(np.int64).min], True)
+        sequential = impl.tick_median(group_idx, ticks, groups)
+        sequential_nan = impl.nantick_median(group_idx, ticks, groups)
+        np.testing.assert_array_equal(
+            np.asarray(parallel).view(np.int64)[~nat_groups], np.asarray(sequential)[~nat_groups]
+        )
+        # the groups that hold a NaT answer the NaT of the wrapper
+        np.testing.assert_array_equal(
+            np.asarray(parallel).view(np.int64)[nat_groups], np.full(int(nat_groups.sum()), np.iinfo(np.int64).min)
+        )
+        np.testing.assert_array_equal(np.asarray(parallel_nan).view(np.int64), sequential_nan)
+
+
+def test_the_bare_tick_median_poisons_the_nat_of_a_group():
+    # the plain kernel sees the NaT tick as the smallest value and averages
+    # it like any other - the caller knows the groups that hold a NaT and
+    # overwrites them with the NaT; the nan kernel leaves the NaT out on its
+    # own and answers the middle of the ticks that remain
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0, 1, 1])
+    ticks = np.array([np.iinfo(np.int64).min, 10, 3, 5], dtype=np.int64)
+    plain = aggregate_numba.tick_median(group_idx, ticks, 2)
+    # what the kernel sees: the exact mean of the NaT tick and the 10
+    want = _round_half_even(Fraction(int(np.iinfo(np.int64).min) + 10, 2))
+    assert int(plain[0]) == want
+    assert int(plain[1]) == 4
+    nan = aggregate_numba.nantick_median(group_idx, ticks, 2)
+    np.testing.assert_array_equal(nan, np.array([10, 4], dtype=np.int64))
+    # an even group whose middles sum beyond the window of int64 - the exact
+    # average of (2**62, 2**62 + 1) is a half above 2**62, and half to even
+    # keeps the even neighbour
+    edge = aggregate_numba.nantick_median(np.array([0, 0]), np.array([2**62, 2**62 + 1], dtype=np.int64), 1)
+    assert int(edge[0]) == 2**62
