@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias, cast
 
 if TYPE_CHECKING:
-    from numpy_groupies.utils.typing import AFillValue, AScalar
+    from numpy_groupies.typing import AFillValue, AScalar
 
 nan = float("nan")  # nan is just this float
 

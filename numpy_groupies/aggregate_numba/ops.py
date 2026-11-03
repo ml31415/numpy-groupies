@@ -32,6 +32,15 @@ from numpy_groupies.aggregate_numba.steps import group_count, group_place, group
 from numpy_groupies.common import (
     resolve_fill_value,
 )
+from numpy_groupies.nptools import (
+    aliasing,
+    check_dtype,
+    check_fill_value,
+    check_nton_shape,
+    input_validation,
+    resolve_output_dtype,
+    scalar_dtype,
+)
 from numpy_groupies.registry import (
     DEFAULT_FILL_VALUE,
     DefaultFillValue,
@@ -42,16 +51,7 @@ from numpy_groupies.registry import (
     custom_callable,
     funcs_no_separate_nan,
 )
-from numpy_groupies.utils.nptools import (
-    aliasing,
-    check_dtype,
-    check_fill_value,
-    check_nton_shape,
-    input_validation,
-    resolve_output_dtype,
-    scalar_dtype,
-)
-from numpy_groupies.utils.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
+from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import is_scalar_input
 
 # input dtypes for which the 'sum' output dtype depends on the input length

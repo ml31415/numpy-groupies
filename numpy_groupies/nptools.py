@@ -13,7 +13,7 @@ from numpy_groupies.registry import (
     get_aliasing,
     resolve_name,
 )
-from numpy_groupies.utils.typing import (
+from numpy_groupies.typing import (
     AFillValue,
     AScalar,
     AValue,
@@ -307,7 +307,7 @@ def resolve_output_dtype(
                     return np.dtype(np.float64)
             else:
                 if func_str == "sum":
-                    if a_dtype.kind in "Mm":  # the kinds utils.temporal holds as TEMPORAL_KINDS
+                    if a_dtype.kind in "Mm":  # the kinds temporal holds as TEMPORAL_KINDS
                         # the sum of durations is a duration - numpy answers
                         # in the unit of the input, and there is no integer
                         # size to guess for

@@ -29,8 +29,8 @@ from numpy_groupies.benchmarks import _ufunc
 from numpy_groupies.registry import (
     funcs_collecting,
 )
+from numpy_groupies.temporal import TEMPORAL_KINDS
 from numpy_groupies.tests.reference import aggregate_ref
-from numpy_groupies.utils.temporal import TEMPORAL_KINDS
 
 # ---------------------------------------------------------------------------
 # the cleanup of the tools: an interrupt ends the run without the shutdown

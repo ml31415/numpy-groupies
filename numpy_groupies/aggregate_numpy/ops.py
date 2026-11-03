@@ -37,14 +37,14 @@ from numpy_groupies.aggregate_numpy.reductions import (
     _sum,
 )
 from numpy_groupies.aggregate_numpy.specials import _median, _nunique, _percentile, _quantile, _sort
+from numpy_groupies.nptools import aliasing
 from numpy_groupies.registry import (
     Registry,
     Resolved,
     custom_callable,
     funcs_no_separate_nan,
 )
-from numpy_groupies.utils.nptools import aliasing
-from numpy_groupies.utils.typing import AResult, AScalar
+from numpy_groupies.typing import AResult, AScalar
 
 _op_dict: dict[str, Callable[..., AResult]] = {
     "min": _min,

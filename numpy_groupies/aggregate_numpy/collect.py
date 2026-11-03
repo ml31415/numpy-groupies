@@ -11,8 +11,8 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.steps import sort_key
-from numpy_groupies.utils.nptools import blocks_to_object_array
-from numpy_groupies.utils.typing import AScalar
+from numpy_groupies.nptools import blocks_to_object_array
+from numpy_groupies.typing import AScalar
 
 
 def _array(

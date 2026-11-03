@@ -27,7 +27,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.utils.typing import AFillValue, AResult, AValue, RavelOrder
+from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
 
 
 class NumpyFallback:

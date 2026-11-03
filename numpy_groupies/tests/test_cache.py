@@ -19,8 +19,8 @@ import sys
 from numba.core.caching import NullCache
 
 import numpy_groupies
+from numpy_groupies.cache import numba_cache_dir, purge_cache
 from numpy_groupies.tests.test_numba import _walk_dispatchers
-from numpy_groupies.utils.cache import numba_cache_dir, purge_cache
 
 PACKAGE = pathlib.Path(numpy_groupies.__file__).parent
 

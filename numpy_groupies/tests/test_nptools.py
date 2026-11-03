@@ -1,6 +1,6 @@
 """The numpy level: the dtype policy, the shape check and the tools.
 
-``utils.nptools`` holds what the numpy-based implementations share.
+``nptools`` holds what the numpy-based implementations share.
 """
 
 import re
@@ -8,7 +8,7 @@ import re
 import numpy as np
 import pytest
 
-from numpy_groupies.utils.nptools import check_dtype, check_nton_shape
+from numpy_groupies.nptools import check_dtype, check_nton_shape
 
 
 def test_check_dtype():

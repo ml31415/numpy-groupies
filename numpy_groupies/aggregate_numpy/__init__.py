@@ -17,15 +17,15 @@ from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
 )
+from numpy_groupies.nptools import exact_integer_group_mean
 from numpy_groupies.registry import (
     FuncName,
     bind_functions,
     function_names,
     missing_impl_error,
 )
-from numpy_groupies.utils.nptools import exact_integer_group_mean
-from numpy_groupies.utils.temporal import NAT_TICK, _temporal_aggregation
-from numpy_groupies.utils.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
+from numpy_groupies.temporal import NAT_TICK, _temporal_aggregation
+from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 
 __all__ = ["aggregate", "blocks_to_object_array", "step_count", "step_indices", "unpack"]
 
@@ -45,7 +45,7 @@ def _tick_mean(
     for a datetime64 in nanoseconds that is a number around 1.6e18, and the
     sum of the ticks of a group leaves the window float64 represents
     exactly.  The sums are therefore exact (see
-    ``utils.nptools.exact_integer_group_mean``), and the remainder of the
+    ``nptools.exact_integer_group_mean``), and the remainder of the
     division rounds half to even.
     """
     if nan:
