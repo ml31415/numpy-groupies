@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies.tests.helpers import impl_name
+from numpy_groupies.tests.reference import aggregate_ref
 
 # the datetime64 cases run on a coarse unit and on nanoseconds - the ns ticks
 # are the ones float64 cannot represent exactly
@@ -140,6 +141,27 @@ def test_the_nan_argreductions_of_a_temporal_group_differ_from_numpy(impl):
     assert list(impl.aggregate(group_idx, a, func="nanargmin", size=1)) == [2]
     # the plain form follows numpy and names the NaT
     assert list(impl.aggregate(group_idx, a, func="argmin", size=1)) == [1]
+
+
+@pytest.mark.parametrize("trial", range(25))
+def test_the_nan_argreductions_of_a_temporal_group_match_the_reference(impl, trial):
+    # the reference of the suite computes the nan argreductions the way the
+    # contract of the nan forms says: it filters the missing values out and
+    # takes the plain argmin over the values that are left, at the positions
+    # they sit at in the input - a construction numpy's own nanargmin of a
+    # datetime64 cannot stand for, since it does not skip.  Both backends
+    # match it over data drawn at random, NaT included, whole NaT groups
+    # included - those answer the fill value on both sides.
+    rng = np.random.default_rng(11 + trial)
+    n = int(rng.integers(1, 30))
+    groups = int(rng.integers(1, 6))
+    group_idx = rng.integers(0, groups, n)
+    a = rng.integers(-(10**7), 10**7, n).astype("M8[s]")
+    a[rng.random(n) < 0.3] = np.datetime64("NaT", "s")
+    for func in ("nanargmin", "nanargmax"):
+        ours = np.asarray(impl.aggregate(group_idx, a, func=func, size=groups))
+        want = np.asarray(aggregate_ref(group_idx, a, func=func, size=groups))
+        np.testing.assert_array_equal(ours, want)
 
 
 def test_the_nan_argreductions_of_a_temporal_group_answer_the_fill_of_an_empty_one(impl):
