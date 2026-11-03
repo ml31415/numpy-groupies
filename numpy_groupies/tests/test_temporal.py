@@ -176,7 +176,7 @@ def test_the_nan_argreductions_of_a_temporal_group_answer_the_fill_of_an_empty_o
     assert list(impl.aggregate(group_idx, a, func="nanargmax", size=2)) == [-1, 3]
 
 
-def test_the_nan_argreductions_of_a_temporal_group_keep_the_positions_of_the_input(impl):
+def test_the_nan_argreductions_of_a_temporal_group_keep_the_positions_of_the_input(impl, request):
     # the positions the nan argreductions name are the ones of the input -
     # the values they skip do not shift them
     group_idx = np.array([0, 0, 1, 1, 1])
@@ -199,7 +199,15 @@ def test_the_nan_argreductions_of_a_temporal_group_keep_the_positions_of_the_inp
     # the first of the equal values.  The numba backend has no sentinel: it
     # skips the NaT where it finds it.
     if impl_name(impl) == "numpy":
-        pytest.xfail("the sentinels of the numpy backend collide with timestamps of their own")
+        # the mark is strict: should the backend answer the right positions
+        # one day, the test fails and asks for the mark to go - a silent
+        # xfail would hide the fix
+        request.node.add_marker(
+            pytest.mark.xfail(
+                strict=True,
+                reason="the sentinels of the numpy backend collide with timestamps of their own",
+            )
+        )
     hi, lo = np.iinfo(np.int64).max, np.iinfo(np.int64).min
     group_idx = np.array([0, 0, 1, 1])
     a = np.array(
@@ -749,7 +757,8 @@ def test_bare_kernel_refuses_what_it_cannot_compute(func):
 
 def test_bare_kernel_refuses_the_mean_of_the_durations():
     # numba's division of durations truncates, and the package rounds the
-    # mean of a duration half to even - only aggregate() computes that
+    # mean of a duration half to even - the mean of the values themselves
+    # is the business of aggregate(), which rounds it on the ticks
     from numpy_groupies import aggregate_numba
 
     group_idx = np.array([0, 0])
@@ -768,8 +777,10 @@ def test_the_sort_of_numba_makes_no_move_when_a_nat_is_in_the_values(unit):
     # fixed by numpy/numpy#12658).  Without a NaT the sort of numba is
     # correct, and its partition answers the NaT the way numpy does - so
     # the machinery is there, the comparison of the sort just does not use
-    # it.  When numba sorts a temporal array holding a NaT like numpy does,
-    # this test fails - and the bare sort kernel can take the values.
+    # it.  This test is the watchman of the fix: when numba sorts a
+    # temporal array holding a NaT like numpy does, the assertion about the
+    # untouched input fails - and the bare sort kernel of this package can
+    # take the values then.
     from numpy_groupies import aggregate_numba
 
     @nb.njit
