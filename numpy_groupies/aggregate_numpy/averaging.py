@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.reductions import _first, _last, _sum
-from numpy_groupies.utils_np import AScalar, exact_integer_group_mean, iscomplexobj
+from numpy_groupies.utils_np import NAT_TICK, AScalar, exact_integer_group_mean, iscomplexobj
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     check_integer_mean_overflow,
@@ -75,6 +75,7 @@ def _tick_mean(
     size: int,
     fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
+    nan: bool = False,
 ) -> npt.NDArray[np.integer]:
     """The mean of the ticks of every group, rounded half to even.
 
@@ -86,9 +87,16 @@ def _tick_mean(
     division rounds half to even.
     """
     fill_tick = 0 if (isinstance(fill_value, float) and fill_value != fill_value) else int(cast("int", fill_value))
+    ticks = a.astype(np.int64)
+    if nan:
+        # the NaT of a group is left out - its tick is the smallest one, and
+        # the sums of the ticks would count it
+        good = ticks != NAT_TICK
+        ticks = ticks[good]
+        group_idx = group_idx[good]
     return cast(
         "npt.NDArray[np.integer]",
-        exact_integer_group_mean(group_idx, a.astype(np.int64), size, fill_tick, np.dtype(np.int64)),
+        exact_integer_group_mean(group_idx, ticks, size, fill_tick, np.dtype(np.int64)),
     )
 
 

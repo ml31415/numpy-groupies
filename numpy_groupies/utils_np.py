@@ -1175,7 +1175,9 @@ def aggregate_temporal(
     the caller does not have to know whether the wrapper computed the answer
     itself or the kernel of the operation did.  The mean of the ticks is the
     one operation that no kernel of a function answers - it is not a function
-    of the package - and it comes in as ``tick_mean``.
+    of the package - and it comes in as ``tick_mean``: it takes the ``nan``
+    flag, because the nan variant leaves the NaT of a group out on its own
+    instead of having the rows filtered out before it.
 
     ``native`` says that the kernel of the backend takes the temporal values
     as they are: the compiled kernels of the numba backend order them and
@@ -1263,10 +1265,12 @@ def aggregate_temporal(
         skip = np.iinfo(np.int64).max if base == "argmin" else NAT_TICK + 1
         a = np.where(nat, np.int64(skip), values.view(np.int64)).view(a.dtype)
         nat = None
-    elif funcname.startswith("nan") and base != "cumsum":
+    elif funcname.startswith("nan") and base != "cumsum" and base != "mean":
         # the nan-variants skip NaT like they skip nan - the plain ones
         # propagate it, and numpy propagates it in nancumsum as well, so
-        # the cumulative functions keep their rows
+        # the cumulative functions keep their rows.  The nan mean does not
+        # filter them either: the tick mean leaves the NaT of a group out on
+        # its own, and filtering the rows would cost a copy of the data.
         if nat.any():
             good = ~nat
             a = a[good]
@@ -1307,7 +1311,7 @@ def aggregate_temporal(
     if base == "argmax" and nat is not None and nat.any():
         # numpy answers the position of the first NaT of the group
         nat_groups, nat_positions = _first_true_position_per_group(group_idx, nat)
-    elif base in TEMPORAL_NAT_POISON and nat is not None and nat.any():
+    elif base in TEMPORAL_NAT_POISON and nat is not None and nat.any() and not funcname.startswith("nan"):
         # a single NaT poisons the mean, the maximum and - for the durations
         # - the middles of its whole group
         nat_groups = _groups_holding(group_idx, nat, size)
@@ -1341,7 +1345,15 @@ def aggregate_temporal(
             try:
                 computed = cast(
                     "npt.NDArray[Any]",
-                    tick_mean(group_idx, ticks, size, fill_value=fill_tick, dtype=np.dtype(np.int64), **kwargs),
+                    tick_mean(
+                        group_idx,
+                        ticks,
+                        size,
+                        fill_value=fill_tick,
+                        dtype=np.dtype(np.int64),
+                        nan=funcname.startswith("nan"),
+                        **kwargs,
+                    ),
                 )
             except OverflowError:
                 # The values of a group reach from one end of the int64 range

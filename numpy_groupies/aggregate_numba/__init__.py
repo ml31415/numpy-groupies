@@ -159,9 +159,9 @@ def aggregate(
 
         ret, fill_value = aggregate_temporal(
             temporal_op,
-            lambda group_idx, values, size_, fill_value=None, dtype=None, **kw: averaging.tick_mean.plain.stub(
-                group_idx, values, size_, fill_value
-            ),
+            lambda group_idx, values, size_, fill_value=None, dtype=None, nan=False, **kw: (
+                averaging.tick_mean.nan if nan else averaging.tick_mean.plain
+            ).stub(group_idx, values, size_, fill_value),
             cast("str", funcname),
             group_idx,
             cast("AValue", a),

@@ -283,6 +283,25 @@ def _tick_mean_init(
     )
 
 
+def _tick_mean_update_nan(st: TickMeanState, ri: int, i: int, val: int, fill_value: int, extra: Any) -> None:
+    """The nan variant of the tick mean: the NaT of a group is left out.
+
+    The NaT of a temporal value is the tick -2**63 - and the kernel sees the
+    ticks alone, so it tells the NaT from a value by that tick.  A value that
+    is exactly the tick of the NaT (the 21st of September 1677) is left out
+    with it.
+    """
+    if val == INT64_MIN:
+        return
+    if st.count[ri] == 0:
+        st.origin[ri] = val
+        st.origin_pos[ri] = i
+    st.count[ri] += 1
+    st.out[ri] += val - st.origin[ri]
+    st.low[ri] = min(st.low[ri], val)
+    st.high[ri] = max(st.high[ri], val)
+
+
 def _tick_mean_update(st: TickMeanState, ri: int, i: int, val: int, fill_value: int, extra: Any) -> None:
     if st.count[ri] == 0:
         # the first value of the group is the origin its deviations are
@@ -365,6 +384,7 @@ tick_mean = build_kernel(
     "tick_mean",
     init=_tick_mean_init,
     update=_tick_mean_update,
+    update_nan=_tick_mean_update_nan,
     finish=_tick_mean_finish,
     combine=_tick_mean_combine,
     rule=rule_int64,
