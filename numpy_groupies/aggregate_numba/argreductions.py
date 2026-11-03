@@ -133,10 +133,13 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
                 # input with them, deliberately unlike numpy: np.nanargmin and
                 # np.nanargmax do not skip a NaT of datetime64, they answer
                 # its position like the plain forms, while np.nanmin and
-                # np.nanmax do skip it - an inconsistency numpy closed as
-                # intended (numpy/numpy#5222, with the NaT semantics of
-                # numpy/numpy#14717).  The nan forms of the package skip the
-                # missing value of every dtype, as their contract says.
+                # np.nanmax do skip it.  numpy closed the report of that
+                # (numpy/numpy#5222) as fixed - the plain forms and the nan
+                # min/max were repaired (numpy/numpy#14717) - while its own
+                # closing output still shows the nanarg forms answering the
+                # NaT position where the float nanarg skips, unaddressed.
+                # The nan forms of the package skip the missing value of
+                # every dtype, as their contract says.
                 continue
             if pending[ri] or best:
                 # the first value of a group wins a tie
