@@ -758,6 +758,50 @@ def test_bare_kernel_refuses_the_mean_of_the_durations():
         aggregate_numba.mean(group_idx, a, 2)
 
 
+@pytest.mark.parametrize("unit", ["M8[s]", "m8[s]"])
+def test_the_sort_of_numba_makes_no_move_when_a_nat_is_in_the_values(unit):
+    # why the bare sort kernel refuses temporal input: the sort of numba
+    # itself does not survive a NaT.  Its comparison makes the NaT
+    # incomparable - both < and > answer False where a value takes part -
+    # and the sort makes no move at all, it hands the input back, while
+    # numpy sorts the NaT to the end of the array (numpy/numpy#12629,
+    # fixed by numpy/numpy#12658).  Without a NaT the sort of numba is
+    # correct, and its partition answers the NaT the way numpy does - so
+    # the machinery is there, the comparison of the sort just does not use
+    # it.  When numba sorts a temporal array holding a NaT like numpy does,
+    # this test fails - and the bare sort kernel can take the values.
+    from numpy_groupies import aggregate_numba
+
+    @nb.njit
+    def nb_sort(x):
+        return np.sort(x)
+
+    @nb.njit
+    def nb_argsort(x):
+        return np.argsort(x)
+
+    @nb.njit
+    def nb_lt(a, b):
+        return a < b
+
+    nat = np.dtype(unit).type("NaT")
+    a = np.array([30, 10, 20], dtype=np.int64).view(unit)
+    a[1] = nat
+    # the comparison of numba: the NaT is incomparable, both ways False
+    assert not nb_lt(a[1], a[0])
+    assert not nb_lt(a[0], a[1])
+    # the sort makes no move - the input comes back
+    np.testing.assert_array_equal(nb_sort(a).view(np.int64), a.view(np.int64))
+    assert list(nb_argsort(a)) == [0, 1, 2]
+    # and numpy sorts the NaT to the end, where the values come first
+    np.testing.assert_array_equal(np.sort(a).view(np.int64), np.array([20, 30, np.iinfo(np.int64).min], dtype=np.int64))
+    # the refusal of the kernel says what aggregate() does instead
+    group_idx = np.array([0, 0, 0])
+    kind = "datetime64" if unit.startswith("M8") else "timedelta64"
+    with pytest.raises((TypeError, nb.TypingError), match="takes no " + kind):
+        aggregate_numba.sort(group_idx, a, 1)
+
+
 def test_the_bare_kernels_and_the_aggregate_entry_agree():
     # the low-level entry and the high-level one answer the same temporal
     # questions the same way
