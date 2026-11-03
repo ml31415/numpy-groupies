@@ -12,12 +12,12 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.steps import group_order, sort_key
 from numpy_groupies.common import nan_of
-from numpy_groupies.utils_np import AResult, AScalar
+from numpy_groupies.utils_np import QUANTILE_METHODS, AResult, AScalar
 from numpy_groupies.utils_temporal import NAT_TICK
 
 # the ways a quantile interpolates between the two values it falls between -
 # the names numpy uses for them
-_QUANTILE_METHODS = frozenset({"linear", "lower", "higher", "midpoint", "nearest"})
+_QUANTILE_METHODS = QUANTILE_METHODS
 
 
 def _median(

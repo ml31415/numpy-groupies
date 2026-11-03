@@ -261,6 +261,13 @@ def scalar_dtype(a: Any) -> np.dtype:
     return np.dtype(type(a)) if dtype is None else np.dtype(dtype)
 
 
+# the ways a quantile interpolates between the two values it falls between -
+# the names numpy uses for them.  The backends share the list: the numpy one
+# computes the quantile of the numbers and of the ticks with it, the numba one
+# the quantile of the ticks.
+QUANTILE_METHODS = frozenset({"linear", "lower", "higher", "midpoint", "nearest"})
+
+
 def check_dtype(
     dtype: npt.DTypeLike | None,
     func_str: str | Callable[..., AScalar],

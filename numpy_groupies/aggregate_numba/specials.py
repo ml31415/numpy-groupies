@@ -388,7 +388,7 @@ def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float)
 _quantile_at = njit_stable(_quantile_at, name="quantile_quantile_at")
 
 
-def _quantile_at_ticks(a_sorted: npt.NDArray[np.int64], begin: int, m: int, q: float) -> int:
+def _quantile_at_ticks(a_sorted: npt.NDArray[np.int64], begin: int, m: int, q: float, method: str) -> int:
     """The quantile q of the ticks of the block at ``a_sorted[begin:begin+m]``.
 
     The rule is numpy's own one for a temporal value: the quantile names a
@@ -402,8 +402,21 @@ def _quantile_at_ticks(a_sorted: npt.NDArray[np.int64], begin: int, m: int, q: f
     the two ticks leaves the window a float64 holds exactly only for the
     small ones, and numpy rounds it there.  The truncation is towards zero,
     like the truncation of numpy's multiplication of a duration and a float.
+
+    The other methods of numpy name the neighbours of the quantile in their
+    own way: ``lower`` takes the one below the position, ``higher`` the one
+    above it, ``nearest`` the one nearest to it (numpy rounds the position
+    to the nearest element, halves to even) - and the ``midpoint`` takes the
+    mean of the two neighbours, which is the rule of the interpolation with a
+    fraction of a half.
     """
     pos = q * (m - 1)
+    if method == "lower":
+        return int(_select(a_sorted, begin, begin + m, begin + int(np.floor(pos))))
+    if method == "higher":
+        return int(_select(a_sorted, begin, begin + m, begin + min(int(np.ceil(pos)), m - 1)))
+    if method == "nearest":
+        return int(_select(a_sorted, begin, begin + m, begin + min(int(np.round(pos)), m - 1)))
     lower_index = int(np.floor(pos))
     upper_index = int(np.ceil(pos))
     upper = int(_select(a_sorted, begin, begin + m, begin + upper_index))
@@ -416,7 +429,7 @@ def _quantile_at_ticks(a_sorted: npt.NDArray[np.int64], begin: int, m: int, q: f
     for i in range(begin + 1, begin + lower_index + 1):
         lower = max(lower, int(a_sorted[i]))
     difference = upper - lower
-    gamma = pos - lower_index
+    gamma = 0.5 if method == "midpoint" else pos - lower_index
     if gamma < 0.5:
         return lower + int(np.float64(difference) * np.float64(gamma))
     return upper - int(np.float64(difference) * np.float64(1 - gamma))
@@ -501,6 +514,7 @@ def _tick_quantile_group(nans: bool) -> Callable[..., None]:
         out: npt.NDArray[np.int64],
         fill_value: int,
         q: float,
+        method: str,
     ) -> None:
         if counts[g] == 0:
             return  # untouched group, keeps the fill value
@@ -509,9 +523,9 @@ def _tick_quantile_group(nans: bool) -> Callable[..., None]:
             if m == 0:
                 out[g] = fill_value
             else:
-                out[g] = _quantile_at_ticks(buf, 0, m, q)
+                out[g] = _quantile_at_ticks(buf, 0, m, q, method)
         else:
-            out[g] = _quantile_at_ticks(a_sorted, starts[g], counts[g], q)
+            out[g] = _quantile_at_ticks(a_sorted, starts[g], counts[g], q, method)
 
     return group
 
@@ -713,6 +727,7 @@ def _tick_quantile_driver_factory(nans: bool) -> Any:
         aux_dtype: np.dtype,
         fill_value: int,
         q: float,
+        method: str,
     ) -> npt.NDArray[np.int64]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
@@ -723,7 +738,7 @@ def _tick_quantile_driver_factory(nans: bool) -> Any:
         # the plain one leaves the values where they are and needs none
         buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
         for g in range(size):
-            group(g, a_sorted, counts, starts, buf, out, fill_value, q)
+            group(g, a_sorted, counts, starts, buf, out, fill_value, q, method)
         return out
 
     return njit_stable(driver, name=f"{'nan' if nans else ''}tick_quantile_driver")
@@ -750,14 +765,14 @@ def _tick_quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.i
         if setup is None:
             # not worth a parallel region: the sequential driver, with its
             # result bit for bit
-            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra[0], extra[1])
         counts, starts, a_sorted, edges, largest = setup
         out = np.full(counts.size, fill_value, out_dtype)
         bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
         for c in nb.prange(largest.size):
             buf = bufs[c]
             for g in range(edges[c], edges[c + 1]):
-                group(g, a_sorted, counts, starts, buf, out, fill_value, extra)
+                group(g, a_sorted, counts, starts, buf, out, fill_value, extra[0], extra[1])
         return out
 
     return njit_stable(mt_passes, name=f"{'nan' if nans else ''}tick_quantile_mt_passes", parallel=True)
@@ -872,12 +887,14 @@ tick_quantile = build_custom_kernel(
     # the same counting sort and the same selection as the median, with
     # numpy's rule of the interpolation on the ticks: the difference of the
     # two ticks it falls between is a duration, its product with the fraction
-    # is truncated towards zero, and the answer is a tick again.
+    # is truncated towards zero, and the answer is a tick again.  All five
+    # methods of numpy run in the kernel - the branch on the method happens
+    # once per group.
     driver_factory=_tick_quantile_driver_factory,
     mt_driver_factory=_tick_quantile_mt_factory,
     rule=rule_int64,
     fill_default=0,
-    variant="q",
+    variant="q_method",
     doc="Quantile of the ticks of every group, the way numpy computes it - the tick of a NaT poisons its group, and the nan form leaves it out",
 )
 

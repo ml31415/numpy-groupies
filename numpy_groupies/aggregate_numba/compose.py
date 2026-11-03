@@ -598,7 +598,7 @@ def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
 # a driver that carries something named after something else is what the
 # kernels of an earlier version of this module had to write by hand, and what
 # the explicit signatures below make impossible.
-Variant = Literal["none", "ddof", "q", "dx", "reverse"]
+Variant = Literal["none", "ddof", "q", "q_method", "dx", "reverse"]
 
 # the defaults the kernels carry for the argument an operation has of its own.
 # They are the defaults of the registry (``numpy_groupies.registry.FUNC_EXTRAS``)
@@ -936,10 +936,56 @@ def _kernel_reverse(
     return stub, typing
 
 
+def _kernel_q_method(
+    name: str, driver: Callable[..., Any], resolve: _PythonPrologue, prepare: _TypingPrologue
+) -> _Kernel:
+    """The kernel of an operation that takes a quantile and the method of the
+    interpolation.
+
+    The method is the name numpy knows the interpolation by - ``linear``,
+    ``lower``, ``higher``, ``nearest`` or ``midpoint`` - and it reaches the
+    driver as the name itself: the driver branches on it once per group, and
+    a branch per group costs nothing next to the work of the group itself.
+    """
+
+    def stub(
+        group_idx: Any, a: Any, q: float = 0.5, method: str = "linear", size: int = -1, fill_value: float | None = None
+    ) -> Any:
+        return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (q, method))
+
+    def typing(
+        group_idx: Any, a: Any, q: float = 0.5, method: str = "linear", size: int = -1, fill_value: float | None = None
+    ) -> Any:
+        out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
+            group_idx, a, fill_value
+        )
+
+        def _kernel_impl(
+            group_idx: Any,
+            a: Any,
+            q: float = 0.5,
+            method: str = "linear",
+            size: int = -1,
+            fill_value: float | None = None,
+        ) -> Any:
+            _require_inputs(group_idx, a)
+            if fill_value is None:
+                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, q, method)
+            else:
+                _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
+                return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, q, method)
+
+        _kernel_impl.__qualname__ = f"{name}_kernel_impl"
+        return _kernel_impl
+
+    return stub, typing
+
+
 _KERNEL_BUILDERS: dict[Variant, Callable[[str, Callable[..., Any], _PythonPrologue, _TypingPrologue], _Kernel]] = {
     "none": _kernel_none,
     "ddof": _kernel_ddof,
     "q": _kernel_q,
+    "q_method": _kernel_q_method,
     "dx": _kernel_dx,
     "reverse": _kernel_reverse,
 }

@@ -238,6 +238,29 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
 
         return call_q
 
+    if handle.variant == "q_method":
+        # the quantile and the method of its interpolation: the two arrive
+        # in the slots of their own, the method after the quantile
+
+        def call_q_method(
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
+            size_arg: int,
+            out_dtype: np.dtype,
+            aux_dtype: np.dtype,
+            fill_value: AScalar,
+            ddof: float,
+            q: float,
+            method: str,
+        ) -> Any:
+            if mt_driver is not None and group_idx.size >= min_values:
+                n_threads = mt_thread_count()
+                if n_threads > 1:
+                    return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, (q, method))
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q, method)
+
+        return call_q_method
+
     # ddof, dx and reverse: the three arrive in the ddof of the call
 
     def call_ddof(

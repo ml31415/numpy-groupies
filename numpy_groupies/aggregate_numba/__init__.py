@@ -94,7 +94,6 @@ from numpy_groupies.aggregate_numba.steps import step_count, step_indices
 # is here and nowhere else - the modules take the box, and the box gets
 # the implementation now.
 from numpy_groupies.aggregate_numpy import aggregate as _numpy_aggregate
-from numpy_groupies.aggregate_numpy.specials import _temporal_quantile
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
@@ -105,6 +104,7 @@ from numpy_groupies.registry import (
     missing_impl_error,
 )
 from numpy_groupies.utils_np import (
+    QUANTILE_METHODS,
     AFillValue,
     AResult,
     AScalar,
@@ -119,7 +119,7 @@ from numpy_groupies.utils_temporal import (
 )
 from numpy_groupies.validation import EMPTY_GROUP_IDX, EXACT_FLOAT64_INTEGER_LIMIT
 
-FALLBACK.set_implementation(_numpy_aggregate, _temporal_quantile)
+FALLBACK.set_implementation(_numpy_aggregate)
 
 
 def aggregate(
@@ -245,24 +245,13 @@ def aggregate(
             """the compiled quantile of the ticks - numpy's rule of the
             interpolation, on the ticks of the values
 
-            The compiled kernel knows the linear method alone - the other
-            four of numpy name the neighbours of the quantile in their own
-            way, and the exact path of the numpy backend answers them.
-            The NaT rows are already gone in the nan variants - the wrapper
-            drops them - so the plain kernel is the one to call.
+            All five methods of numpy run in the kernel: the branch on the
+            method happens once per group, and a group costs far more than
+            the branch.  The NaT rows are already gone in the nan variants -
+            the wrapper drops them - so the plain kernel is the one to call.
             """
-            if method != "linear":
-                return cast(
-                    AResult,
-                    FALLBACK.temporal_quantile(
-                        group_idx,
-                        cast("npt.NDArray[np.int64]", values),
-                        size_,
-                        int(fill_tick),
-                        fraction,
-                        method,
-                    ),
-                )
+            if method not in QUANTILE_METHODS:
+                raise ValueError(f"unknown interpolation method '{method}' - use one of {sorted(QUANTILE_METHODS)}")
             return cast(
                 AResult,
                 _driver_call(specials.tick_quantile.plain)(
@@ -277,6 +266,7 @@ def aggregate(
                     # alone
                     0.0,
                     fraction,
+                    method,
                 ),
             )
 

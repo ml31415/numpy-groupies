@@ -11,6 +11,9 @@ implementation instead:
 - the collecting function cannot place a float16 or an object array, which
   numba has no dtype for.
 
+The quantile of a temporal input is no part of it: the compiled kernel of
+this backend holds all five methods of numpy.
+
 The numpy implementation is the module of another backend, and the numba
 backend imports it in one place only - its ``__init__`` - which hands the
 callables to the modules that need them.  That keeps the dependency of the
@@ -43,19 +46,14 @@ class NumpyFallback:
 
     def __init__(self) -> None:
         self._aggregate: Callable[..., AResult] | None = None
-        self._temporal_quantile: Callable[..., AResult] | None = None
 
-    def set_implementation(
-        self,
-        aggregate: Callable[..., AResult],
-        temporal_quantile: Callable[..., AResult],
-    ) -> None:
-        """The entry of the numpy implementation, and the exact quantile of
-        the ticks of a temporal input - the one answer of the temporal
-        support that no compiled kernel of this backend holds.
+    def set_implementation(self, aggregate: Callable[..., AResult]) -> None:
+        """The entry of the numpy implementation.
+
+        The quantile of a temporal input is no part of it: the compiled
+        kernel of this backend holds all five methods of numpy.
         """
         self._aggregate = aggregate
-        self._temporal_quantile = temporal_quantile
 
     def aggregate(
         self,
@@ -83,27 +81,6 @@ class NumpyFallback:
             axis=axis,
             **kwargs,
         )
-
-    def temporal_quantile(
-        self,
-        group_idx: npt.NDArray[np.integer],
-        ticks: npt.NDArray[np.int64],
-        size: int,
-        fill_tick: int,
-        fraction: float,
-        method: str = "linear",
-    ) -> AResult:
-        """The quantile of the ticks of a temporal input.
-
-        The quantile interpolates between the two ticks it falls between,
-        and the difference of the two is scaled by a fraction - a product
-        that no int64 arithmetic of the compiled code holds.  The numpy
-        implementation computes it the way numpy computes it, on the ticks
-        of the values.
-        """
-        if self._temporal_quantile is None:
-            raise RuntimeError("the numpy implementation of the package is not set")
-        return self._temporal_quantile(group_idx, ticks, size, fill_tick, fraction, method)
 
     def as_operation(self) -> Callable[..., AResult]:
         """The fallback of a kernel: the same call behind the signature the
