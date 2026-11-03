@@ -949,20 +949,25 @@ def _temporal_fill_tick(fill_value: Any, a_dtype: np.dtype, default_is_nat: bool
 
 def _groups_holding(
     group_idx: npt.NDArray[np.integer], mask: npt.NDArray[np.bool_], size: int
-) -> npt.NDArray[np.integer]:
-    """The labels of the groups where ``mask`` holds at least once.
+) -> npt.NDArray[np.bool_]:
+    """Which groups hold at least one true value of ``mask``, as a mask over
+    the groups - it indexes the answer of an aggregation just like the
+    labels of the groups would.
 
-    The groups are counted rather than picked out: ``np.unique`` would sort
-    the labels, and a sort over a million values costs more than the
-    aggregation itself.
+    The groups are counted rather than picked out: picking them out indexes
+    the labels with the mask, and that is a copy of the labels - measured
+    2ms of a million values, where the counting over the masked labels takes
+    0.2ms.  ``np.unique`` would sort them on top of that.
     """
-    return np.flatnonzero(np.bincount(group_idx[mask], minlength=size) > 0)
+    positions = np.flatnonzero(mask)
+    return np.bincount(group_idx[positions], minlength=size) > 0
 
 
 def _first_true_position_per_group(
-    group_idx: npt.NDArray[np.integer], mask: npt.NDArray[np.bool_]
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.intp]]:
-    """The labels of the masked groups and the first masked position of each.
+    group_idx: npt.NDArray[np.integer], mask: npt.NDArray[np.bool_], size: int
+) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.integer]]:
+    """Which groups hold a true value of ``mask``, and the first masked
+    position of every one of them (-1 for the groups that hold none).
 
     numpy answers the position of the first NaT for both argmin and argmax of
     a group that holds one - the argreductions on the ticks deliver the first
@@ -976,7 +981,9 @@ def _first_true_position_per_group(
     order = np.argsort(labels, kind="stable")
     labels, positions = labels[order], positions[order]
     starts = np.concatenate(([True], labels[1:] != labels[:-1]))
-    return labels[starts], positions[starts]
+    first = np.full(size, -1, np.intp)
+    first[labels[starts]] = positions[starts]
+    return first >= 0, first
 
 
 def _round_half_even(total: int, count: int) -> int:
@@ -1223,8 +1230,8 @@ def aggregate_temporal(
     # what the NaT of the values does to the answer: the groups it poisons,
     # the positions it holds, and the running mask of the accumulations
     nat: npt.NDArray[np.bool_] | None = None
-    nat_groups: npt.NDArray[np.integer] | None = None
-    nat_positions: npt.NDArray[np.intp] | None = None
+    nat_groups: npt.NDArray[np.bool_] | None = None
+    nat_positions: npt.NDArray[np.integer] | None = None
     running_nat: npt.NDArray[np.bool_] | None = None
     sort_nat_restore = False
     # the answer the wrapper computes itself (the mean, the median and the
@@ -1281,12 +1288,15 @@ def aggregate_temporal(
         skip = np.iinfo(np.int64).max if base == "argmin" else NAT_TICK + 1
         a = np.where(nat, np.int64(skip), values.view(np.int64)).view(a.dtype)
         nat = None
-    elif funcname.startswith("nan") and base != "cumsum" and base != "mean":
+    elif funcname.startswith("nan") and base not in ("cumsum", "mean", "nunique"):
         # the nan-variants skip NaT like they skip nan - the plain ones
         # propagate it, and the cumulative ones carry it through their group
         # like numpy does.  The nan mean does not filter them either: the
         # tick mean leaves the NaT of a group out on its own, and filtering
-        # the rows would cost a copy of the data.
+        # the rows would cost a copy of the data.  The nan count of the
+        # distinct values keeps its rows as well: the hash table of the
+        # kernel counts the NaT of a group as one value among the ticks,
+        # and the count of it comes off below.
         nat = np.isnat(a)
         if nat.any():
             good = ~nat
@@ -1335,7 +1345,7 @@ def aggregate_temporal(
         if base == "argmax":
             nat = np.isnat(values)
             if nat.any():
-                nat_groups, nat_positions = _first_true_position_per_group(group_idx, nat)
+                nat_groups, nat_positions = _first_true_position_per_group(group_idx, nat, size)
     elif base in TEMPORAL_NAT_POISON and not funcname.startswith("nan") and not (native and base == "mean"):
         # a single NaT poisons the sum, the maximum and - for the durations
         # - the middles of its whole group.  The mean of the native backend
@@ -1480,6 +1490,13 @@ def aggregate_temporal(
             dtype=user_dtype,
             **kwargs,
         )
+        if base == "nunique" and funcname.startswith("nan"):
+            # the ticks of the NaT sat in the hash table as one value of its
+            # own - the count of it comes off the groups that hold one
+            nat = np.isnat(values)
+            if nat.any():
+                ret = np.asarray(ret)
+                ret[_groups_holding(group_idx, nat, size)] = ret[_groups_holding(group_idx, nat, size)] - 1
 
     # the answer of the kernels, turned back into a temporal one
     if computed is not None and computed_final:
@@ -1493,7 +1510,10 @@ def aggregate_temporal(
         ret[ret == np.iinfo(np.int64).max] = NAT_TICK
     if nat_groups is not None:
         ret = np.asarray(ret)
-        ret[nat_groups] = nat_positions if nat_positions is not None else NAT_TICK
+        if nat_positions is not None:
+            ret[nat_groups] = nat_positions[nat_groups]
+        else:
+            ret[nat_groups] = NAT_TICK
     if value_result:
         ret = np.asarray(ret)
         if user_dtype is not None:

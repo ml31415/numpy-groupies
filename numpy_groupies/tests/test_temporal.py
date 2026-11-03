@@ -650,6 +650,34 @@ def test_the_mean_of_the_ticks_keeps_the_unit(impl):
     np.testing.assert_array_equal(res, np.array([2], dtype="m8[ns]"))
 
 
+def test_the_parallel_path_of_the_mean_answers_the_same(impl):
+    # the parallel path splits the data into chunks, and every chunk measures
+    # its deviations from its own origin - the mean must not depend on the
+    # origin, and the chunks of the data know their values by their place in
+    # the chunk, not by their place in the data.  The data is big enough for
+    # the parallel path to run at all.
+    rng = np.random.default_rng(3)
+    size = 300_000
+    groups = 500
+    group_idx = rng.integers(0, groups, size).astype(np.int64)
+    ticks = rng.integers(2**62, 2**62 + 10**9, size, dtype=np.int64)
+    a = ticks.view("M8[ns]")
+    # every fifth value is the NaT of its group
+    a[::5] = np.datetime64("NaT", "ns")
+    parallel = impl.aggregate(group_idx, a, func="mean", size=groups)
+    if hasattr(impl, "tick_mean"):
+        # the sequential kernel of the numba backend is the yardstick
+        sequential = impl.tick_mean(group_idx, ticks, groups)
+        np.testing.assert_array_equal(np.asarray(parallel).view(np.int64), sequential)
+    # and the answer is the exact mean of the ticks, NaT and all
+    for g in range(groups):
+        mask = group_idx == g
+        values = ticks[mask]
+        if not np.isnat(a[mask]).any():
+            want = _round_half_even(Fraction(int(values.astype(object).sum()), int(mask.sum())))
+            assert int(np.asarray(parallel).view(np.int64)[g]) == want
+
+
 def test_the_bare_tick_mean_poisons_the_nat_of_a_group():
     # the kernel sees the ticks alone - the tick of the NaT is the smallest
     # one, and the plain kernel takes its group over with it, while the nan

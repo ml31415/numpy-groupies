@@ -79,7 +79,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.aggregate_numba.gather import unpack, unpack_into
-from numpy_groupies.aggregate_numba.ops import _dispatch
+from numpy_groupies.aggregate_numba.ops import _dispatch, _driver_call
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
@@ -159,9 +159,21 @@ def aggregate(
 
         ret, fill_value = aggregate_temporal(
             temporal_op,
-            lambda group_idx, values, size_, fill_value=None, dtype=None, nan=False, **kw: (
+            lambda group_idx, values, size_, fill_value=None, dtype=None, nan=False, **kw: _driver_call(
                 averaging.tick_mean.nan if nan else averaging.tick_mean.plain
-            ).stub(group_idx, values, size_, fill_value),
+            )(
+                group_idx,
+                values,
+                size_,
+                np.dtype(np.int64),
+                np.dtype(np.int64),
+                fill_value,
+                # the sample spacing and the quantile are no argument of the
+                # tick mean - the driver of the plain variant takes them and
+                # leaves them alone
+                0.0,
+                0.0,
+            ),
             cast("str", funcname),
             group_idx,
             cast("AValue", a),

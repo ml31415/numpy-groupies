@@ -247,19 +247,22 @@ def _mean_combine(acc: MeanState, other: MeanState, fill_value: float, extra: An
 
 class TickMeanState(NamedTuple):
     """The state of the mean of the ticks of a temporal input: the sum of the
-    deviations from the first value of the group, the count of the values,
-    the first value of every group and the index it has (the chunk that saw
-    the first value wins the fold).
+    deviations from the origin of the group, the count of the values, the
+    origin itself, the extrema of the group and the sign of its poison.
 
     The sum of the deviations is exact in int64 - the ticks of a datetime64
     are the number of nanoseconds since the epoch, and their sum leaves the
     window float64 represents exactly long before the group is done.
+
+    The origin is the first value of the group in the sequential path, and
+    the origin of the chunk in the parallel one: the sum of the deviations
+    does not depend on the origin it is measured from, and the mean is the
+    quotient of the sum of the values either way.
     """
 
     out: npt.NDArray[np.int64]
     count: npt.NDArray[np.int64]  # type: ignore[assignment]  # the field name shadows tuple.count, which numba does not see
     origin: npt.NDArray[np.int64]
-    origin_pos: npt.NDArray[np.int64]
     low: npt.NDArray[np.int64]
     high: npt.NDArray[np.int64]
     poisoned: npt.NDArray[np.bool_]
@@ -278,7 +281,6 @@ def _tick_mean_init(
         np.zeros(size, np.int64),
         np.zeros(size, np.int64),
         np.zeros(size, np.int64),
-        np.full(size, -1, np.int64),
         np.full(size, np.iinfo(np.int64).max, np.int64),
         np.full(size, INT64_MIN, np.int64),
         np.zeros(size, np.bool_),
@@ -294,6 +296,13 @@ def _make_tick_mean_update(nan: bool) -> Callable[..., None]:
     NaT poisons the mean of its whole group, like a nan poisons the mean of
     a float group.  A value that is exactly the tick of the NaT (the 21st of
     September 1677) is treated as one.
+
+    The skip is a branch, and that is measured: on values without NaT the
+    branch never runs and the kernel keeps the speed of the plain one, while
+    a branchless skip - four selects that every value runs through - costs
+    a fifth of the plain kernel even on the cleanest data.  The data with a
+    fifth of it NaT pays the mispredictions of the branch, which is the
+    cheaper half of the two.
     """
 
     def _tick_mean_update(st: TickMeanState, ri: int, i: int, val: int, fill_value: int, extra: Any) -> None:
@@ -306,7 +315,6 @@ def _make_tick_mean_update(nan: bool) -> Callable[..., None]:
             # measured from - the values of a group are close to each other,
             # and it is their sum that overflows
             st.origin[ri] = val
-            st.origin_pos[ri] = i
         st.count[ri] += 1
         st.out[ri] += val - st.origin[ri]
         # the extrema of the group, for the check of the sum of the deviations
@@ -360,30 +368,39 @@ def _tick_mean_combine(acc: TickMeanState, other: TickMeanState, fill_value: int
 
     The deviations of the two chunks are measured from their own origins, so
     they have to be brought to one origin before they are added up: the
-    origin of the chunk that saw the first value of the group wins, and the
-    deviations of the other chunk are moved by the difference of the origins.
+    deviations of the other chunk are moved by the difference of the origins,
+    and the sum of them is the sum of the values of the group, measured from
+    the origin of this one.
+
+    The origin of the chunk that saw the first value of the group is not the
+    one that wins here: the chunks of the parallel path know their values by
+    their place in the chunk, not by their place in the data, and the sum of
+    the deviations does not depend on the origin it is measured from - the
+    mean is the quotient of the sum of the values either way.
     """
     out: np.ndarray = acc.out
     count: np.ndarray = acc.count
     origin: np.ndarray = acc.origin
-    origin_pos: np.ndarray = acc.origin_pos
     low: np.ndarray = acc.low
     high: np.ndarray = acc.high
     other_count: np.ndarray = other.count
     other_out: np.ndarray = other.out
     other_origin: np.ndarray = other.origin
     for g in range(out.size):
-        if other.origin_pos[g] >= 0 and (origin_pos[g] < 0 or other.origin_pos[g] < origin_pos[g]):
-            # the other chunk saw the first value of the group: the deviations
-            # of this one are moved to its origin
-            out[g] += count[g] * (origin[g] - other_origin[g])
+        if count[g] == 0:
+            # the group has no value in this chunk - the state of the other
+            # one is the state of the group
+            out[g] = other_out[g]
+            count[g] = other_count[g]
             origin[g] = other_origin[g]
-            origin_pos[g] = other.origin_pos[g]
-        else:
+        elif other_count[g] > 0:
             # the deviations of the other chunk are measured from its own
-            # origin - they are moved to the origin of this one
+            # origin - they are moved to the origin of this one.  The sum of
+            # them is the sum of the values of the group measured from this
+            # origin, and it stays inside the range the check of the finish
+            # allows.
             out[g] += other_out[g] + other_count[g] * (other_origin[g] - origin[g])
-        count[g] += other_count[g]
+            count[g] += other_count[g]
         low[g] = min(low[g], other.low[g])
         high[g] = max(high[g], other.high[g])
         acc.poisoned[g] = acc.poisoned[g] or other.poisoned[g]
