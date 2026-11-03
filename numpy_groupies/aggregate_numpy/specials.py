@@ -283,12 +283,22 @@ def _temporal_group_quantile(
     size: int,
     fill_tick: int,
     q: float,
+    method: str = "linear",
 ) -> npt.NDArray[np.int64]:
-    """The quantile of the ticks of a timedelta64 input.
+    """The quantile of the ticks of every group, the way numpy computes it.
 
-    Like numpy's ``linear`` method, the two ticks around the quantile
-    position interpolate linearly - their difference is exact as a python
-    integer, and the rounded product keeps the answer on the tick grid.
+    numpy computes the quantile of a temporal value by interpolating between
+    the two ticks it falls between - the difference of the two scaled by the
+    fraction of the way - and it does that in the arithmetic of the ticks:
+    the difference is a duration, the product of it and the fraction is
+    truncated towards zero, and the answer is a tick again.  The two
+    neighbours are taken from the sorted group, and the branch of the
+    interpolation depends on the fraction: below a half the answer grows
+    from the lower neighbour, from a half on it shrinks from the upper one.
+
+    The two branches are the ones of numpy's own ``_lerp``, and the
+    truncation is the one of its multiplication of a duration and a float -
+    so the answers are the answers of numpy, tick for tick.
     """
     order = np.argsort(group_idx, kind="stable")
     values = ticks[order]
@@ -296,14 +306,39 @@ def _temporal_group_quantile(
     starts = np.zeros(size, dtype=np.intp)
     np.cumsum(counts[:-1], out=starts[1:])
     ret = np.full(size, NAT_TICK, dtype=np.int64)
+    if method not in _QUANTILE_METHODS:
+        raise ValueError(f"unknown interpolation method '{method}' - use one of {sorted(_QUANTILE_METHODS)}")
     for grp in np.flatnonzero(counts):
         count = int(counts[grp])
-        part = np.partition(values[starts[grp] : starts[grp] + count], [0, count - 1] if count > 1 else 0)
+        part = np.sort(values[starts[grp] : starts[grp] + count])
         position = q * (count - 1)
         low = min(int(np.floor(position)), count - 1)
-        high = min(low + 1, count - 1)
+        high = min(int(np.ceil(position)), count - 1)
+        if method == "nearest":
+            # numpy rounds the position to the nearest element, halves to
+            # even, and takes that element as it is
+            ret[grp] = part[min(int(np.round(position)), count - 1)]
+            continue
+        if method == "lower":
+            ret[grp] = part[low]
+            continue
+        if method == "higher":
+            ret[grp] = part[high]
+            continue
+        # the two neighbours it falls between: the midpoint takes their mean
+        # - numpy interpolates it with the fraction of a half
+        gamma = 0.5 if method == "midpoint" else position - low
+        if low == high:
+            ret[grp] = part[low]
+            continue
         difference = int(part[high]) - int(part[low])
-        ret[grp] = int(part[low]) + int(np.rint((position - low) * difference))
+        if gamma < 0.5:
+            # the product of the difference and the fraction is truncated
+            # towards zero, like numpy's multiplication of a duration and a
+            # float truncates it
+            ret[grp] = int(part[low]) + int(np.float64(difference) * np.float64(gamma))
+        else:
+            ret[grp] = int(part[high]) - int(np.float64(difference) * np.float64(1 - gamma))
     ret[counts == 0] = fill_tick
     return ret
 
@@ -370,12 +405,14 @@ def _temporal_quantile(
     size: int,
     fill_tick: int,
     fraction: float,
+    method: str = "linear",
 ) -> npt.NDArray[np.int64]:
-    """The exact quantile of the ticks, behind the signature the temporal
+    """The quantile of the ticks, behind the signature the temporal
     wrapper calls the tick quantile of a backend with.
 
     The quantile interpolates between the two ticks it falls between, and
     the difference of the two is scaled by the fraction - a product that no
-    int64 arithmetic holds, so the interpolation runs on python integers.
+    int64 arithmetic holds, so the interpolation runs on the ticks the way
+    numpy runs it on the durations of the values.
     """
-    return _temporal_group_quantile(group_idx, ticks, size, fill_tick, fraction)
+    return _temporal_group_quantile(group_idx, ticks, size, fill_tick, fraction, method)

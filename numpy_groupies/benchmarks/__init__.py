@@ -142,9 +142,11 @@ func_list = (
 
 # the functions that take datetime64 and timedelta64 values, and the ones that
 # take the durations beyond them - the sums and the accumulations and the
-# middles are refused for the points in time, like numpy refuses them, and the
-# moments have no temporal unit anywhere.  The names are the ones the table
-# shows, and ``nan`` in the name is what sends a function to the NaT data.
+# median are refused for the points in time, like numpy refuses them, and the
+# moments have no temporal unit anywhere.  The quantile and the percentile
+# numpy computes of both, so they are measured with the datetime64 block.
+# The names are the ones the table shows, and ``nan`` in the name is what
+# sends a function to the NaT data.
 temporal_datetime_funcs = (
     np.min,
     np.max,
@@ -168,6 +170,8 @@ temporal_datetime_funcs = (
     "anynan",
     np.mean,
     np.nanmean,
+    "quantile",
+    "nanquantile",
     "sort",
     "array",
 )
@@ -180,8 +184,6 @@ temporal_timedelta_funcs = temporal_datetime_funcs + (
     "cummin",
     np.median,
     np.nanmedian,
-    "quantile",
-    "nanquantile",
 )
 # the temporal table, one block of rows per dtype
 TEMPORAL_TABLE = (("datetime64", "M", temporal_datetime_funcs), ("timedelta64", "m", temporal_timedelta_funcs))

@@ -43,9 +43,12 @@ from numpy_groupies.utils_np import (
 # - plain reductions propagate NaT (a group holding one answers NaT), the
 #   nan-variants skip it,
 # - what numpy refuses, we refuse: datetime64 has no sum, prod, cumsum,
-#   cumprod, median, quantile, var, std, skew, kurt or trapezoid, and
+#   cumprod, median, var, std, skew, kurt or trapezoid, and
 #   timedelta64 has no prod, cumprod, var, std, skew, kurt or trapezoid - in
-#   both cases numpy itself raises,
+#   both cases numpy itself raises.  The quantile and the percentile of a
+#   datetime64 numpy does compute (numpy/numpy#11620, closed with
+#   numpy/numpy#11627), and so do we - the median it cannot, because it
+#   adds two middles,
 # - the unit of the input is the unit of the answer, and NaT is the fill
 #   value.
 
@@ -79,7 +82,10 @@ TEMPORAL_VALUE_FUNCS = frozenset(
     }
 )
 # the functions numpy refuses for datetime64 - the plain and the nan variant
-# share their fate
+# share their fate.  The quantile and the percentile are not among them:
+# numpy computes them of a datetime64 (numpy/numpy#11620, closed with
+# numpy/numpy#11627), while the median it cannot - it adds two middles,
+# and numpy has no addition of datetime64 values.
 TEMPORAL_DATETIME_REJECTED = frozenset(
     {
         "sum",
@@ -87,8 +93,6 @@ TEMPORAL_DATETIME_REJECTED = frozenset(
         "cumsum",
         "cumprod",
         "median",
-        "quantile",
-        "percentile",
         "var",
         "std",
         "skew",
@@ -607,7 +611,10 @@ def _temporal_aggregation(
             fraction = cast("float", kwargs.get("q", 50.0 if base == "percentile" else 0.5))
             if base == "percentile":
                 fraction = fraction / 100.0
-            computed = tick_quantile(group_idx, ticks, size, fill_tick, fraction)
+            # the method of the interpolation - numpy knows five of them, and
+            # the temporal answer follows the one the caller names
+            method = cast("str", kwargs.get("method", "linear"))
+            computed = tick_quantile(group_idx, ticks, size, fill_tick, fraction, method)
         value_result = True
     elif base in TEMPORAL_VALUE_FUNCS:
         value_result = True

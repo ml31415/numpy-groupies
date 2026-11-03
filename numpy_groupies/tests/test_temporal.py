@@ -449,15 +449,78 @@ def test_timedelta_median_nat_poisons(impl):
     )
 
 
-@pytest.mark.parametrize("q, want", [(0.0, 31), (0.25, 45), (0.5, 59), (0.75, 89), (1.0, 120)])
+@pytest.mark.parametrize("q, want", [(0.0, 31), (0.25, 45), (0.5, 59), (0.75, 90), (1.0, 120)])
 def test_timedelta_quantile_linear(impl, q, want):
-    # like numpy's linear method: 31 + q * (120 - 31) on the sorted group
+    # numpy's linear method on the sorted group [31, 59, 120]: the quantile
+    # of 0.75 falls between the 59 and the 120, and numpy takes the upper
+    # one minus the half of the difference - 120 - 30 = 90
     group_idx = np.array([0, 0, 0])
     a = np.array([120, 31, 59], dtype="m8[s]")
     res = impl.aggregate(group_idx, a, func="quantile", q=q, size=1)
     assert int(np.asarray(res).view(np.int64)[0]) == want
+    assert int(np.asarray(res).view(np.int64)[0]) == int(np.quantile(a, q).view("m8[s]").astype(np.int64))
     res_pct = impl.aggregate(group_idx, a, func="percentile", q=100 * q, size=1)
     assert int(np.asarray(res_pct).view(np.int64)[0]) == want
+
+
+@pytest.mark.parametrize("method", ["linear", "lower", "higher", "nearest", "midpoint"])
+@pytest.mark.parametrize("q", [0.0, 0.1, 0.25, 1 / 3, 0.5, 0.6, 0.75, 0.9, 1.0])
+def test_the_temporal_quantile_answers_like_numpy(impl, method, q):
+    # numpy computes the quantile of a temporal value (numpy/numpy#11620,
+    # closed with numpy/numpy#11627): it interpolates between the two ticks
+    # the quantile falls between, in the arithmetic of the ticks - the
+    # difference of the two is a duration, its product with the fraction is
+    # truncated towards zero, and the answer is a tick again.  The two
+    # backends answer the same as numpy does, tick for tick, over values of
+    # every size - the ticks of a nanosecond timestamp are around 1.6e18,
+    # far beyond the window a float64 holds exactly.
+    rng = np.random.default_rng(5)
+    group_idx = rng.integers(0, 3, 24)
+    scale = 10**18
+    ticks = rng.integers(-scale, scale, 24).astype(np.int64)
+    for unit in ("M8[ns]", "m8[ns]"):
+        a = ticks.view(unit)
+        res = impl.aggregate(group_idx, a, func="quantile", q=q, method=method, size=3)
+        for g in range(3):
+            mask = group_idx == g
+            if not mask.any():
+                continue
+            want = np.quantile(a[mask], q, method=method)
+            assert res[g] == want, (unit, method, q, g)
+
+
+@pytest.mark.parametrize("method", ["linear", "lower", "higher", "nearest", "midpoint"])
+def test_the_temporal_percentile_answers_like_numpy(impl, method):
+    # the percentile is the quantile of the fraction of a hundred
+    group_idx = np.array([0, 0, 0, 1, 1])
+    a = np.array(["2020-01-01", "2020-05-01", "2020-03-01", "2020-02-01", "2020-06-01"], dtype="M8[s]")
+    for q in (0.0, 25.0, 50.0, 75.0, 100.0):
+        res = impl.aggregate(group_idx, a, func="percentile", q=q, method=method, size=2)
+        for g in range(2):
+            mask = group_idx == g
+            want = np.percentile(a[mask], q, method=method)
+            assert res[g] == want, (method, q, g)
+
+
+def test_the_datetime_quantile_propagates_the_nat(impl):
+    # the plain quantile of numpy propagates the NaT of its group, the nan
+    # variant leaves it out
+    group_idx = np.array([0, 0, 0, 1, 1, 1])
+    a = np.array(["2020-01-01", "NaT", "2020-03-01", "2020-01-01", "2020-02-01", "2020-04-01"], dtype="M8[s]")
+    res = impl.aggregate(group_idx, a, func="quantile", q=0.5, size=2)
+    assert np.isnat(res[0])
+    assert res[1] == np.datetime64("2020-02-01", "s")
+    res_nan = impl.aggregate(group_idx, a, func="nanquantile", q=0.5, size=2)
+    assert res_nan[0] == np.datetime64("2020-01-31", "s")  # the middle of the two values that are left
+    assert res_nan[1] == np.datetime64("2020-02-01", "s")
+
+
+def test_the_temporal_quantile_refuses_an_unknown_method(impl):
+    # the methods numpy knows are the ones the package knows
+    group_idx = np.array([0, 0])
+    a = np.array(["2020-01-01", "2020-02-01"], dtype="M8[s]")
+    with pytest.raises(ValueError, match="unknown interpolation method"):
+        impl.aggregate(group_idx, a, func="quantile", q=0.5, method="weibull", size=1)
 
 
 @pytest.mark.parametrize("func", ["sum", "nansum"])
@@ -583,8 +646,6 @@ def test_timedelta_std_is_refused_like_numpy(impl):
         "cumsum",
         "cumprod",
         "median",
-        "quantile",
-        "percentile",
         "var",
         "std",
         "skew",
@@ -594,6 +655,10 @@ def test_timedelta_std_is_refused_like_numpy(impl):
     ],
 )
 def test_datetime_refusals(impl, func):
+    # the quantile and the percentile are not among them: numpy computes
+    # them of a datetime64 (numpy/numpy#11620, closed with
+    # numpy/numpy#11627), while the median it cannot - it adds two
+    # middles, and numpy has no addition of datetime64 values
     kwargs = {"q": 0.5} if func in ("quantile", "percentile") else {}
     group_idx = np.array([0, 0])
     a = np.array(["2011-01-01", "2011-03-01"], dtype="M8[s]")

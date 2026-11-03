@@ -91,18 +91,19 @@ class NumpyFallback:
         size: int,
         fill_tick: int,
         fraction: float,
+        method: str = "linear",
     ) -> AResult:
-        """The exact quantile of the ticks of a temporal input.
+        """The quantile of the ticks of a temporal input.
 
         The quantile interpolates between the two ticks it falls between,
         and the difference of the two is scaled by a fraction - a product
         that no int64 arithmetic of the compiled code holds.  The numpy
-        implementation computes it on python integers, where it stays
-        exact.
+        implementation computes it the way numpy computes it, on the ticks
+        of the values.
         """
         if self._temporal_quantile is None:
             raise RuntimeError("the numpy implementation of the package is not set")
-        return self._temporal_quantile(group_idx, ticks, size, fill_tick, fraction)
+        return self._temporal_quantile(group_idx, ticks, size, fill_tick, fraction, method)
 
     def as_operation(self) -> Callable[..., AResult]:
         """The fallback of a kernel: the same call behind the signature the

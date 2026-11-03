@@ -113,7 +113,7 @@ One value per group.
 | `sumofsquares` | Sum of squares. |
 | `mean`         | Mean. |
 | `median`       | Median. |
-| `quantile`     | Quantile of the items; `q` says which one (0 to 1, 0.5 by default), `method` how to interpolate between the two values it falls between (`linear`, `lower`, `higher`, `midpoint` or `nearest`, as in `np.quantile`). |
+| `quantile`     | Quantile of the items; `q` says which one (0 to 1, 0.5 by default), `method` how to interpolate between the two values it falls between (`linear`, `lower`, `higher`, `midpoint` or `nearest`, as in `np.quantile`). On temporal input the answer follows numpy tick for tick: the interpolation runs on the ticks of the values, the way numpy runs it on the durations of the values. |
 | `percentile`   | Percentile of the items; the quantile in percent (`q` from 0 to 100, 50 by default). |
 | `skew`         | Skewness of the items — the third central moment over the second one to the three-halves power, corrected for the size of the group the way pandas corrects it. A group of fewer than three items has no skewness, and a group whose items are all the same has none either (the answer is then 0). |
 | `kurt`         | Excess kurtosis of the items — the fourth central moment over the square of the second one, minus the three of a normal distribution, corrected for the size of the group the way pandas corrects it. A group of fewer than four items has no kurtosis. (alias: `kurtosis`) |
