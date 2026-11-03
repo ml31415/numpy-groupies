@@ -455,6 +455,8 @@ _TEMPORAL_KERNELS = frozenset(
         "nanlen",
         "nanmax",
         "nanmin",
+        "nunique",
+        "nannunique",
     }
 )
 # the durations add up (NaT included, which the addition propagates), so the

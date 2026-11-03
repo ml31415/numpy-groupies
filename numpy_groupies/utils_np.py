@@ -867,6 +867,8 @@ TEMPORAL_NATIVE_FUNCS = frozenset(
         "allnan",
         "anynan",
         "array",
+        "nunique",
+        "nannunique",
         "sum",
         "nansum",
         "cumsum",
@@ -1288,15 +1290,15 @@ def aggregate_temporal(
         skip = np.iinfo(np.int64).max if base == "argmin" else NAT_TICK + 1
         a = np.where(nat, np.int64(skip), values.view(np.int64)).view(a.dtype)
         nat = None
-    elif funcname.startswith("nan") and base not in ("cumsum", "mean", "nunique"):
+    elif funcname.startswith("nan") and base not in ("cumsum", "mean"):
         # the nan-variants skip NaT like they skip nan - the plain ones
         # propagate it, and the cumulative ones carry it through their group
         # like numpy does.  The nan mean does not filter them either: the
         # tick mean leaves the NaT of a group out on its own, and filtering
         # the rows would cost a copy of the data.  The nan count of the
-        # distinct values keeps its rows as well: the hash table of the
-        # kernel counts the NaT of a group as one value among the ticks,
-        # and the count of it comes off below.
+        # distinct values does not filter them either: the hash table of the
+        # kernel skips a NaT like it skips a nan, and it takes the values as
+        # they are.
         nat = np.isnat(a)
         if nat.any():
             good = ~nat
@@ -1490,13 +1492,6 @@ def aggregate_temporal(
             dtype=user_dtype,
             **kwargs,
         )
-        if base == "nunique" and funcname.startswith("nan"):
-            # the ticks of the NaT sat in the hash table as one value of its
-            # own - the count of it comes off the groups that hold one
-            nat = np.isnat(values)
-            if nat.any():
-                ret = np.asarray(ret)
-                ret[_groups_holding(group_idx, nat, size)] = ret[_groups_holding(group_idx, nat, size)] - 1
 
     # the answer of the kernels, turned back into a temporal one
     if computed is not None and computed_final:
