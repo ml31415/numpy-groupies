@@ -9,9 +9,9 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numpy.steps import fill_untouched
 from numpy_groupies.utils_np import (
     AScalar,
+    fill_untouched,
     iscomplexobj,
     maxval,
     minimum_dtype,

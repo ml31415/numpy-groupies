@@ -744,9 +744,8 @@ def test_the_ordered_value_of_every_group_is_the_value_of_that_group(func, data)
 
 @pytest.mark.parametrize("func", ORDERED)
 def test_the_ordered_values_with_nans_give_the_result_of_the_sequential_one(func, group_data):
-    # die nan-Varianten lassen die NaNs aus, die plain-Varianten nicht - und
-    # beide muessen auf dem parallelen Pfad das sagen, was der sequentielle
-    # sagt
+    # the nan variants leave the NaNs out, the plain ones do not - and both
+    # have to say on the parallel path what the sequential one says
     group_idx, values = group_data
     parallel, sequential = _both_ways(group_idx, values, func)
     _same(parallel, sequential, 0)

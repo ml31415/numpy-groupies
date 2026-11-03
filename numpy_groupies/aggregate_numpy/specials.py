@@ -13,6 +13,7 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numpy.steps import group_order, sort_key
 from numpy_groupies.common import nan_of
 from numpy_groupies.utils_np import AResult, AScalar
+from numpy_groupies.utils_temporal import NAT_TICK
 
 # the ways a quantile interpolates between the two values it falls between -
 # the names numpy uses for them
@@ -255,3 +256,126 @@ def _sort(
     ret = cast(AResult, np.empty_like(a))
     ret[gsort] = a[sortidx]
     return ret
+
+
+# ---------------------------------------------------------------------------
+# the order statistics of the ticks of a temporal input
+#
+# The median and the quantile of a temporal input are computed on the int64
+# ticks of its values, and exactly: the middle of an even group averages its
+# two middles as python integers, where a float64 would round the answer off
+# the tick grid, and the quantile interpolates between two ticks, which
+# scales their difference by a fraction - a product no int64 arithmetic
+# holds.
+
+
+def _round_half_even(total: int, count: int) -> int:
+    """The exact integer division of ``total`` by ``count``, half to even."""
+    q, r = divmod(total, count)
+    if 2 * r > count or (2 * r == count and q % 2 == 1):
+        q += 1
+    return q
+
+
+def _temporal_group_quantile(
+    group_idx: npt.NDArray[np.integer],
+    ticks: npt.NDArray[np.int64],
+    size: int,
+    fill_tick: int,
+    q: float,
+) -> npt.NDArray[np.int64]:
+    """The quantile of the ticks of a timedelta64 input.
+
+    Like numpy's ``linear`` method, the two ticks around the quantile
+    position interpolate linearly - their difference is exact as a python
+    integer, and the rounded product keeps the answer on the tick grid.
+    """
+    order = np.argsort(group_idx, kind="stable")
+    values = ticks[order]
+    counts = np.bincount(group_idx, minlength=size)
+    starts = np.zeros(size, dtype=np.intp)
+    np.cumsum(counts[:-1], out=starts[1:])
+    ret = np.full(size, NAT_TICK, dtype=np.int64)
+    for grp in np.flatnonzero(counts):
+        count = int(counts[grp])
+        part = np.partition(values[starts[grp] : starts[grp] + count], [0, count - 1] if count > 1 else 0)
+        position = q * (count - 1)
+        low = min(int(np.floor(position)), count - 1)
+        high = min(low + 1, count - 1)
+        difference = int(part[high]) - int(part[low])
+        ret[grp] = int(part[low]) + int(np.rint((position - low) * difference))
+    ret[counts == 0] = fill_tick
+    return ret
+
+
+def _temporal_group_median(
+    group_idx: npt.NDArray[np.integer],
+    ticks: npt.NDArray[np.int64],
+    size: int,
+    fill_tick: int,
+) -> npt.NDArray[np.int64]:
+    """The median of the ticks of every group, exact.
+
+    The values of a group are brought together by a stable argsort, a
+    partition finds the middle of the block, and the two middles of an even
+    group average to their exact mean rounded half to even - the two add up
+    as python integers, so even ticks at the edges of int64 cannot wrap the
+    sum.
+    """
+    order = np.argsort(group_idx, kind="stable")
+    values = ticks[order]
+    counts = np.bincount(group_idx, minlength=size)
+    starts = np.zeros(size, dtype=np.intp)
+    np.cumsum(counts[:-1], out=starts[1:])
+    ret = np.full(size, NAT_TICK, dtype=np.int64)
+    for grp in np.flatnonzero(counts):
+        count = int(counts[grp])
+        part = np.partition(values[starts[grp] : starts[grp] + count], count // 2)
+        if count % 2 == 1:
+            ret[grp] = part[count // 2]
+        else:
+            ret[grp] = _round_half_even(int(part[: count // 2].max()) + int(part[count // 2]), 2)
+    ret[counts == 0] = fill_tick
+    return ret
+
+
+def _temporal_median(
+    group_idx: npt.NDArray[np.integer],
+    ticks: npt.NDArray[np.int64],
+    size: int,
+    fill_value: int | None = None,
+    dtype: npt.DTypeLike | None = None,
+    nan: bool = False,
+    **kwargs: object,
+) -> npt.NDArray[np.int64]:
+    """The exact median of the ticks, behind the signature the temporal
+    wrapper calls the tick median of a backend with.
+
+    The nan form drops the rows of the NaT ticks before the selection - the
+    same work the nan median of the numba backend does inside its kernel.
+    The dtype of the caller and the arguments of no other function reach
+    the selection: the answer is a tick, and the median takes none.
+    """
+    fill_tick = NAT_TICK if fill_value is None else int(fill_value)
+    if nan:
+        good = ticks != NAT_TICK
+        if not good.all():
+            group_idx, ticks = group_idx[good], ticks[good]
+    return _temporal_group_median(group_idx, ticks, size, fill_tick)
+
+
+def _temporal_quantile(
+    group_idx: npt.NDArray[np.integer],
+    ticks: npt.NDArray[np.int64],
+    size: int,
+    fill_tick: int,
+    fraction: float,
+) -> npt.NDArray[np.int64]:
+    """The exact quantile of the ticks, behind the signature the temporal
+    wrapper calls the tick quantile of a backend with.
+
+    The quantile interpolates between the two ticks it falls between, and
+    the difference of the two is scaled by the fraction - a product that no
+    int64 arithmetic holds, so the interpolation runs on python integers.
+    """
+    return _temporal_group_quantile(group_idx, ticks, size, fill_tick, fraction)

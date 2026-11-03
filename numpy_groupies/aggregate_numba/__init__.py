@@ -80,9 +80,19 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
+from numpy_groupies.aggregate_numba.fallback import FALLBACK
 from numpy_groupies.aggregate_numba.gather import unpack, unpack_into
 from numpy_groupies.aggregate_numba.ops import _dispatch, _driver_call
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
+
+# The numpy implementation answers the three calls of this backend that
+# numba cannot: the median of a complex input, the quantile of a method
+# other than the linear one, and the collecting function of a dtype that
+# numba has no dtype for.  The dependency of this backend on the other one
+# is here and nowhere else - the modules take the box, and the box gets
+# the implementation now.
+from numpy_groupies.aggregate_numpy import aggregate as _numpy_aggregate
+from numpy_groupies.aggregate_numpy.specials import _temporal_quantile
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
@@ -106,6 +116,8 @@ from numpy_groupies.utils_temporal import (
     is_temporal_input,
 )
 from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
+
+FALLBACK.set_implementation(_numpy_aggregate, _temporal_quantile)
 
 
 def aggregate(
@@ -219,6 +231,13 @@ def aggregate(
 
         ret, fill_value = _temporal_aggregation(
             temporal_op,
+            tick_mean,
+            tick_median,
+            # the quantile of the ticks: its interpolation scales a tick
+            # difference by a fraction, and that product no int64 arithmetic
+            # of the compiled code holds - the exact path of the numpy
+            # backend answers it
+            FALLBACK.temporal_quantile,
             cast("str", funcname),
             group_idx,
             cast("AValue", a),
@@ -228,8 +247,6 @@ def aggregate(
             kwargs,
             # the compiled kernels take the temporal values as they are
             native=True,
-            tick_mean=tick_mean,
-            tick_median=tick_median,
         )
 
     # numba has no float16: the values survive the widening cast to float32

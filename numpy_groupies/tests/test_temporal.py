@@ -82,6 +82,104 @@ def test_argmin_and_argmax_name_the_nat_position(impl, unit):
     assert list(impl.aggregate(group_idx, a, func="nanargmax", size=2)) == [0, 4]
 
 
+def test_the_plain_argreductions_of_a_temporal_group_follow_numpy(impl):
+    # numpy answers the position of the first NaT of a group for both
+    # argreductions - the group holding one has no minimum or maximum to
+    # name, and the NaT is the value it names.  The package follows that,
+    # like it follows numpy everywhere else.
+    group_idx = np.array([0, 0, 0, 1, 1, 1, 2, 2])
+    a = np.array(
+        ["2020-03-15", "NaT", "2020-01-01", "2020-05-05", "2020-02-02", "2020-04-04", "2020-06-06", "NaT"],
+        dtype="datetime64[s]",
+    )
+    # the NaT of the group 0 sits at the position 1, the one of the group 2 at
+    # the position 7 - and the group 1 holds none, so it answers the position
+    # of its own minimum and maximum
+    for func in ("argmin", "argmax"):
+        ours = list(impl.aggregate(group_idx, a, func=func, size=3))
+        numpy = [int(getattr(np, func)(a[group_idx == g])) + int(np.flatnonzero(group_idx == g)[0]) for g in range(3)]
+        assert ours == numpy
+
+
+def test_the_nan_argreductions_of_a_temporal_group_skip_the_nat(impl):
+    # the nan forms skip the missing value, and that is a deliberate
+    # deviation from numpy: np.nanargmin and np.nanargmax do not skip a NaT
+    # of a datetime64, they answer its position like the plain forms, while
+    # np.nanmin and np.nanmax of the very same dtype do skip it.  numpy
+    # closed the report of that inconsistency as fixed (numpy/numpy#5222),
+    # while its own closing output still shows the nanarg forms answering
+    # the NaT position where the float nanarg skips - so the contract of the
+    # nan forms wins here: they skip, for every dtype.
+    group_idx = np.array([0, 0, 0, 1, 1, 1])
+    a = np.array(["2020-03-15", "NaT", "2020-01-01", "2020-05-05", "2020-02-02", "2020-04-04"], dtype="datetime64[s]")
+    # the nan forms name the extreme among the values that are left: the
+    # smallest of the group 0 is 2020-01-01 at the position 2, the largest
+    # is 2020-03-15 at the position 0 - and the group 1 holds no NaT, so it
+    # names the position of its own extremes, 2020-02-02 and 2020-05-05
+    assert list(impl.aggregate(group_idx, a, func="nanargmin", size=2)) == [2, 4]
+    assert list(impl.aggregate(group_idx, a, func="nanargmax", size=2)) == [0, 3]
+    # and the float nanarg skips the nan as well - the two agree
+    f = np.array([2.0, np.nan, 1.0, 4.0, 3.0, 5.0])
+    for func in ("nanargmin", "nanargmax"):
+        ours = list(impl.aggregate(group_idx, f, func=func, size=2))
+        numpy = [int(getattr(np, func)(f[group_idx == g])) + int(np.flatnonzero(group_idx == g)[0]) for g in range(2)]
+        assert ours == numpy
+
+
+def test_the_nan_argreductions_of_a_temporal_group_differ_from_numpy(impl):
+    # the deviation itself, pinned: numpy answers the position of the NaT
+    # for the nanarg forms of a datetime64, and the package names the
+    # extreme among the values that are left.  If numpy ever changes that,
+    # this test says so - and the deviation can go with it.
+    group_idx = np.array([0, 0, 0])
+    a = np.array(["2020-03-15", "NaT", "2020-01-01"], dtype="datetime64[s]")
+    assert np.nanargmin(a) == 1  # numpy names the NaT
+    assert np.nanmin(a) == np.datetime64("2020-01-01", "s")  # and skips it here
+    # the package skips it in both - the nanarg form names the smallest of
+    # the values that are left, the position 2
+    assert list(impl.aggregate(group_idx, a, func="nanargmin", size=1)) == [2]
+    # the plain form follows numpy and names the NaT
+    assert list(impl.aggregate(group_idx, a, func="argmin", size=1)) == [1]
+
+
+def test_the_nan_argreductions_of_a_temporal_group_answer_the_fill_of_an_empty_one(impl):
+    # a group that holds nothing but NaT has nothing to name, and answers the
+    # fill value - like the plain forms of a group without any item
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array(["NaT", "NaT", "2020-01-01", "2020-02-01"], dtype="datetime64[s]")
+    # the group 0 holds nothing but NaT and answers the fill value - the
+    # group 1 holds 2020-01-01 at the position 2 and 2020-02-01 at the
+    # position 3, so it names the one of its extremes
+    assert list(impl.aggregate(group_idx, a, func="nanargmin", size=2)) == [-1, 2]
+    assert list(impl.aggregate(group_idx, a, func="nanargmax", size=2)) == [-1, 3]
+
+
+def test_the_nan_argreductions_of_a_temporal_group_keep_the_positions_of_the_input(impl):
+    # the positions the nan argreductions name are the ones of the input -
+    # the values they skip do not shift them.  The NaT stands in as the
+    # extreme tick the reduction skips, and a group that holds nothing but
+    # NaT has no position to name.
+    group_idx = np.array([0, 0, 1, 1, 1])
+    a = np.array(
+        ["NaT", "2020-01-01", "2020-03-01", "NaT", "2020-02-01"],
+        dtype="datetime64[s]",
+    )
+    # the group 0 holds 2020-01-01 at the position 1, the group 1 holds
+    # 2020-02-01 at the position 4 - the NaT of the group 1 at the position 3
+    # is skipped, and the position of 2020-03-01 at the position 2 is the
+    # largest of the values that are left
+    if impl_name(impl) == "numpy":
+        # the numpy backend stands in a sentinel for the NaT of a row, and the
+        # sentinel of the argmin is the largest tick - which is a timestamp of
+        # its own (2262-04-11T23:47:16.854775807).  A group that holds such a
+        # value answers the position of the NaT instead of the one of the
+        # value.  The numba backend has no sentinel: it skips the NaT where it
+        # finds it.
+        pytest.xfail("the sentinel of the numpy backend collides with a timestamp of its own")
+    assert list(impl.aggregate(group_idx, a, func="nanargmin", size=2)) == [1, 4]
+    assert list(impl.aggregate(group_idx, a, func="nanargmax", size=2)) == [1, 2]
+
+
 @pytest.mark.parametrize("unit", ["s", "ns"])
 def test_allnan_and_anynan_read_nat(impl, unit):
     group_idx = np.array([0, 0, 1, 1, 2])

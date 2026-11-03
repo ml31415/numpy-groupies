@@ -1,7 +1,7 @@
 """Numpy specific functionality shared by the numpy-based aggregate implementations."""
 
 import platform
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Literal, SupportsFloat, TypeAlias, cast
 
 import numpy as np
@@ -865,4 +865,41 @@ def exact_integer_group_mean(
         return ret
     if fill is not None and fill != 0:
         ret[~present] = fill
+    return ret
+
+
+def fill_untouched(idx: npt.NDArray[np.integer], ret: npt.NDArray[np.generic], fill_value: AScalar) -> None:
+    """any elements of ret not indexed by idx are set to fill_value."""
+    untouched = np.ones_like(ret, dtype=bool)
+    untouched[idx] = False
+    ret[untouched] = fill_value
+
+
+def blocks_to_object_array(
+    blocks: Iterable[npt.NDArray[np.generic]],
+    group_idx: npt.NDArray[np.integer],
+    fill_value: AScalar | Sequence[AScalar] | None,
+) -> npt.NDArray[np.object_]:
+    """The blocks of the groups as an object array, one sequence per group.
+
+    A group without values takes the fill value - an empty sequence leaves the
+    empty block of the group alone.  The array is built element by element:
+    ``np.asanyarray`` of a list of blocks collapses it into a regular array
+    whenever the groups happen to be of the same length - and the result would
+    lose the sequences it is meant to hold (and the size the caller asked
+    for).
+
+    Both backends collect their groups into such an array, and the function
+    lives here so that neither of them has to import the other.
+    """
+    if fill_value is not None and not (
+        np.isscalar(fill_value) or (isinstance(fill_value, Sequence) and len(fill_value) == 0)
+    ):
+        raise ValueError("fill_value must be None, a scalar or an empty sequence")
+    blocks = list(blocks)
+    ret = np.empty(len(blocks), dtype=object)
+    for g, block in enumerate(blocks):
+        ret[g] = block
+    if fill_value is None or np.isscalar(fill_value):
+        fill_untouched(group_idx, ret, cast("AScalar", fill_value))
     return ret

@@ -25,26 +25,26 @@ def test_the_function_names_are_the_ones_of_the_package():
     assert select_funcs(None) == tuple(func_list)
     namen = [getattr(func, "__name__", func) for func in func_list]
     assert "min" in namen and "max" in namen
-    gewaehlt = select_funcs("min,max")
-    assert [getattr(func, "__name__", func) for func in gewaehlt] == ["min", "max"]
+    chosen = select_funcs("min,max")
+    assert [getattr(func, "__name__", func) for func in chosen] == ["min", "max"]
 
 
 def test_the_temporal_functions_are_split_by_the_dtype_of_their_data():
     from numpy_groupies.benchmarks import select_temporal_funcs
 
-    nach_typ = select_temporal_funcs(None)
-    zeit = [getattr(func, "__name__", func) for func in nach_typ["datetime64"]]
-    dauer = [getattr(func, "__name__", func) for func in nach_typ["timedelta64"]]
+    by_type = select_temporal_funcs(None)
+    datetime = [getattr(func, "__name__", func) for func in by_type["datetime64"]]
+    timedelta = [getattr(func, "__name__", func) for func in by_type["timedelta64"]]
     # the sum and the accumulations and the middles are refused for the
     # points in time - they belong to the durations alone
-    assert "sum" not in zeit and "cumsum" not in zeit and "median" not in zeit
-    assert "sum" in dauer and "cumsum" in dauer and "median" in dauer
-    assert "mean" in zeit and "mean" in dauer
+    assert "sum" not in datetime and "cumsum" not in datetime and "median" not in datetime
+    assert "sum" in timedelta and "cumsum" in timedelta and "median" in timedelta
+    assert "mean" in datetime and "mean" in timedelta
     # a selection by name lands in the blocks that know the name, in the
     # order the caller named them
-    gewaehlt = select_temporal_funcs("min,sum,mean")
-    assert [getattr(func, "__name__", func) for func in gewaehlt["datetime64"]] == ["min", "mean"]
-    assert [getattr(func, "__name__", func) for func in gewaehlt["timedelta64"]] == ["min", "sum", "mean"]
+    chosen = select_temporal_funcs("min,sum,mean")
+    assert [getattr(func, "__name__", func) for func in chosen["datetime64"]] == ["min", "mean"]
+    assert [getattr(func, "__name__", func) for func in chosen["timedelta64"]] == ["min", "sum", "mean"]
     with pytest.raises(SystemExit):
         select_temporal_funcs("kurt")
 

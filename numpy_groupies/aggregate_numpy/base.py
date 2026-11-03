@@ -29,7 +29,7 @@ from numpy_groupies.utils_np import (
     check_nton_shape,
     input_validation,
 )
-from numpy_groupies.utils_temporal import _temporal_aggregation, is_own_function, is_temporal_input
+from numpy_groupies.utils_temporal import is_own_function, is_temporal_input
 from numpy_groupies.validation import is_scalar_input
 
 
@@ -63,6 +63,7 @@ def _aggregate_base(
     axis: int | None = None,
     _dispatch: Registry = _dispatch,
     len_counts_values: bool = False,
+    temporal: Callable[..., tuple[AResult, AFillValue]] | None = None,
     **kwargs: Any,
 ) -> AResult:
     iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
@@ -86,10 +87,11 @@ def _aggregate_base(
     # a callable of the caller's own defines its own semantics and sees the
     # values as they are.  The numpy functions that mean the same thing are
     # aliases of the functions of the package, so np.mean is the mean of the
-    # package and gets its answer.
-    if is_own_function(funcname) and is_temporal_input(a):
-        ret, fill_value = _temporal_aggregation(
-            lambda name: cast("Callable[..., AResult]", _dispatch[name].op),
+    # package and gets its answer.  The wrapper is put together by the
+    # caller of this module - it needs the answers of the backend, and only
+    # the backend has them.
+    if temporal is not None and is_own_function(funcname) and is_temporal_input(a):
+        ret, fill_value = temporal(
             cast("str", funcname),
             group_idx,
             cast("AValue", a),

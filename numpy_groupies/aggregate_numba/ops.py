@@ -21,6 +21,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.aggregate_numba.compose import KernelHandle
+from numpy_groupies.aggregate_numba.fallback import FALLBACK
 from numpy_groupies.aggregate_numba.mt import (
     GROUP_MT_MIN_VALUES,
     group_chunk_count,
@@ -28,7 +29,6 @@ from numpy_groupies.aggregate_numba.mt import (
     should_use_group_mt,
 )
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.common import (
     resolve_fill_value,
 )
@@ -699,7 +699,10 @@ def _quantile_arguments(
         if not 0.0 <= q <= 1.0 / scale:
             raise ValueError(f"Quantiles must be in the range [0, {round(1.0 / scale)}]")
         if method != "linear":
-            return _aggregate_base(
+            # a method other than the linear one is an interpolation that
+            # numpy does in its own way - the compiled kernel holds the
+            # linear one only
+            return FALLBACK.aggregate(
                 group_idx,
                 a,
                 func=name,
