@@ -137,9 +137,10 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
                 # (numpy/numpy#5222) as fixed - the plain forms and the nan
                 # min/max were repaired (numpy/numpy#14717) - while its own
                 # closing output still shows the nanarg forms answering the
-                # NaT position where the float nanarg skips, unaddressed.
-                # The nan forms of the package skip the missing value of
-                # every dtype, as their contract says.
+                # NaT position where the float nanarg skips, unaddressed;
+                # now reported upstream as numpy/numpy#33207.  The nan forms
+                # of the package skip the missing value of every dtype, as
+                # their contract says.
                 continue
             if pending[ri] or best:
                 # the first value of a group wins a tie

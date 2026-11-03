@@ -537,8 +537,9 @@ def _temporal_aggregation(
         # and np.nanmax do skip it (numpy/numpy#5222 - closed as fixed in
         # 2020, while its own closing output still shows the nanarg forms of
         # datetime64 answering the NaT position where the float nanarg
-        # skips, unaddressed) - the contract of the nan forms says skip, and
-        # we keep it for every dtype.  The nan mean does not filter them
+        # skips, unaddressed; reported upstream as numpy/numpy#33207) - the
+        # contract of the nan forms says skip, and we keep it for every
+        # dtype.  The nan mean does not filter them
         # either: the tick mean leaves the NaT of a group out on its own,
         # and filtering the rows would cost a copy of the data.  The nan
         # median filters them in its own backend: the kernel of the numba
