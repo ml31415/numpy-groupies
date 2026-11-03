@@ -574,3 +574,45 @@ def test_the_bare_kernels_and_the_aggregate_entry_agree():
         bare = kernel(group_idx, a, 3)
         called = aggregate_numba.aggregate(group_idx, a, func=func, size=3)
         np.testing.assert_array_equal(bare, called)
+
+
+# ---------------------------------------------------------------------------
+# the mean of the ticks
+#
+# The mean of a temporal input is the mean of its ticks: the number of units
+# since the epoch.  Their sum leaves the window float64 represents exactly,
+# so the mean is computed on the deviations from the first value of the
+# group - the kernel of the numba backend does that in its own pass, and the
+# numpy backend falls back to the exact limb sums when the values of a group
+# reach too far apart for their sum to stay inside int64.
+
+
+def test_the_mean_of_the_ticks_is_exact_and_centered(impl):
+    # the values of a group are close to each other - their sum fits into
+    # int64, and the mean of the ticks is the exact quotient of it
+    group_idx = np.array([0, 0, 0, 1, 1, 1])
+    a = np.array(
+        [
+            1577836800000000000,
+            1577836800000000001,
+            1577836800000000002,
+            1577836800000000000,
+            1577836800000000004,
+            1577836800000000000,
+        ],
+        dtype="M8[ns]",
+    )
+    res = impl.aggregate(group_idx, a, func="mean", size=2)
+    assert res.dtype == a.dtype
+    np.testing.assert_array_equal(
+        res, np.array(["2020-01-01T00:00:00.000000001", "2020-01-01T00:00:00.000000001"], dtype=a.dtype)
+    )
+
+
+def test_the_mean_of_the_ticks_keeps_the_unit(impl):
+    group_idx = np.array([0, 0, 0])
+    a = np.array([1, 2, 4], dtype="m8[ns]")
+    res = impl.aggregate(group_idx, a, func="mean", size=1)
+    assert res.dtype == a.dtype
+    # 7 / 3 = 2.333... - the tick answer rounds half to even, so 2
+    np.testing.assert_array_equal(res, np.array([2], dtype="m8[ns]"))

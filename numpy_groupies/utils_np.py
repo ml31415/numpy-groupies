@@ -1098,6 +1098,7 @@ def _temporal_group_quantile(
 
 def aggregate_temporal(
     resolve: Callable[[str], Callable[..., AResult]],
+    tick_mean: Callable[..., AResult],
     funcname: str,
     group_idx: npt.NDArray[np.integer],
     a: AValue,
@@ -1116,7 +1117,9 @@ def aggregate_temporal(
 
     The operation of the function is resolved through ``resolve``, so that
     the caller does not have to know whether the wrapper computed the answer
-    itself or the kernel of the operation did.
+    itself or the kernel of the operation did.  The mean of the ticks is the
+    one operation that no kernel of a function answers - it is not a function
+    of the package - and it comes in as ``tick_mean``.
     """
 
     def operation(name: str) -> Callable[..., AResult]:
@@ -1249,10 +1252,23 @@ def aggregate_temporal(
             )
             computed_final = True
         else:
-            computed = cast(
-                "npt.NDArray[Any]",
-                exact_integer_group_mean(group_idx, ticks, size, fill_tick, np.dtype(np.int64)),
-            )
+            # the tick mean: the kernel measures the deviations from the
+            # first value of the group, so the sum of the ticks stays exact
+            # and the answer is a tick again
+            try:
+                computed = cast(
+                    "npt.NDArray[Any]",
+                    tick_mean(group_idx, ticks, size, fill_value=fill_tick, dtype=np.dtype(np.int64), **kwargs),
+                )
+            except OverflowError:
+                # The values of a group reach from one end of the int64 range
+                # to the other: their sum leaves the range, and the kernel
+                # refuses the mean rather than wrapping it around silently.
+                # The limb sums of the ticks hold it exactly.
+                computed = cast(
+                    "npt.NDArray[Any]",
+                    exact_integer_group_mean(group_idx, ticks, size, fill_tick, np.dtype(np.int64)),
+                )
             value_result = True
     elif base in ("median", "quantile", "percentile"):
         # only timedelta64 reaches this point - datetime64 has no middles

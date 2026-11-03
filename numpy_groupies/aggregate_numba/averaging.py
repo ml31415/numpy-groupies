@@ -17,7 +17,7 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_real_float
+from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_int64, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numpy.base import numpy_fallback
 from numpy_groupies.registry import FuncName
@@ -70,6 +70,24 @@ _mean_overflow_message: Callable[[int, int], str] = njit_stable(mean_overflow_me
 _span_message: Callable[[str, int], str] = njit_stable(
     variance_span_overflow_message, name="variance_span_overflow_message"
 )
+
+
+@njit_stable
+def _tick_mean_overflow_message(count: int, span: int) -> str:
+    """The complaint about a mean of ticks whose sum would overflow int64.
+
+    The values of the group reach from one end of the int64 range to the
+    other, and their sum leaves the range - the mean of them cannot be
+    computed exactly.
+    """
+    return (
+        "cannot compute an exact mean of "
+        + str(count)
+        + " ticks with a span of "
+        + str(span)
+        + ": their sum would leave the int64 range - the ticks of the values "
+        + "are too far apart"
+    )
 
 
 @njit_stable
@@ -225,6 +243,135 @@ def _mean_combine(acc: MeanState, other: MeanState, fill_value: float, extra: An
     high: np.ndarray = acc.high
     if complex_less(high[0], other.high[0]):
         high[0] = other.high[0]
+
+
+class TickMeanState(NamedTuple):
+    """The state of the mean of the ticks of a temporal input: the sum of the
+    deviations from the first value of the group, the count of the values,
+    the first value of every group and the index it has (the chunk that saw
+    the first value wins the fold).
+
+    The sum of the deviations is exact in int64 - the ticks of a datetime64
+    are the number of nanoseconds since the epoch, and their sum leaves the
+    window float64 represents exactly long before the group is done.
+    """
+
+    out: npt.NDArray[np.int64]
+    count: npt.NDArray[np.int64]  # type: ignore[assignment]  # the field name shadows tuple.count, which numba does not see
+    origin: npt.NDArray[np.int64]
+    origin_pos: npt.NDArray[np.int64]
+    low: npt.NDArray[np.int64]
+    high: npt.NDArray[np.int64]
+
+
+def _tick_mean_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: int,
+    forced_fill: int,
+) -> TickMeanState:
+    return TickMeanState(
+        np.zeros(size, np.int64),
+        np.zeros(size, np.int64),
+        np.zeros(size, np.int64),
+        np.full(size, -1, np.int64),
+        np.full(size, np.iinfo(np.int64).max, np.int64),
+        np.full(size, INT64_MIN, np.int64),
+    )
+
+
+def _tick_mean_update(st: TickMeanState, ri: int, i: int, val: int, fill_value: int, extra: Any) -> None:
+    if st.count[ri] == 0:
+        # the first value of the group is the origin its deviations are
+        # measured from - the values of a group are close to each other, and
+        # it is their sum that overflows
+        st.origin[ri] = val
+        st.origin_pos[ri] = i
+    st.count[ri] += 1
+    st.out[ri] += val - st.origin[ri]
+    # the extrema of the group, for the check of the sum of the deviations
+    st.low[ri] = min(st.low[ri], val)
+    st.high[ri] = max(st.high[ri], val)
+
+
+def _tick_mean_finish(st: TickMeanState, g: int, fill_value: int, extra: Any) -> Any:
+    """The mean of the ticks of a group, rounded half to even.
+
+    The sum of the deviations is exact, so the quotient and the remainder are
+    exact as well - the rounding is the one of numpy's round, and not the
+    truncation a division would give.
+    """
+    if st.count[g] > extra:
+        count = st.count[g]
+        # the sum of the deviations stays inside int64 as long as the span of
+        # the values times their number does - a group whose values reach
+        # from one end of the int64 range to the other cannot be summed up
+        # exactly, and the sum would wrap around silently
+        span = st.high[g] - st.low[g]
+        if span > INT64_DEVIATION_LIMIT // count:
+            raise OverflowError(_tick_mean_overflow_message(count, span))
+        # the total of the group is origin * count + the sum of the deviations
+        # - its quotient is the origin plus the quotient of the deviations,
+        # and its remainder is the remainder of the deviations
+        quotient = st.out[g] // count
+        remainder = st.out[g] - quotient * count
+        # the rounding is half to even, and the parity it looks at is the one
+        # of the total - the parity of the origin and of the quotient added
+        # up (the total itself does not fit into an int64)
+        odd = (st.origin[g] & 1) + (quotient & 1)
+        if 2 * remainder > count or (2 * remainder == count and odd % 2 == 1):
+            quotient += 1
+        return st.origin[g] + quotient
+    return fill_value
+
+
+def _tick_mean_combine(acc: TickMeanState, other: TickMeanState, fill_value: int, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one.
+
+    The deviations of the two chunks are measured from their own origins, so
+    they have to be brought to one origin before they are added up: the
+    origin of the chunk that saw the first value of the group wins, and the
+    deviations of the other chunk are moved by the difference of the origins.
+    """
+    out: np.ndarray = acc.out
+    count: np.ndarray = acc.count
+    origin: np.ndarray = acc.origin
+    origin_pos: np.ndarray = acc.origin_pos
+    low: np.ndarray = acc.low
+    high: np.ndarray = acc.high
+    other_count: np.ndarray = other.count
+    other_out: np.ndarray = other.out
+    other_origin: np.ndarray = other.origin
+    for g in range(out.size):
+        if other.origin_pos[g] >= 0 and (origin_pos[g] < 0 or other.origin_pos[g] < origin_pos[g]):
+            # the other chunk saw the first value of the group: the deviations
+            # of this one are moved to its origin
+            out[g] += count[g] * (origin[g] - other_origin[g])
+            origin[g] = other_origin[g]
+            origin_pos[g] = other.origin_pos[g]
+        else:
+            # the deviations of the other chunk are measured from its own
+            # origin - they are moved to the origin of this one
+            out[g] += other_out[g] + other_count[g] * (other_origin[g] - origin[g])
+        count[g] += other_count[g]
+        low[g] = min(low[g], other.low[g])
+        high[g] = max(high[g], other.high[g])
+
+
+tick_mean = build_kernel(
+    "tick_mean",
+    init=_tick_mean_init,
+    update=_tick_mean_update,
+    finish=_tick_mean_finish,
+    combine=_tick_mean_combine,
+    rule=rule_int64,
+    fill_default=0,
+    forced_fill=0,
+    doc="Mean of the ticks of every group, rounded half to even",
+)
 
 
 mean = build_kernel(

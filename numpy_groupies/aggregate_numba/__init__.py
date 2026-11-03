@@ -159,6 +159,9 @@ def aggregate(
 
         ret, fill_value = aggregate_temporal(
             temporal_op,
+            lambda group_idx, values, size_, fill_value=None, dtype=None, **kw: averaging.tick_mean.plain.stub(
+                group_idx, values, size_, fill_value
+            ),
             cast("str", funcname),
             group_idx,
             cast("AValue", a),
@@ -293,6 +296,11 @@ nanargmin = argreductions.argmin.nan.stub
 
 mean = averaging.mean.plain.stub
 nanmean = averaging.mean.nan.stub
+# the mean of the ticks of a temporal input - the kernel measures the
+# deviations from the first value of the group, so the sum of the ticks
+# stays exact and the answer is a tick again
+tick_mean = averaging.tick_mean.plain.stub
+nantick_mean = averaging.tick_mean.nan.stub
 std = averaging.std.plain.stub
 nanstd = averaging.std.nan.stub
 var = averaging.var.plain.stub

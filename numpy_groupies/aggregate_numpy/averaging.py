@@ -69,6 +69,29 @@ def _mean(
     return ret.astype(dtype, copy=False)
 
 
+def _tick_mean(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
+    size: int,
+    fill_value: AScalar,
+    dtype: npt.DTypeLike | None = None,
+) -> npt.NDArray[np.integer]:
+    """The mean of the ticks of every group, rounded half to even.
+
+    The ticks of a temporal input are the number of units since the epoch -
+    for a datetime64 in nanoseconds that is a number around 1.6e18, and the
+    sum of the ticks of a group leaves the window float64 represents
+    exactly.  The sums are therefore exact (see
+    ``utils_np.exact_integer_group_mean``), and the remainder of the
+    division rounds half to even.
+    """
+    fill_tick = 0 if (isinstance(fill_value, float) and fill_value != fill_value) else int(cast("int", fill_value))
+    return cast(
+        "npt.NDArray[np.integer]",
+        exact_integer_group_mean(group_idx, a.astype(np.int64), size, fill_tick, np.dtype(np.int64)),
+    )
+
+
 def _trapezoid(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
