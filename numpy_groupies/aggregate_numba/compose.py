@@ -285,7 +285,10 @@ _NUMERIC_VALUES = "the kernels take numeric values"
 # tick) and ``val != val`` detects NaT like a nan, so the selection and the
 # reduction kernels run on temporal values directly - but the arithmetic of
 # the squared moments has no temporal unit (numpy refuses it as well), the
-# partitions and sorts of numba order NaT wrongly, and the truthiness and
+# sort of numba makes no move when a NaT is in the values (its comparison
+# leaves the NaT incomparable, and the algorithm hands the input back -
+# reported upstream as numba/numba#10981; the partition of numba answers
+# the NaT the way numpy does), and the truthiness and
 # the hashing of a temporal value are not compiled operations.  The mean and
 # the sum of a datetime64 have no unit to accumulate (numpy refuses them as
 # well), while the durations of a timedelta64 add up fine - NaT included,
