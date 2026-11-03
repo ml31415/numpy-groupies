@@ -43,6 +43,7 @@ LENGTH_MISMATCH_OR_SCALAR = f"{LENGTH_MISMATCH}, or a can be scalar"
 # the fill value of a call
 FILL_NOT_BOOLEAN = "Value not boolean"
 FILL_NOT_CONVERTIBLE = "fill_value must be convertible into {dtype}"
+MOMENTS_NOT_FOR_COMPLEX = "the skewness and the kurtosis are not defined for complex values"
 FILL_NOT_INTEGER = "fill_value must be convertible into an integer"
 FILL_NONE_NOT_HELD = (
     "fill_value=None fills an object result, which is what func='array' returns and no other function does "

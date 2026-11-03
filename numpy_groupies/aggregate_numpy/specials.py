@@ -12,7 +12,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.steps import group_order, sort_key
 from numpy_groupies.common import nan_of
-from numpy_groupies.utils_np import NAT_TICK, AResult, AScalar
+from numpy_groupies.utils_temporal import NAT_TICK, AResult, AScalar
 
 # the ways a quantile interpolates between the two values it falls between -
 # the names numpy uses for them

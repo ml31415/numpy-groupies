@@ -19,13 +19,14 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_int64, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.aggregate_numpy.base import numpy_fallback
 from numpy_groupies.registry import FuncName
-from numpy_groupies.utils_np import NAT_TICK, AFillValue, AResult, AValue, RavelOrder
+from numpy_groupies.utils_np import AFillValue, AResult, AValue, RavelOrder
+from numpy_groupies.utils_temporal import NAT_TICK
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
     INT64_MIN,
+    MOMENTS_NOT_FOR_COMPLEX,
     mean_overflow_message,
     variance_span_overflow_message,
 )
@@ -495,7 +496,7 @@ def _moment_update(st: MomentState, ri: int, i: int, val: float, fill_value: flo
     if isinstance(val, complex):
         # the moments of the deviations of a complex value would be complex,
         # and their ratio meaningless
-        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+        raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
     st.count[ri] += 1
     n = st.count[ri]
     delta = val - st.m1[ri]
@@ -520,7 +521,7 @@ def _moment_update_nan(st: MomentState, ri: int, i: int, val: float, fill_value:
     if val != val:
         return
     if isinstance(val, complex):
-        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+        raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
     st.count[ri] += 1
     n = st.count[ri]
     delta = val - st.m1[ri]
@@ -621,7 +622,7 @@ def _moment_combine(acc: MomentState, other: MomentState, fill_value: float, ext
                 acc.high[0] = other.high[0]
 
 
-def _numpy_fallback(
+def _complex_moments_refusal(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
     func: FuncName,
@@ -631,16 +632,16 @@ def _numpy_fallback(
     dtype: npt.DTypeLike | None,
     axis: int | None,
 ) -> AResult:
-    """The numpy implementation, for the input the compiled kernel refuses.
+    """The refusal for the input the compiled moments cannot take.
 
     The skewness and the kurtosis are not defined for the complex values,
     and the compiled kernel says so with a ``TypeError`` from inside its
     accumulation loop - a loop that runs inside the parallel region of the
-    parallel path, where an exception cannot leave.  The complex input
-    therefore goes to the numpy implementation, which refuses it with the
-    very same complaint.
+    parallel path, where an exception cannot leave.  The refusal therefore
+    stands here, ahead of the kernel, with the complaint the numpy backend
+    raises for the very same input.
     """
-    return numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
+    raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
 
 
 def _skew_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
@@ -694,7 +695,7 @@ skew = build_kernel(
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,
-    fallback=_numpy_fallback,
+    fallback=_complex_moments_refusal,
     doc="Skewness of the values of every group",
 )
 
@@ -722,7 +723,7 @@ kurt = build_kernel(
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,
-    fallback=_numpy_fallback,
+    fallback=_complex_moments_refusal,
     doc="Excess kurtosis of the values of every group",
 )
 

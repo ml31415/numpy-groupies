@@ -9,8 +9,8 @@ their kernels to ``_temporal_aggregation`` - the numpy one its tick mean
 and its exact tick median, the numba one the compiled forms of both - and
 the wrapper answers for them.
 
-The dtype facts stay in ``utils_np``: the kinds of the temporal dtypes and
-the tick of NaT.  The order statistics of the numpy backend live in
+The dtype facts stay in ``utils_np``: the kinds of the temporal dtypes.
+The order statistics of the numpy backend live in
 ``aggregate_numpy.specials`` - the exact median of the ticks - and the
 numba kernels in ``aggregate_numba``: nothing in this module reaches into
 a backend, so both of them reach into this module.
@@ -25,8 +25,6 @@ import numpy.typing as npt
 from numpy_groupies.common import resolve_fill_value
 from numpy_groupies.registry import DEFAULT_FILL_VALUE, missing_impl_error
 from numpy_groupies.utils_np import (
-    NAT_TICK,
-    TEMPORAL_KINDS,
     AFillValue,
     AResult,
     AScalar,
@@ -55,6 +53,15 @@ from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
 # the functions whose result holds ticks of the input again - their answer is
 # viewed back into the dtype of the input.  datetime64 has no sum and no
 # median, but both raise before anything is viewed back.
+# the tick of the NaT of a temporal value - the value every tick kernel
+# finds as the smallest tick of its group, and the one the nan forms leave
+# out and the plain ones take their group over with
+# the kinds of the temporal dtypes - datetime64 and timedelta64, the "M"
+# and the "m" of numpy
+TEMPORAL_KINDS = "Mm"
+
+NAT_TICK: int = -(2**63)
+
 TEMPORAL_VALUE_FUNCS = frozenset(
     {
         "min",

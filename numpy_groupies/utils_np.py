@@ -327,7 +327,7 @@ def resolve_output_dtype(
                     return np.dtype(np.float64)
             else:
                 if func_str == "sum":
-                    if a_dtype.kind in TEMPORAL_KINDS:
+                    if a_dtype.kind in "Mm":  # the kinds utils_temporal holds as TEMPORAL_KINDS
                         # the sum of durations is a duration - numpy answers
                         # in the unit of the input, and there is no integer
                         # size to guess for
@@ -770,15 +770,3 @@ def iscomplexobj(x: Any) -> bool:
     except AttributeError:
         type_ = np.asarray(x).dtype.type
     return issubclass(type_, np.complexfloating)
-
-
-# ---------------------------------------------------------------------------
-# datetime64 and timedelta64 support
-#
-# The dtype facts of the temporal support: the kinds of the temporal dtypes,
-# and the tick of NaT.  The policy of the functions lives in utils_temporal,
-# the exact median of the ticks of the numpy backend in
-# aggregate_numpy.specials.
-
-TEMPORAL_KINDS = "Mm"
-NAT_TICK: int = -(2**63)

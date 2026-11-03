@@ -11,10 +11,11 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.reductions import _first, _last, _sum
-from numpy_groupies.utils_np import NAT_TICK, AScalar, iscomplexobj
-from numpy_groupies.utils_temporal import exact_integer_group_mean
+from numpy_groupies.utils_np import AScalar, iscomplexobj
+from numpy_groupies.utils_temporal import NAT_TICK, exact_integer_group_mean
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
+    MOMENTS_NOT_FOR_COMPLEX,
     check_integer_mean_overflow,
     check_integer_variance_span_overflow,
     is_scalar_input,
@@ -241,7 +242,7 @@ def _skew(
     if iscomplexobj(a):
         # the skewness of a complex value is not defined - the moments of the
         # deviations would be complex, and their ratio meaningless
-        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+        raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
     if a.dtype.kind in "iu" and a.size:
         # the cubes of the deviations leave the window float64 represents
         # exactly - refuse instead of answering an inexact number
@@ -278,7 +279,7 @@ def _kurt(
     all the same has none either.
     """
     if iscomplexobj(a):
-        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+        raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
     if a.dtype.kind in "iu" and a.size:
         bound = max(int(a.max()), -int(a.min()))
         check_integer_mean_overflow(a.size, bound)

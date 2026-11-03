@@ -84,12 +84,11 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.mt import GROUP_MT_MIN_VALUES, MT_MIN_VALUES, chunk_count, should_use_mt
 from numpy_groupies.utils_np import (
-    NAT_TICK,
-    TEMPORAL_KINDS,
     AResult,
     AScalar,
     check_fill_value_for_dtype,
 )
+from numpy_groupies.utils_temporal import NAT_TICK, TEMPORAL_KINDS
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
     FILL_NOT_BOOLEAN,

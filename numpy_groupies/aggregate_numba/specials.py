@@ -32,7 +32,7 @@ from numpy_groupies.aggregate_numba.compose import (
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.mt import group_chunk_count, should_use_group_mt
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
-from numpy_groupies.utils_np import NAT_TICK
+from numpy_groupies.utils_temporal import NAT_TICK
 
 
 def _group_valid_plain(
