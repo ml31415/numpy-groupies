@@ -12,8 +12,6 @@ from typing import NamedTuple
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.utils_np import AScalar
-
 
 def step_count(group_idx: npt.NDArray[np.integer]) -> int:
     """Return the number of contiguous runs in ``group_idx``.
@@ -114,10 +112,3 @@ def group_order(
         a_srt = a[good][sortidx]
     starts, counts = group_bounds(group_idx_srt)
     return GroupOrder(sortidx, group_idx_srt, a_srt, starts, counts)
-
-
-def fill_untouched(idx: npt.NDArray[np.integer], ret: npt.NDArray[np.generic], fill_value: AScalar) -> None:
-    """any elements of ret not indexed by idx are set to fill_value."""
-    untouched = np.ones_like(ret, dtype=bool)
-    untouched[idx] = False
-    ret[untouched] = fill_value

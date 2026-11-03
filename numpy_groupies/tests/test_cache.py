@@ -118,8 +118,8 @@ def test_the_cache_of_a_kernel_lands_in_the_directory_and_is_used(tmp_path):
 
     run()
     cache = tmp_path / "numpy_groupies"
-    assert list(cache.glob("*.nbi")), "der Cache des Kernels liegt nicht im Verzeichnis"
-    assert list(cache.glob("*.nbc")), "der Cache des Kernels liegt nicht im Verzeichnis"
+    assert list(cache.glob("*.nbi")), "the cache of the kernel is not in the directory"
+    assert list(cache.glob("*.nbc")), "the cache of the kernel is not in the directory"
     before = {p.name: p.stat().st_mtime_ns for p in cache.iterdir()}
     run()
     after = {p.name: p.stat().st_mtime_ns for p in cache.iterdir()}

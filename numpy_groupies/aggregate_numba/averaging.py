@@ -17,15 +17,16 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_real_float
+from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_int64, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.aggregate_numpy.base import numpy_fallback
 from numpy_groupies.registry import FuncName
 from numpy_groupies.utils_np import AFillValue, AResult, AValue, RavelOrder
+from numpy_groupies.utils_temporal import NAT_TICK
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
     INT64_MIN,
+    MOMENTS_NOT_FOR_COMPLEX,
     mean_overflow_message,
     variance_span_overflow_message,
 )
@@ -70,6 +71,24 @@ _mean_overflow_message: Callable[[int, int], str] = njit_stable(mean_overflow_me
 _span_message: Callable[[str, int], str] = njit_stable(
     variance_span_overflow_message, name="variance_span_overflow_message"
 )
+
+
+@njit_stable
+def _tick_mean_overflow_message(count: int, span: int) -> str:
+    """The complaint about a mean of ticks whose sum would overflow int64.
+
+    The values of the group reach from one end of the int64 range to the
+    other, and their sum leaves the range - the mean of them cannot be
+    computed exactly.
+    """
+    return (
+        "cannot compute an exact mean of "
+        + str(count)
+        + " ticks with a span of "
+        + str(span)
+        + ": their sum would leave the int64 range - the ticks of the values "
+        + "are too far apart"
+    )
 
 
 @njit_stable
@@ -227,6 +246,181 @@ def _mean_combine(acc: MeanState, other: MeanState, fill_value: float, extra: An
         high[0] = other.high[0]
 
 
+class TickMeanState(NamedTuple):
+    """The state of the mean of the ticks of a temporal input: the sum of the
+    deviations from the origin of the group, the count of the values, the
+    origin itself, the extrema of the group and the sign of its poison.
+
+    The sum of the deviations is exact in int64 - the ticks of a datetime64
+    are the number of nanoseconds since the epoch, and their sum leaves the
+    window float64 represents exactly long before the group is done.
+
+    The origin is the first value of the group in the sequential path, and
+    the origin of the chunk in the parallel one: the sum of the deviations
+    does not depend on the origin it is measured from, and the mean is the
+    quotient of the sum of the values either way.
+    """
+
+    out: npt.NDArray[np.int64]
+    count: npt.NDArray[np.int64]  # type: ignore[assignment]  # the field name shadows tuple.count, which numba does not see
+    origin: npt.NDArray[np.int64]
+    low: npt.NDArray[np.int64]
+    high: npt.NDArray[np.int64]
+    poisoned: npt.NDArray[np.bool_]
+
+
+def _tick_mean_init(
+    size: int,
+    n_input: int,
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: int,
+    forced_fill: int,
+) -> TickMeanState:
+    return TickMeanState(
+        np.zeros(size, np.int64),
+        np.zeros(size, np.int64),
+        np.zeros(size, np.int64),
+        np.full(size, np.iinfo(np.int64).max, np.int64),
+        np.full(size, INT64_MIN, np.int64),
+        np.zeros(size, np.bool_),
+    )
+
+
+def _make_tick_mean_update(nan: bool) -> Callable[..., None]:
+    """The update of the tick mean, in its plain and its nan form.
+
+    The NaT of a temporal value is the tick -2**63 - and the kernel sees the
+    ticks alone, so it tells the NaT from a value by that tick.  The nan
+    variant leaves it out, and the plain one takes its group over: a single
+    NaT poisons the mean of its whole group, like a nan poisons the mean of
+    a float group.  A value that is exactly the tick of the NaT (the 21st of
+    September 1677) is treated as one.
+
+    The skip is a branch, and that is measured: on values without NaT the
+    branch never runs and the kernel keeps the speed of the plain one, while
+    a branchless skip - four selects that every value runs through - costs
+    a fifth of the plain kernel even on the cleanest data.  The data with a
+    fifth of it NaT pays the mispredictions of the branch, which is the
+    cheaper half of the two.
+    """
+
+    def _tick_mean_update(st: TickMeanState, ri: int, i: int, val: int, fill_value: int, extra: Any) -> None:
+        if nan and val == INT64_MIN:
+            return
+        if val == INT64_MIN:
+            st.poisoned[ri] = True
+        if st.count[ri] == 0:
+            # the first value of the group is the origin its deviations are
+            # measured from - the values of a group are close to each other,
+            # and it is their sum that overflows
+            st.origin[ri] = val
+        st.count[ri] += 1
+        st.out[ri] += val - st.origin[ri]
+        # the extrema of the group, for the check of the sum of the deviations
+        st.low[ri] = min(st.low[ri], val)
+        st.high[ri] = max(st.high[ri], val)
+
+    return _tick_mean_update
+
+
+_tick_mean_update = _make_tick_mean_update(False)
+_tick_mean_update_nan = _make_tick_mean_update(True)
+
+
+def _tick_mean_finish(st: TickMeanState, g: int, fill_value: int, extra: Any) -> Any:
+    """The mean of the ticks of a group, rounded half to even.
+
+    The sum of the deviations is exact, so the quotient and the remainder are
+    exact as well - the rounding is the one of numpy's round, and not the
+    truncation a division would give.
+    """
+    if st.poisoned[g]:
+        # a single NaT poisons the mean of its whole group - the ticks of
+        # its values are no answer, and the NaT of the unit is
+        return NAT_TICK
+    if st.count[g] > extra:
+        count = st.count[g]
+        # the sum of the deviations stays inside int64 as long as the span of
+        # the values times their number does - a group whose values reach
+        # from one end of the int64 range to the other cannot be summed up
+        # exactly, and the sum would wrap around silently
+        span = st.high[g] - st.low[g]
+        if span > INT64_DEVIATION_LIMIT // count:
+            raise OverflowError(_tick_mean_overflow_message(count, span))
+        # the total of the group is origin * count + the sum of the deviations
+        # - its quotient is the origin plus the quotient of the deviations,
+        # and its remainder is the remainder of the deviations
+        quotient = st.out[g] // count
+        remainder = st.out[g] - quotient * count
+        # the rounding is half to even, and the parity it looks at is the one
+        # of the total - the parity of the origin and of the quotient added
+        # up (the total itself does not fit into an int64)
+        odd = (st.origin[g] & 1) + (quotient & 1)
+        if 2 * remainder > count or (2 * remainder == count and odd % 2 == 1):
+            quotient += 1
+        return st.origin[g] + quotient
+    return fill_value
+
+
+def _tick_mean_combine(acc: TickMeanState, other: TickMeanState, fill_value: int, extra: Any) -> None:
+    """The states of two chunks of the data, folded into one.
+
+    The deviations of the two chunks are measured from their own origins, so
+    they have to be brought to one origin before they are added up: the
+    deviations of the other chunk are moved by the difference of the origins,
+    and the sum of them is the sum of the values of the group, measured from
+    the origin of this one.
+
+    The origin of the chunk that saw the first value of the group is not the
+    one that wins here: the chunks of the parallel path know their values by
+    their place in the chunk, not by their place in the data, and the sum of
+    the deviations does not depend on the origin it is measured from - the
+    mean is the quotient of the sum of the values either way.
+    """
+    out: np.ndarray = acc.out
+    count: np.ndarray = acc.count
+    origin: np.ndarray = acc.origin
+    low: np.ndarray = acc.low
+    high: np.ndarray = acc.high
+    other_count: np.ndarray = other.count
+    other_out: np.ndarray = other.out
+    other_origin: np.ndarray = other.origin
+    for g in range(out.size):
+        if count[g] == 0:
+            # the group has no value in this chunk - the state of the other
+            # one is the state of the group
+            out[g] = other_out[g]
+            count[g] = other_count[g]
+            origin[g] = other_origin[g]
+        elif other_count[g] > 0:
+            # the deviations of the other chunk are measured from its own
+            # origin - they are moved to the origin of this one.  The sum of
+            # them is the sum of the values of the group measured from this
+            # origin, and it stays inside the range the check of the finish
+            # allows.
+            out[g] += other_out[g] + other_count[g] * (other_origin[g] - origin[g])
+            count[g] += other_count[g]
+        low[g] = min(low[g], other.low[g])
+        high[g] = max(high[g], other.high[g])
+        acc.poisoned[g] = acc.poisoned[g] or other.poisoned[g]
+
+
+tick_mean = build_kernel(
+    "tick_mean",
+    init=_tick_mean_init,
+    update=_tick_mean_update,
+    update_nan=_tick_mean_update_nan,
+    finish=_tick_mean_finish,
+    combine=_tick_mean_combine,
+    rule=rule_int64,
+    fill_default=0,
+    forced_fill=0,
+    doc="Mean of the ticks of every group, rounded half to even - the tick of a NaT poisons its group, and the nan form leaves it out",
+)
+
+
 mean = build_kernel(
     "mean",
     init=_mean_init,
@@ -302,7 +496,7 @@ def _moment_update(st: MomentState, ri: int, i: int, val: float, fill_value: flo
     if isinstance(val, complex):
         # the moments of the deviations of a complex value would be complex,
         # and their ratio meaningless
-        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+        raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
     st.count[ri] += 1
     n = st.count[ri]
     delta = val - st.m1[ri]
@@ -327,7 +521,7 @@ def _moment_update_nan(st: MomentState, ri: int, i: int, val: float, fill_value:
     if val != val:
         return
     if isinstance(val, complex):
-        raise TypeError("the skewness and the kurtosis are not defined for complex values")
+        raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
     st.count[ri] += 1
     n = st.count[ri]
     delta = val - st.m1[ri]
@@ -428,7 +622,7 @@ def _moment_combine(acc: MomentState, other: MomentState, fill_value: float, ext
                 acc.high[0] = other.high[0]
 
 
-def _numpy_fallback(
+def _complex_moments_refusal(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
     func: FuncName,
@@ -438,16 +632,16 @@ def _numpy_fallback(
     dtype: npt.DTypeLike | None,
     axis: int | None,
 ) -> AResult:
-    """The numpy implementation, for the input the compiled kernel refuses.
+    """The refusal for the input the compiled moments cannot take.
 
     The skewness and the kurtosis are not defined for the complex values,
     and the compiled kernel says so with a ``TypeError`` from inside its
     accumulation loop - a loop that runs inside the parallel region of the
-    parallel path, where an exception cannot leave.  The complex input
-    therefore goes to the numpy implementation, which refuses it with the
-    very same complaint.
+    parallel path, where an exception cannot leave.  The refusal therefore
+    stands here, ahead of the kernel, with the complaint the numpy backend
+    raises for the very same input.
     """
-    return numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
+    raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
 
 
 def _skew_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
@@ -501,7 +695,7 @@ skew = build_kernel(
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,
-    fallback=_numpy_fallback,
+    fallback=_complex_moments_refusal,
     doc="Skewness of the values of every group",
 )
 
@@ -529,7 +723,7 @@ kurt = build_kernel(
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,
-    fallback=_numpy_fallback,
+    fallback=_complex_moments_refusal,
     doc="Excess kurtosis of the values of every group",
 )
 

@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
+from numpy_groupies.tests.helpers import impl_name
 from numpy_groupies.utils_np import minimum_dtype
 
 float_funcs = [np.std, np.var, np.mean, np.median, np.nanmedian]
@@ -304,31 +305,47 @@ def test_integer_variance_full_span_raises(impl, dtype, func):
 
 
 @pytest.mark.parametrize("func", ["mean", "nanmean"])
-def test_integer_mean_cancellation_raises(impl, func):
+def test_integer_mean_extreme_cancellation_exact(impl, func):
+    # the sums cancel to a small exact mean although the values reach the
+    # edges of int64 - the limb sums hold the total exactly where float64
+    # accumulation would round
     maximum = np.iinfo(np.int64).max
     values = np.array([maximum, -maximum + 1, maximum, maximum, maximum], dtype=np.int64)
     original = values.copy()
-    with pytest.raises(OverflowError, match="exact mean"):
-        impl.aggregate(np.array([0, 0, 1, 1, 1]), values, func=func, size=3)
+    actual = impl.aggregate(np.array([0, 0, 1, 1, 1]), values, func=func, size=3)
+    np.testing.assert_array_equal(actual, [0.5, maximum, np.nan])
     np.testing.assert_array_equal(values, original)
 
 
-def test_integer_mean_beyond_exact_window_raises(impl):
-    # (2**53 + 1) is not representable in float64, so even this tiny group has
-    # no exact float64 mean
+def test_integer_mean_beyond_exact_window_exact(impl):
+    # (2**53 + 1) is not representable in float64 - the mean is still the
+    # exact quotient of the exact total, not a float64 rounding of it
     values = np.array([2**53 + 1, 0, 0], dtype=np.int64)
-    with pytest.raises(OverflowError, match="exact mean"):
-        impl.aggregate(np.array([0, 0, 0]), values, func="mean", size=1)
+    actual = impl.aggregate(np.array([0, 0, 0]), values, func="mean", size=1)
+    np.testing.assert_array_equal(actual, [(2**53 + 1) / 3])
+
+
+def test_integer_mean_half_to_even_beyond_exact_window(impl):
+    # an integer output rounds the exact quotient half to even: the sum of
+    # (2**53 + 1) and 2 is odd, the tie of (2**53 + 3) / 2 rounds up to the
+    # even neighbour - although the values themselves are not floats.
+    # purepy keeps its answers as python floats, an integer dtype of the
+    # result is the business of the caller there
+    if impl_name(impl) == "purepy":
+        pytest.skip("purepy hands out floats and leaves the dtype to the caller")
+    values = np.array([2**53 + 1, 2], dtype=np.int64)
+    actual = impl.aggregate(np.array([0, 0]), values, func="mean", size=1, dtype=np.int64)
+    np.testing.assert_array_equal(actual, [2**52 + 2])
 
 
 def test_integer_mean_gate_boundary(impl):
     # 2 * 2**52 == 2**53 stays inside the exact window and returns the exact
-    # mean; a third value pushes the possible sum beyond it and is refused
+    # mean; a third value leaves it and the answer stays exact as well - the
+    # window no longer decides between an answer and a refusal
     values = np.array([2**52, 2**52], dtype=np.int64)
     np.testing.assert_array_equal(impl.aggregate(np.array([0, 0]), values, func="mean", size=1), [2**52])
     values = np.array([2**52, 2**52, 2**52], dtype=np.int64)
-    with pytest.raises(OverflowError, match="exact mean"):
-        impl.aggregate(np.array([0, 0, 0]), values, func="mean", size=1)
+    np.testing.assert_array_equal(impl.aggregate(np.array([0, 0, 0]), values, func="mean", size=1), [2**52])
 
 
 def test_integer_mean_small_values_exact(impl):

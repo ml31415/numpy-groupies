@@ -11,6 +11,7 @@ single pass - it composes like the streaming reductions and takes the sample
 spacing ``dx`` as the argument of its own.
 """
 
+import functools
 import math
 from collections.abc import Callable
 from typing import Any, NamedTuple
@@ -20,6 +21,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import (
+    _fill_differs,
     build_custom_kernel,
     build_kernel,
     complex_less,
@@ -31,6 +33,7 @@ from numpy_groupies.aggregate_numba.compose import (
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.mt import group_chunk_count, should_use_group_mt
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
+from numpy_groupies.utils_temporal import NAT_TICK
 
 
 def _group_valid_plain(
@@ -56,24 +59,42 @@ def _group_valid_plain(
     return size_g
 
 
-def _group_valid_nan(
-    g: int,
-    a_sorted: npt.NDArray[np.number],
-    counts: npt.NDArray[np.int64],
-    starts: npt.NDArray[np.int64],
-    buf: npt.NDArray[np.number],
-) -> int:
+@functools.lru_cache(maxsize=2)
+def _valid_nan_scan(ticks: bool) -> Callable[..., int]:
     """copy the usable values of group g into buf, returning their number -
-    the nans are filtered out, so the group keeps its usable values"""
-    begin: int = starts[g]
-    size_g: int = counts[g]
-    m = 0
-    for i in range(size_g):
-        v = a_sorted[begin + i]
-        if v == v:
-            buf[m] = v
-            m += 1
-    return m
+    the missing values are filtered out, so the group keeps its usable values.
+
+    The missing value of the numbers is the nan - the value that is not equal
+    to itself - and the missing value of a temporal input is the NaT tick
+    ``-2**63``, which is an ordinary int64 among the other ticks.  The flag
+    is a constant of the closure, so numba compiles the two branches apart
+    and the one that does not belong to the call is not even typed.
+    """
+
+    @njit_stable(name=f"{'tick_' if ticks else ''}valid_nan")
+    def valid_nan(
+        g: int,
+        a_sorted: npt.NDArray[np.number],
+        counts: npt.NDArray[np.int64],
+        starts: npt.NDArray[np.int64],
+        buf: npt.NDArray[np.number],
+    ) -> int:
+        begin: int = starts[g]
+        size_g: int = counts[g]
+        m = 0
+        for i in range(size_g):
+            v = a_sorted[begin + i]
+            if ticks:
+                if v != NAT_TICK:
+                    buf[m] = v
+                    m += 1
+            else:
+                if v == v:
+                    buf[m] = v
+                    m += 1
+        return m
+
+    return valid_nan
 
 
 # The number of partition passes a selection may make per power of two of the
@@ -177,95 +198,164 @@ def _select_kth(
 # the same helpers serve the median and the quantile - the same source, the same
 # signature, the same specializations: one compiled artifact serves both
 _valid_plain = njit_stable(_group_valid_plain)
-_valid_nan = njit_stable(_group_valid_nan)
+# the nan scan of the numbers - the temporal one is the same scan with the
+# NaT tick as the missing value (see ``_valid_nan_scan``)
+_valid_nan = _valid_nan_scan(False)
 # the selection: the same block for every operation that selects, so one
 # compiled artifact serves the median and the quantile and both of their variants
 _select = njit_stable(_select_kth)
 
 
-def _middle(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> Any:
+@functools.lru_cache(maxsize=2)
+def _middle_of(ticks: bool) -> Callable[..., Any]:
     """the middle value(s) of the block at ``a_sorted[begin:begin+m]``.
 
     No sorting needed: the wanted element is selected in place, and the block is
     left in the order the selection put it in - the median does not care about
     the order of the values it looks at.
+
+    The two flavours differ in the mean of the two middles of an even group:
+    the numbers promote it to float64, just like np.median promotes before
+    averaging - summing the two middles in their own dtype overflows (int64
+    2**62 + 2**62) and adds bool as a logical or - while the ticks keep it an
+    exact int64, where a pair around the epoch carries more bits than the 53
+    of a float64 mantissa holds and the promotion would round the answer off
+    the tick grid.  The flag is a constant of the closure, so numba compiles
+    the two branches apart and the one that does not belong to the call is
+    not even typed.
     """
-    k = m // 2
-    upper = _select(a_sorted, begin, begin + m, begin + k)
-    if m % 2 == 1:
-        return upper
-    # the lower middle is the largest of the left half, which the selection left
-    # in place; the 1.0 promotes integral input to float64, just like np.median
-    # promotes before averaging - summing the two middles in their own dtype
-    # overflows (int64 2**62 + 2**62) and adds bool as a logical or
-    lower = a_sorted[begin]
-    for i in range(begin + 1, begin + k):
-        if complex_less(lower, a_sorted[i]):
-            lower = a_sorted[i]
-    return (lower * 1.0 + upper) / 2
+
+    @njit_stable(name=f"{'tick_' if ticks else ''}median_middle")
+    def middle(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> Any:
+        k = m // 2
+        upper = _select(a_sorted, begin, begin + m, begin + k)
+        if m % 2 == 1:
+            return upper
+        # the lower middle is the largest of the left half, which the selection left
+        # in place
+        lower = a_sorted[begin]
+        for i in range(begin + 1, begin + k):
+            if complex_less(lower, a_sorted[i]):
+                lower = a_sorted[i]
+        if ticks:
+            return _tick_pair_average(lower, upper)
+        return (lower * 1.0 + upper) / 2
+
+    return middle
 
 
-_middle = njit_stable(_middle, name="median_middle")
+_middle = _middle_of(False)
 
 
-def _median_group_plain(
-    g: int,
-    a_sorted: npt.NDArray[np.number],
-    counts: npt.NDArray[np.int64],
-    starts: npt.NDArray[np.int64],
-    buf: npt.NDArray[np.number],
-    out: npt.NDArray[np.number],
-    fill_value: float,
-) -> None:
-    """the median of one group of the placed values
+def _tick_pair_average(lower: int, upper: int) -> int:
+    """The exact mean of two ticks, rounded half to even.
 
-    ``buf`` and ``fill_value`` are the two arguments the nan variant of the very
-    same step needs and this one does not: an empty buffer is handed over, and
-    the poisoned cell is shaped out of the output itself.  The two bodies share
-    the signature so that the drivers of the two variants are the same loop.
+    The sum of the two is not taken: two ticks of one end of the int64
+    range sum past it, and the wraparound would answer a tick that belongs
+    to no value of the group.  The mean is taken from the bits instead -
+
+    - ``a & b`` are the bits the two share: they are in the mean once,
+    whatever the other one carries there,
+    - ``a ^ b`` are the bits they differ in: the mean of those is half of
+    them, and the shift of a negative number floors - which is the floor
+    the mean asks for,
+
+    so ``q = (a & b) + ((a ^ b) >> 1)`` is ``floor((a + b) / 2)`` for the
+    whole int64 range.  An odd sum leaves a remainder of a half, and half
+    to even hands the answer to the even of the two neighbours one apart:
+    the low bit of ``a ^ b`` is the parity of the sum, the low bit of ``q``
+    the one of the floor - when both are set, the floor is the odd one and
+    the neighbour above is taken.
+
+    Measured against a python ``Fraction`` over the pairs of the corners
+    of the int64 range, and the ties at zero and the smallest tick
+    (test_temporal, the bare kernel of the tick median) - the wraparound
+    of the plain sum and the rounding of the float64 promotion both stay
+    out of it.
     """
-    if counts[g] == 0:
-        return  # untouched group, keeps the fill value
-    m = _valid_plain(g, a_sorted, counts, starts)
-    if m == 0:
-        # a nan-poisoned group for plain median (where any nan is contagious) -
-        # the poison is shaped like the output, since a plain nan written into a
-        # complex column leaves its imaginary part at a zero the group never
-        # claimed to have.  The cell still holds the fill value, which is of the
-        # output dtype, and a nan times a value of that dtype is a nan in every
-        # part it has (for a real dtype: the plain nan)
-        out[g] = out[g] * np.nan
-    else:
-        out[g] = _middle(a_sorted, starts[g], m)
+    q = (lower & upper) + ((lower ^ upper) >> 1)
+    if (lower ^ upper) & 1 and q & 1:
+        q += 1
+    return q
 
 
-def _median_group_nan(
-    g: int,
-    a_sorted: npt.NDArray[np.number],
-    counts: npt.NDArray[np.int64],
-    starts: npt.NDArray[np.int64],
-    buf: npt.NDArray[np.number],
-    out: npt.NDArray[np.number],
-    fill_value: float,
-) -> None:
-    """the median of one group, the nan values of the group left out
+_tick_pair_average = njit_stable(_tick_pair_average, name="tick_pair_average")
 
-    ``buf`` is the scratch of the range this group belongs to: a thread writes
-    into the buffer of its own range and into no other one, which is what makes
-    the loop over the ranges free of a lock.
+
+@functools.lru_cache(maxsize=4)
+def _median_group(ticks: bool, nans: bool) -> Callable[..., None]:
+    """the median of one group of the placed values.
+
+    The two flavours of the operation - the numbers and the ticks of a
+    temporal input - and the two of the variants - the plain one, where a
+    missing value poisons the group, and the nan one, where it is left out -
+    are one body with two flags.  The flags are constants of the closure, so
+    numba compiles the four combinations apart and the branches that do not
+    belong to the call are not even typed.
+
+    The difference between the flavours is the middle of the block (the exact
+    mean of the two middles for the ticks, the float64 promotion for the
+    numbers) and the missing value (the NaT tick for the temporal input, the
+    nan for the numbers).  The difference between the variants is what a
+    missing value does to the group: it takes it over, or it is left out.
+
+    ``buf`` and ``fill_value`` are the two arguments the nan variant of the
+    very same step needs and the plain one does not: an empty buffer is
+    handed over, and the poisoned cell is shaped out of the output itself.
+    The two bodies share the signature so that the drivers of the two
+    variants are the same loop.
     """
-    if counts[g] == 0:
-        return  # untouched group, keeps the fill value
-    m = _valid_nan(g, a_sorted, counts, starts, buf)
-    if m == 0:
-        # all-nan group: it keeps the fill value
-        out[g] = fill_value
-    else:
-        out[g] = _middle(buf, 0, m)
+    middle = _middle_of(ticks)
+    valid_nan = _valid_nan_scan(ticks)
+
+    @njit_stable(name=f"{'nan' if nans else ''}{'tick_' if ticks else ''}median_group")
+    def group(
+        g: int,
+        a_sorted: npt.NDArray[np.number],
+        counts: npt.NDArray[np.int64],
+        starts: npt.NDArray[np.int64],
+        buf: npt.NDArray[np.number],
+        out: npt.NDArray[np.number],
+        fill_value: Any,
+    ) -> None:
+        if counts[g] == 0:
+            return  # untouched group, keeps the fill value
+        if nans:
+            # the nan variant: the missing values are left out, and the group
+            # that holds nothing but them keeps the fill value
+            m = valid_nan(g, a_sorted, counts, starts, buf)
+            if m == 0:
+                out[g] = fill_value
+            else:
+                out[g] = middle(buf, 0, m)
+        elif ticks:
+            # the plain variant of the ticks: a NaT tick is a value like any
+            # other here - the smallest of them all - and the group that
+            # holds one is answered NaT by the caller: the mask of the groups
+            # that hold a NaT is already in the hands of the temporal wrapper,
+            # and no scan of the block buys it
+            out[g] = middle(a_sorted, starts[g], counts[g])
+        else:
+            # the plain variant of the numbers: a nan poisons the group (where
+            # any nan is contagious) - the poison is shaped like the output,
+            # since a plain nan written into a complex column leaves its
+            # imaginary part at a zero the group never claimed to have.  The
+            # cell still holds the fill value, which is of the output dtype,
+            # and a nan times a value of that dtype is a nan in every part it
+            # has (for a real dtype: the plain nan)
+            m = _valid_plain(g, a_sorted, counts, starts)
+            if m == 0:
+                out[g] = out[g] * np.nan
+            else:
+                out[g] = middle(a_sorted, starts[g], m)
+
+    return group
 
 
-_median_group_plain = njit_stable(_median_group_plain, name="median_group")
-_median_group_nan = njit_stable(_median_group_nan, name="nanmedian_group")
+_median_group_plain = _median_group(False, False)
+_median_group_nan = _median_group(False, True)
+_tick_median_group_plain = _median_group(True, False)
+_tick_median_group_nan = _median_group(True, True)
 
 
 def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float) -> Any:
@@ -296,6 +386,56 @@ def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float)
 
 
 _quantile_at = njit_stable(_quantile_at, name="quantile_quantile_at")
+
+
+def _quantile_at_ticks(a_sorted: npt.NDArray[np.int64], begin: int, m: int, q: float, method: str) -> int:
+    """The quantile q of the ticks of the block at ``a_sorted[begin:begin+m]``.
+
+    The rule is numpy's own one for a temporal value: the quantile names a
+    position between two of the ticks of the group, the difference of the two
+    is a duration, and its product with the fraction of the way is truncated
+    towards zero - the answer is a tick again.  The two branches are the ones
+    of numpy's interpolation: below a half the answer grows from the lower
+    neighbour, from a half on it shrinks from the upper one.
+
+    The product is taken in float64, like numpy takes it - the difference of
+    the two ticks leaves the window a float64 holds exactly only for the
+    small ones, and numpy rounds it there.  The truncation is towards zero,
+    like the truncation of numpy's multiplication of a duration and a float.
+
+    The other methods of numpy name the neighbours of the quantile in their
+    own way: ``lower`` takes the one below the position, ``higher`` the one
+    above it, ``nearest`` the one nearest to it (numpy rounds the position
+    to the nearest element, halves to even) - and the ``midpoint`` takes the
+    mean of the two neighbours, which is the rule of the interpolation with a
+    fraction of a half.
+    """
+    pos = q * (m - 1)
+    if method == "lower":
+        return int(_select(a_sorted, begin, begin + m, begin + int(np.floor(pos))))
+    if method == "higher":
+        return int(_select(a_sorted, begin, begin + m, begin + min(int(np.ceil(pos)), m - 1)))
+    if method == "nearest":
+        return int(_select(a_sorted, begin, begin + m, begin + min(int(np.round(pos)), m - 1)))
+    lower_index = int(np.floor(pos))
+    upper_index = int(np.ceil(pos))
+    upper = int(_select(a_sorted, begin, begin + m, begin + upper_index))
+    if lower_index == upper_index:
+        # the quantile is one of the ticks of the group
+        return upper
+    # the tick below: the largest of the elements the selection left in
+    # front of the one it picked - they are the ones below it
+    lower = int(a_sorted[begin])
+    for i in range(begin + 1, begin + lower_index + 1):
+        lower = max(lower, int(a_sorted[i]))
+    difference = upper - lower
+    gamma = 0.5 if method == "midpoint" else pos - lower_index
+    if gamma < 0.5:
+        return lower + int(np.float64(difference) * np.float64(gamma))
+    return upper - int(np.float64(difference) * np.float64(1 - gamma))
+
+
+_quantile_at_ticks = njit_stable(_quantile_at_ticks, name="tick_quantile_at")
 
 
 def _quantile_group_plain(
@@ -353,6 +493,43 @@ _quantile_group_plain = njit_stable(_quantile_group_plain, name="quantile_group"
 _quantile_group_nan = njit_stable(_quantile_group_nan, name="nanquantile_group")
 
 
+def _tick_quantile_group(nans: bool) -> Callable[..., None]:
+    """The quantile of one group of the ticks, the way numpy computes it.
+
+    The plain variant takes the NaT tick as a value like any other - it is the
+    smallest of them all, and the group that holds one is answered NaT by the
+    caller: the mask of the groups that hold a NaT is already in the hands of
+    the temporal wrapper, and no scan of the block buys it.  The nan variant
+    leaves the NaT tick out, as every nan variant leaves the nan out.
+    """
+    valid_nan = _valid_nan_scan(True)
+
+    @njit_stable(name=f"{'nan' if nans else ''}tick_quantile_group")
+    def group(
+        g: int,
+        a_sorted: npt.NDArray[np.int64],
+        counts: npt.NDArray[np.int64],
+        starts: npt.NDArray[np.int64],
+        buf: npt.NDArray[np.int64],
+        out: npt.NDArray[np.int64],
+        fill_value: int,
+        q: float,
+        method: str,
+    ) -> None:
+        if counts[g] == 0:
+            return  # untouched group, keeps the fill value
+        if nans:
+            m = valid_nan(g, a_sorted, counts, starts, buf)
+            if m == 0:
+                out[g] = fill_value
+            else:
+                out[g] = _quantile_at_ticks(buf, 0, m, q, method)
+        else:
+            out[g] = _quantile_at_ticks(a_sorted, starts[g], counts[g], q, method)
+
+    return group
+
+
 # ---------------------------------------------------------------------------
 # the counting sort and the range cut, at the module level
 #
@@ -372,7 +549,7 @@ _ranges = njit_stable(group_ranges)
 @njit_stable
 def _place_values(
     group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number], size: int
-) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[np.number]]:
+) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[Any]]:
     """The counting sort that places the values of every group in a block.
 
     It hands back the number of the values of every group, where the block
@@ -402,7 +579,7 @@ class GroupMTSetup(NamedTuple):
 
     counts: npt.NDArray[np.int64]  # the number of the values of every group
     starts: npt.NDArray[np.int64]  # where the block of every group starts
-    a_sorted: npt.NDArray[np.number]  # the values, placed group by group
+    a_sorted: npt.NDArray[Any]  # the values, placed group by group
     edges: npt.NDArray[np.intp]  # the boundaries of the ranges
     largest: npt.NDArray[np.int64]  # the largest block of every range
 
@@ -455,12 +632,12 @@ _NS_PER_VALUE_NUNIQUE = 19.0
 _NS_PER_VALUE_SORT = 68.0
 
 
-def _median_driver_factory(nans: bool) -> Any:
+def _median_driver_factory(nans: bool, ticks: bool = False) -> Any:
     # the block of the group is what the two drivers work on - the plain one
     # and the parallel one reach the ONE compiled body of it (see the note
-    # above ``_median_group_plain``); the counting sort is the shared one of
+    # above ``_median_group``); the counting sort is the shared one of
     # the module (see the note at ``_count``)
-    group = _median_group_nan if nans else _median_group_plain
+    group = _median_group(ticks, nans)
 
     def driver(
         group_idx: npt.NDArray[np.integer],
@@ -483,10 +660,10 @@ def _median_driver_factory(nans: bool) -> Any:
             group(g, a_sorted, counts, starts, buf, out, fill_value)
         return out
 
-    return njit_stable(driver, name=f"{'nan' if nans else ''}median_driver")
+    return njit_stable(driver, name=f"{'nan' if nans else ''}{'tick_' if ticks else ''}median_driver")
 
 
-def _median_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+def _median_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]], ticks: bool = False) -> Any:
     """The parallel passes of the median: the groups cut into ranges.
 
     The gate, the counting sort that places the values and the cut of the
@@ -496,7 +673,7 @@ def _median_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]
     has to be folded afterwards - the result is the one of the sequential
     driver bit for bit, whatever the number of the threads and of the ranges.
     """
-    group = _median_group_nan if nans else _median_group_plain
+    group = _median_group(ticks, nans)
 
     def mt_passes(
         group_idx: npt.NDArray[np.integer],
@@ -530,7 +707,75 @@ def _median_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]
                 group(g, a_sorted, counts, starts, buf, out, fill_value)
         return out
 
-    return njit_stable(mt_passes, name=f"{'nan' if nans else ''}median_mt_passes", parallel=True)
+    return njit_stable(
+        mt_passes, name=f"{'nan' if nans else ''}{'tick_' if ticks else ''}median_mt_passes", parallel=True
+    )
+
+
+def _tick_quantile_driver_factory(nans: bool) -> Any:
+    """The driver of the quantile of the ticks - the same counting sort and
+    the same selection the median uses, and numpy's rule of the interpolation
+    on the ticks of the values.
+    """
+    group = _tick_quantile_group(nans)
+
+    def driver(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.int64],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: int,
+        q: float,
+        method: str,
+    ) -> npt.NDArray[np.int64]:
+        size = output_size(group_idx, size_arg)
+        out = np.full(size, fill_value, out_dtype)
+        # counting-sort placement into contiguous group-blocks (the order
+        # within a block is arbitrary, which the quantile ignores)
+        counts, starts, a_sorted = _place_values(group_idx, a, size)
+        # the nan variant filters the NaT ticks out into a buffer of its own,
+        # the plain one leaves the values where they are and needs none
+        buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
+        for g in range(size):
+            group(g, a_sorted, counts, starts, buf, out, fill_value, q, method)
+        return out
+
+    return njit_stable(driver, name=f"{'nan' if nans else ''}tick_quantile_driver")
+
+
+def _tick_quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.int64]]) -> Any:
+    """The parallel passes of the quantile of the ticks: the groups cut into
+    ranges, every group belonging to exactly one of them - so the result is
+    the one of the sequential driver bit for bit.
+    """
+    group = _tick_quantile_group(nans)
+
+    def mt_passes(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.int64],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: int,
+        extra: Any,
+        n_threads: int,
+    ) -> npt.NDArray[np.int64]:
+        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
+        if setup is None:
+            # not worth a parallel region: the sequential driver, with its
+            # result bit for bit
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra[0], extra[1])
+        counts, starts, a_sorted, edges, largest = setup
+        out = np.full(counts.size, fill_value, out_dtype)
+        bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
+        for c in nb.prange(largest.size):
+            buf = bufs[c]
+            for g in range(edges[c], edges[c + 1]):
+                group(g, a_sorted, counts, starts, buf, out, fill_value, extra[0], extra[1])
+        return out
+
+    return njit_stable(mt_passes, name=f"{'nan' if nans else ''}tick_quantile_mt_passes", parallel=True)
 
 
 median = build_custom_kernel(
@@ -620,6 +865,37 @@ quantile = build_custom_kernel(
     fill_default=np.nan,
     variant="q",
     doc="Quantile of the values of every group",
+)
+
+
+tick_median = build_custom_kernel(
+    "tick_median",
+    # the same driver and the same parallel passes as the numeric median,
+    # with the tick bodies: the exact int64 middle, and the NaT tick as the
+    # missing value of the nan variant.  The answer stays on the tick grid -
+    # an int64 output, where the numeric kernel promotes to float64.
+    driver_factory=lambda nans: _median_driver_factory(nans, True),
+    mt_driver_factory=lambda nans, driver: _median_mt_factory(nans, driver, True),
+    rule=rule_int64,
+    fill_default=0,
+    doc="Median of the ticks of every group, the exact middle of the ticks - the tick of a NaT poisons its group, and the nan form leaves it out",
+)
+
+
+tick_quantile = build_custom_kernel(
+    "tick_quantile",
+    # the same counting sort and the same selection as the median, with
+    # numpy's rule of the interpolation on the ticks: the difference of the
+    # two ticks it falls between is a duration, its product with the fraction
+    # is truncated towards zero, and the answer is a tick again.  All five
+    # methods of numpy run in the kernel - the branch on the method happens
+    # once per group.
+    driver_factory=_tick_quantile_driver_factory,
+    mt_driver_factory=_tick_quantile_mt_factory,
+    rule=rule_int64,
+    fill_default=0,
+    variant="q_method",
+    doc="Quantile of the ticks of every group, the way numpy computes it - the tick of a NaT poisons its group, and the nan form leaves it out",
 )
 
 
@@ -1048,7 +1324,7 @@ def _trapezoid_init(
     fill_value: float,
     forced_fill: float,
 ) -> TrapezoidState:
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return TrapezoidState(
         np.zeros(size, out_dtype),

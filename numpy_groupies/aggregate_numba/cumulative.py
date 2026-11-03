@@ -147,7 +147,16 @@ def _cummax_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value:
     # expression - reaching it as a call defeats the branchless
     # form (measured 2.5ms against 0.8ms per 500k values)
     best = complex_less(cur, val)
-    st.running[ri] = val if (first or val != val or best) else cur
+    # temporal input: a NaT poisons the rest of its group (numpy carries it
+    # through the running maximum), which the guard below keeps - the
+    # comparison alone would order NaT as the smallest tick and let the next
+    # value win.  The NaT of a temporal value is the one that is not equal
+    # to itself.
+    # the condition is put together without a short circuit: the or of
+    # python is a branch, and a branch that a fifth of the values take
+    # mispredicts - the values of a temporal input carry their NaT at
+    # random places
+    st.running[ri] = val if (first | (val != val) | (best & (cur == cur))) else cur
 
 
 def _cummax_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
@@ -206,6 +215,10 @@ def _cummin_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value:
     # expression - reaching it as a call defeats the branchless
     # form (measured 2.5ms against 0.8ms per 500k values)
     best = complex_less(val, cur)
+    # the short circuit stays here: the condition without one is a third
+    # slower in this kernel (measured 2.0ms against 3.0ms per million
+    # values) - the branch that it saves is the one of the comparison of a
+    # value that does not win the group
     st.running[ri] = val if (first or val != val or best) else cur
 
 

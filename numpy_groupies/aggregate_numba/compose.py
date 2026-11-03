@@ -83,7 +83,12 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.mt import GROUP_MT_MIN_VALUES, MT_MIN_VALUES, chunk_count, should_use_mt
-from numpy_groupies.utils_np import AResult, AScalar, check_fill_value_for_dtype
+from numpy_groupies.utils_np import (
+    AResult,
+    AScalar,
+    check_fill_value_for_dtype,
+)
+from numpy_groupies.utils_temporal import NAT_TICK, TEMPORAL_KINDS
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
     FILL_NOT_BOOLEAN,
@@ -184,10 +189,11 @@ def rule_widen_int(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
 
 
 def rule_float(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
-    """mean/median/trapezoid: inexact input keeps its dtype, otherwise
-    everything widens to float64."""
+    """mean/median/trapezoid: inexact input and the durations keep their
+    dtype (the mean of timedelta64 is a timedelta64, like numpy's mean),
+    otherwise everything widens to float64."""
     dt = _as_np_dtype(a_type)
-    out = dt if dt.kind in "fc" else np.dtype(np.float64)
+    out = dt if dt.kind in "fcm" else np.dtype(np.float64)
     return out, out
 
 
@@ -242,7 +248,13 @@ def rule_int64(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
 def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar:
     """The njit-kernel twin of the DEFAULT_FILL_VALUE resolution: a nan
     default only fits inexact outputs (a complex output needs the nan in both
-    parts), integer and bool outputs fall back to 0."""
+    parts), a temporal output takes its zero or its NaT as the scalar of its
+    own unit (an int cannot be written into a temporal array), and integer
+    and bool outputs fall back to 0."""
+    if out_dtype.kind in TEMPORAL_KINDS:
+        if fill_default != fill_default:  # nan
+            return cast("AScalar", np.asarray(NAT_TICK).view(out_dtype)[()])
+        return cast("AScalar", np.asarray(0, dtype=np.int64).view(out_dtype)[()])
     if fill_default != fill_default:  # nan
         if out_dtype.kind == "c":
             return complex(fill_default, fill_default)
@@ -269,6 +281,72 @@ def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar
 _FLAT_INPUT = "the kernels take flat one-dimensional input"
 _SCALAR_INPUT = "the kernels take one value per label - a scalar is not supported"
 _NUMERIC_VALUES = "the kernels take numeric values"
+
+# the temporal dtypes a kernel does not take.  The comparisons of compiled
+# code order datetime64 and timedelta64 values (with NaT as the smallest
+# tick) and ``val != val`` detects NaT like a nan, so the selection and the
+# reduction kernels run on temporal values directly - but the arithmetic of
+# the squared moments has no temporal unit (numpy refuses it as well), the
+# sort of numba makes no move when a NaT is in the values (its comparison
+# leaves the NaT incomparable, and the algorithm hands the input back -
+# reported upstream as numba/numba#10981; the partition of numba answers
+# the NaT the way numpy does), and the truthiness and
+# the hashing of a temporal value are not compiled operations.  The mean and
+# the sum of a datetime64 have no unit to accumulate (numpy refuses them as
+# well), while the durations of a timedelta64 add up fine - NaT included,
+# which the addition propagates.
+_TEMPORAL_KERNEL_REFUSED = frozenset(
+    {
+        "sort",
+        "median",
+        "quantile",
+        "percentile",
+        "all",
+        "any",
+        "prod",
+        "cumprod",
+        "var",
+        "std",
+        "skew",
+        "kurt",
+        "trapezoid",
+        "sumofsquares",
+        "mean",
+    }
+)
+# the sum of a datetime64 has no unit to accumulate either - numpy refuses it
+# as well - while the durations of a timedelta64 add up fine, NaT included,
+# which the addition propagates
+_TEMPORAL_DATETIME_REFUSED = frozenset({"sum", "cumsum"})
+
+
+def _temporal_refusal(stub_name: str, a_dtype: np.dtype) -> str:
+    """The complaint of a kernel that does not take temporal values."""
+    base = stub_name.removeprefix("nan")
+    if base == "mean":
+        return (
+            f"the {stub_name} kernel takes no {a_dtype.name} values - the mean of the ticks is the "
+            f"business of tick_mean and nantick_mean, and aggregate() rounds the mean of the values "
+            f"half to even, where the division of durations of numba truncates"
+        )
+    if a_dtype.kind == "M" and base in _TEMPORAL_DATETIME_REFUSED:
+        return (
+            f"the {stub_name} kernel takes no {a_dtype.name} values - numpy refuses {base} "
+            f"of datetime64 values as well, and so does aggregate()"
+        )
+    return (
+        f"the {stub_name} kernel takes no {a_dtype.name} values - aggregate() aggregates "
+        f"temporal input on its int64 ticks"
+    )
+
+
+def _temporal_gate(stub_name: str, a_dtype: np.dtype) -> None:
+    """Refuse the temporal dtypes a kernel cannot take, by its name."""
+    base = stub_name.removeprefix("nan")
+    if base in _TEMPORAL_KERNEL_REFUSED or (a_dtype.kind == "M" and base in _TEMPORAL_DATETIME_REFUSED):
+        raise TypeError(_temporal_refusal(stub_name, a_dtype))
+
+
 # what only the kernel of an operation that cannot place a fill value has to
 # say - the collecting one, whose absent group holds an empty sequence
 _REFUSAL = "The {name} kernel has no fill_value - an absent group holds an empty sequence"
@@ -306,9 +384,28 @@ def _kernel_inputs(group_idx: Any, a: Any) -> tuple[Any, Any]:
     if not is_integer_dtype(group_idx.dtype):
         # the same complaint the python-level call makes about the labels
         raise TypeError(NON_INTEGER_GROUP_IDX)
-    if not is_numeric_dtype(a.dtype):
+    if not is_numeric_dtype(a.dtype) and a.dtype.kind not in TEMPORAL_KINDS:
         raise ValueError(f"{_NUMERIC_VALUES}, not {a.dtype}")
     return group_idx, a
+
+
+def _temporal_fill_scalar(fill_value: Any, out_dtype: np.dtype) -> AScalar:
+    """The fill value of a temporal output, as the scalar of its dtype.
+
+    A nan (and the default of the averaging functions) is the NaT of the
+    unit, an integer is the tick it names (0 is the epoch, or no duration),
+    and a temporal value passes through in the unit of the output.
+    """
+    if isinstance(fill_value, (float, np.floating)) and fill_value != fill_value:
+        return cast("AScalar", np.asarray(NAT_TICK).view(out_dtype)[()])
+    if isinstance(fill_value, (np.datetime64, np.timedelta64)):
+        if np.asarray(fill_value).dtype.kind == out_dtype.kind:
+            return cast("AScalar", np.asarray(fill_value).astype(out_dtype)[()])
+        raise ValueError(FILL_NOT_CONVERTIBLE.format(dtype=out_dtype.type.__name__))
+    if isinstance(fill_value, (bool, np.bool_, int, np.integer)):
+        # the tick of the value - NaT is the tick -2**63
+        return cast("AScalar", np.asarray(NAT_TICK + int(fill_value)).view(out_dtype)[()])
+    raise ValueError(FILL_NOT_CONVERTIBLE.format(dtype=out_dtype.type.__name__))
 
 
 def _numpy_dtype(dtype: Any) -> np.dtype | None:
@@ -339,7 +436,9 @@ def _fill_type_ok(fill_type: Any) -> bool:
         # the default of the signature: numba hands the python None of an
         # argument the caller left out to the typing function
         return True
-    if isinstance(fill_type, (nb.types.NoneType, nb.types.Number, nb.types.Boolean)):
+    if isinstance(
+        fill_type, (nb.types.NoneType, nb.types.Number, nb.types.Boolean, nb.types.NPDatetime, nb.types.NPTimedelta)
+    ):
         return True
     if isinstance(fill_type, nb.types.Omitted):
         # an argument the caller left out - it carries the default of the
@@ -347,7 +446,9 @@ def _fill_type_ok(fill_type: Any) -> bool:
         # operation
         return fill_type.value is None
     if isinstance(fill_type, nb.types.Optional):
-        return isinstance(fill_type.type, (nb.types.Number, nb.types.Boolean))
+        return isinstance(
+            fill_type.type, (nb.types.Number, nb.types.Boolean, nb.types.NPDatetime, nb.types.NPTimedelta)
+        )
     return False
 
 
@@ -384,6 +485,24 @@ def _fill_fits_overload(fill_value: Any, low: Any, high: Any, high_exclusive: An
 
 
 @njit_stable
+def _fill_differs(fill_value: Any, forced_fill: float) -> bool:
+    """Whether the fill value of the call is the caller's own rather than the
+    forced default of the operation.
+
+    A temporal fill is compared within its own unit - a nan differs, and the
+    zero of the unit does not - because the comparison of a temporal scalar
+    with the integer default is not an operation numba knows.  The
+    isinstance is dead code for the numeric dtypes.
+    """
+    if isinstance(fill_value, (np.datetime64, np.timedelta64)):
+        # a temporal fill differs from the forced default when it is a NaT -
+        # the zero of the unit is the default of the operations that fill
+        # with zero
+        return bool(fill_value != fill_value)
+    return bool(fill_value != forced_fill)
+
+
+@njit_stable
 def _require_inputs(group_idx: Any, a: Any) -> None:
     """The two value checks a call of a kernel cannot be trusted to skip.
 
@@ -411,12 +530,16 @@ def _require_fittable(
 ) -> None:
     """Whether the fill value fits the output it fills, as compiled code
     sees it: a boolean output takes the two booleans, an integer output an
-    exact number of its own range, and the inexact ones anything.
+    exact number of its own range, the inexact ones anything, and a temporal
+    output the temporal value it is handed - a NaT is the fill value a NaT
+    result asks for, and no bound of a number can hold it.
 
     The bounds and the complaint are resolved by the typing function of the
     kernel once per compiled signature (``_typing_prologue``) - jitted code
     cannot ask numpy, and the message is the one numpy would have said.
     """
+    if isinstance(fill_value, (np.datetime64, np.timedelta64)):
+        return
     if is_bool and fill_value != 0 and fill_value != 1:
         raise ValueError(FILL_NOT_BOOLEAN)
     if is_exact and not _fill_fits(fill_value, low, high, high_exclusive):
@@ -477,7 +600,7 @@ def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
 # a driver that carries something named after something else is what the
 # kernels of an earlier version of this module had to write by hand, and what
 # the explicit signatures below make impossible.
-Variant = Literal["none", "ddof", "q", "dx", "reverse"]
+Variant = Literal["none", "ddof", "q", "q_method", "dx", "reverse"]
 
 # the defaults the kernels carry for the argument an operation has of its own.
 # They are the defaults of the registry (``numpy_groupies.registry.FUNC_EXTRAS``)
@@ -540,6 +663,8 @@ def _python_prologue(
 
     def resolve(group_idx: Any, a: Any, size: int, fill_value: AScalar | None) -> _PythonCall:
         group_idx, a = _kernel_inputs(group_idx, a)
+        if a.dtype.kind in TEMPORAL_KINDS:
+            _temporal_gate(stub_name, a.dtype)
         if reject_fill and fill_value is not None:
             # the driver of this operation cannot place a fill value - saying
             # so beats ignoring the argument silently
@@ -551,6 +676,8 @@ def _python_prologue(
         out_dtype, aux_dtype = rule(_array_type(a.dtype))
         if fill_value is None:
             fill_value = _resolve_default_fill(fill_default, out_dtype)
+        elif out_dtype.kind in TEMPORAL_KINDS:
+            fill_value = _temporal_fill_scalar(fill_value, out_dtype)
         else:
             fill_value = check_fill_value_for_dtype(fill_value, out_dtype)
         return group_idx, a, out_dtype, aux_dtype, fill_value
@@ -589,8 +716,15 @@ def _typing_prologue(
         # the caller, a bool one is not an index at all
         if not is_integer_dtype(_numpy_dtype(getattr(group_idx, "dtype", None))):
             raise nb.TypingError(NON_INTEGER_GROUP_IDX)
-        if not is_numeric_dtype(_numpy_dtype(getattr(a, "dtype", None))):
+        a_dtype = _numpy_dtype(getattr(a, "dtype", None))
+        temporal = a_dtype is not None and a_dtype.kind in TEMPORAL_KINDS
+        if not temporal and not is_numeric_dtype(a_dtype):
             raise nb.TypingError(_NUMERIC_VALUES)
+        if temporal and a_dtype is not None:
+            try:
+                _temporal_gate(stub_name, a_dtype)
+            except TypeError as err:
+                raise nb.TypingError(str(err)) from None
         out_dtype, aux_dtype = rule(a)
         if reject_fill:
             if not _no_fill_value(fill_value):
@@ -600,7 +734,9 @@ def _typing_prologue(
         default_fill = _resolve_default_fill(fill_default, out_dtype)
         # the rules of the fill value, as the compiled code sees them: a
         # boolean output takes the two booleans, an integer output takes an
-        # exact number of its own range, and the inexact ones take anything
+        # exact number of its own range, the inexact ones take anything, and
+        # a temporal output takes the temporal fill value it is handed - a
+        # NaT fits by being NaT, which no number is
         fill_is_bool = out_dtype.kind == "b"
         fill_is_exact = out_dtype.kind in "iu"
         if fill_is_exact:
@@ -802,10 +938,56 @@ def _kernel_reverse(
     return stub, typing
 
 
+def _kernel_q_method(
+    name: str, driver: Callable[..., Any], resolve: _PythonPrologue, prepare: _TypingPrologue
+) -> _Kernel:
+    """The kernel of an operation that takes a quantile and the method of the
+    interpolation.
+
+    The method is the name numpy knows the interpolation by - ``linear``,
+    ``lower``, ``higher``, ``nearest`` or ``midpoint`` - and it reaches the
+    driver as the name itself: the driver branches on it once per group, and
+    a branch per group costs nothing next to the work of the group itself.
+    """
+
+    def stub(
+        group_idx: Any, a: Any, q: float = 0.5, method: str = "linear", size: int = -1, fill_value: float | None = None
+    ) -> Any:
+        return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (q, method))
+
+    def typing(
+        group_idx: Any, a: Any, q: float = 0.5, method: str = "linear", size: int = -1, fill_value: float | None = None
+    ) -> Any:
+        out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
+            group_idx, a, fill_value
+        )
+
+        def _kernel_impl(
+            group_idx: Any,
+            a: Any,
+            q: float = 0.5,
+            method: str = "linear",
+            size: int = -1,
+            fill_value: float | None = None,
+        ) -> Any:
+            _require_inputs(group_idx, a)
+            if fill_value is None:
+                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, q, method)
+            else:
+                _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
+                return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, q, method)
+
+        _kernel_impl.__qualname__ = f"{name}_kernel_impl"
+        return _kernel_impl
+
+    return stub, typing
+
+
 _KERNEL_BUILDERS: dict[Variant, Callable[[str, Callable[..., Any], _PythonPrologue, _TypingPrologue], _Kernel]] = {
     "none": _kernel_none,
     "ddof": _kernel_ddof,
     "q": _kernel_q,
+    "q_method": _kernel_q_method,
     "dx": _kernel_dx,
     "reverse": _kernel_reverse,
 }
@@ -961,6 +1143,9 @@ class KernelHandle(NamedTuple):
     ``fallback``    python-level callable for input dtypes the compiled
                 driver cannot handle (complex medians go to the numpy
                 implementation - numba cannot partition complex values)
+    ``refusal``     the message of the TypeError for the input dtypes the
+                compiled driver cannot take at all - raised ahead of the
+                kernel, where nothing parallel is running yet
     ``placeable``   which dtypes the compiled driver can take - None means
                 the default: only complex input goes to the fallback
     ``post``    turns the result of the driver into the result of the caller
@@ -996,6 +1181,7 @@ class KernelHandle(NamedTuple):
     aux_widen: bool
     nton: bool
     fallback: Callable[..., AResult] | None = None
+    refusal: str | None = None
     placeable: Callable[[np.dtype | None], bool] | None = None
     post: Callable[..., AResult] | None = None
     assembles: bool = False
@@ -1045,6 +1231,7 @@ def build_kernel(
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
+    refusal: str | None = None,
     placeable: Callable[[np.dtype | None], bool] | None = None,
     post: Callable[..., AResult] | None = None,
     assembles: bool = False,
@@ -1129,7 +1316,7 @@ def build_kernel(
             # a custom fill value also belongs to the groups that never
             # received a value - their output was seeded with the forced
             # default of the operation
-            if fill_value != forced_fill:
+            if forced_fill is not None and _fill_differs(fill_value, forced_fill):
                 un = untouched_c(st)
                 for g in range(size):
                     if un[g]:
@@ -1372,6 +1559,7 @@ def build_kernel(
             aux_widen=aux_widen,
             nton=nton,
             fallback=fallback,
+            refusal=refusal,
             placeable=placeable,
             post=post,
             assembles=assembles,
@@ -1396,6 +1584,7 @@ def build_custom_kernel(
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
+    refusal: str | None = None,
     placeable: Callable[[np.dtype | None], bool] | None = None,
     post: Callable[..., AResult] | None = None,
     assembles: bool = False,
@@ -1459,6 +1648,7 @@ def build_custom_kernel(
             aux_widen=aux_widen,
             nton=nton,
             fallback=fallback,
+            refusal=refusal,
             placeable=placeable,
             post=post,
             assembles=assembles,

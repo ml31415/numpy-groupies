@@ -18,9 +18,12 @@ from numpy_groupies.registry import (
     Resolved,
     bind_functions,
     custom_callable,
+    forced_float_types,
+    forced_real_float_types,
     funcs_no_separate_nan,
     function_names,
     missing_impl_error,
+    resolve_name,
 )
 from numpy_groupies.registry import (
     aliasing_py as aliasing,
@@ -30,7 +33,6 @@ from numpy_groupies.validation import (
     LENGTH_MISMATCH,
     check_complex_dtype,
     check_fixed_fill_value,
-    check_integer_mean_overflow,
     check_integer_variance_span_overflow,
     is_scalar_input,
 )
@@ -360,19 +362,20 @@ def _a_dtype(a: Sequence[Any]) -> type:
 
 
 def _check_integer_precision(a: Sequence[Any], func: Callable[..., AScalar]) -> None:
-    """The backend-uniform overflow gates for integer mean/var/std.
+    """The backend-uniform overflow gates for integer var/std.
 
-    Python ints could compute these exactly, but every backend has to refuse
-    the same inputs, so results never depend on the chosen implementation.
+    The mean needs no gate here: python ints sum exactly, and their division
+    rounds once, to the closest float - the numpy and numba backends compute
+    the same answer on their limb sums.  The variance centers every value on
+    the first of its group in an int-sized deviation, and that centering is
+    the one the backends have to refuse together.
     """
     if _a_dtype(a) is not int or len(a) == 0:
         return
     values = [int(val) for val in a]
     low = min(values)
     high = max(values)
-    if func is _mean:
-        check_integer_mean_overflow(len(values), max(high, -low))
-    else:
+    if func is not _mean:
         check_integer_variance_span_overflow(low, high)
 
 
@@ -455,8 +458,17 @@ def aggregate(
         raise ValueError(LENGTH_MISMATCH)
 
     # the datatype rule of the numpy implementations: nan is only a sensible
-    # default where the output datatype can hold it
-    fill_value = resolve_fill_value(funcname, fill_value, _a_dtype(vals))
+    # default where the output datatype can hold it - the averaging functions
+    # answer floats even for integer values, so their output dtype is the one
+    # the fill value has to fit
+    result_dtype = _a_dtype(vals)
+    if (
+        result_dtype is int
+        and isinstance(funcname, str)
+        and (resolve_name(funcname) in forced_float_types or resolve_name(funcname) in forced_real_float_types)
+    ):
+        result_dtype = float
+    fill_value = resolve_fill_value(funcname, fill_value, result_dtype)
     # the numpy implementations look the fill value against the datatype of the
     # result, not of the values: neither a count nor a boolean answer holds a nan
     check_fixed_fill_value(funcname, fill_value)

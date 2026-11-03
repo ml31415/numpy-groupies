@@ -43,6 +43,7 @@ LENGTH_MISMATCH_OR_SCALAR = f"{LENGTH_MISMATCH}, or a can be scalar"
 # the fill value of a call
 FILL_NOT_BOOLEAN = "Value not boolean"
 FILL_NOT_CONVERTIBLE = "fill_value must be convertible into {dtype}"
+MOMENTS_NOT_FOR_COMPLEX = "the skewness and the kurtosis are not defined for complex values"
 FILL_NOT_INTEGER = "fill_value must be convertible into an integer"
 FILL_NONE_NOT_HELD = (
     "fill_value=None fills an object result, which is what func='array' returns and no other function does "
@@ -262,12 +263,13 @@ def variance_span_overflow_message(low_text: str, high: int) -> str:
 
 
 def check_integer_mean_overflow(count: int, bound: int) -> None:
-    """Refuse integer means that float64 cannot compute exactly.
+    """Refuse integer moments float64 cannot compute exactly.
 
-    The mean of ``count`` integers of magnitude up to ``bound`` is exact in
-    float64 only while their sums stay inside the window float64 represents
-    exactly.  Every implementation applies this rule, so the backends never
-    disagree silently on inexact integer means.
+    The sums behind the third and the fourth central moment of ``count``
+    integers of magnitude up to ``bound`` are exact in float64 only while
+    they stay inside the window float64 represents exactly - the moments
+    have no exact integer fallback, so the inputs are refused.  The mean is
+    not among them any more: it is computed exactly instead.
     """
     if count * bound > EXACT_FLOAT64_INTEGER_LIMIT:
         raise OverflowError(mean_overflow_message(count, bound))

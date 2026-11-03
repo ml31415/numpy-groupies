@@ -11,20 +11,16 @@ same way the numpy implementation collects the blocks of its own sort, so that
 the two hand out the very same object.
 """
 
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import build_custom_kernel, output_size, rule_object
+from numpy_groupies.aggregate_numba.fallback import FALLBACK
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
-from numpy_groupies.aggregate_numpy.base import numpy_fallback
-from numpy_groupies.aggregate_numpy.collect import blocks_to_object_array
-from numpy_groupies.registry import (
-    FuncName,
-)
-from numpy_groupies.utils_np import AFillValue, AValue, RavelOrder
+from numpy_groupies.utils_np import blocks_to_object_array
 
 # the dtypes the compiled driver can place - the numeric ones the drivers of
 # the other operations take as well.  The list is no duplication of what numba
@@ -101,34 +97,13 @@ def _array_driver_factory(nan_variant: bool) -> Any:
     return njit_stable(driver, name=f"{'nan' if nan_variant else ''}array_driver")
 
 
-def _numpy_fallback(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    func: FuncName,
-    size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
-    fill_value: AFillValue,
-    order: RavelOrder,
-    dtype: npt.DTypeLike | None,
-    axis: int | None,
-) -> npt.NDArray[np.object_]:
-    """The numpy implementation, for the dtypes the compiled driver cannot place.
-
-    It copies the values around without knowing their type, which the
-    compiled driver cannot do - numba has no float16 and no object arrays.
-    """
-    return cast(
-        "npt.NDArray[np.object_]",
-        numpy_fallback(group_idx, a, func, size, fill_value, order, dtype, axis),
-    )
-
-
 array = build_custom_kernel(
     "array",
     driver_factory=_array_driver_factory,
     rule=rule_object,
     fill_default=0,
     nans=False,
-    fallback=_numpy_fallback,
+    fallback=FALLBACK.as_operation(),
     # the dtypes the driver can take, and the assembly of its result into the
     # object array the caller expects
     placeable=_placeable,

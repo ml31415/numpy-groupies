@@ -21,6 +21,81 @@ python -m numpy_groupies.benchmarks --ufunc --numbagg --pandas --polars --runs=3
 
 The participants get the data as it is - they must not write into it, since that would change the results of the runs that follow. The benchmark checks the data after every function, undoes a change if there was one and reports the row as not measured.
 
+## The temporal table
+
+`--temporal` measures the functions that take `datetime64` and `timedelta64` values instead of the numeric table, one block of rows per dtype:
+
+- 500,000 indices as above; the values are `datetime64[ns]` and `timedelta64[ns]` ticks.
+- The datetime values gather one day after the epoch, spread over a window as wide as the data is long: close enough that the mean of the ticks stays on the exact fast path of its kernel even with the falsy values in the group, and wide enough that `nunique` and `sort` see distinct values.
+- The durations stay below a millisecond, so that the sums and the accumulations of every group stay inside `int64` - the table measures the work, not a wraparound.
+- As in the numeric table, everything above a fifth of the window is set to the tick `0` (the falsy values of the boolean functions), and for the `nan…` functions about 20% of the remaining values are `NaT`.
+- The functions a dtype refuses are left out of its block: the sum and the accumulations belong to the durations alone, the median does too - numpy adds two middles and has no addition of datetime64 values - while the quantile and the percentile numpy computes of both, so they are in the block of the datetime64 values as well. The moments belong to neither. `--funcs` narrows both blocks by name, and a name neither dtype knows is an error.
+
+The result of a run on the machine of the numeric table (same conditions, `--runs=3`, milliseconds, lower is better):
+
+| function                |        numpy |        numba |
+| ----------------------- | -----------: | -----------: |
+| min datetime64          |        1.675 |        0.470 |
+| max datetime64          |        1.329 |        0.504 |
+| nanmin datetime64       |        5.094 |        0.564 |
+| nanmax datetime64       |        4.758 |        0.582 |
+| first datetime64        |        1.810 |        0.412 |
+| last datetime64         |        0.891 |        0.345 |
+| nanfirst datetime64     |        5.163 |        0.383 |
+| nanlast datetime64      |        4.493 |        0.374 |
+| argmin datetime64       |        5.100 |        0.499 |
+| argmax datetime64       |        2.991 |        0.547 |
+| nanargmin datetime64    |        8.215 |        0.620 |
+| nanargmax datetime64    |        6.587 |        0.666 |
+| len datetime64          |        0.838 |        0.300 |
+| nanlen datetime64       |        4.309 |        0.321 |
+| nunique datetime64      |       15.422 |        3.544 |
+| nannunique datetime64   |       16.790 |        3.002 |
+| all datetime64          |        1.939 |        0.904 |
+| any datetime64          |        2.961 |        0.848 |
+| allnan datetime64       |        2.234 |        0.397 |
+| anynan datetime64       |        1.032 |        0.390 |
+| mean datetime64         |        5.595 |        0.768 |
+| nanmean datetime64      |        7.894 |        0.831 |
+| quantile datetime64     |       41.871 |        4.130 |
+| nanquantile datetime64  |       37.898 |        6.212 |
+| sort datetime64         |       53.429 |        6.347 |
+| array datetime64        |        7.791 |        7.952 |
+| min timedelta64         |        1.697 |        0.413 |
+| max timedelta64         |        1.343 |        0.506 |
+| nanmin timedelta64      |        5.011 |        0.523 |
+| nanmax timedelta64      |        4.501 |        0.516 |
+| first timedelta64       |        1.804 |        0.399 |
+| last timedelta64        |        0.866 |        0.360 |
+| nanfirst timedelta64    |        5.095 |        0.367 |
+| nanlast timedelta64     |        4.353 |        0.424 |
+| argmin timedelta64      |        4.885 |        0.530 |
+| argmax timedelta64      |        2.876 |        0.580 |
+| nanargmin timedelta64   |        8.329 |        0.669 |
+| nanargmax timedelta64   |        6.298 |        0.686 |
+| len timedelta64         |        0.794 |        0.306 |
+| nanlen timedelta64      |        4.248 |        0.359 |
+| nunique timedelta64     |       15.111 |        3.155 |
+| nannunique timedelta64  |       16.480 |        2.772 |
+| all timedelta64         |        1.900 |        0.805 |
+| any timedelta64         |        2.841 |        0.801 |
+| allnan timedelta64      |        2.261 |        0.387 |
+| anynan timedelta64      |        1.018 |        0.362 |
+| mean timedelta64        |        5.053 |        0.736 |
+| nanmean timedelta64     |        7.538 |        0.986 |
+| quantile timedelta64    |       42.331 |        3.136 |
+| nanquantile timedelta64 |       37.722 |        6.264 |
+| sort timedelta64        |       53.893 |        6.532 |
+| array timedelta64       |        8.151 |        8.059 |
+| sum timedelta64         |        1.650 |        0.431 |
+| nansum timedelta64      |        4.759 |        0.423 |
+| cumsum timedelta64      |       14.596 |        0.887 |
+| nancumsum timedelta64   |       60.286 |        0.888 |
+| median timedelta64      |       41.333 |        2.951 |
+| nanmedian timedelta64   |       36.587 |        3.736 |
+
+The kernels of the temporal rows are the ones of the numeric table working on the values or their ticks: the selection of the extrema, the positions, the counts and the truth of the values orders them and finds their `NaT` as it finds a nan, the sums and the accumulations of the durations add in the compiled code, the mean and the median of the ticks answer in exact int64 arithmetic, and the quantile of the ticks interpolates the way numpy interpolates it - the difference of the two ticks it falls between is a duration, its product with the fraction is truncated towards zero, and the answer is a tick again. The numba backend compiles all of it: the quantile of the ticks runs in a kernel of its own, with the same counting sort and the same selection the median uses, and all five methods of numpy are in it. The numpy backend is the reference implementation and computes the quantile of the ticks in python - that is why its quantile takes ten times the time of the median. The nan variants sit at the level of their float counterparts: the check of the NaT costs what the check of the nan costs.
+
 ## The calibration of the parallel path
 
 Which calls of the numba kernels take the parallel path and which do not is

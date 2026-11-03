@@ -5,7 +5,10 @@ function of ``func_list`` once per implementation and prints the milliseconds
 per call as a Markdown table.  NumPy and Numba are always measured, ``--help``
 explains the columns to ask for, ``--all`` takes them all.  A single run, the
 default, prints its rows as they are measured; a repeated one reports a counter
-and then the fastest measurement of all runs.
+and then the fastest measurement of all runs.  ``--temporal`` measures the
+functions that take datetime64 and timedelta64 values instead, on data of their
+own - the plain functions on clean values, the nan ones with a fifth of them
+NaT - one block per dtype in the same table.
 
 ``python -m numpy_groupies.benchmarks.mt`` is a tool of its own: it
 measures the parallel variant of the numba kernels against the sequential
@@ -27,6 +30,7 @@ from numpy_groupies.registry import (
     funcs_collecting,
 )
 from numpy_groupies.tests.reference import aggregate_ref
+from numpy_groupies.utils_temporal import TEMPORAL_KINDS
 
 # ---------------------------------------------------------------------------
 # the cleanup of the tools: an interrupt ends the run without the shutdown
@@ -136,6 +140,60 @@ func_list = (
     "array",
 )
 
+# the functions that take datetime64 and timedelta64 values, and the ones that
+# take the durations beyond them - the sums and the accumulations and the
+# median are refused for the points in time, like numpy refuses them, and the
+# moments have no temporal unit anywhere.  The quantile and the percentile
+# numpy computes of both, so they are measured with the datetime64 block.
+# The names are the ones the table shows, and ``nan`` in the name is what
+# sends a function to the NaT data.
+temporal_datetime_funcs = (
+    np.min,
+    np.max,
+    np.nanmin,
+    np.nanmax,
+    "first",
+    "last",
+    "nanfirst",
+    "nanlast",
+    "argmin",
+    "argmax",
+    "nanargmin",
+    "nanargmax",
+    len,
+    "nanlen",
+    "nunique",
+    "nannunique",
+    np.all,
+    np.any,
+    "allnan",
+    "anynan",
+    np.mean,
+    np.nanmean,
+    "quantile",
+    "nanquantile",
+    "sort",
+    "array",
+)
+temporal_timedelta_funcs = temporal_datetime_funcs + (
+    np.sum,
+    np.nansum,
+    "cumsum",
+    "nancumsum",
+    "cummax",
+    "cummin",
+    np.median,
+    np.nanmedian,
+)
+# the temporal table, one block of rows per dtype
+TEMPORAL_TABLE = (("datetime64", "M", temporal_datetime_funcs), ("timedelta64", "m", temporal_timedelta_funcs))
+# the temporal data is measured in nanoseconds: the values gather around one
+# day after the epoch, in a window as wide as the data is long - a span that
+# the mean of the ticks sums exactly for every group of the default data, with
+# the falsy epoch values of the boolean functions included
+TEMPORAL_UNIT = "ns"
+TEMPORAL_BASE = "1970-01-02"
+
 
 def benchmark_data(size=5e5, seed=100, groups=1000):
     rnd = np.random.RandomState(seed=seed)
@@ -146,6 +204,41 @@ def benchmark_data(size=5e5, seed=100, groups=1000):
     nana[(nana < 0.2) & (nana != 0)] = np.nan
     nan_share = np.mean(np.isnan(nana))
     assert 0.15 < nan_share < 0.25, f"{nan_share * 100:3f}% nans"
+    return a, nana, group_idx
+
+
+def temporal_benchmark_data(size=5e5, seed=100, groups=1000, *, kind):
+    """The temporal twin of the numeric data: a tick per value, a fifth of
+    them the zero of the dtype and a fifth of the rest NaT in ``nana``.
+
+    The values gather one day after the epoch - close enough that the mean
+    of the ticks stays on the exact fast path of its kernel even with the
+    falsy epoch values in the group, which the ticks of the year 2020 would
+    push onto the slower exact fallback.  The durations stay below a
+    millisecond, so that the sums and the accumulations of every group stay
+    inside int64 - what the benchmark measures is the work, not a wraparound.
+    """
+    rnd = np.random.RandomState(seed=seed)
+    group_idx = rnd.randint(0, int(groups), int(size))
+    span = int(size)
+    base = np.datetime64(TEMPORAL_BASE, TEMPORAL_UNIT).view(np.int64) if kind == "M" else 0
+    if kind == "m":
+        span = min(span, 1_000_000)
+    ticks = base + rnd.randint(0, span, int(size))
+    a = ticks.astype(np.dtype(f"{kind}8[{TEMPORAL_UNIT}]"))
+    # the falsy values: the epoch for a point in time, no duration for a
+    # duration - the tick 0 of either
+    zero = a.dtype.type(0, TEMPORAL_UNIT)
+    nat = a.dtype.type("NaT", TEMPORAL_UNIT)
+    a[ticks - base > int(span * 0.8)] = zero
+    nana = a.copy()
+    # of the remaining values, those below 0.2 are NaT (about 20%), like the
+    # nans of the numeric data - the zeros stay, the falsy values are no
+    # missing ones
+    relative = nana.view(np.int64) - base
+    nana[(relative < int(span * 0.2)) & (relative != -base)] = nat
+    nat_share = np.mean(np.isnat(nana))
+    assert 0.15 < nat_share < 0.25, f"{nat_share * 100:3f}% NaT"
     return a, nana, group_idx
 
 
@@ -219,6 +312,9 @@ def _assert_same_result(got, want, func_name):
 
     The collecting function hands out a sequence per group, which numpy's own
     comparison cannot take in one go - the groups are compared one by one.
+    The temporal answers are compared for equality rather than closeness:
+    their ticks are int64 counts that float64 does not resolve, and NaT is
+    equal to itself there.
     """
     if func_name in funcs_collecting:
         groups = list(got) if isinstance(got, list) else np.ravel(got)
@@ -229,6 +325,9 @@ def _assert_same_result(got, want, func_name):
                 assert one is None and other is None, f"{one!r} != {other!r}"
             else:
                 np.testing.assert_array_equal(one, other)
+        return
+    if getattr(want, "dtype", None) is not None and want.dtype.kind in TEMPORAL_KINDS:
+        np.testing.assert_array_equal(got, want)
         return
     np.testing.assert_array_almost_equal(got, want)
 
@@ -285,7 +384,11 @@ def single_run(
                 results.append(res)
                 try:
                     _assert_same_result(res, results[0], func_name)
-                except AssertionError:
+                except (AssertionError, TypeError, ValueError):
+                    # a disagreement of the answers, or two of them that the
+                    # comparison cannot put side by side - the group-by
+                    # wrappers answer temporal questions in dtypes of their
+                    # own, and None where their library refuses
                     cells.append("FAIL")
                 else:
                     # An untimed call that wakes the threads of the pool up:
@@ -454,6 +557,29 @@ def select_funcs(names: str | None) -> tuple[Any, ...]:
     return tuple(known[name] for name in wanted)
 
 
+def select_temporal_funcs(names: str | None) -> dict[str, tuple[Any, ...]]:
+    """The temporal functions to measure, per dtype of their data.
+
+    The names are the ones the table shows, so ``--funcs min,sum`` measures
+    the minimum of both dtypes and the sum of the durations - a name a dtype
+    refuses (the sum of a datetime64 among them) is left out of its block
+    silently, and a name neither dtype knows is an error.
+    """
+    known: dict[str, Any] = {}
+    for _, _, kind_funcs in TEMPORAL_TABLE:
+        known.update({getattr(func, "__name__", func): func for func in kind_funcs})
+    if not names:
+        return {label: tuple(kind_funcs) for label, _, kind_funcs in TEMPORAL_TABLE}
+    wanted = [name.strip() for name in names.split(",") if name.strip()]
+    unknown = [name for name in wanted if name not in known]
+    if unknown:
+        raise SystemExit(f"unknown function(s): {', '.join(unknown)} - known are: {', '.join(known)}")
+    return {
+        label: tuple(known[name] for name in wanted if name in {getattr(f, "__name__", f) for f in kind_funcs})
+        for label, _, kind_funcs in TEMPORAL_TABLE
+    }
+
+
 def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1, funcs=None):
     _warm_up_allocator()
     a, nana, group_idx = benchmark_data(size=size, seed=seed)
@@ -543,6 +669,61 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
         print(_versions_line(implementations))
 
 
+def temporal_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1, funcs=None):
+    """Measure the temporal functions of ``TEMPORAL_TABLE``, one block of rows
+    per dtype: the datetime64 questions on the ticks of the year 2020, the
+    timedelta64 ones on the durations below a millisecond - ``funcs`` narrows
+    both blocks by name, the way ``--funcs`` names them.
+
+    The plain functions run on clean values, the nan ones on values with a
+    fifth of them NaT, like the numeric table runs its plain functions on
+    nan-free data.  Every row is labeled with the dtype it was measured on.
+    """
+    _warm_up_allocator()
+    by_kind = select_temporal_funcs(funcs) if funcs else {label: tuple(f) for label, _, f in TEMPORAL_TABLE}
+    selections = [(label, kind, by_kind[label]) for label, kind, _ in TEMPORAL_TABLE]
+    labels = [
+        f"{getattr(func, '__name__', func)} {dtype}" for dtype, _, kind_funcs in selections for func in kind_funcs
+    ]
+    out, label_width = _open_report("function", implementations, labels, runs)
+
+    def report(label, cells):
+        if out is not None:
+            print(_table_row(label, cells, label_width), file=out, flush=True)
+
+    rows = []
+    for dtype, kind, kind_funcs in selections:
+        a, nana, group_idx = temporal_benchmark_data(size=size, seed=seed, kind=kind)
+        snapshot = _byte_snapshot(group_idx, a, nana)
+        tables = []
+        for run in range(runs):
+            if runs > 1:
+                print(f"{dtype}: run {run + 1}/{runs}", file=sys.stderr, flush=True)
+            tables.append(
+                single_run(
+                    implementations,
+                    group_idx,
+                    a,
+                    nana,
+                    repeat=repeat,
+                    raise_errors=raise_errors,
+                    funcs=kind_funcs,
+                    on_row=lambda func_name, cells, _dtype=dtype: report(f"{func_name} {_dtype}", cells),
+                    snapshot=snapshot,
+                )
+            )
+        merged = _merge_runs(tables)
+        rows.extend(
+            (f"{getattr(func, '__name__', func)} {dtype}", merged[getattr(func, "__name__", func)])
+            for func in kind_funcs
+        )
+
+    if runs > 1:
+        print(*_table_lines("function", rows, implementations, label_width), _versions_line(implementations), sep="\n")
+    else:
+        print(_versions_line(implementations))
+
+
 # The columns in the order they appear in the table.
 COLUMN_ORDER = ("numpy", "numba", "purepy", "grouploop", "numbagg", "polars", "pandas", "ufunc")
 # of those, the ones that have to be asked for
@@ -623,6 +804,13 @@ nothing, the whole array being the core of the kernel.""",
         help=f"measure 'sort' only, over the group counts {'-'.join(str(g) for g in SORT_GROUPS)} instead of the full table",
     )
     parser.add_argument(
+        "--temporal",
+        action="store_true",
+        help="measure the functions that take datetime64 and timedelta64 values only, on nanosecond data of "
+        "their own (the plain functions on clean values, the nan ones with a fifth of them NaT), one block "
+        "of rows per dtype instead of the numeric table",
+    )
+    parser.add_argument(
         "--funcs",
         help="comma-separated names of the functions to measure, e.g. 'min,max' (default: all of them)",
     )
@@ -662,6 +850,8 @@ nothing, the whole array being the core of the kernel.""",
     if args.all:
         for column in OPTIONAL_COLUMNS:
             setattr(args, COLUMN_ARGUMENTS.get(column, column), True)
+    if args.sort and args.temporal:
+        parser.error("choose one of --sort and --temporal - each replaces the numeric table on its own")
     if args.sort:
         # the sort is measured on its own, over the group counts
         sort_benchmark(
@@ -670,6 +860,16 @@ nothing, the whole array being the core of the kernel.""",
             size=args.size,
             raise_errors=args.raise_errors,
             runs=max(1, args.runs),
+        )
+        return
+    if args.temporal:
+        temporal_benchmark(
+            _build_implementations(args),
+            repeat=args.repeat,
+            size=args.size,
+            raise_errors=args.raise_errors,
+            runs=max(1, args.runs),
+            funcs=args.funcs,
         )
         return
     benchmark(

@@ -407,6 +407,12 @@ FUNC_EXTRAS: dict[str, tuple[tuple[str, str, Any], ...]] = {
     "percentile": (("q", "float", 50.0),),
     "trapezoid": (("dx", "float", 1.0),),
     "sort": (("reverse", "bool", False),),
+    # the bare kernel of the quantile of the ticks - the quantile of a
+    # temporal input, on the int64 ticks of its values.  It is no function
+    # of the package - it is the kernel behind its temporal answer - but it
+    # takes the quantile and the method the same way the quantile of the
+    # package does.
+    "tick_quantile": (("q", "float", 0.5), ("method", "str", "linear")),
 }
 
 

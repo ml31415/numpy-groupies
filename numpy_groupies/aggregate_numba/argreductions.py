@@ -106,18 +106,41 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
             # The direction of the comparison is the one of the operation:
             # the greater value wins for the argmax, the smaller one for
             # the argmin.
+            # temporal input: a NaT in the running value poisons its group -
+            # numpy answers no position behind the first NaT - which the
+            # guard keeps from letting a later value win.  The NaT of a
+            # temporal value is the one that is not equal to itself.
+            live = cur == cur
             if greater:
-                best = complex_less(cur, val)
+                best = live and complex_less(cur, val)
             else:
-                best = complex_less(val, cur)
+                best = live and complex_less(val, cur)
             if val != val:
                 if not nans:
-                    # a nan poisons its group: it wins outright and the
-                    # result falls back to the fill value
                     pending[ri] = False
                     running[ri] = val
-                    out[ri] = fill_value
-                # the nan variant leaves the nans out
+                    if isinstance(val, (np.datetime64, np.timedelta64)):
+                        # temporal input: NaT is a value, not a missing one -
+                        # numpy answers the position of its first occurrence
+                        # for both argreductions, and the comparison of no
+                        # later value can beat the smallest tick
+                        out[ri] = start + i
+                    else:
+                        # a nan poisons its group: it wins outright and the
+                        # result falls back to the fill value
+                        out[ri] = fill_value
+                # the nan variant leaves the nans out - the NaT of a temporal
+                # input with them, deliberately unlike numpy: np.nanargmin and
+                # np.nanargmax do not skip a NaT of datetime64, they answer
+                # its position like the plain forms, while np.nanmin and
+                # np.nanmax do skip it.  numpy closed the report of that
+                # (numpy/numpy#5222) as fixed - the plain forms and the nan
+                # min/max were repaired (numpy/numpy#14717) - while its own
+                # closing output still shows the nanarg forms answering the
+                # NaT position where the float nanarg skips, unaddressed;
+                # now reported upstream as numpy/numpy#33207.  The nan forms
+                # of the package skip the missing value of every dtype, as
+                # their contract says.
                 continue
             if pending[ri] or best:
                 # the first value of a group wins a tie

@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import (
+    _fill_differs,
     build_custom_kernel,
     build_kernel,
     complex_less,
@@ -62,7 +63,7 @@ def _sum_init(
 ) -> ReductionState:
     # the accumulation starts at 0 (the forced default) - a custom fill value
     # is applied to the untouched groups after the loop
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
 
@@ -85,6 +86,12 @@ def _sum_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value:
         st.untouched[ri] = st.untouched[ri] & (val != val)
     if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.out[ri] += val if valid else 0.0
+    elif isinstance(val, (np.datetime64, np.timedelta64)):
+        # temporal input: NaT contributes nothing (the nan variant skips it
+        # like a nan), and its additive zero is the running value minus
+        # itself - NaT minus NaT is NaT and not zero.  The plain variant
+        # adds the NaT, which the addition propagates like numpy does
+        st.out[ri] += val if valid else st.out[ri] - st.out[ri]
     else:
         # integer and bool input have no nan - the plain path keeps wide
         # uint64 exact (a python literal 0 would unify uint64 with int64
@@ -139,7 +146,7 @@ def _prod_init(
     fill_value: float,
     forced_fill: float,
 ) -> ReductionState:
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.ones(size, out_dtype), untouched, track)
 
@@ -196,7 +203,7 @@ def _len_init(
     fill_value: float,
     forced_fill: float,
 ) -> ReductionState:
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
 
@@ -249,7 +256,7 @@ def _all_init(
     fill_value: float,
     forced_fill: float,
 ) -> ReductionState:
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.ones(size, np.bool_), untouched, track)
 
@@ -301,7 +308,7 @@ def _any_init(
     fill_value: float,
     forced_fill: float,
 ) -> ReductionState:
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, np.bool_), untouched, track)
 
@@ -608,7 +615,7 @@ def _allnan_init(
     fill_value: float,
     forced_fill: float,
 ) -> ReductionState:
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.ones(size, np.bool_), untouched, track)
 
@@ -654,7 +661,7 @@ def _anynan_init(
     fill_value: float,
     forced_fill: float,
 ) -> ReductionState:
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, np.bool_), untouched, track)
 
@@ -726,7 +733,15 @@ def _max_update(st: SelectionState, ri: int, i: int, val: float, fill_value: flo
     # expression - reaching it as a call defeats the branchless
     # form (measured 2.5ms against 0.8ms per 500k values)
     best = complex_less(cur, val)
-    st.out[ri] = val if (first or val != val or best) else cur
+    # temporal input: NaT is a value that takes its group over, and once it
+    # is the running value no later value wins - the comparison orders NaT
+    # as the smallest tick, so the guard is what keeps it.  The NaT of a
+    # temporal value is the one that is not equal to itself.
+    # the condition is put together without a short circuit: the or of
+    # python is a branch, and a branch that a fifth of the values take
+    # mispredicts - the values of a temporal input carry their NaT at
+    # random places
+    st.out[ri] = val if (first | (val != val) | (best & (cur == cur))) else cur
 
 
 def _max_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
@@ -763,7 +778,9 @@ def _max_combine(acc: SelectionState, other: SelectionState, fill_value: float, 
                 pending[g] = False
             else:
                 val = other_out[g]
-                if val != val or complex_less(out[g], val):
+                # the temporal guard is dead code for the numeric dtypes - a
+                # NaT of the running value poisons its group like a nan does
+                if val != val or (out[g] == out[g] and complex_less(out[g], val)):
                     out[g] = val
 
 
@@ -887,7 +904,7 @@ def _sumofsquares_init(
     fill_value: float,
     forced_fill: float,
 ) -> ReductionState:
-    track = fill_value != forced_fill
+    track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
 

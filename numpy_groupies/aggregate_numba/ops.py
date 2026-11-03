@@ -21,6 +21,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.aggregate_numba.compose import KernelHandle
+from numpy_groupies.aggregate_numba.fallback import FALLBACK
 from numpy_groupies.aggregate_numba.mt import (
     GROUP_MT_MIN_VALUES,
     group_chunk_count,
@@ -28,7 +29,6 @@ from numpy_groupies.aggregate_numba.mt import (
     should_use_group_mt,
 )
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.common import (
     resolve_fill_value,
 )
@@ -238,6 +238,29 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
 
         return call_q
 
+    if handle.variant == "q_method":
+        # the quantile and the method of its interpolation: the two arrive
+        # in the slots of their own, the method after the quantile
+
+        def call_q_method(
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
+            size_arg: int,
+            out_dtype: np.dtype,
+            aux_dtype: np.dtype,
+            fill_value: AScalar,
+            ddof: float,
+            q: float,
+            method: str,
+        ) -> Any:
+            if mt_driver is not None and group_idx.size >= min_values:
+                n_threads = mt_thread_count()
+                if n_threads > 1:
+                    return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, (q, method))
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q, method)
+
+        return call_q_method
+
     # ddof, dx and reverse: the three arrive in the ddof of the call
 
     def call_ddof(
@@ -266,7 +289,8 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
     fill value (memoized for the plain 1d fast path), materializes scalar
     input and delegates the actual aggregation to the jitted driver.  Input
     dtypes that the compiled driver cannot handle go to the operation's
-    python-level ``fallback`` (complex medians to the numpy implementation).
+    python-level ``fallback``, or raise its ``refusal`` (complex medians
+    go to the numpy implementation, the complex moments refuse).
     """
     driver_call = _driver_call(handle)
 
@@ -282,8 +306,12 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         q: float = 0.5,
     ) -> AResult:
         # dtypes the compiled driver cannot handle, handed to the numpy twin
-        if handle.fallback is not None and _needs_fallback(handle, a):
-            return handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
+        if (handle.fallback is not None or handle.refusal is not None) and _needs_fallback(handle, a):
+            if handle.fallback is not None:
+                return handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
+            # nothing runs parallel here: the refusal of the operation is
+            # thrown while the call is still being prepared
+            raise TypeError(handle.refusal)
         # fast path: plain 1d-in/1d-out - the jitted driver does the bounds
         # check, size detection, allocation and the kernel in one compiled
         # call, everything else falls through to the full validation machinery
@@ -694,7 +722,10 @@ def _quantile_arguments(
         if not 0.0 <= q <= 1.0 / scale:
             raise ValueError(f"Quantiles must be in the range [0, {round(1.0 / scale)}]")
         if method != "linear":
-            return _aggregate_base(
+            # a method other than the linear one is an interpolation that
+            # numpy does in its own way - the compiled kernel holds the
+            # linear one only
+            return FALLBACK.aggregate(
                 group_idx,
                 a,
                 func=name,
