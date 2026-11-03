@@ -1092,6 +1092,9 @@ class KernelHandle(NamedTuple):
     ``fallback``    python-level callable for input dtypes the compiled
                 driver cannot handle (complex medians go to the numpy
                 implementation - numba cannot partition complex values)
+    ``refusal``     the message of the TypeError for the input dtypes the
+                compiled driver cannot take at all - raised ahead of the
+                kernel, where nothing parallel is running yet
     ``placeable``   which dtypes the compiled driver can take - None means
                 the default: only complex input goes to the fallback
     ``post``    turns the result of the driver into the result of the caller
@@ -1127,6 +1130,7 @@ class KernelHandle(NamedTuple):
     aux_widen: bool
     nton: bool
     fallback: Callable[..., AResult] | None = None
+    refusal: str | None = None
     placeable: Callable[[np.dtype | None], bool] | None = None
     post: Callable[..., AResult] | None = None
     assembles: bool = False
@@ -1176,6 +1180,7 @@ def build_kernel(
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
+    refusal: str | None = None,
     placeable: Callable[[np.dtype | None], bool] | None = None,
     post: Callable[..., AResult] | None = None,
     assembles: bool = False,
@@ -1503,6 +1508,7 @@ def build_kernel(
             aux_widen=aux_widen,
             nton=nton,
             fallback=fallback,
+            refusal=refusal,
             placeable=placeable,
             post=post,
             assembles=assembles,
@@ -1527,6 +1533,7 @@ def build_custom_kernel(
     aux_widen: bool = False,
     nton: bool = False,
     fallback: Callable[..., AResult] | None = None,
+    refusal: str | None = None,
     placeable: Callable[[np.dtype | None], bool] | None = None,
     post: Callable[..., AResult] | None = None,
     assembles: bool = False,
@@ -1590,6 +1597,7 @@ def build_custom_kernel(
             aux_widen=aux_widen,
             nton=nton,
             fallback=fallback,
+            refusal=refusal,
             placeable=placeable,
             post=post,
             assembles=assembles,

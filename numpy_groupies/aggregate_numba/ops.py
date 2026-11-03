@@ -266,7 +266,8 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
     fill value (memoized for the plain 1d fast path), materializes scalar
     input and delegates the actual aggregation to the jitted driver.  Input
     dtypes that the compiled driver cannot handle go to the operation's
-    python-level ``fallback`` (complex medians to the numpy implementation).
+    python-level ``fallback``, or raise its ``refusal`` (complex medians
+    go to the numpy implementation, the complex moments refuse).
     """
     driver_call = _driver_call(handle)
 
@@ -282,8 +283,12 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         q: float = 0.5,
     ) -> AResult:
         # dtypes the compiled driver cannot handle, handed to the numpy twin
-        if handle.fallback is not None and _needs_fallback(handle, a):
-            return handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
+        if (handle.fallback is not None or handle.refusal is not None) and _needs_fallback(handle, a):
+            if handle.fallback is not None:
+                return handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
+            # nothing runs parallel here: the refusal of the operation is
+            # thrown while the call is still being prepared
+            raise TypeError(handle.refusal)
         # fast path: plain 1d-in/1d-out - the jitted driver does the bounds
         # check, size detection, allocation and the kernel in one compiled
         # call, everything else falls through to the full validation machinery
