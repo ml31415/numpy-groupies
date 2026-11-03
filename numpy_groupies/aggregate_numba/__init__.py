@@ -56,7 +56,7 @@ back, a kernel of its own has nothing to run it on.
 
 Datetime64 and timedelta64 input is aggregated on its int64 ticks: the
 ``aggregate()`` entry hands temporal values to the wrapper of the numpy
-based backends (``aggregate_numpy.temporal``), which carries the policy -
+based backends (``utils_temporal``), which carries the policy -
 what numpy refuses, the NaT of the plain reductions and the nan variants,
 the unit of the answer - and turns the tick results back.  The kernels
 themselves take temporal values as they are, as far as their arithmetic
@@ -83,11 +83,6 @@ from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cu
 from numpy_groupies.aggregate_numba.gather import unpack, unpack_into
 from numpy_groupies.aggregate_numba.ops import _dispatch, _driver_call
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
-from numpy_groupies.aggregate_numpy.temporal import (
-    _temporal_aggregation,
-    is_own_function,
-    is_temporal_input,
-)
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
@@ -103,7 +98,12 @@ from numpy_groupies.utils_np import (
     AScalar,
     AValue,
     RavelOrder,
+)
+from numpy_groupies.utils_temporal import (
+    _temporal_aggregation,
     exact_integer_group_mean,
+    is_own_function,
+    is_temporal_input,
 )
 from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
 

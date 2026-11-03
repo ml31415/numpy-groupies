@@ -1,15 +1,23 @@
-"""The aggregation of datetime64 and timedelta64 input.
+"""The temporal policy of the numpy based backends.
 
-The temporal wrapper of the numpy based backends: it answers what the
-kernels cannot, and it turns tick answers back into temporal ones.  The
-numpy backend hands the ticks of its values to its kernels, the numba one
-lets its compiled kernels take the temporal values as they are - both come
-through ``_temporal_aggregation`` for the policy, the mean, the middles and
-the answer of the empty groups.
+Everything both numpy based backends need to know about datetime64 and
+timedelta64 input lives here: the functions a dtype refuses (the ones numpy
+refuses itself), the functions whose compiled kernels take the values as
+they are, what a plain reduction does with the NaT of a group and what the
+nan variants leave out, and the fills of the answers.  The backends hand
+their kernels to ``_temporal_aggregation`` - the numpy one its tick mean
+and its exact tick median, the numba one the compiled forms of both - and
+the wrapper answers for them.
+
+The dtype facts stay in ``utils_np``: the kinds of the temporal dtypes and
+the tick of NaT.  The order statistics of the numpy backend live in
+``aggregate_numpy.specials`` - the exact median of the ticks - and the
+numba kernels in ``aggregate_numba``: nothing in this module reaches into
+a backend, so both of them reach into this module.
 """
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, SupportsFloat, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -21,18 +29,18 @@ from numpy_groupies.utils_np import (
     TEMPORAL_KINDS,
     AFillValue,
     AResult,
+    AScalar,
     AValue,
-    exact_integer_group_mean,
 )
+from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
 
 # ---------------------------------------------------------------------------
 # datetime64 and timedelta64 support
 #
-# Temporal arrays never reach the kernels as datetime values: the wrapper
-# below takes them apart into their int64 ticks ahead of the kernels and
-# turns the results back afterwards.  NaT is the int64 tick ``-2**63``, so
-# every value a kernel computes on the ticks is a tick again - the plan
-# carries what the wrapper has to do to a tick result to make it temporal.
+# The tables name the functions of the package and what their temporal
+# answer is made of.  NaT is the int64 tick ``-2**63``, so every value a
+# kernel computes on the ticks of the values is a tick again - the
+# wrapper below turns the tick results back into temporal ones.
 #
 # The policy follows numpy:
 # - plain reductions propagate NaT (a group holding one answers NaT), the
@@ -47,7 +55,7 @@ from numpy_groupies.utils_np import (
 # the functions whose result holds ticks of the input again - their answer is
 # viewed back into the dtype of the input.  datetime64 has no sum and no
 # median, but both raise before anything is viewed back.
-_TEMPORAL_VALUE_FUNCS = frozenset(
+TEMPORAL_VALUE_FUNCS = frozenset(
     {
         "min",
         "max",
@@ -66,7 +74,7 @@ _TEMPORAL_VALUE_FUNCS = frozenset(
 )
 # the functions numpy refuses for datetime64 - the plain and the nan variant
 # share their fate
-_TEMPORAL_DATETIME_REJECTED = frozenset(
+TEMPORAL_DATETIME_REJECTED = frozenset(
     {
         "sum",
         "prod",
@@ -85,7 +93,7 @@ _TEMPORAL_DATETIME_REJECTED = frozenset(
 )
 # and the ones numpy refuses for timedelta64 - sum, cumsum, mean, median and
 # the quantiles work there like they do on integers
-_TEMPORAL_TIMEDELTA_REJECTED = frozenset({"prod", "cumprod", "var", "std", "skew", "kurt", "trapezoid", "sumofsquares"})
+TEMPORAL_TIMEDELTA_REJECTED = frozenset({"prod", "cumprod", "var", "std", "skew", "kurt", "trapezoid", "sumofsquares"})
 # the functions whose kernel takes the temporal values as they are: the
 # comparisons of compiled code order datetime64 and timedelta64 values, and
 # ``val != val`` detects NaT like a nan - so the kernel finds the NaT of a
@@ -94,7 +102,7 @@ _TEMPORAL_TIMEDELTA_REJECTED = frozenset({"prod", "cumprod", "var", "std", "skew
 # duration is compiled, and it propagates the NaT like numpy does.  The mean
 # is the one value function that stays behind: numba's division of durations
 # would truncate it, where the package rounds half to even.
-_TEMPORAL_NATIVE_FUNCS = frozenset(
+TEMPORAL_NATIVE_FUNCS = frozenset(
     {
         "min",
         "max",
@@ -127,11 +135,11 @@ _TEMPORAL_NATIVE_FUNCS = frozenset(
 # group answers NaT rather than the value of its ticks.  The sum of the
 # durations joins them: numpy adds NaT into a temporal sum and the answer is
 # NaT, while the ticks would wrap around in the int64 accumulation.
-_TEMPORAL_NAT_POISON = frozenset({"sum", "mean", "max", "median", "quantile", "percentile"})
+TEMPORAL_NAT_POISON = frozenset({"sum", "mean", "max", "median", "quantile", "percentile"})
 # the value functions whose default fill is nan - the temporal answer of an
 # empty group is NaT for them, and 0 (the epoch, or no duration) for the
 # functions that fill with zero, like the sum of the durations
-_TEMPORAL_NAT_FILL = frozenset({"min", "max", "mean", "median", "quantile", "percentile", "first", "last"})
+TEMPORAL_NAT_FILL = frozenset({"min", "max", "mean", "median", "quantile", "percentile", "first", "last"})
 
 
 def is_temporal_input(a: Any) -> bool:
@@ -176,7 +184,7 @@ def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:
         or fill_value is DEFAULT_FILL_VALUE
         or isinstance(fill_value, (bool, np.bool_, int, np.integer))
     ):
-        tick = NAT_TICK if base in _TEMPORAL_NAT_FILL else 0
+        tick = NAT_TICK if base in TEMPORAL_NAT_FILL else 0
         return np.asarray(tick, dtype=np.int64).view(a_dtype)[()]
     return fill_value
 
@@ -234,14 +242,6 @@ def _first_true_position_per_group(
     return first >= 0, first
 
 
-def _round_half_even(total: int, count: int) -> int:
-    """The exact integer division of ``total`` by ``count``, half to even."""
-    q, r = divmod(total, count)
-    if 2 * r > count or (2 * r == count and q % 2 == 1):
-        q += 1
-    return q
-
-
 def _per_group_running_mask(group_idx: npt.NDArray[np.integer], nat: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
     """The positions from the first NaT of their group on.
 
@@ -266,32 +266,98 @@ def _per_group_running_mask(group_idx: npt.NDArray[np.integer], nat: npt.NDArray
     return cast("npt.NDArray[np.bool_]", ranks >= first_nat[group_idx])
 
 
-def _temporal_group_median(
+def exact_integer_group_mean(
     group_idx: npt.NDArray[np.integer],
-    ticks: npt.NDArray[np.int64],
+    a: npt.NDArray[np.integer],
     size: int,
-    fill_tick: int,
-) -> npt.NDArray[np.int64]:
-    """The median of the ticks of a timedelta64 input, exact.
+    fill_value: AScalar,
+    dtype: np.dtype,
+) -> npt.NDArray[np.floating] | npt.NDArray[np.integer]:
+    """The mean of integer values per group, exact where float64 would round.
 
-    The middles of an even group average to their exact mean rounded half to
-    even - the two add up as python integers, so even ticks at the edges of
-    int64 cannot wrap the sum.
+    The ticks of datetime input add up beyond the +/-2**53 window float64
+    represents exactly, and so can the sums of plain integers - instead of
+    refusing the mean, the values are split into limbs, every limb
+    accumulates in an exact sum through ``bincount``, and the totals of the
+    groups are combined as python integers.  The division is exact and the
+    remainder rounds half to even.
+
+    The limbs are as wide as they can be: a 32-bit limb holds its sum
+    inside the window float64 represents exactly as long as there are fewer
+    than 2**21 values, and a 16-bit limb serves more values than that.  The
+    wider the limb, the fewer of them there are - and every limb is one pass
+    over the data.
+
+    An integer mean of small magnitudes keeps coming back as float64 - the
+    quotient is exact in float64 there, so its answer does not change - and a
+    caller asking for an integer dtype gets the exact rounded quotient.
     """
-    order = np.argsort(group_idx, kind="stable")
-    values = ticks[order]
+    u = np.ascontiguousarray(a).view(np.uint64)
+    # the width of the limbs: the sum of a limb has to stay inside the
+    # window float64 represents exactly
+    width = 32 if len(group_idx) * (2**32 - 1) <= EXACT_FLOAT64_INTEGER_LIMIT else 16
+    mask = np.uint64((1 << width) - 1)
+    shifts = tuple(range(0, 64, width))
+    limb_sums = [
+        np.bincount(
+            group_idx,
+            # the cast to float64 is explicit: numpy would cast the weights
+            # itself, and the cast of the masked limbs - small numbers - is
+            # far quicker than the cast of the whole bit patterns
+            weights=((u >> np.uint64(shift)) & mask).astype(np.float64),
+            minlength=size,
+        ).astype(np.int64)
+        for shift in shifts
+    ]
     counts = np.bincount(group_idx, minlength=size)
-    starts = np.zeros(size, dtype=np.intp)
-    np.cumsum(counts[:-1], out=starts[1:])
-    ret = np.full(size, NAT_TICK, dtype=np.int64)
-    for grp in np.flatnonzero(counts):
-        count = int(counts[grp])
-        part = np.partition(values[starts[grp] : starts[grp] + count], count // 2)
-        if count % 2 == 1:
-            ret[grp] = part[count // 2]
-        else:
-            ret[grp] = _round_half_even(int(part[: count // 2].max()) + int(part[count // 2]), 2)
-    ret[counts == 0] = fill_tick
+    total: npt.NDArray[Any] = limb_sums[-1].astype(object)
+    for limb in reversed(limb_sums[:-1]):
+        total = (total << width) + limb.astype(object)
+    if a.dtype.kind == "i":
+        # signed values sum to the two's-complement limb sum of their bit
+        # pattern plus one 2**64 per negative value - the pattern sums are
+        # corrected by the count of the negatives of every group
+        negatives = np.bincount(group_idx, weights=u >= np.uint64(2**63), minlength=size)
+        total -= negatives.astype(np.int64).astype(object) << 64
+    present = counts > 0
+    quotients = np.zeros(size, dtype=object)
+    remainders = np.zeros(size, dtype=object)
+    quotients[present], remainders[present] = (
+        np.floor_divide(total[present], counts[present].astype(object)),
+        np.remainder(total[present], counts[present].astype(object)),
+    )
+    # the fill of the empty groups: the default of the dtype unless the caller
+    # asked for a number - the nan of a float result and the sentinel of the
+    # call both mean "default"
+    fill: int | float | None
+    if isinstance(fill_value, (float, np.floating)) and fill_value != fill_value:
+        fill = None  # a nan asks for the default
+    elif isinstance(fill_value, (bool, np.bool_, int, np.integer)):
+        fill = int(fill_value)
+    elif fill_value is None or fill_value.__class__.__name__ == "DefaultFillValue":
+        fill = None  # the sentinel of the call asks for the default
+    else:
+        fill = float(cast("SupportsFloat", fill_value))
+    if np.issubdtype(dtype, np.integer):
+        rounded = quotients.copy()
+        bump = (2 * remainders > counts) | ((2 * remainders == counts) & (quotients % 2 == 1))
+        rounded[bump] += 1
+        ret = rounded.astype(np.int64)
+    else:
+        # the float64 answer: the exact quotient and remainder of the python
+        # integers, so the total itself can never round - the 64-bit mantissa
+        # of the long double holds every int64 quotient exactly, and the two
+        # roundings of the assembly stay within half an ulp of the exact
+        # quotient
+        quotients = quotients.astype(np.longdouble)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fractions = np.true_divide(remainders.astype(np.longdouble), counts.astype(np.longdouble))
+        ret = (quotients + fractions).astype(np.float64)
+        if fill is not None:
+            ret[~present] = fill
+        return ret
+    if fill is not None and fill != 0:
+        ret[~present] = fill
     return ret
 
 
@@ -329,7 +395,7 @@ def _temporal_group_quantile(
 def _temporal_aggregation(
     resolve: Callable[[str], Callable[..., AResult]],
     tick_mean: Callable[..., AResult],
-    tick_median: Callable[..., AResult] | None,
+    tick_median: Callable[..., AResult],
     funcname: str,
     group_idx: npt.NDArray[np.integer],
     a: AValue,
@@ -361,12 +427,12 @@ def _temporal_aggregation(
     pass over the data, and the wrapper has nothing to prepare for them.
     The numpy backend works on the ticks, so it leaves the flag alone.
 
-    ``tick_median`` is the kernel of the backend for the median of the
-    ticks - the exact middle, where the numeric kernel would promote the
-    mean of the two middles to float64.  The numba backend hands its
-    compiled one in, the numpy backend leaves it out and takes the exact
-    numpy median of this module.  The quantiles stay on the exact numpy
-    path for both backends: their interpolation scales a tick difference
+    ``tick_median`` is the median of the ticks of the backend - the exact
+    middle of every group.  The numba backend hands its compiled one in,
+    the numpy backend the selection of ``aggregate_numpy.specials``; both
+    leave the NaT of a nan median out on their own, so the wrapper filters
+    no rows for the median.  The quantiles stay on the exact path of this
+    module for both backends: their interpolation scales a tick difference
     by a fraction, and that product no int64 arithmetic of the compiled
     code holds.
     """
@@ -382,7 +448,7 @@ def _temporal_aggregation(
     values = np.asarray(a)
     a_dtype = values.dtype
     is_datetime = a_dtype.kind == "M"
-    rejected = _TEMPORAL_DATETIME_REJECTED if is_datetime else _TEMPORAL_TIMEDELTA_REJECTED
+    rejected = TEMPORAL_DATETIME_REJECTED if is_datetime else TEMPORAL_TIMEDELTA_REJECTED
     if base in rejected:
         raise TypeError(
             f"aggregate {funcname!r} is not supported for {a_dtype.name} input - "
@@ -423,7 +489,7 @@ def _temporal_aggregation(
     # asks for may be the ticks or another unit - both are the business of
     # the tick path below
     plain_fill = isinstance(fill_value, (bool, np.bool_, int, np.integer))
-    if native and base in _TEMPORAL_NATIVE_FUNCS and dtype is None and not plain_fill:
+    if native and base in TEMPORAL_NATIVE_FUNCS and dtype is None and not plain_fill:
         # the kernel takes the temporal values as they are - it finds the NaT
         # of every group, its position and the empty groups on its own, in
         # one pass, and the wrapper has nothing to prepare for it
@@ -460,9 +526,10 @@ def _temporal_aggregation(
         # propagate it, and the cumulative ones carry it through their group
         # like numpy does.  The nan mean does not filter them either: the
         # tick mean leaves the NaT of a group out on its own, and filtering
-        # the rows would cost a copy of the data.  The nan median does not
-        # filter them either where the backend answers the median of the
-        # ticks itself: its kernel leaves the NaT tick out.  The nan count
+        # the rows would cost a copy of the data.  The nan median filters
+        # them in its own backend: the kernel of the numba one leaves the
+        # NaT tick out, the exact one of the numpy one drops its rows.  The
+        # nan count
         # of the distinct values does not filter them either: the hash
         # table of the kernel skips a NaT like it skips a nan, and it takes
         # the values as they are.
@@ -515,7 +582,7 @@ def _temporal_aggregation(
             nat = np.isnat(values)
             if nat.any():
                 nat_groups, nat_positions = _first_true_position_per_group(group_idx, nat, size)
-    elif base in _TEMPORAL_NAT_POISON and not funcname.startswith("nan") and not (native and base == "mean"):
+    elif base in TEMPORAL_NAT_POISON and not funcname.startswith("nan") and not (native and base == "mean"):
         # a single NaT poisons the sum, the maximum and - for the durations
         # - the middles of its whole group.  The mean of the native backend
         # is not among them: its kernel poisons the group on its own, and
@@ -612,7 +679,7 @@ def _temporal_aggregation(
     elif base in ("median", "quantile", "percentile"):
         # only timedelta64 reaches this point - datetime64 has no middles
         fill_tick = _temporal_fill_tick(fill_value, a_dtype, True)
-        if base == "median" and tick_median is not None:
+        if base == "median":
             # the kernel of the backend selects the middle of the ticks of
             # every group - the plain variant answers the groups that hold
             # a NaT through the poison below, the nan one leaves the NaT
@@ -629,15 +696,13 @@ def _temporal_aggregation(
                     **kwargs,
                 ),
             )
-        elif base == "median":
-            computed = _temporal_group_median(group_idx, ticks, size, fill_tick)
         else:
             fraction = cast("float", kwargs.get("q", 50.0 if base == "percentile" else 0.5))
             if base == "percentile":
                 fraction = fraction / 100.0
             computed = _temporal_group_quantile(group_idx, ticks, size, fill_tick, fraction)
         value_result = True
-    elif base in _TEMPORAL_VALUE_FUNCS:
+    elif base in TEMPORAL_VALUE_FUNCS:
         value_result = True
 
     if base == "array":
@@ -658,7 +723,7 @@ def _temporal_aggregation(
     elif value_result:
         # the kernels answer in ticks, the fill is a tick, and the dtype they
         # are asked for is int64
-        fill_tick = _temporal_fill_tick(fill_value, a_dtype, base in _TEMPORAL_NAT_FILL)
+        fill_tick = _temporal_fill_tick(fill_value, a_dtype, base in TEMPORAL_NAT_FILL)
         op = operation(funcname)
         ret = op(group_idx, ticks, size, fill_value=fill_tick, dtype=np.dtype(np.int64), **kwargs)
     else:
