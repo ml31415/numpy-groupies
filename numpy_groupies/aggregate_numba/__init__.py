@@ -69,7 +69,9 @@ directly, as a python call and as a
 jitted one.  The kernels that cannot take them (the arithmetic of the
 moments, the partitions and the sorts, the truthiness, and the mean - whose
 rounding numba's division of durations would truncate, where the package
-rounds half to even) say so by name.
+rounds half to even) say so by name.  The mean of the ticks of a temporal
+input has its own kernels - ``tick_mean`` and ``nantick_mean`` - which
+answer it exactly, half to even, on the int64 ticks the caller hands them.
 """
 
 import builtins

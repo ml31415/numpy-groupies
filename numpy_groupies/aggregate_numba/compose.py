@@ -320,9 +320,9 @@ def _temporal_refusal(stub_name: str, a_dtype: np.dtype) -> str:
     base = stub_name.removeprefix("nan")
     if base == "mean":
         return (
-            f"the {stub_name} kernel takes no {a_dtype.name} values - the mean of a duration "
-            f"is rounded by numba's division of durations, which truncates, and only aggregate() "
-            f"computes it exactly, half to even"
+            f"the {stub_name} kernel takes no {a_dtype.name} values - the mean of the ticks is the "
+            f"business of tick_mean and nantick_mean, and aggregate() rounds the mean of the values "
+            f"half to even, where the division of durations of numba truncates"
         )
     if a_dtype.kind == "M" and base in _TEMPORAL_DATETIME_REFUSED:
         return (
