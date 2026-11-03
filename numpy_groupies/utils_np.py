@@ -835,6 +835,33 @@ TEMPORAL_DATETIME_REJECTED = frozenset(
 # and the ones numpy refuses for timedelta64 - sum, cumsum, mean, median and
 # the quantiles work there like they do on integers
 TEMPORAL_TIMEDELTA_REJECTED = frozenset({"prod", "cumprod", "var", "std", "skew", "kurt", "trapezoid", "sumofsquares"})
+# the functions whose kernel takes the temporal values as they are: the
+# comparisons of compiled code order datetime64 and timedelta64 values, and
+# ``val != val`` detects NaT like a nan - so the kernel finds the NaT of a
+# group, its position and the empty groups on its own, in one pass.  The
+# functions that need the ticks themselves - the sum, the cumulative sums and
+# the mean - are not among them.
+TEMPORAL_NATIVE_FUNCS = frozenset(
+    {
+        "min",
+        "max",
+        "nanmin",
+        "nanmax",
+        "first",
+        "last",
+        "nanfirst",
+        "nanlast",
+        "argmin",
+        "argmax",
+        "nanargmin",
+        "nanargmax",
+        "len",
+        "nanlen",
+        "allnan",
+        "anynan",
+        "array",
+    }
+)
 # plain variants of these poison their whole group with a single NaT - the
 # group answers NaT rather than the value of its ticks.  The sum of the
 # durations joins them: numpy adds NaT into a temporal sum and the answer is
@@ -870,6 +897,27 @@ def is_own_function(funcname: str | Callable[..., Any]) -> bool:
     return isinstance(funcname, str)
 
 
+def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:
+    """The fill value of a temporal result, as the value of its dtype.
+
+    The nan of the averaging functions is the NaT of the unit, the zero of
+    the operations that fill with zero is the zero of the unit, and a value
+    the caller named passes through.
+    """
+    if fill_value is None or fill_value is DEFAULT_FILL_VALUE:
+        tick = NAT_TICK if base in TEMPORAL_NAT_FILL else 0
+        return np.asarray(tick, dtype=np.int64).view(a_dtype)[()]
+    if isinstance(fill_value, (float, np.floating)) and fill_value != fill_value:
+        tick = NAT_TICK if base in TEMPORAL_NAT_FILL else 0
+        return np.asarray(tick, dtype=np.int64).view(a_dtype)[()]
+    if isinstance(fill_value, (np.datetime64, np.timedelta64)):
+        return np.asarray(fill_value).astype(a_dtype)[()]
+    if isinstance(fill_value, (bool, np.bool_, int, np.integer)):
+        tick = NAT_TICK if base in TEMPORAL_NAT_FILL else 0
+        return np.asarray(tick, dtype=np.int64).view(a_dtype)[()]
+    return fill_value
+
+
 def _temporal_fill_tick(fill_value: Any, a_dtype: np.dtype, default_is_nat: bool) -> int:
     """The tick of the fill value - NaT where the default of the function is
     nan, zero where it fills with zero, unless the caller asks for a date."""
@@ -884,9 +932,16 @@ def _temporal_fill_tick(fill_value: Any, a_dtype: np.dtype, default_is_nat: bool
     return int(np.asarray(fill_value, dtype=a_dtype).view(np.int64))
 
 
-def _groups_holding(group_idx: npt.NDArray[np.integer], mask: npt.NDArray[np.bool_]) -> npt.NDArray[np.integer]:
-    """The sorted labels of the groups where ``mask`` holds at least once."""
-    return np.unique(group_idx[mask])
+def _groups_holding(
+    group_idx: npt.NDArray[np.integer], mask: npt.NDArray[np.bool_], size: int
+) -> npt.NDArray[np.integer]:
+    """The labels of the groups where ``mask`` holds at least once.
+
+    The groups are counted rather than picked out: ``np.unique`` would sort
+    the labels, and a sort over a million values costs more than the
+    aggregation itself.
+    """
+    return np.flatnonzero(np.bincount(group_idx[mask], minlength=size) > 0)
 
 
 def _first_true_position_per_group(
@@ -1106,6 +1161,7 @@ def aggregate_temporal(
     fill_value: AFillValue,
     dtype: npt.DTypeLike | None,
     kwargs: dict[str, Any],
+    native: bool = False,
 ) -> tuple[AResult, AFillValue]:
     """The answer of an aggregation of temporal values, and the fill it used.
 
@@ -1120,6 +1176,12 @@ def aggregate_temporal(
     itself or the kernel of the operation did.  The mean of the ticks is the
     one operation that no kernel of a function answers - it is not a function
     of the package - and it comes in as ``tick_mean``.
+
+    ``native`` says that the kernel of the backend takes the temporal values
+    as they are: the compiled kernels of the numba backend order them and
+    find their NaT on their own, in one pass over the data, and the wrapper
+    has nothing to prepare for them.  The numpy backend works on the ticks,
+    so it leaves the flag alone.
     """
 
     def operation(name: str) -> Callable[..., AResult]:
@@ -1168,6 +1230,27 @@ def aggregate_temporal(
             dtype=None,
             **kwargs,
         )
+        return cast("AResult", ret), fill_value
+
+    # a fill value that is a plain number is a tick, and a dtype the caller
+    # asks for may be the ticks or another unit - both are the business of
+    # the tick path below
+    plain_fill = isinstance(fill_value, (bool, np.bool_, int, np.integer))
+    if native and base in TEMPORAL_NATIVE_FUNCS and dtype is None and not plain_fill:
+        # the kernel takes the temporal values as they are - it finds the NaT
+        # of every group, its position and the empty groups on its own
+        op = operation(funcname)
+        if base in ("len", "nanlen", "nunique", "nannunique", "argmin", "argmax", "nanargmin", "nanargmax"):
+            # a position or a count: the fill is the number the function uses
+            fill = resolve_fill_value(funcname, fill_value, np.dtype(np.int64))
+        elif base in ("allnan", "anynan"):
+            fill = resolve_fill_value(funcname, fill_value, np.dtype(np.bool_))
+        elif base == "array":
+            fill = resolve_fill_value(funcname, fill_value, np.dtype(object))
+        else:
+            # a value of the input: the fill is the NaT or the zero of the unit
+            fill = _temporal_fill_value(fill_value, a_dtype, base)
+        ret = op(group_idx, a, size, fill_value=fill, dtype=None, **kwargs)
         return cast("AResult", ret), fill_value
 
     nat = np.isnat(a)
@@ -1227,7 +1310,7 @@ def aggregate_temporal(
     elif base in TEMPORAL_NAT_POISON and nat is not None and nat.any():
         # a single NaT poisons the mean, the maximum and - for the durations
         # - the middles of its whole group
-        nat_groups = _groups_holding(group_idx, nat)
+        nat_groups = _groups_holding(group_idx, nat, size)
 
     ticks = values.view(np.int64)
     if base == "sort" and nat is not None and nat.any():

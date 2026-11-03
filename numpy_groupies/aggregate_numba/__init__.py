@@ -169,6 +169,8 @@ def aggregate(
             fill_value,
             dtype,
             kwargs,
+            # the compiled kernels take the temporal values as they are
+            native=True,
         )
 
     # numba has no float16: the values survive the widening cast to float32
