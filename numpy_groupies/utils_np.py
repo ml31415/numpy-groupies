@@ -19,6 +19,7 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
+    EXACT_FLOAT64_INTEGER_LIMIT,
     FILL_NOT_CONVERTIBLE,
     LENGTH_MISMATCH_OR_SCALAR,
     NEGATIVE_INDICES,
@@ -951,27 +952,42 @@ def exact_integer_group_mean(
 
     The ticks of datetime input add up beyond the +/-2**53 window float64
     represents exactly, and so can the sums of plain integers - instead of
-    refusing the mean, the values are split into four 16-bit limbs, every
-    limb accumulates in an exact sum through ``bincount``, and the totals of
-    the groups are combined as python integers.  The division is exact and
-    the remainder rounds half to even.
+    refusing the mean, the values are split into limbs, every limb
+    accumulates in an exact sum through ``bincount``, and the totals of the
+    groups are combined as python integers.  The division is exact and the
+    remainder rounds half to even.
+
+    The limbs are as wide as they can be: a 32-bit limb holds its sum
+    inside the window float64 represents exactly as long as there are fewer
+    than 2**21 values, and a 16-bit limb serves more values than that.  The
+    wider the limb, the fewer of them there are - and every limb is one pass
+    over the data.
 
     An integer mean of small magnitudes keeps coming back as float64 - the
     quotient is exact in float64 there, so its answer does not change - and a
     caller asking for an integer dtype gets the exact rounded quotient.
     """
     u = np.ascontiguousarray(a).view(np.uint64)
+    # the width of the limbs: the sum of a limb has to stay inside the
+    # window float64 represents exactly
+    width = 32 if len(group_idx) * (2**32 - 1) <= EXACT_FLOAT64_INTEGER_LIMIT else 16
+    mask = np.uint64((1 << width) - 1)
+    shifts = tuple(range(0, 64, width))
     limb_sums = [
-        np.bincount(group_idx, weights=(u >> np.uint64(shift)) & np.uint64(0xFFFF), minlength=size).astype(np.int64)
-        for shift in (0, 16, 32, 48)
+        np.bincount(
+            group_idx,
+            # the cast to float64 is explicit: numpy would cast the weights
+            # itself, and the cast of the masked limbs - small numbers - is
+            # far quicker than the cast of the whole bit patterns
+            weights=((u >> np.uint64(shift)) & mask).astype(np.float64),
+            minlength=size,
+        ).astype(np.int64)
+        for shift in shifts
     ]
     counts = np.bincount(group_idx, minlength=size)
-    total: npt.NDArray[Any] = (
-        (limb_sums[3].astype(object) << 48)
-        + (limb_sums[2].astype(object) << 32)
-        + (limb_sums[1].astype(object) << 16)
-        + limb_sums[0].astype(object)
-    )
+    total: npt.NDArray[Any] = limb_sums[-1].astype(object)
+    for limb in reversed(limb_sums[:-1]):
+        total = (total << width) + limb.astype(object)
     if a.dtype.kind == "i":
         # signed values sum to the two's-complement limb sum of their bit
         # pattern plus one 2**64 per negative value - the pattern sums are
