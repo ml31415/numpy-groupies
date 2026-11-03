@@ -17,7 +17,7 @@ from typing import Any, TypeVar, overload
 import numba as nb
 from numba.core import caching
 
-from numpy_groupies.utils_cache import numba_cache_dir
+from numpy_groupies.utils.cache import numba_cache_dir
 
 # the decorated function is a dispatcher that keeps the signature of its
 # python function - the overloads below hand that signature through

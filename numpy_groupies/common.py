@@ -34,7 +34,7 @@ from numpy_groupies.validation import (
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from numpy_groupies.utils_np import AFillValue, AScalar
+    from numpy_groupies.utils.typing import AFillValue, AScalar
 
 nan = float("nan")  # nan is just this float
 

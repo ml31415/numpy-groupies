@@ -1,7 +1,7 @@
 """The datetime64 and timedelta64 support of the numpy and numba backends.
 
 Temporal input never reaches the kernels as datetime values: the wrapper of
-``utils_temporal`` takes it apart into its int64 ticks and turns the results back.
+``utils.temporal`` takes it apart into its int64 ticks and turns the results back.
 The tests pin the semantics that emerge - the NaT propagation of the plain
 reductions, the skipping of the nan variants, the exact means on ticks that
 float64 cannot represent, the unit of the answer, and the refusals numpy

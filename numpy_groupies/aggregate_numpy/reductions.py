@@ -9,8 +9,7 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.utils_np import (
-    AScalar,
+from numpy_groupies.utils.nptools import (
     fill_untouched,
     iscomplexobj,
     maxval,
@@ -18,6 +17,7 @@ from numpy_groupies.utils_np import (
     minimum_dtype_scalar,
     minval,
 )
+from numpy_groupies.utils.typing import AScalar
 from numpy_groupies.validation import check_boolean, is_scalar_input
 
 

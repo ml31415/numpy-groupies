@@ -20,7 +20,7 @@ from numba.core.caching import NullCache
 
 import numpy_groupies
 from numpy_groupies.tests.test_numba import _walk_dispatchers
-from numpy_groupies.utils_cache import numba_cache_dir, purge_cache
+from numpy_groupies.utils.cache import numba_cache_dir, purge_cache
 
 PACKAGE = pathlib.Path(numpy_groupies.__file__).parent
 
@@ -58,18 +58,25 @@ def test_purge_cache_removes_the_cache_and_the_leftovers_in_the_source_tree(monk
     # the byte code of the package is left alone
     bytecode = tree / "keep.pyc"
     bytecode.write_bytes(b"\x00")
+    # and one in a subpackage: the leftovers are in the whole tree, not
+    # only next to the modules of the top level
+    sub = PACKAGE / "utils" / "__pycache__"
+    sub.mkdir(parents=True, exist_ok=True)
+    (sub / "old.nbi").write_text("index")
     try:
         removed = purge_cache()
-        assert removed >= 5
+        assert removed >= 6
         assert not cache.exists()
         assert not (tree / "old.nbi").exists()
         assert not (tree / "old.1.nbc").exists()
         assert not (tree / "old.nbi.lock").exists()
         assert bytecode.exists()
+        assert not (sub / "old.nbi").exists()
     finally:
         bytecode.unlink(missing_ok=True)
         for name in ("old.nbi", "old.1.nbc", "old.nbi.lock"):
             (tree / name).unlink(missing_ok=True)
+        (sub / "old.nbi").unlink(missing_ok=True)
 
 
 def test_the_package_hands_out_the_purge_cache():

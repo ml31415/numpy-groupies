@@ -17,7 +17,7 @@ import pytest
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
 from numpy_groupies.tests.helpers import impl_name
-from numpy_groupies.utils_np import minimum_dtype
+from numpy_groupies.utils.nptools import minimum_dtype
 
 float_funcs = [np.std, np.var, np.mean, np.median, np.nanmedian]
 if hasattr(np, "trapezoid"):

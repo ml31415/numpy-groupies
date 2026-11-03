@@ -18,18 +18,9 @@ from numpy_groupies.registry import (
     Registry,
     missing_impl_error,
 )
-from numpy_groupies.utils_np import (
-    AFillValue,
-    AResult,
-    AScalar,
-    AValue,
-    RavelOrder,
-    check_dtype,
-    check_fill_value,
-    check_nton_shape,
-    input_validation,
-)
-from numpy_groupies.utils_temporal import is_own_function, is_temporal_input
+from numpy_groupies.utils.nptools import check_dtype, check_fill_value, check_nton_shape, input_validation
+from numpy_groupies.utils.temporal import is_own_function, is_temporal_input
+from numpy_groupies.utils.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import is_scalar_input
 
 

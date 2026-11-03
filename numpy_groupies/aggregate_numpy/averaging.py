@@ -11,7 +11,8 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.reductions import _first, _last, _sum
-from numpy_groupies.utils_np import AScalar, exact_integer_group_mean, iscomplexobj
+from numpy_groupies.utils.nptools import exact_integer_group_mean, iscomplexobj
+from numpy_groupies.utils.typing import AScalar
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     MOMENTS_NOT_FOR_COMPLEX,

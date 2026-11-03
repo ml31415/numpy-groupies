@@ -22,7 +22,7 @@ from numpy_groupies.registry import (
     function_names,
     resolve_name,
 )
-from numpy_groupies.utils_np import aliasing
+from numpy_groupies.utils.nptools import aliasing
 
 
 def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():

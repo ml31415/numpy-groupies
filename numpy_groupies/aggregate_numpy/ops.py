@@ -43,7 +43,8 @@ from numpy_groupies.registry import (
     custom_callable,
     funcs_no_separate_nan,
 )
-from numpy_groupies.utils_np import AResult, AScalar, aliasing
+from numpy_groupies.utils.nptools import aliasing
+from numpy_groupies.utils.typing import AResult, AScalar
 
 _op_dict: dict[str, Callable[..., AResult]] = {
     "min": _min,

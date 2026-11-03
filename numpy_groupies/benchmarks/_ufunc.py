@@ -15,16 +15,8 @@ from numpy_groupies.registry import (
     custom_callable,
     missing_impl_error,
 )
-from numpy_groupies.utils_np import (
-    AFillValue,
-    AScalar,
-    RavelOrder,
-    aliasing,
-    maxval,
-    minimum_dtype,
-    minimum_dtype_scalar,
-    minval,
-)
+from numpy_groupies.utils.nptools import aliasing, maxval, minimum_dtype, minimum_dtype_scalar, minval
+from numpy_groupies.utils.typing import AFillValue, AScalar, RavelOrder
 from numpy_groupies.validation import check_boolean
 
 

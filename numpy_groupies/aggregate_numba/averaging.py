@@ -20,8 +20,8 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_int64, rule_real_float
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.registry import FuncName
-from numpy_groupies.utils_np import AFillValue, AResult, AValue, RavelOrder
-from numpy_groupies.utils_temporal import NAT_TICK
+from numpy_groupies.utils.temporal import NAT_TICK
+from numpy_groupies.utils.typing import AFillValue, AResult, AValue, RavelOrder
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
