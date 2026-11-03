@@ -2,7 +2,7 @@
 
 import platform
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Literal, TypeAlias, cast
+from typing import Any, Literal, SupportsFloat, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -16,6 +16,7 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
+    EXACT_FLOAT64_INTEGER_LIMIT,
     FILL_NOT_CONVERTIBLE,
     LENGTH_MISMATCH_OR_SCALAR,
     NEGATIVE_INDICES,
@@ -770,3 +771,98 @@ def iscomplexobj(x: Any) -> bool:
     except AttributeError:
         type_ = np.asarray(x).dtype.type
     return issubclass(type_, np.complexfloating)
+
+
+def exact_integer_group_mean(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.integer],
+    size: int,
+    fill_value: AScalar,
+    dtype: np.dtype,
+) -> npt.NDArray[np.floating] | npt.NDArray[np.integer]:
+    """The mean of integer values per group, exact where float64 would round.
+
+    The ticks of datetime input add up beyond the +/-2**53 window float64
+    represents exactly, and so can the sums of plain integers - instead of
+    refusing the mean, the values are split into limbs, every limb
+    accumulates in an exact sum through ``bincount``, and the totals of the
+    groups are combined as python integers.  The division is exact and the
+    remainder rounds half to even.
+
+    The limbs are as wide as they can be: a 32-bit limb holds its sum
+    inside the window float64 represents exactly as long as there are fewer
+    than 2**21 values, and a 16-bit limb serves more values than that.  The
+    wider the limb, the fewer of them there are - and every limb is one pass
+    over the data.
+
+    An integer mean of small magnitudes keeps coming back as float64 - the
+    quotient is exact in float64 there, so its answer does not change - and a
+    caller asking for an integer dtype gets the exact rounded quotient.
+    """
+    u = np.ascontiguousarray(a).view(np.uint64)
+    # the width of the limbs: the sum of a limb has to stay inside the
+    # window float64 represents exactly
+    width = 32 if len(group_idx) * (2**32 - 1) <= EXACT_FLOAT64_INTEGER_LIMIT else 16
+    mask = np.uint64((1 << width) - 1)
+    shifts = tuple(range(0, 64, width))
+    limb_sums = [
+        np.bincount(
+            group_idx,
+            # the cast to float64 is explicit: numpy would cast the weights
+            # itself, and the cast of the masked limbs - small numbers - is
+            # far quicker than the cast of the whole bit patterns
+            weights=((u >> np.uint64(shift)) & mask).astype(np.float64),
+            minlength=size,
+        ).astype(np.int64)
+        for shift in shifts
+    ]
+    counts = np.bincount(group_idx, minlength=size)
+    total: npt.NDArray[Any] = limb_sums[-1].astype(object)
+    for limb in reversed(limb_sums[:-1]):
+        total = (total << width) + limb.astype(object)
+    if a.dtype.kind == "i":
+        # signed values sum to the two's-complement limb sum of their bit
+        # pattern plus one 2**64 per negative value - the pattern sums are
+        # corrected by the count of the negatives of every group
+        negatives = np.bincount(group_idx, weights=u >= np.uint64(2**63), minlength=size)
+        total -= negatives.astype(np.int64).astype(object) << 64
+    present = counts > 0
+    quotients = np.zeros(size, dtype=object)
+    remainders = np.zeros(size, dtype=object)
+    quotients[present], remainders[present] = (
+        np.floor_divide(total[present], counts[present].astype(object)),
+        np.remainder(total[present], counts[present].astype(object)),
+    )
+    # the fill of the empty groups: the default of the dtype unless the caller
+    # asked for a number - the nan of a float result and the sentinel of the
+    # call both mean "default"
+    fill: int | float | None
+    if isinstance(fill_value, (float, np.floating)) and fill_value != fill_value:
+        fill = None  # a nan asks for the default
+    elif isinstance(fill_value, (bool, np.bool_, int, np.integer)):
+        fill = int(fill_value)
+    elif fill_value is None or fill_value.__class__.__name__ == "DefaultFillValue":
+        fill = None  # the sentinel of the call asks for the default
+    else:
+        fill = float(cast("SupportsFloat", fill_value))
+    if np.issubdtype(dtype, np.integer):
+        rounded = quotients.copy()
+        bump = (2 * remainders > counts) | ((2 * remainders == counts) & (quotients % 2 == 1))
+        rounded[bump] += 1
+        ret = rounded.astype(np.int64)
+    else:
+        # the float64 answer: the exact quotient and remainder of the python
+        # integers, so the total itself can never round - the 64-bit mantissa
+        # of the long double holds every int64 quotient exactly, and the two
+        # roundings of the assembly stay within half an ulp of the exact
+        # quotient
+        quotients = quotients.astype(np.longdouble)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fractions = np.true_divide(remainders.astype(np.longdouble), counts.astype(np.longdouble))
+        ret = (quotients + fractions).astype(np.float64)
+        if fill is not None:
+            ret[~present] = fill
+        return ret
+    if fill is not None and fill != 0:
+        ret[~present] = fill
+    return ret

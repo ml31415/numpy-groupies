@@ -17,7 +17,7 @@ a backend, so both of them reach into this module.
 """
 
 from collections.abc import Callable
-from typing import Any, SupportsFloat, cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -27,10 +27,9 @@ from numpy_groupies.registry import DEFAULT_FILL_VALUE, missing_impl_error
 from numpy_groupies.utils_np import (
     AFillValue,
     AResult,
-    AScalar,
     AValue,
+    exact_integer_group_mean,
 )
-from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
 
 # ---------------------------------------------------------------------------
 # datetime64 and timedelta64 support
@@ -273,99 +272,12 @@ def _per_group_running_mask(group_idx: npt.NDArray[np.integer], nat: npt.NDArray
     return cast("npt.NDArray[np.bool_]", ranks >= first_nat[group_idx])
 
 
-def exact_integer_group_mean(
-    group_idx: npt.NDArray[np.integer],
-    a: npt.NDArray[np.integer],
-    size: int,
-    fill_value: AScalar,
-    dtype: np.dtype,
-) -> npt.NDArray[np.floating] | npt.NDArray[np.integer]:
-    """The mean of integer values per group, exact where float64 would round.
-
-    The ticks of datetime input add up beyond the +/-2**53 window float64
-    represents exactly, and so can the sums of plain integers - instead of
-    refusing the mean, the values are split into limbs, every limb
-    accumulates in an exact sum through ``bincount``, and the totals of the
-    groups are combined as python integers.  The division is exact and the
-    remainder rounds half to even.
-
-    The limbs are as wide as they can be: a 32-bit limb holds its sum
-    inside the window float64 represents exactly as long as there are fewer
-    than 2**21 values, and a 16-bit limb serves more values than that.  The
-    wider the limb, the fewer of them there are - and every limb is one pass
-    over the data.
-
-    An integer mean of small magnitudes keeps coming back as float64 - the
-    quotient is exact in float64 there, so its answer does not change - and a
-    caller asking for an integer dtype gets the exact rounded quotient.
-    """
-    u = np.ascontiguousarray(a).view(np.uint64)
-    # the width of the limbs: the sum of a limb has to stay inside the
-    # window float64 represents exactly
-    width = 32 if len(group_idx) * (2**32 - 1) <= EXACT_FLOAT64_INTEGER_LIMIT else 16
-    mask = np.uint64((1 << width) - 1)
-    shifts = tuple(range(0, 64, width))
-    limb_sums = [
-        np.bincount(
-            group_idx,
-            # the cast to float64 is explicit: numpy would cast the weights
-            # itself, and the cast of the masked limbs - small numbers - is
-            # far quicker than the cast of the whole bit patterns
-            weights=((u >> np.uint64(shift)) & mask).astype(np.float64),
-            minlength=size,
-        ).astype(np.int64)
-        for shift in shifts
-    ]
-    counts = np.bincount(group_idx, minlength=size)
-    total: npt.NDArray[Any] = limb_sums[-1].astype(object)
-    for limb in reversed(limb_sums[:-1]):
-        total = (total << width) + limb.astype(object)
-    if a.dtype.kind == "i":
-        # signed values sum to the two's-complement limb sum of their bit
-        # pattern plus one 2**64 per negative value - the pattern sums are
-        # corrected by the count of the negatives of every group
-        negatives = np.bincount(group_idx, weights=u >= np.uint64(2**63), minlength=size)
-        total -= negatives.astype(np.int64).astype(object) << 64
-    present = counts > 0
-    quotients = np.zeros(size, dtype=object)
-    remainders = np.zeros(size, dtype=object)
-    quotients[present], remainders[present] = (
-        np.floor_divide(total[present], counts[present].astype(object)),
-        np.remainder(total[present], counts[present].astype(object)),
-    )
-    # the fill of the empty groups: the default of the dtype unless the caller
-    # asked for a number - the nan of a float result and the sentinel of the
-    # call both mean "default"
-    fill: int | float | None
-    if isinstance(fill_value, (float, np.floating)) and fill_value != fill_value:
-        fill = None  # a nan asks for the default
-    elif isinstance(fill_value, (bool, np.bool_, int, np.integer)):
-        fill = int(fill_value)
-    elif fill_value is None or fill_value.__class__.__name__ == "DefaultFillValue":
-        fill = None  # the sentinel of the call asks for the default
-    else:
-        fill = float(cast("SupportsFloat", fill_value))
-    if np.issubdtype(dtype, np.integer):
-        rounded = quotients.copy()
-        bump = (2 * remainders > counts) | ((2 * remainders == counts) & (quotients % 2 == 1))
-        rounded[bump] += 1
-        ret = rounded.astype(np.int64)
-    else:
-        # the float64 answer: the exact quotient and remainder of the python
-        # integers, so the total itself can never round - the 64-bit mantissa
-        # of the long double holds every int64 quotient exactly, and the two
-        # roundings of the assembly stay within half an ulp of the exact
-        # quotient
-        quotients = quotients.astype(np.longdouble)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            fractions = np.true_divide(remainders.astype(np.longdouble), counts.astype(np.longdouble))
-        ret = (quotients + fractions).astype(np.float64)
-        if fill is not None:
-            ret[~present] = fill
-        return ret
-    if fill is not None and fill != 0:
-        ret[~present] = fill
-    return ret
+def _round_half_even(total: int, count: int) -> int:
+    """The exact integer division of ``total`` by ``count``, half to even."""
+    q, r = divmod(total, count)
+    if 2 * r > count or (2 * r == count and q % 2 == 1):
+        q += 1
+    return q
 
 
 def _temporal_group_quantile(
@@ -399,10 +311,112 @@ def _temporal_group_quantile(
     return ret
 
 
+def _temporal_group_median(
+    group_idx: npt.NDArray[np.integer],
+    ticks: npt.NDArray[np.int64],
+    size: int,
+    fill_tick: int,
+) -> npt.NDArray[np.int64]:
+    """The median of the ticks of every group, exact.
+
+    The values of a group are brought together by a stable argsort, a
+    partition finds the middle of the block, and the two middles of an even
+    group average to their exact mean rounded half to even - the two add up
+    as python integers, so even ticks at the edges of int64 cannot wrap the
+    sum.
+    """
+    order = np.argsort(group_idx, kind="stable")
+    values = ticks[order]
+    counts = np.bincount(group_idx, minlength=size)
+    starts = np.zeros(size, dtype=np.intp)
+    np.cumsum(counts[:-1], out=starts[1:])
+    ret = np.full(size, NAT_TICK, dtype=np.int64)
+    for grp in np.flatnonzero(counts):
+        count = int(counts[grp])
+        part = np.partition(values[starts[grp] : starts[grp] + count], count // 2)
+        if count % 2 == 1:
+            ret[grp] = part[count // 2]
+        else:
+            ret[grp] = _round_half_even(int(part[: count // 2].max()) + int(part[count // 2]), 2)
+    ret[counts == 0] = fill_tick
+    return ret
+
+
+def _tick_mean(
+    kernel: Callable[..., AResult] | None,
+    group_idx: npt.NDArray[np.integer],
+    ticks: npt.NDArray[np.int64],
+    size: int,
+    fill_tick: int,
+    nan: bool,
+) -> AResult:
+    """The mean of the ticks of every group, rounded half to even.
+
+    The kernel of the backend computes it in compiled code, measuring the
+    deviations from the first value of a group - the sum of the ticks of a
+    group around the epoch leaves the window float64 represents exactly.
+
+    A backend without a kernel gets the mean of the exact sums of this
+    module: the ticks are split into limbs, every limb accumulates in an
+    exact sum, and the totals of the groups are combined as python
+    integers.  The division is exact, and the remainder rounds half to
+    even.
+    """
+    if kernel is not None:
+        return kernel(
+            group_idx,
+            ticks,
+            size,
+            fill_value=fill_tick,
+            dtype=np.dtype(np.int64),
+            nan=nan,
+        )
+    if nan:
+        # the NaT of a group is left out - its tick is the smallest one, and
+        # the sums of the ticks would count it
+        good = ticks != NAT_TICK
+        ticks, group_idx = ticks[good], group_idx[good]
+    return cast(
+        "AResult",
+        exact_integer_group_mean(group_idx, ticks, size, fill_tick, np.dtype(np.int64)),
+    )
+
+
+def _tick_median(
+    kernel: Callable[..., AResult] | None,
+    group_idx: npt.NDArray[np.integer],
+    ticks: npt.NDArray[np.int64],
+    size: int,
+    fill_tick: int,
+    nan: bool,
+) -> AResult:
+    """The median of the ticks of every group, the exact middle.
+
+    The kernel of the backend selects the middle of the block of every
+    group in compiled code; a backend without one gets the exact median of
+    this module - the middles of an even group average to their exact mean
+    rounded half to even, and the two add up as python integers, so even
+    ticks at the edges of int64 cannot wrap the sum.
+    """
+    if kernel is not None:
+        return kernel(
+            group_idx,
+            ticks,
+            size,
+            fill_value=fill_tick,
+            dtype=np.dtype(np.int64),
+            nan=nan,
+        )
+    if nan:
+        # the NaT of a group is left out, like the nan variant leaves the
+        # nans of a group out
+        good = ticks != NAT_TICK
+        ticks, group_idx = ticks[good], group_idx[good]
+    return cast("AResult", _temporal_group_median(group_idx, ticks, size, fill_tick))
+
+
 def _temporal_aggregation(
     resolve: Callable[[str], Callable[..., AResult]],
-    tick_mean: Callable[..., AResult],
-    tick_median: Callable[..., AResult],
     funcname: str,
     group_idx: npt.NDArray[np.integer],
     a: AValue,
@@ -411,6 +425,8 @@ def _temporal_aggregation(
     dtype: npt.DTypeLike | None,
     kwargs: dict[str, Any],
     native: bool = False,
+    tick_mean: Callable[..., AResult] | None = None,
+    tick_median: Callable[..., AResult] | None = None,
 ) -> tuple[AResult, AFillValue]:
     """The answer of an aggregation of temporal values, and the fill it used.
 
@@ -422,11 +438,7 @@ def _temporal_aggregation(
 
     The operation of the function is resolved through ``resolve``, so that
     the caller does not have to know whether the wrapper computed the answer
-    itself or the kernel of the operation did.  The mean of the ticks is the
-    one operation that no kernel of a function answers - it is not a function
-    of the package - and it comes in as ``tick_mean``: it takes the ``nan``
-    flag, because the nan variant leaves the NaT of a group out on its own
-    instead of having the rows filtered out before it.
+    itself or the kernel of the operation did.
 
     ``native`` says that the kernel of the backend takes the temporal values
     as they are: the compiled kernels of the numba backend order them, find
@@ -434,14 +446,23 @@ def _temporal_aggregation(
     pass over the data, and the wrapper has nothing to prepare for them.
     The numpy backend works on the ticks, so it leaves the flag alone.
 
-    ``tick_median`` is the median of the ticks of the backend - the exact
-    middle of every group.  The numba backend hands its compiled one in,
-    the numpy backend the selection of ``aggregate_numpy.specials``; both
-    leave the NaT of a nan median out on their own, so the wrapper filters
-    no rows for the median.  The quantiles stay on the exact path of this
-    module for both backends: their interpolation scales a tick difference
-    by a fraction, and that product no int64 arithmetic of the compiled
-    code holds.
+    The two answers that no function of the package computes - the mean and
+    the median of the ticks - belong to this module: it holds them exactly,
+    in python integers, where the sum of the ticks of a group leaves the
+    window float64 represents exactly and the mean of the two middles of an
+    even group rounds off the tick grid.
+
+    A backend that has a kernel for one of them hands it in as ``tick_mean``
+    or ``tick_median``: the numba backend has both, and its kernels measure
+    the deviations from the first value of a group and select the middle of
+    a block in compiled code.  A backend that has none - the numpy one -
+    leaves them out, and the answers of this module stand.  The kernels take
+    the ``nan`` flag, because the nan variant leaves the NaT of a group out
+    on its own instead of having the rows filtered out before it.
+
+    The quantiles have no kernel in either backend: their interpolation
+    scales a tick difference by a fraction, and that product no int64
+    arithmetic of the compiled code holds.
     """
 
     def operation(name: str) -> Callable[..., AResult]:
@@ -648,21 +669,23 @@ def _temporal_aggregation(
                 computed[nat_groups_for_float] = np.nan
             computed_final = True
         else:
-            # the tick mean: the kernel measures the deviations from the
-            # first value of the group, so the sum of the ticks stays exact
-            # and the answer is a tick again - the plain kernel poisons the
-            # group of a NaT on its own, the nan one leaves the NaT out
+            # the tick mean: the kernel of the backend measures the
+            # deviations from the first value of the group, so the sum of
+            # the ticks stays exact and the answer is a tick again - the
+            # plain kernel poisons the group of a NaT on its own, the nan one
+            # leaves the NaT out.  A backend without a kernel gets the exact
+            # mean of this module, which holds the sum of the ticks in
+            # python integers.
             try:
                 computed = cast(
                     "npt.NDArray[Any]",
-                    tick_mean(
+                    _tick_mean(
+                        tick_mean,
                         group_idx,
                         ticks,
                         size,
-                        fill_value=fill_tick,
-                        dtype=np.dtype(np.int64),
-                        nan=funcname.startswith("nan"),
-                        **kwargs,
+                        fill_tick,
+                        funcname.startswith("nan"),
                     ),
                 )
             except OverflowError:
@@ -695,20 +718,20 @@ def _temporal_aggregation(
         # only timedelta64 reaches this point - datetime64 has no middles
         fill_tick = _temporal_fill_tick(fill_value, a_dtype, True)
         if base == "median":
-            # the kernel of the backend selects the middle of the ticks of
-            # every group - the plain variant answers the groups that hold
-            # a NaT through the poison below, the nan one leaves the NaT
-            # tick out on its own
+            # the middle of the ticks of every group: the kernel of the
+            # backend selects it in compiled code, a backend without one
+            # gets the exact median of this module - the plain variant
+            # answers the groups that hold a NaT through the poison below,
+            # the nan one leaves the NaT tick out on its own
             computed = cast(
                 "npt.NDArray[Any]",
-                tick_median(
+                _tick_median(
+                    tick_median,
                     group_idx,
                     ticks,
                     size,
-                    fill_value=fill_tick,
-                    dtype=np.dtype(np.int64),
-                    nan=funcname.startswith("nan"),
-                    **kwargs,
+                    fill_tick,
+                    funcname.startswith("nan"),
                 ),
             )
         else:

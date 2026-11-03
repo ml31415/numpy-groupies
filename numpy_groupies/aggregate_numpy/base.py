@@ -8,9 +8,7 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numpy.averaging import _tick_mean
 from numpy_groupies.aggregate_numpy.ops import _dispatch
-from numpy_groupies.aggregate_numpy.specials import _temporal_median
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     resolve_fill_value,
@@ -92,8 +90,6 @@ def _aggregate_base(
     if is_own_function(funcname) and is_temporal_input(a):
         ret, fill_value = _temporal_aggregation(
             lambda name: cast("Callable[..., AResult]", _dispatch[name].op),
-            _tick_mean,
-            _temporal_median,
             cast("str", funcname),
             group_idx,
             cast("AValue", a),

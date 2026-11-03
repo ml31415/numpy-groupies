@@ -98,10 +98,10 @@ from numpy_groupies.utils_np import (
     AScalar,
     AValue,
     RavelOrder,
+    exact_integer_group_mean,
 )
 from numpy_groupies.utils_temporal import (
     _temporal_aggregation,
-    exact_integer_group_mean,
     is_own_function,
     is_temporal_input,
 )
@@ -161,38 +161,64 @@ def aggregate(
 
             return call
 
+        def tick_mean(
+            group_idx: npt.NDArray[np.integer],
+            values: AValue,
+            size_: int,
+            fill_value: AFillValue = None,
+            dtype: npt.DTypeLike | None = None,
+            nan: bool = False,
+            **kw: Any,
+        ) -> AResult:
+            """the compiled mean of the ticks - the deviations from the first
+            value of a group, so the sum of the ticks stays exact"""
+            return cast(
+                AResult,
+                _driver_call(averaging.tick_mean.nan if nan else averaging.tick_mean.plain)(
+                    group_idx,
+                    values,
+                    size_,
+                    np.dtype(np.int64),
+                    np.dtype(np.int64),
+                    fill_value,
+                    # the sample spacing and the quantile are no argument of
+                    # the tick mean - the driver of the plain variant takes
+                    # them and leaves them alone
+                    0.0,
+                    0.0,
+                ),
+            )
+
+        def tick_median(
+            group_idx: npt.NDArray[np.integer],
+            values: AValue,
+            size_: int,
+            fill_value: AFillValue = None,
+            dtype: npt.DTypeLike | None = None,
+            nan: bool = False,
+            **kw: Any,
+        ) -> AResult:
+            """the compiled median of the ticks - the exact middle of every
+            group, where the numeric kernel promotes to float64"""
+            return cast(
+                AResult,
+                _driver_call(specials.tick_median.nan if nan else specials.tick_median.plain)(
+                    group_idx,
+                    values,
+                    size_,
+                    np.dtype(np.int64),
+                    np.dtype(np.int64),
+                    fill_value,
+                    # the sample spacing and the quantile are no argument of
+                    # the tick median - the driver of the plain variant takes
+                    # them and leaves them alone
+                    0.0,
+                    0.0,
+                ),
+            )
+
         ret, fill_value = _temporal_aggregation(
             temporal_op,
-            lambda group_idx, values, size_, fill_value=None, dtype=None, nan=False, **kw: _driver_call(
-                averaging.tick_mean.nan if nan else averaging.tick_mean.plain
-            )(
-                group_idx,
-                values,
-                size_,
-                np.dtype(np.int64),
-                np.dtype(np.int64),
-                fill_value,
-                # the sample spacing and the quantile are no argument of the
-                # tick mean - the driver of the plain variant takes them and
-                # leaves them alone
-                0.0,
-                0.0,
-            ),
-            lambda group_idx, values, size_, fill_value=None, dtype=None, nan=False, **kw: _driver_call(
-                specials.tick_median.nan if nan else specials.tick_median.plain
-            )(
-                group_idx,
-                values,
-                size_,
-                np.dtype(np.int64),
-                np.dtype(np.int64),
-                fill_value,
-                # the sample spacing and the quantile are no argument of the
-                # tick median - the driver of the plain variant takes them
-                # and leaves them alone
-                0.0,
-                0.0,
-            ),
             cast("str", funcname),
             group_idx,
             cast("AValue", a),
@@ -202,6 +228,8 @@ def aggregate(
             kwargs,
             # the compiled kernels take the temporal values as they are
             native=True,
+            tick_mean=tick_mean,
+            tick_median=tick_median,
         )
 
     # numba has no float16: the values survive the widening cast to float32

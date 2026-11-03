@@ -11,8 +11,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.reductions import _first, _last, _sum
-from numpy_groupies.utils_np import AScalar, iscomplexobj
-from numpy_groupies.utils_temporal import NAT_TICK, exact_integer_group_mean
+from numpy_groupies.utils_np import AScalar, exact_integer_group_mean, iscomplexobj
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     MOMENTS_NOT_FOR_COMPLEX,
@@ -69,37 +68,6 @@ def _mean(
     if not np.isnan(fill_value):
         ret[counts == 0] = fill_value
     return ret.astype(dtype, copy=False)
-
-
-def _tick_mean(
-    group_idx: npt.NDArray[np.integer],
-    a: npt.NDArray[np.number],
-    size: int,
-    fill_value: AScalar,
-    dtype: npt.DTypeLike | None = None,
-    nan: bool = False,
-) -> npt.NDArray[np.integer]:
-    """The mean of the ticks of every group, rounded half to even.
-
-    The ticks of a temporal input are the number of units since the epoch -
-    for a datetime64 in nanoseconds that is a number around 1.6e18, and the
-    sum of the ticks of a group leaves the window float64 represents
-    exactly.  The sums are therefore exact (see
-    ``utils_np.exact_integer_group_mean``), and the remainder of the
-    division rounds half to even.
-    """
-    fill_tick = 0 if (isinstance(fill_value, float) and fill_value != fill_value) else int(cast("int", fill_value))
-    ticks = a.astype(np.int64)
-    if nan:
-        # the NaT of a group is left out - its tick is the smallest one, and
-        # the sums of the ticks would count it
-        good = ticks != NAT_TICK
-        ticks = ticks[good]
-        group_idx = group_idx[good]
-    return cast(
-        "npt.NDArray[np.integer]",
-        exact_integer_group_mean(group_idx, ticks, size, fill_tick, np.dtype(np.int64)),
-    )
 
 
 def _trapezoid(
