@@ -55,15 +55,17 @@ cannot do at all: ``aggregate()`` runs it on float32 and rounds the result
 back, a kernel of its own has nothing to run it on.
 
 Datetime64 and timedelta64 input is aggregated on its int64 ticks: the
-``aggregate()`` entry takes temporal values apart ahead of the kernels (the
-NaT semantics included), and turns the tick results back - see the temporal
-section of ``utils_np`` for the policy.  The kernels themselves take temporal
-values as they are, as far as their arithmetic allows: the comparisons of
-compiled code order datetime64 and timedelta64 values (NaT is the smallest
-tick among them, and ``val != val`` detects it like a nan), so the selection
-and the reduction kernels - min, max, first, last, their nan variants, the
-argreductions, len, allnan, anynan, array, and the sum and the cumulative
-sums of the durations - aggregate them directly, as a python call and as a
+``aggregate()`` entry hands temporal values to the wrapper of the numpy
+based backends (``aggregate_numpy.temporal``), which carries the policy -
+what numpy refuses, the NaT of the plain reductions and the nan variants,
+the unit of the answer - and turns the tick results back.  The kernels
+themselves take temporal values as they are, as far as their arithmetic
+allows: the comparisons of compiled code order datetime64 and timedelta64
+values (NaT is the smallest tick among them, and ``val != val`` detects it
+like a nan), so the selection and the reduction kernels - min, max, first,
+last, their nan variants, the argreductions, len, allnan, anynan, array,
+and the sum and the cumulative sums of the durations - aggregate them
+directly, as a python call and as a
 jitted one.  The kernels that cannot take them (the arithmetic of the
 moments, the partitions and the sorts, the truthiness, and the mean - whose
 rounding numba's division of durations would truncate, where the package
