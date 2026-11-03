@@ -126,6 +126,42 @@ def _round_half_even(fr):
     return q
 
 
+def test_the_average_of_two_ticks_is_exact_over_the_whole_int64_range():
+    # the mean of the two middles of an even group must not take the sum of
+    # the two: pairs at the ends of the int64 range sum past it, and the
+    # wraparound answers a tick of no value of the group.  The average is
+    # built from the bits the two share and the bits they differ in, and it
+    # rounds the half remainder to the even neighbour - here it is checked
+    # against the python integers, over the corners of the range, the ties
+    # of half to even and twenty thousand random pairs.
+    from numpy_groupies.aggregate_numba.specials import _tick_pair_average
+
+    lo, hi = np.iinfo(np.int64).min, np.iinfo(np.int64).max
+
+    def want(a: int, b: int) -> int:
+        # the reference reads the sum as a python integer, where nothing wraps
+        return _round_half_even(Fraction(a + b, 2))
+
+    corners = [lo, lo + 1, lo + 2, -2, -1, 0, 1, 2, 2**61 - 1, 2**61, 2**62 - 1, 2**62, 2**62 + 1, hi - 1, hi]
+    for a in corners:
+        for b in corners:
+            assert int(_tick_pair_average(np.int64(a), np.int64(b))) == want(a, b)
+    # the ties, spelled out: a half rounds to the even of the two neighbours
+    for a, b, mean in [(-1, 2, 0), (-2, 1, 0), (1, 2, 2), (2, 3, 2), (-3, -2, -2), (0, 1, 0), (-1, 0, 0)]:
+        assert int(_tick_pair_average(np.int64(a), np.int64(b))) == mean, (a, b)
+    # the two ends of the range together, and each with itself - the sum of
+    # the pair would wrap in both cases
+    assert int(_tick_pair_average(np.int64(lo), np.int64(hi))) == 0
+    assert int(_tick_pair_average(np.int64(hi), np.int64(hi))) == hi
+    assert int(_tick_pair_average(np.int64(lo), np.int64(lo))) == lo
+    # and twenty thousand pairs drawn over the whole range
+    rng = np.random.default_rng(11)
+    first = [int(v) for v in rng.integers(lo, hi, 20_000, dtype=np.int64)]
+    second = [int(v) for v in rng.integers(lo, hi, 20_000, dtype=np.int64)]
+    for a, b in zip(first, second):
+        assert int(_tick_pair_average(np.int64(a), np.int64(b))) == want(a, b), (a, b)
+
+
 @pytest.mark.parametrize("unit", ["s", "ns"])
 def test_datetime_mean_rounds_half_to_even(impl, unit):
     # two ticks of a group one day apart: their mean is the half day, which

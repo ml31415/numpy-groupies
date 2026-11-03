@@ -210,6 +210,41 @@ def _middle(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> Any:
 _middle = njit_stable(_middle, name="median_middle")
 
 
+def _tick_pair_average(lower: int, upper: int) -> int:
+    """The exact mean of two ticks, rounded half to even.
+
+    The sum of the two is not taken: two ticks of one end of the int64
+    range sum past it, and the wraparound would answer a tick that belongs
+    to no value of the group.  The mean is taken from the bits instead -
+
+    - ``a & b`` are the bits the two share: they are in the mean once,
+    whatever the other one carries there,
+    - ``a ^ b`` are the bits they differ in: the mean of those is half of
+    them, and the shift of a negative number floors - which is the floor
+    the mean asks for,
+
+    so ``q = (a & b) + ((a ^ b) >> 1)`` is ``floor((a + b) / 2)`` for the
+    whole int64 range.  An odd sum leaves a remainder of a half, and half
+    to even hands the answer to the even of the two neighbours one apart:
+    the low bit of ``a ^ b`` is the parity of the sum, the low bit of ``q``
+    the one of the floor - when both are set, the floor is the odd one and
+    the neighbour above is taken.
+
+    Measured against a python ``Fraction`` over the pairs of the corners
+    of the int64 range, and the ties at zero and the smallest tick
+    (test_temporal, the bare kernel of the tick median) - the wraparound
+    of the plain sum and the rounding of the float64 promotion both stay
+    out of it.
+    """
+    q = (lower & upper) + ((lower ^ upper) >> 1)
+    if (lower ^ upper) & 1 and q & 1:
+        q += 1
+    return q
+
+
+_tick_pair_average = njit_stable(_tick_pair_average, name="tick_pair_average")
+
+
 def _tick_middle(a_sorted: npt.NDArray[np.int64], begin: int, m: int) -> Any:
     """the middle value(s) of the block of ticks at ``a_sorted[begin:begin+m]``.
 
@@ -217,16 +252,7 @@ def _tick_middle(a_sorted: npt.NDArray[np.int64], begin: int, m: int) -> Any:
     the one of the ticks: an exact int64 answer, where ``_middle`` promotes
     to float64 (just like np.median does).  A tick pair around the epoch
     carries more bits than the 53 of a float64 mantissa holds - the
-    promotion would round the answer off the tick grid - and their sum
-    would wrap the int64 it adds up in.
-
-    ``(a & b) + ((a ^ b) >> 1)`` is ``floor((a + b) / 2)`` without the sum:
-    the shared bits are counted once, and the differing bits carry the
-    carry of the halved difference - a shift of a negative number floors,
-    which is what the floor of the mean asks for.  An odd sum leaves a
-    remainder of a half, and half to even says the even of the two
-    neighbours wins: the low bit of ``a ^ b`` is the parity of the sum,
-    the low bit of ``q`` the one of the floor.
+    promotion would round the answer off the tick grid.
     """
     k = m // 2
     upper = _select(a_sorted, begin, begin + m, begin + k)
@@ -236,10 +262,7 @@ def _tick_middle(a_sorted: npt.NDArray[np.int64], begin: int, m: int) -> Any:
     for i in range(begin + 1, begin + k):
         if complex_less(lower, a_sorted[i]):
             lower = a_sorted[i]
-    q = (lower & upper) + ((lower ^ upper) >> 1)
-    if (lower ^ upper) & 1 and q & 1:
-        q += 1
-    return q
+    return _tick_pair_average(lower, upper)
 
 
 _tick_middle = njit_stable(_tick_middle, name="tick_median_middle")
