@@ -212,6 +212,38 @@ def test_mean_default_dtype_is_float_of_the_exact_quotient(impl):
     assert res[0] == float(Fraction(int(ticks.astype(object).sum()), 3))
 
 
+def test_mean_float_dtype_poisons_the_nat_groups(impl):
+    # the float answer of a group a NaT poisons is no quotient at all - nan
+    ticks = np.array([2**62, 2**62 + 2, 0, 2**62], dtype=np.int64)
+    a = ticks.view("M8[ns]")
+    a[1] = np.datetime64("NaT", "ns")
+    group_idx = np.array([0, 0, 1, 1])
+    res = impl.aggregate(group_idx, a, func="mean", size=2, dtype=np.float64)
+    assert res[1] == float(Fraction(int(ticks[2]) + int(ticks[3]), 2))
+    assert res[0] != res[0]  # nan
+
+
+def test_nanmean_float_dtype_leaves_the_nat_out(impl):
+    # the nan variant of the float answer averages the values it has
+    ticks = np.array([2**62, 2**62 + 4, 2**62 + 8, 2**62], dtype=np.int64)
+    a = ticks.view("M8[ns]")
+    a[1] = np.datetime64("NaT", "ns")
+    group_idx = np.array([0, 0, 0, 1])
+    res = impl.aggregate(group_idx, a, func="nanmean", size=2, dtype=np.float64)
+    assert res[0] == float(Fraction(int(ticks[0]) + int(ticks[2]), 2))
+    assert res[1] == float(ticks[3])
+
+
+def test_mean_of_a_spanning_group_with_nat_answers_nat(impl):
+    # a NaT and a value of this epoch: the span of the ticks alone would
+    # overflow the deviations of the kernel, and the limb sums take over -
+    # the poison of the NaT survives the fallback
+    group_idx = np.array([0, 0, 1])
+    a = np.array(["1970-01-01", "NaT", "2011-01-01"], dtype="M8[s]")
+    res = impl.aggregate(group_idx, a, func="mean", size=2)
+    np.testing.assert_array_equal(res, np.array(["NaT", "2011-01-01"], dtype=a.dtype))
+
+
 # ---------------------------------------------------------------------------
 # the order statistics and the sums of the durations
 
@@ -616,3 +648,17 @@ def test_the_mean_of_the_ticks_keeps_the_unit(impl):
     assert res.dtype == a.dtype
     # 7 / 3 = 2.333... - the tick answer rounds half to even, so 2
     np.testing.assert_array_equal(res, np.array([2], dtype="m8[ns]"))
+
+
+def test_the_bare_tick_mean_poisons_the_nat_of_a_group():
+    # the kernel sees the ticks alone - the tick of the NaT is the smallest
+    # one, and the plain kernel takes its group over with it, while the nan
+    # kernel leaves it out
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0, 1, 1])
+    ticks = np.array([10, np.iinfo(np.int64).min, 3, 5], dtype=np.int64)
+    plain = aggregate_numba.tick_mean(group_idx, ticks, 2)
+    np.testing.assert_array_equal(plain, np.array([np.iinfo(np.int64).min, 4], dtype=np.int64))
+    nan = aggregate_numba.nantick_mean(group_idx, ticks, 2)
+    np.testing.assert_array_equal(nan, np.array([10, 4], dtype=np.int64))

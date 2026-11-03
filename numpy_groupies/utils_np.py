@@ -331,6 +331,11 @@ def resolve_output_dtype(
                     return np.dtype(np.float64)
             else:
                 if func_str == "sum":
+                    if a_dtype.kind in TEMPORAL_KINDS:
+                        # the sum of durations is a duration - numpy answers
+                        # in the unit of the input, and there is no integer
+                        # size to guess for
+                        return a_dtype
                     # Try to guess the minimally required int size
                     if np.issubdtype(a_dtype, np.int64):
                         # It's not getting bigger anymore
@@ -838,9 +843,11 @@ TEMPORAL_TIMEDELTA_REJECTED = frozenset({"prod", "cumprod", "var", "std", "skew"
 # the functions whose kernel takes the temporal values as they are: the
 # comparisons of compiled code order datetime64 and timedelta64 values, and
 # ``val != val`` detects NaT like a nan - so the kernel finds the NaT of a
-# group, its position and the empty groups on its own, in one pass.  The
-# functions that need the ticks themselves - the sum, the cumulative sums and
-# the mean - are not among them.
+# group, its position and the empty groups on its own, in one pass.  The sum
+# and the cumulative sums of the durations belong to them: the addition of a
+# duration is compiled, and it propagates the NaT like numpy does.  The mean
+# is the one value function that stays behind: numba's division of durations
+# would truncate it, where the package rounds half to even.
 TEMPORAL_NATIVE_FUNCS = frozenset(
     {
         "min",
@@ -860,6 +867,12 @@ TEMPORAL_NATIVE_FUNCS = frozenset(
         "allnan",
         "anynan",
         "array",
+        "sum",
+        "nansum",
+        "cumsum",
+        "nancumsum",
+        "cummax",
+        "cummin",
     }
 )
 # plain variants of these poison their whole group with a single NaT - the
@@ -900,19 +913,21 @@ def is_own_function(funcname: str | Callable[..., Any]) -> bool:
 def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:
     """The fill value of a temporal result, as the value of its dtype.
 
-    The nan of the averaging functions is the NaT of the unit, the zero of
-    the operations that fill with zero is the zero of the unit, and a value
-    the caller named passes through.
+    A nan (the default of the averaging functions, or the caller's own) and
+    the missing default answer NaT for the functions that fill with it and
+    the zero of the unit for the ones that fill with zero; a plain number is
+    a tick; a temporal value passes through in the unit of the input.
     """
-    if fill_value is None or fill_value is DEFAULT_FILL_VALUE:
-        tick = NAT_TICK if base in TEMPORAL_NAT_FILL else 0
-        return np.asarray(tick, dtype=np.int64).view(a_dtype)[()]
-    if isinstance(fill_value, (float, np.floating)) and fill_value != fill_value:
-        tick = NAT_TICK if base in TEMPORAL_NAT_FILL else 0
-        return np.asarray(tick, dtype=np.int64).view(a_dtype)[()]
     if isinstance(fill_value, (np.datetime64, np.timedelta64)):
         return np.asarray(fill_value).astype(a_dtype)[()]
-    if isinstance(fill_value, (bool, np.bool_, int, np.integer)):
+    if isinstance(fill_value, (float, np.floating)) and fill_value == fill_value:
+        # a real number of the caller's own - no tick, and no missing value
+        return fill_value
+    if (
+        fill_value is None
+        or fill_value is DEFAULT_FILL_VALUE
+        or isinstance(fill_value, (bool, np.bool_, int, np.integer))
+    ):
         tick = NAT_TICK if base in TEMPORAL_NAT_FILL else 0
         return np.asarray(tick, dtype=np.int64).view(a_dtype)[()]
     return fill_value
@@ -1180,10 +1195,10 @@ def aggregate_temporal(
     instead of having the rows filtered out before it.
 
     ``native`` says that the kernel of the backend takes the temporal values
-    as they are: the compiled kernels of the numba backend order them and
-    find their NaT on their own, in one pass over the data, and the wrapper
-    has nothing to prepare for them.  The numpy backend works on the ticks,
-    so it leaves the flag alone.
+    as they are: the compiled kernels of the numba backend order them, find
+    their NaT, and add and accumulate the durations on their own, in one
+    pass over the data, and the wrapper has nothing to prepare for them.
+    The numpy backend works on the ticks, so it leaves the flag alone.
     """
 
     def operation(name: str) -> Callable[..., AResult]:
@@ -1240,7 +1255,8 @@ def aggregate_temporal(
     plain_fill = isinstance(fill_value, (bool, np.bool_, int, np.integer))
     if native and base in TEMPORAL_NATIVE_FUNCS and dtype is None and not plain_fill:
         # the kernel takes the temporal values as they are - it finds the NaT
-        # of every group, its position and the empty groups on its own
+        # of every group, its position and the empty groups on its own, in
+        # one pass, and the wrapper has nothing to prepare for it
         op = operation(funcname)
         if base in ("len", "nanlen", "nunique", "nannunique", "argmin", "argmax", "nanargmin", "nanargmax"):
             # a position or a count: the fill is the number the function uses
@@ -1255,22 +1271,23 @@ def aggregate_temporal(
         ret = op(group_idx, a, size, fill_value=fill, dtype=None, **kwargs)
         return cast("AResult", ret), fill_value
 
-    nat = np.isnat(a)
     if funcname.startswith("nan") and base in ("argmin", "argmax"):
         # the nan-variants of the argreductions keep every row - the
         # positions they name are the ones of the input - so the NaT rows
         # stand in as the extreme tick the reduction skips.  A group of
         # nothing but NaT holds no tick of its own after the swap, and is
         # left to the fill value like its float counterpart
+        nat = np.isnat(a)
         skip = np.iinfo(np.int64).max if base == "argmin" else NAT_TICK + 1
         a = np.where(nat, np.int64(skip), values.view(np.int64)).view(a.dtype)
         nat = None
     elif funcname.startswith("nan") and base != "cumsum" and base != "mean":
         # the nan-variants skip NaT like they skip nan - the plain ones
-        # propagate it, and numpy propagates it in nancumsum as well, so
-        # the cumulative functions keep their rows.  The nan mean does not
-        # filter them either: the tick mean leaves the NaT of a group out on
-        # its own, and filtering the rows would cost a copy of the data.
+        # propagate it, and the cumulative ones carry it through their group
+        # like numpy does.  The nan mean does not filter them either: the
+        # tick mean leaves the NaT of a group out on its own, and filtering
+        # the rows would cost a copy of the data.
+        nat = np.isnat(a)
         if nat.any():
             good = ~nat
             a = a[good]
@@ -1283,8 +1300,7 @@ def aggregate_temporal(
         # the truth of a temporal value is its tick being non-zero and the
         # value not being NaT - a NaT is no value at all
         truth: npt.NDArray[np.bool_] = values.view(np.int64) != 0
-        if nat is not None:
-            truth = truth & ~nat
+        truth &= ~np.isnat(values)
         op = operation(funcname)
         ret = op(
             group_idx,
@@ -1308,40 +1324,73 @@ def aggregate_temporal(
         )
         return cast("AResult", ret), fill_value
 
-    if base == "argmax" and nat is not None and nat.any():
-        # numpy answers the position of the first NaT of the group
-        nat_groups, nat_positions = _first_true_position_per_group(group_idx, nat)
-    elif base in TEMPORAL_NAT_POISON and nat is not None and nat.any() and not funcname.startswith("nan"):
-        # a single NaT poisons the mean, the maximum and - for the durations
-        # - the middles of its whole group
-        nat_groups = _groups_holding(group_idx, nat, size)
-
     ticks = values.view(np.int64)
-    if base == "sort" and nat is not None and nat.any():
+    # the NaT of the values, where the ticks of the kernels alone do not
+    # know it - every branch of the chain below is the one of its operation,
+    # so no call computes the mask more than once
+    if base in ("argmin", "argmax"):
+        # the plain argmin finds the NaT on its own - its tick is the
+        # smallest one - while the plain argmax never picks it, and numpy
+        # answers the position of the first NaT of the group
+        if base == "argmax":
+            nat = np.isnat(values)
+            if nat.any():
+                nat_groups, nat_positions = _first_true_position_per_group(group_idx, nat)
+    elif base in TEMPORAL_NAT_POISON and not funcname.startswith("nan") and not (native and base == "mean"):
+        # a single NaT poisons the sum, the maximum and - for the durations
+        # - the middles of its whole group.  The mean of the native backend
+        # is not among them: its kernel poisons the group on its own, and
+        # the numpy backend poisons through the patch further down.
+        nat = np.isnat(values)
+        if nat.any():
+            nat_groups = _groups_holding(group_idx, nat, size)
+    elif base == "sort":
         # numpy sorts NaT to the end of its group although it compares as the
         # smallest value everywhere else - the largest tick stands in for it
         # on the way through the sort, and the answer turns it back into NaT
-        ticks = np.where(nat, np.iinfo(np.int64).max, ticks)
-        sort_nat_restore = True
-    if base in ("cumsum", "cummax", "cummin") and nat is not None and nat.any():
+        nat = np.isnat(values)
+        if nat.any():
+            ticks = np.where(nat, np.iinfo(np.int64).max, ticks)
+            sort_nat_restore = True
+    elif base in ("cumsum", "cummax", "cummin") and not native:
         # the accumulation carries the NaT through to the end of its group,
         # nancumsum included - numpy propagates it for temporal input, and
-        # the groups are poisoned one by one
-        running_nat = _per_group_running_mask(group_idx, nat)
+        # the groups are poisoned one by one.  The native backend keeps its
+        # rows: its kernels carry the NaT on their own.
+        nat = np.isnat(values)
+        if nat.any():
+            running_nat = _per_group_running_mask(group_idx, nat)
 
     if base == "mean":
         fill_tick = _temporal_fill_tick(fill_value, a_dtype, True)
         if user_dtype is not None and user_dtype.kind == "f":
             # a float answer is the exact quotient itself, not the rounded tick
+            mean_idx, mean_ticks = group_idx, ticks
+            nat_groups_for_float = None
+            if funcname.startswith("nan"):
+                # the NaT rows have no tick to average - the nan variant
+                # leaves them out, like its kernel does
+                good = ticks != NAT_TICK
+                mean_idx, mean_ticks = group_idx[good], ticks[good]
+            else:
+                # a single NaT poisons its group - the float answer of a
+                # group without a quotient is nan
+                nat = np.isnat(values)
+                if nat.any():
+                    nat_groups_for_float = _groups_holding(group_idx, nat, size)
             computed = cast(
                 "npt.NDArray[Any]",
-                exact_integer_group_mean(group_idx, ticks, size, fill_tick, user_dtype),
+                exact_integer_group_mean(mean_idx, mean_ticks, size, fill_tick, user_dtype),
             )
+            if nat_groups_for_float is not None:
+                computed = cast("npt.NDArray[Any]", np.asarray(computed))
+                computed[nat_groups_for_float] = np.nan
             computed_final = True
         else:
             # the tick mean: the kernel measures the deviations from the
             # first value of the group, so the sum of the ticks stays exact
-            # and the answer is a tick again
+            # and the answer is a tick again - the plain kernel poisons the
+            # group of a NaT on its own, the nan one leaves the NaT out
             try:
                 computed = cast(
                     "npt.NDArray[Any]",
@@ -1357,13 +1406,29 @@ def aggregate_temporal(
                 )
             except OverflowError:
                 # The values of a group reach from one end of the int64 range
-                # to the other: their sum leaves the range, and the kernel
-                # refuses the mean rather than wrapping it around silently.
-                # The limb sums of the ticks hold it exactly.
-                computed = cast(
-                    "npt.NDArray[Any]",
-                    exact_integer_group_mean(group_idx, ticks, size, fill_tick, np.dtype(np.int64)),
-                )
+                # to the other: their sum of deviations leaves the range, and
+                # the kernel refuses the mean rather than wrapping it around
+                # silently.  The limb sums of the ticks hold it exactly.
+                if funcname.startswith("nan"):
+                    # the nan kernel never sums the NaT ticks - their rows
+                    # are no part of its deviations - so the limb sums take
+                    # the values it would have averaged
+                    good = ticks != NAT_TICK
+                    computed = cast(
+                        "npt.NDArray[Any]",
+                        exact_integer_group_mean(group_idx[good], ticks[good], size, fill_tick, np.dtype(np.int64)),
+                    )
+                else:
+                    # a NaT of the group is what may have broken the span of
+                    # its deviations - the poison comes back through the
+                    # patch further down
+                    nat = np.isnat(values)
+                    if nat.any():
+                        nat_groups = _groups_holding(group_idx, nat, size)
+                    computed = cast(
+                        "npt.NDArray[Any]",
+                        exact_integer_group_mean(group_idx, ticks, size, fill_tick, np.dtype(np.int64)),
+                    )
             value_result = True
     elif base in ("median", "quantile", "percentile"):
         # only timedelta64 reaches this point - datetime64 has no middles

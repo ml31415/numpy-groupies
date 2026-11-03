@@ -11,6 +11,7 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numba.compose import (
     build_custom_kernel,
     complex_less,
+    nat_holds,
     output_size,
     rule_int64,
 )
@@ -108,9 +109,8 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
             # the argmin.
             # temporal input: a NaT in the running value poisons its group -
             # numpy answers no position behind the first NaT - which the
-            # guard keeps from letting a later value win.  The isinstance is
-            # dead code for the numeric dtypes.
-            holds = isinstance(cur, (np.datetime64, np.timedelta64)) and np.isnat(cur)
+            # guard keeps from letting a later value win
+            holds = nat_holds(cur)
             if greater:
                 best = (not holds) and complex_less(cur, val)
             else:

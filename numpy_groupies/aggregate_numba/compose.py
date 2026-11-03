@@ -500,6 +500,19 @@ def _fill_differs(fill_value: Any, forced_fill: float) -> bool:
 
 
 @njit_stable
+def nat_holds(value: Any) -> bool:
+    """Whether a value of the running state is the NaT of a temporal input.
+
+    The comparisons of compiled code order NaT as the smallest tick of its
+    dtype, so a selection whose running value is NaT takes no later value -
+    numpy carries the NaT through the group, and this guard is what keeps the
+    ordering from letting one win.  The isinstance is dead code for the
+    numeric dtypes.
+    """
+    return isinstance(value, (np.datetime64, np.timedelta64)) and np.isnat(value)
+
+
+@njit_stable
 def _require_inputs(group_idx: Any, a: Any) -> None:
     """The two value checks a call of a kernel cannot be trusted to skip.
 

@@ -13,6 +13,7 @@ from numpy_groupies.aggregate_numba.compose import (
     build_custom_kernel,
     build_kernel,
     complex_less,
+    nat_holds,
     output_size,
     rule_bool,
     rule_int64,
@@ -735,9 +736,8 @@ def _max_update(st: SelectionState, ri: int, i: int, val: float, fill_value: flo
     best = complex_less(cur, val)
     # temporal input: NaT is a value that takes its group over, and once it
     # is the running value no later value wins - the comparison orders NaT
-    # as the smallest tick, so the guard is what keeps it.  The isinstance is
-    # dead code for the numeric dtypes.
-    holds = isinstance(cur, (np.datetime64, np.timedelta64)) and np.isnat(cur)
+    # as the smallest tick, so the guard is what keeps it
+    holds = nat_holds(cur)
     st.out[ri] = val if (first or val != val or (best and not holds)) else cur
 
 
@@ -777,7 +777,7 @@ def _max_combine(acc: SelectionState, other: SelectionState, fill_value: float, 
                 val = other_out[g]
                 # the temporal guard is dead code for the numeric dtypes - a
                 # NaT of the running value poisons its group like a nan does
-                holds = isinstance(out[g], (np.datetime64, np.timedelta64)) and np.isnat(out[g])
+                holds = nat_holds(out[g])
                 if val != val or (not holds and complex_less(out[g], val)):
                     out[g] = val
 

@@ -21,7 +21,7 @@ from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, r
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numpy.base import numpy_fallback
 from numpy_groupies.registry import FuncName
-from numpy_groupies.utils_np import AFillValue, AResult, AValue, RavelOrder
+from numpy_groupies.utils_np import NAT_TICK, AFillValue, AResult, AValue, RavelOrder
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
@@ -262,6 +262,7 @@ class TickMeanState(NamedTuple):
     origin_pos: npt.NDArray[np.int64]
     low: npt.NDArray[np.int64]
     high: npt.NDArray[np.int64]
+    poisoned: npt.NDArray[np.bool_]
 
 
 def _tick_mean_init(
@@ -280,40 +281,43 @@ def _tick_mean_init(
         np.full(size, -1, np.int64),
         np.full(size, np.iinfo(np.int64).max, np.int64),
         np.full(size, INT64_MIN, np.int64),
+        np.zeros(size, np.bool_),
     )
 
 
-def _tick_mean_update_nan(st: TickMeanState, ri: int, i: int, val: int, fill_value: int, extra: Any) -> None:
-    """The nan variant of the tick mean: the NaT of a group is left out.
+def _make_tick_mean_update(nan: bool) -> Callable[..., None]:
+    """The update of the tick mean, in its plain and its nan form.
 
     The NaT of a temporal value is the tick -2**63 - and the kernel sees the
-    ticks alone, so it tells the NaT from a value by that tick.  A value that
-    is exactly the tick of the NaT (the 21st of September 1677) is left out
-    with it.
+    ticks alone, so it tells the NaT from a value by that tick.  The nan
+    variant leaves it out, and the plain one takes its group over: a single
+    NaT poisons the mean of its whole group, like a nan poisons the mean of
+    a float group.  A value that is exactly the tick of the NaT (the 21st of
+    September 1677) is treated as one.
     """
-    if val == INT64_MIN:
-        return
-    if st.count[ri] == 0:
-        st.origin[ri] = val
-        st.origin_pos[ri] = i
-    st.count[ri] += 1
-    st.out[ri] += val - st.origin[ri]
-    st.low[ri] = min(st.low[ri], val)
-    st.high[ri] = max(st.high[ri], val)
+
+    def _tick_mean_update(st: TickMeanState, ri: int, i: int, val: int, fill_value: int, extra: Any) -> None:
+        if nan and val == INT64_MIN:
+            return
+        if val == INT64_MIN:
+            st.poisoned[ri] = True
+        if st.count[ri] == 0:
+            # the first value of the group is the origin its deviations are
+            # measured from - the values of a group are close to each other,
+            # and it is their sum that overflows
+            st.origin[ri] = val
+            st.origin_pos[ri] = i
+        st.count[ri] += 1
+        st.out[ri] += val - st.origin[ri]
+        # the extrema of the group, for the check of the sum of the deviations
+        st.low[ri] = min(st.low[ri], val)
+        st.high[ri] = max(st.high[ri], val)
+
+    return _tick_mean_update
 
 
-def _tick_mean_update(st: TickMeanState, ri: int, i: int, val: int, fill_value: int, extra: Any) -> None:
-    if st.count[ri] == 0:
-        # the first value of the group is the origin its deviations are
-        # measured from - the values of a group are close to each other, and
-        # it is their sum that overflows
-        st.origin[ri] = val
-        st.origin_pos[ri] = i
-    st.count[ri] += 1
-    st.out[ri] += val - st.origin[ri]
-    # the extrema of the group, for the check of the sum of the deviations
-    st.low[ri] = min(st.low[ri], val)
-    st.high[ri] = max(st.high[ri], val)
+_tick_mean_update = _make_tick_mean_update(False)
+_tick_mean_update_nan = _make_tick_mean_update(True)
 
 
 def _tick_mean_finish(st: TickMeanState, g: int, fill_value: int, extra: Any) -> Any:
@@ -323,6 +327,10 @@ def _tick_mean_finish(st: TickMeanState, g: int, fill_value: int, extra: Any) ->
     exact as well - the rounding is the one of numpy's round, and not the
     truncation a division would give.
     """
+    if st.poisoned[g]:
+        # a single NaT poisons the mean of its whole group - the ticks of
+        # its values are no answer, and the NaT of the unit is
+        return NAT_TICK
     if st.count[g] > extra:
         count = st.count[g]
         # the sum of the deviations stays inside int64 as long as the span of
@@ -378,6 +386,7 @@ def _tick_mean_combine(acc: TickMeanState, other: TickMeanState, fill_value: int
         count[g] += other_count[g]
         low[g] = min(low[g], other.low[g])
         high[g] = max(high[g], other.high[g])
+        acc.poisoned[g] = acc.poisoned[g] or other.poisoned[g]
 
 
 tick_mean = build_kernel(
@@ -390,7 +399,7 @@ tick_mean = build_kernel(
     rule=rule_int64,
     fill_default=0,
     forced_fill=0,
-    doc="Mean of the ticks of every group, rounded half to even",
+    doc="Mean of the ticks of every group, rounded half to even - the tick of a NaT poisons its group, and the nan form leaves it out",
 )
 
 
