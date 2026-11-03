@@ -1042,6 +1042,34 @@ def test_the_parallel_path_of_the_median_answers_the_same(impl):
         np.testing.assert_array_equal(np.asarray(parallel_nan).view(np.int64), sequential_nan)
 
 
+def test_the_parallel_path_of_the_quantile_answers_the_same(impl):
+    # the groups are cut into ranges the threads work on alone - the answer
+    # must not depend on where the cut falls.  The data is big enough for the
+    # parallel path to run at all.
+    rng = np.random.default_rng(5)
+    size = 300_000
+    groups = 500
+    group_idx = rng.integers(0, groups, size).astype(np.int64)
+    ticks = rng.integers(-(2**62), 2**62, size, dtype=np.int64)
+    a = ticks.view("m8[ns]")
+    a[::5] = np.datetime64("NaT", "ns")
+    for func, plain in (("quantile", "quantile"), ("nanquantile", "quantile")):
+        res = impl.aggregate(group_idx, a, func=func, q=0.5, size=groups)
+        # the nan variant answers the same as the plain one over the values
+        # that are left - and the plain one answers NaT for the groups that
+        # hold a NaT
+        good = ~np.isnat(a)
+        ref = impl.aggregate(group_idx[good], a[good], func=plain, q=0.5, size=groups)
+        nat_groups = np.zeros(groups, dtype=bool)
+        np.maximum.at(nat_groups, group_idx[~good], True)
+        got = np.asarray(res).view(np.int64)
+        if func == "quantile":
+            assert np.isnat(np.asarray(res).view("m8[ns]")[nat_groups]).all()
+            assert np.array_equal(got[~nat_groups], np.asarray(ref).view(np.int64)[~nat_groups])
+        else:
+            assert np.array_equal(got, np.asarray(ref).view(np.int64))
+
+
 def test_the_bare_tick_median_poisons_the_nat_of_a_group():
     # the plain kernel sees the NaT tick as the smallest value and averages
     # it like any other - the caller knows the groups that hold a NaT and

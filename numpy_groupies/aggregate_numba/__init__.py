@@ -234,15 +234,57 @@ def aggregate(
                 ),
             )
 
+        def tick_quantile(
+            group_idx: npt.NDArray[np.integer],
+            values: AValue,
+            size_: int,
+            fill_tick: int,
+            fraction: float,
+            method: str = "linear",
+        ) -> AResult:
+            """the compiled quantile of the ticks - numpy's rule of the
+            interpolation, on the ticks of the values
+
+            The compiled kernel knows the linear method alone - the other
+            four of numpy name the neighbours of the quantile in their own
+            way, and the exact path of the numpy backend answers them.
+            The NaT rows are already gone in the nan variants - the wrapper
+            drops them - so the plain kernel is the one to call.
+            """
+            if method != "linear":
+                return cast(
+                    AResult,
+                    FALLBACK.temporal_quantile(
+                        group_idx,
+                        cast("npt.NDArray[np.int64]", values),
+                        size_,
+                        int(fill_tick),
+                        fraction,
+                        method,
+                    ),
+                )
+            return cast(
+                AResult,
+                _driver_call(specials.tick_quantile.plain)(
+                    group_idx,
+                    values,
+                    size_,
+                    np.dtype(np.int64),
+                    np.dtype(np.int64),
+                    fill_tick,
+                    # the sample spacing is no argument of the tick quantile -
+                    # the driver of the plain variant takes it and leaves it
+                    # alone
+                    0.0,
+                    fraction,
+                ),
+            )
+
         ret, fill_value = _temporal_aggregation(
             temporal_op,
             tick_mean,
             tick_median,
-            # the quantile of the ticks: its interpolation scales a tick
-            # difference by a fraction, and that product no int64 arithmetic
-            # of the compiled code holds - the exact path of the numpy
-            # backend answers it
-            FALLBACK.temporal_quantile,
+            tick_quantile,
             cast("str", funcname),
             group_idx,
             cast("AValue", a),
@@ -389,6 +431,10 @@ nantick_mean = averaging.tick_mean.nan.stub
 # middles to float64 and round it off the tick grid
 tick_median = specials.tick_median.plain.stub
 nantick_median = specials.tick_median.nan.stub
+# the quantile of the ticks of a temporal input - numpy's rule of the
+# interpolation, on the ticks of the values
+tick_quantile = specials.tick_quantile.plain.stub
+nantick_quantile = specials.tick_quantile.nan.stub
 std = averaging.std.plain.stub
 nanstd = averaging.std.nan.stub
 var = averaging.var.plain.stub

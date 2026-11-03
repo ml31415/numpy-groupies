@@ -310,33 +310,38 @@ def _temporal_group_quantile(
         raise ValueError(f"unknown interpolation method '{method}' - use one of {sorted(_QUANTILE_METHODS)}")
     for grp in np.flatnonzero(counts):
         count = int(counts[grp])
-        part = np.sort(values[starts[grp] : starts[grp] + count])
+        block = values[starts[grp] : starts[grp] + count]
         position = q * (count - 1)
         low = min(int(np.floor(position)), count - 1)
         high = min(int(np.ceil(position)), count - 1)
         if method == "nearest":
             # numpy rounds the position to the nearest element, halves to
             # even, and takes that element as it is
-            ret[grp] = part[min(int(np.round(position)), count - 1)]
+            index = min(int(np.round(position)), count - 1)
+            ret[grp] = np.partition(block, index)[index]
             continue
         if method == "lower":
-            ret[grp] = part[low]
+            ret[grp] = np.partition(block, low)[low]
             continue
         if method == "higher":
-            ret[grp] = part[high]
+            ret[grp] = np.partition(block, high)[high]
             continue
         # the two neighbours it falls between: the midpoint takes their mean
         # - numpy interpolates it with the fraction of a half
         gamma = 0.5 if method == "midpoint" else position - low
         if low == high:
-            ret[grp] = part[low]
+            ret[grp] = np.partition(block, high)[high]
             continue
-        difference = int(part[high]) - int(part[low])
+        # the partition places the element at the upper index at its sorted
+        # position and leaves the ones before it in no particular order -
+        # their largest is the one below
+        part = np.partition(block, high)
+        difference = int(part[high]) - int(part[:high].max())
         if gamma < 0.5:
             # the product of the difference and the fraction is truncated
             # towards zero, like numpy's multiplication of a duration and a
             # float truncates it
-            ret[grp] = int(part[low]) + int(np.float64(difference) * np.float64(gamma))
+            ret[grp] = int(part[:high].max()) + int(np.float64(difference) * np.float64(gamma))
         else:
             ret[grp] = int(part[high]) - int(np.float64(difference) * np.float64(1 - gamma))
     ret[counts == 0] = fill_tick
