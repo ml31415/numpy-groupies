@@ -29,6 +29,46 @@ def test_the_function_names_are_the_ones_of_the_package():
     assert [getattr(func, "__name__", func) for func in gewaehlt] == ["min", "max"]
 
 
+def test_the_temporal_functions_are_split_by_the_dtype_of_their_data():
+    from numpy_groupies.benchmarks import select_temporal_funcs
+
+    nach_typ = select_temporal_funcs(None)
+    zeit = [getattr(func, "__name__", func) for func in nach_typ["datetime64"]]
+    dauer = [getattr(func, "__name__", func) for func in nach_typ["timedelta64"]]
+    # the sum and the accumulations and the middles are refused for the
+    # points in time - they belong to the durations alone
+    assert "sum" not in zeit and "cumsum" not in zeit and "median" not in zeit
+    assert "sum" in dauer and "cumsum" in dauer and "median" in dauer
+    assert "mean" in zeit and "mean" in dauer
+    # a selection by name lands in the blocks that know the name, in the
+    # order the caller named them
+    gewaehlt = select_temporal_funcs("min,sum,mean")
+    assert [getattr(func, "__name__", func) for func in gewaehlt["datetime64"]] == ["min", "mean"]
+    assert [getattr(func, "__name__", func) for func in gewaehlt["timedelta64"]] == ["min", "sum", "mean"]
+    with pytest.raises(SystemExit):
+        select_temporal_funcs("kurt")
+
+
+def test_the_temporal_data_is_suitable_for_the_kernels(rng):
+    # a fifth of the values is the tick 0 (the falsy values of the boolean
+    # functions), and nana holds a fifth of the rest as NaT - while the span
+    # of every group stays inside the window the mean of the ticks sums
+    # exactly, so the kernels stay on their fast path
+    from numpy_groupies.benchmarks import temporal_benchmark_data
+
+    for kind in ("M", "m"):
+        a, nana, group_idx = temporal_benchmark_data(size=50_000, groups=100, kind=kind)
+        assert a.dtype.kind == kind and nana.dtype.kind == kind
+        assert np.mean(a.view(np.int64) == 0) > 0.15
+        nat_share = np.mean(np.isnat(nana))
+        assert 0.15 < nat_share < 0.25
+        # every group fits the window the kernel sums its deviations in
+        counts = np.bincount(group_idx)
+        for grp in np.flatnonzero(counts):
+            span = int(a[group_idx == grp].view(np.int64).max()) - int(a[group_idx == grp].view(np.int64).min())
+            assert span * int(counts[grp]) < 2**63 - 1
+
+
 def test_a_participant_that_writes_into_the_data_is_undone(rng):
     # the participants must not write into the data: one that does would
     # change the results of the runs that follow, silently.  The snapshot is

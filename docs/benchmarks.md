@@ -21,6 +21,16 @@ python -m numpy_groupies.benchmarks --ufunc --numbagg --pandas --polars --runs=3
 
 The participants get the data as it is - they must not write into it, since that would change the results of the runs that follow. The benchmark checks the data after every function, undoes a change if there was one and reports the row as not measured.
 
+## The temporal table
+
+`--temporal` measures the functions that take `datetime64` and `timedelta64` values instead of the numeric table, one block of rows per dtype:
+
+- 500,000 indices as above; the values are `datetime64[ns]` and `timedelta64[ns]` ticks.
+- The datetime values gather one day after the epoch, spread over a window as wide as the data is long: close enough that the mean of the ticks stays on the exact fast path of its kernel even with the falsy values in the group, and wide enough that `nunique` and `sort` see distinct values.
+- The durations stay below a millisecond, so that the sums and the accumulations of every group stay inside `int64` - the table measures the work, not a wraparound.
+- As in the numeric table, everything above a fifth of the window is set to the tick `0` (the falsy values of the boolean functions), and for the `nan…` functions about 20% of the remaining values are `NaT`.
+- The functions a dtype refuses are left out of its block: the sum, the accumulations and the middles belong to the durations alone, and the moments belong to neither. `--funcs` narrows both blocks by name, and a name neither dtype knows is an error.
+
 ## The calibration of the parallel path
 
 Which calls of the numba kernels take the parallel path and which do not is
