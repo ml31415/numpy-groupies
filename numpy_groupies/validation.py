@@ -263,12 +263,13 @@ def variance_span_overflow_message(low_text: str, high: int) -> str:
 
 
 def check_integer_mean_overflow(count: int, bound: int) -> None:
-    """Refuse integer means that float64 cannot compute exactly.
+    """Refuse integer moments float64 cannot compute exactly.
 
-    The mean of ``count`` integers of magnitude up to ``bound`` is exact in
-    float64 only while their sums stay inside the window float64 represents
-    exactly.  Every implementation applies this rule, so the backends never
-    disagree silently on inexact integer means.
+    The sums behind the third and the fourth central moment of ``count``
+    integers of magnitude up to ``bound`` are exact in float64 only while
+    they stay inside the window float64 represents exactly - the moments
+    have no exact integer fallback, so the inputs are refused.  The mean is
+    not among them any more: it is computed exactly instead.
     """
     if count * bound > EXACT_FLOAT64_INTEGER_LIMIT:
         raise OverflowError(mean_overflow_message(count, bound))

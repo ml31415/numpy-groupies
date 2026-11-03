@@ -115,7 +115,7 @@ from numpy_groupies.utils_temporal import (
     is_own_function,
     is_temporal_input,
 )
-from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
+from numpy_groupies.validation import EMPTY_GROUP_IDX, EXACT_FLOAT64_INTEGER_LIMIT
 
 FALLBACK.set_implementation(_numpy_aggregate, _temporal_quantile)
 
@@ -149,7 +149,10 @@ def aggregate(
     # package and gets its answer.
     temporal = is_own_function(funcname) and is_temporal_input(a)
     if temporal:
-        if size is None and group_idx.size:
+        if size is None:
+            if not group_idx.size:
+                # the kernels of the operations refuse an empty input as well
+                raise ValueError(EMPTY_GROUP_IDX)
             # the NaT rows the nan-variants drop would shrink the group count
             # the kernels detect from the labels - pin it before the filter
             size = int(group_idx.max()) + 1
@@ -241,7 +244,7 @@ def aggregate(
             cast("str", funcname),
             group_idx,
             cast("AValue", a),
-            int(group_idx.max()) + 1 if size is None else cast("int", size),
+            cast("int", size),
             fill_value,
             dtype,
             kwargs,

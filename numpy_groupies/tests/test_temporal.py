@@ -1,7 +1,7 @@
 """The datetime64 and timedelta64 support of the numpy and numba backends.
 
 Temporal input never reaches the kernels as datetime values: the wrapper of
-``utils_np`` takes it apart into its int64 ticks and turns the results back.
+``utils_temporal`` takes it apart into its int64 ticks and turns the results back.
 The tests pin the semantics that emerge - the NaT propagation of the plain
 reductions, the skipping of the nan variants, the exact means on ticks that
 float64 cannot represent, the unit of the answer, and the refusals numpy
@@ -156,9 +156,7 @@ def test_the_nan_argreductions_of_a_temporal_group_answer_the_fill_of_an_empty_o
 
 def test_the_nan_argreductions_of_a_temporal_group_keep_the_positions_of_the_input(impl):
     # the positions the nan argreductions name are the ones of the input -
-    # the values they skip do not shift them.  The NaT stands in as the
-    # extreme tick the reduction skips, and a group that holds nothing but
-    # NaT has no position to name.
+    # the values they skip do not shift them
     group_idx = np.array([0, 0, 1, 1, 1])
     a = np.array(
         ["NaT", "2020-01-01", "2020-03-01", "NaT", "2020-02-01"],
@@ -168,16 +166,29 @@ def test_the_nan_argreductions_of_a_temporal_group_keep_the_positions_of_the_inp
     # 2020-02-01 at the position 4 - the NaT of the group 1 at the position 3
     # is skipped, and the position of 2020-03-01 at the position 2 is the
     # largest of the values that are left
-    if impl_name(impl) == "numpy":
-        # the numpy backend stands in a sentinel for the NaT of a row, and the
-        # sentinel of the argmin is the largest tick - which is a timestamp of
-        # its own (2262-04-11T23:47:16.854775807).  A group that holds such a
-        # value answers the position of the NaT instead of the one of the
-        # value.  The numba backend has no sentinel: it skips the NaT where it
-        # finds it.
-        pytest.xfail("the sentinel of the numpy backend collides with a timestamp of its own")
     assert list(impl.aggregate(group_idx, a, func="nanargmin", size=2)) == [1, 4]
     assert list(impl.aggregate(group_idx, a, func="nanargmax", size=2)) == [1, 2]
+    # the numpy backend stands in a sentinel for the NaT of a row while it
+    # reduces - the smallest tick for the nanargmax and the largest one for
+    # the nanargmin - and both sentinels are timestamps of their own: the
+    # largest ns tick is 2262-04-11T23:47:16.854775807, the smallest one
+    # 1677-09-21T00:12:43.145224193.  A group that holds such a value gets
+    # the position of the NaT answered where the tie of the sentinel keeps
+    # the first of the equal values.  The numba backend has no sentinel: it
+    # skips the NaT where it finds it.
+    if impl_name(impl) == "numpy":
+        pytest.xfail("the sentinels of the numpy backend collide with timestamps of their own")
+    hi, lo = np.iinfo(np.int64).max, np.iinfo(np.int64).min
+    group_idx = np.array([0, 0, 1, 1])
+    a = np.array(
+        [np.datetime64(hi, "ns"), "NaT", "NaT", np.datetime64(lo + 1, "ns")],
+        dtype="M8[ns]",
+    )
+    # the nanargmin of the group 0 names the position of the largest tick -
+    # the one the sentinel of the backend would stand in for - and the
+    # nanargmax of the group 1 the one of the smallest tick but the NaT
+    assert list(impl.aggregate(group_idx, a, func="nanargmin", size=2)) == [0, 3]
+    assert list(impl.aggregate(group_idx, a, func="nanargmax", size=2)) == [0, 3]
 
 
 @pytest.mark.parametrize("unit", ["s", "ns"])

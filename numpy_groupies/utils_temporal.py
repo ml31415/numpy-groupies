@@ -304,23 +304,18 @@ def _temporal_aggregation(
     pass over the data, and the wrapper has nothing to prepare for them.
     The numpy backend works on the ticks, so it leaves the flag alone.
 
-    The two answers that no function of the package computes - the mean and
-    the median of the ticks - belong to this module: it holds them exactly,
-    in python integers, where the sum of the ticks of a group leaves the
-    window float64 represents exactly and the mean of the two middles of an
-    even group rounds off the tick grid.
-
-    A backend that has a kernel for one of them hands it in as ``tick_mean``
-    or ``tick_median``: the numba backend has both, and its kernels measure
-    the deviations from the first value of a group and select the middle of
-    a block in compiled code.  A backend that has none - the numpy one -
-    leaves them out, and the answers of this module stand.  The kernels take
-    the ``nan`` flag, because the nan variant leaves the NaT of a group out
-    on its own instead of having the rows filtered out before it.
-
-    The quantiles have no kernel in either backend: their interpolation
-    scales a tick difference by a fraction, and that product no int64
-    arithmetic of the compiled code holds.
+    The mean, the median and the quantile of the ticks are the three answers
+    that no kernel of the package computes on its own - a backend hands them
+    in as ``tick_mean``, ``tick_median`` and ``tick_quantile``: the numba
+    backend has compiled kernels for the first two, whose deviations from
+    the first value of a group and selection of the middle of a block run in
+    one pass, and its quantile goes to the exact path of the numpy backend -
+    whose python integers hold the sum of the ticks of a group and the
+    interpolation of the quantile exactly, where the sum leaves the window
+    float64 represents and no int64 arithmetic holds the product of a tick
+    difference and a fraction.  The kernels take the ``nan`` flag, because
+    the nan variant leaves the NaT of a group out on its own instead of
+    having the rows filtered out before it.
     """
 
     def operation(name: str) -> Callable[..., AResult]:
