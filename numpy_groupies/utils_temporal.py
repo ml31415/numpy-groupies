@@ -605,8 +605,9 @@ def _temporal_aggregation(
             nat_groups = _groups_holding(group_idx, nat, size)
     elif base == "sort":
         # numpy sorts NaT to the end of its group although it compares as the
-        # smallest value everywhere else - the largest tick stands in for it
-        # on the way through the sort, and the answer turns it back into NaT
+        # smallest value everywhere else (numpy/numpy#12629, fixed by PR
+        # numpy/numpy#12658) - the largest tick stands in for it on the way
+        # through the sort, and the answer turns it back into NaT
         nat = np.isnat(values)
         if nat.any():
             ticks = np.where(nat, np.iinfo(np.int64).max, ticks)
