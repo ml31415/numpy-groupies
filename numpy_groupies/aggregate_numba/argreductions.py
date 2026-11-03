@@ -129,7 +129,14 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
                         # a nan poisons its group: it wins outright and the
                         # result falls back to the fill value
                         out[ri] = fill_value
-                # the nan variant leaves the nans out
+                # the nan variant leaves the nans out - the NaT of a temporal
+                # input with them, deliberately unlike numpy: np.nanargmin and
+                # np.nanargmax do not skip a NaT of datetime64, they answer
+                # its position like the plain forms, while np.nanmin and
+                # np.nanmax do skip it - an inconsistency numpy closed as
+                # intended (numpy/numpy#5222, with the NaT semantics of
+                # numpy/numpy#14717).  The nan forms of the package skip the
+                # missing value of every dtype, as their contract says.
                 continue
             if pending[ri] or best:
                 # the first value of a group wins a tie

@@ -531,15 +531,19 @@ def _temporal_aggregation(
     ):
         # the nan-variants skip NaT like they skip nan - the plain ones
         # propagate it, and the cumulative ones carry it through their group
-        # like numpy does.  The nan mean does not filter them either: the
-        # tick mean leaves the NaT of a group out on its own, and filtering
-        # the rows would cost a copy of the data.  The nan median filters
-        # them in its own backend: the kernel of the numba one leaves the
-        # NaT tick out, the exact one of the numpy one drops its rows.  The
-        # nan count
-        # of the distinct values does not filter them either: the hash
-        # table of the kernel skips a NaT like it skips a nan, and it takes
-        # the values as they are.
+        # like numpy does.  Deliberately unlike numpy for the argreductions:
+        # np.nanargmin and np.nanargmax do not skip a NaT of datetime64,
+        # they answer its position like the plain forms, while np.nanmin
+        # and np.nanmax do skip it (numpy/numpy#5222, closed with that very
+        # inconsistency) - the contract of the nan forms says skip, and we
+        # keep it for every dtype.  The nan mean does not filter them
+        # either: the tick mean leaves the NaT of a group out on its own,
+        # and filtering the rows would cost a copy of the data.  The nan
+        # median filters them in its own backend: the kernel of the numba
+        # one leaves the NaT tick out, the exact one of the numpy one drops
+        # its rows.  The nan count of the distinct values does not filter
+        # them either: the hash table of the kernel skips a NaT like it
+        # skips a nan, and it takes the values as they are.
         nat = np.isnat(a)
         if nat.any():
             good = ~nat
