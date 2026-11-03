@@ -847,9 +847,13 @@ TEMPORAL_NAT_FILL = frozenset({"min", "max", "mean", "median", "quantile", "perc
 
 def is_temporal_input(a: Any) -> bool:
     """Whether the input carries datetime64 or timedelta64 values - an array
-    of them, or the one scalar standing for a value of every group."""
-    dtype = getattr(a, "dtype", None)
-    return dtype is not None and np.dtype(dtype).kind in TEMPORAL_KINDS
+    of them, or the one scalar standing for a value of every group.
+
+    The kind of the dtype is asked, not the dtype itself: the check runs on
+    every call, and building a dtype out of a dtype is not free.
+    """
+    kind = getattr(getattr(a, "dtype", None), "kind", None)
+    return kind is not None and kind in TEMPORAL_KINDS
 
 
 def is_own_function(funcname: str | Callable[..., Any]) -> bool:

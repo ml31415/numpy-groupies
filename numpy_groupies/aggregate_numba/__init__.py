@@ -182,7 +182,6 @@ def aggregate(
     if op is None:
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
-    exact_mean: npt.NDArray[Any] | None = None
     if temporal:
         # the temporal wrapper has answered - the mean, the median and the
         # quantiles of temporal input compute on their own, exact
@@ -195,19 +194,20 @@ def aggregate(
             and a.dtype.kind in "iu"
             and a.size
         ):
-            # the sums of these integers can leave the window float64
-            # represents exactly and the compiled kernel would refuse the
-            # mean - the limb sums answer it exactly instead, like the numpy
-            # backend does (the module exports its own max, so no builtin
-            # max here)
-            # (the module exports its own max as a kernel, so the builtin
-            # comes from the builtins module)
-            bound = builtins.max(int(a.max()), -int(a.min()))
-            if bound * a.size > EXACT_FLOAT64_INTEGER_LIMIT:
+            # The sums of these integers can leave the window float64
+            # represents exactly, and the compiled kernel refuses the mean
+            # then - it knows the bounds of the values from its own
+            # accumulation pass, so the check costs nothing extra.  The exact
+            # answer comes from the limb sums of the values, which the
+            # wrapper computes when the kernel refuses - like the numpy
+            # backend does.
+            try:
+                ret = cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
+            except OverflowError:
                 n = int(group_idx.max()) + 1 if size is None else cast("int", size)
                 out_dtype = np.dtype(dtype) if dtype is not None else np.dtype(np.float64)
-                exact_mean = cast(
-                    "npt.NDArray[Any]",
+                ret = cast(
+                    AResult,
                     exact_integer_group_mean(
                         group_idx,
                         cast("npt.NDArray[np.integer]", a),
@@ -216,8 +216,6 @@ def aggregate(
                         out_dtype,
                     ),
                 )
-        if exact_mean is not None:
-            ret = cast(AResult, exact_mean)
         elif isinstance(funcname, str):
             ret = cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
         else:
