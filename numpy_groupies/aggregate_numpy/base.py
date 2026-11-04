@@ -136,7 +136,7 @@ def _aggregate_base(
         # the topk hands out k values per group: its result is a matrix with
         # a row per group, and the unravelling of a multidimensional group
         # index has no place in that
-        check_topk_input(ndim_idx, size, axis)
+        check_topk_input(ndim_idx, size)
 
     # deal with ndimensional indexing
     if ndim_idx > 1:

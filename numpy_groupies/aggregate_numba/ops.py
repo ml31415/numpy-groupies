@@ -54,6 +54,7 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import (
+    TOPK_NEEDS_FLAT_GROUP_IDX,
     check_topk_input,
     check_topk_shape,
     is_scalar_input,
@@ -398,7 +399,11 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         if func == "topk":
             # the topk answers a matrix with a row per group - a group index
             # of more than one dimension has no place in it
-            check_topk_input(ndim_idx, size, axis)
+            check_topk_input(ndim_idx, size)
+            if axis is not None:
+                # the numpy backend catches the axis by the size it makes of
+                # it, and says the very same words
+                raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX)
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
         scalar = is_scalar_input(a)

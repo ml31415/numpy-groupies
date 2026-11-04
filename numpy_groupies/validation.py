@@ -323,15 +323,15 @@ def check_complex_dtype(
 # for both of them, and one place to change them in.
 
 
-def check_topk_input(ndim_idx: int, size: Any, axis: int | None) -> None:
+def check_topk_input(ndim_idx: int, size: Any) -> None:
     """The input the topk cannot take: a group index of more than one
-    dimension, an axis to aggregate along, and a size that is a sequence.
+    dimension, and a size that is a sequence.
 
     A group index of more than one dimension names its groups in more than
     one way, and the answer of the topk is a matrix with a row per group -
     the unravelling of such an index has no place in it.
     """
-    if ndim_idx > 1 or axis is not None or isinstance(size, tuple):
+    if ndim_idx > 1 or isinstance(size, tuple):
         raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX)
 
 
