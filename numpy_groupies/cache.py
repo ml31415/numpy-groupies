@@ -49,7 +49,7 @@ def _user_cache_dir() -> Path:
     """
     if sys.platform == "darwin":
         base = Path.home() / "Library" / "Caches"
-    elif os.name == "nt":
+    elif sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
     else:
         base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
@@ -58,7 +58,7 @@ def _user_cache_dir() -> Path:
 
 def _count_files(directory: Path) -> int:
     """The number of the files below a directory."""
-    return sum(len(files) for _root, _dirs, files in os.walk(directory))
+    return sum(1 for path in directory.rglob("*") if path.is_file())
 
 
 def package_dir() -> Path:
@@ -96,12 +96,12 @@ def purge_cache() -> int:
         # the files the removal did not reach are not counted: the counter is
         # the number of the files that are really gone
         removed += before - _count_files(cache)
-    for root, _dirs, files in os.walk(package_dir()):
-        for name in files:
-            if name.endswith((".nbi", ".nbc", ".nbi.lock")):
-                try:
-                    Path(root, name).unlink()
-                except OSError:  # pragma: no cover - the file is gone
-                    continue
-                removed += 1
+    for path in package_dir().rglob("*"):
+        if not path.name.endswith((".nbi", ".nbc", ".nbi.lock")):
+            continue
+        try:
+            path.unlink()
+        except OSError:  # pragma: no cover - the file is gone
+            continue
+        removed += 1
     return removed
