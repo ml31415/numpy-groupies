@@ -155,7 +155,7 @@ These do not reduce the data; the output has the size of the input. There are no
 | Function | Result |
 | -------- | ------ |
 | `array`  | The grouped items themselves, in the order they appear in `a` — one sequence per group. (aliases: `split`, `splice`) |
-| `topk`  | The `k` largest values of every group (`largest=False` for the `k` smallest ones), in the order of their rank — the largest one first. The output is a matrix with one row per group and `k` columns; a group with fewer than `k` values fills the places it has none with the fill value. The missing values - the nans, the NaT of the temporal ones - are in no selection: they are neither the largest nor the smallest value of a group, the way the `sort` of a group puts them last. |
+| `topk`  | The `k` largest values of every group (`largest=False` for the `k` smallest ones), in the order of their rank — the largest one first. The output is a matrix with one row per group and `k` columns; a group with fewer than `k` values fills the places it has none with the fill value. The missing values - the nans, the NaT of the temporal ones - are in no selection: they are neither the largest nor the smallest value of a group, the way the `sort` of a group puts them last. A group index of more than one dimension has no place in a matrix of groups, so the `topk` refuses it. |
 
 The NumPy and the Numba implementation hand out an object array whose entries are the arrays of the groups; the pure Python one a list of lists. The `topk` hands out a matrix in the NumPy and the Numba implementation, and a list of lists in the pure Python one.
 

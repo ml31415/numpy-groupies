@@ -175,3 +175,44 @@ def test_the_topk_of_a_temporal_input_can_be_asked_for_in_ticks():
     a = np.array(["2011-01-03", "2011-01-01", "2011-01-05"], dtype="datetime64[s]")
     ticks = npgn.aggregate(group_idx, a, func="topk", k=1, dtype=np.int64)
     np.testing.assert_array_equal(ticks, np.array([[1294012800], [1294185600]]))
+
+
+def test_the_topk_of_the_numba_backend_goes_into_the_array_of_the_caller():
+    """The out= of the numba backend takes the matrix of the topk."""
+    group_idx = np.array([0, 0, 1, 1, 1, 2])
+    a = np.array([5.0, 9.0, 1.0, 7.0, 3.0, 4.0])
+    out = np.empty((3, 2))
+    answer = npgb.aggregate(group_idx, a, func="topk", k=2, out=out)
+    assert answer is out
+    np.testing.assert_array_equal(out[0], [9.0, 5.0])
+    np.testing.assert_array_equal(out[2], [4.0, np.nan])
+
+
+@pytest.mark.parametrize("backend", [npgn, npgb], ids=["numpy", "numba"])
+def test_the_topk_needs_a_flat_group_index(backend):
+    """A multidimensional group index has no place in a matrix of groups."""
+    group_idx = np.array([0, 0, 1, 1, 1, 2])
+    a = np.arange(12.0).reshape(6, 2)
+    with pytest.raises(ValueError, match="the topk needs a flat group index"):
+        backend.aggregate(group_idx, a, func="topk", k=1, axis=0)
+
+
+@pytest.mark.parametrize("backend", BACKENDS, ids=["numpy", "numba", "purepy"])
+def test_the_topk_of_complex_values_uses_the_order_of_numpy(backend):
+    """Numpy orders complex values lexicographically - the real part first,
+    the imaginary one second - and the topk keeps that order."""
+    group_idx = np.array([0, 0, 1])
+    a = np.array([3 + 1j, 1 + 5j, 2 + 0j])
+    answer = _as_matrix(backend.aggregate(group_idx, a, func="topk", k=2))
+    np.testing.assert_array_equal(answer[0], np.array([3 + 1j, 1 + 5j]))
+    np.testing.assert_array_equal(answer[1], np.array([2 + 0j, np.nan + np.nan * 1j]))
+
+
+def test_the_topk_of_the_numba_backend_of_float16_runs_on_float32():
+    """Numba has no float16, so the values run on float32 and the answer is
+    rounded back - like the other operations of the backend."""
+    group_idx = np.array([0, 0, 1])
+    a = np.array([5.0, 9.0, 4.0], dtype=np.float16)
+    answer = npgb.aggregate(group_idx, a, func="topk", k=1)
+    assert answer.dtype == np.float16
+    np.testing.assert_array_equal(answer, np.array([[9.0], [4.0]], dtype=np.float16))

@@ -49,6 +49,7 @@ from numpy_groupies.registry import (
     Resolved,
     can_name_a_function,
     custom_callable,
+    func_extras,
     funcs_no_separate_nan,
 )
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
@@ -314,6 +315,9 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
     go to the numpy implementation, the complex moments refuse).
     """
     driver_call = _driver_call(handle)
+    # the names of the arguments the operation has of its own - only those
+    # reach the fallback of the backend, under their own names
+    extra_names = {name for name, _annotation, _default in func_extras(func)}
 
     def aggregate(
         group_idx: npt.NDArray[np.integer],
@@ -325,11 +329,19 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         axis: int | None = None,
         ddof: float = 0,
         q: float = 0.5,
+        **kwargs: Any,
     ) -> AResult:
         # dtypes the compiled driver cannot handle, handed to the numpy twin
         if (handle.fallback is not None or handle.refusal is not None) and _needs_fallback(handle, a):
             if handle.fallback is not None:
-                return handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
+                # the arguments of the operation go with it: the fallback is
+                # the numpy implementation, which knows them under their own
+                # names - the two slots of the signature carry the ddof and
+                # the q, and only the function itself knows which of them
+                # are its own
+                extra = {name: value for name, value in (("ddof", ddof), ("q", q)) if name in extra_names}
+                extra.update(kwargs)
+                return handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis, **extra)
             # nothing runs parallel here: the refusal of the operation is
             # thrown while the call is still being prepared
             raise TypeError(handle.refusal)
@@ -379,6 +391,10 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
 
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=func)
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
+        if func == "topk" and (ndim_idx > 1 or axis is not None or isinstance(size, tuple)):
+            # the topk answers a matrix with a row per group - a group index
+            # of more than one dimension has no place in it
+            raise ValueError("the topk needs a flat group index and a size that is a number")
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
         scalar = is_scalar_input(a)
@@ -692,7 +708,7 @@ def _topk_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
     ) -> AResult:
         if k < 0:
             raise ValueError(f"k must not be negative, got {k}")
-        return op(group_idx, a, size, fill_value, order, dtype, axis, k, largest)
+        return op(group_idx, a, size, fill_value, order, dtype, axis, k, largest, k=k, largest=largest)
 
     return topk_op
 
@@ -745,7 +761,7 @@ def _sort_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
     ) -> AResult:
         if fill_value is DEFAULT_FILL_VALUE:
             fill_value = 0
-        return op(group_idx, a, size, fill_value, order, dtype, axis, reverse)
+        return op(group_idx, a, size, fill_value, order, dtype, axis, reverse, reverse=reverse)
 
     return sort_op
 
@@ -791,7 +807,7 @@ def _quantile_arguments(
                 q=q,
                 method=method,
             )
-        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q * scale)
+        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q * scale, method=method)
 
     return quantile_op
 
