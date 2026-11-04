@@ -447,8 +447,8 @@ mean = build_kernel(
     # the mean of the temporal input is the mean of the ticks: the stub
     # hands the ticks to the tick kernel and views the answer back
     tick=TickKernel(
-        plain=make_tick_call("tick_mean_call", tick_mean.plain.driver),
-        nan=make_tick_call("nantick_mean_call", tick_mean.nan.driver),
+        plain=make_tick_call("tick_mean_call", tick_mean.plain),
+        nan=make_tick_call("nantick_mean_call", tick_mean.nan),
     ),
 )
 

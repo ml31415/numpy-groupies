@@ -83,7 +83,12 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.aggregate_numba.mt import GROUP_MT_MIN_VALUES, MT_MIN_VALUES, chunk_count, should_use_mt
+from numpy_groupies.aggregate_numba.mt import (
+    GROUP_MT_MIN_VALUES,
+    MT_MIN_VALUES,
+    chunk_count,
+    should_use_mt,
+)
 from numpy_groupies.nptools import check_fill_value_for_dtype
 from numpy_groupies.registry import func_argument_default, nan
 from numpy_groupies.temporal import NAT_TICK, TEMPORAL_KINDS, is_temporal_input
@@ -610,34 +615,6 @@ class TickKernel:
 # the ticks to it and views its answer back into the unit of the input.  The
 # tick kernel stays behind the stub: it is no function of the package, and
 # the stub of the function is the one a caller reaches.
-
-
-def make_tick_call(name: str, driver: Callable[..., Any]) -> Callable[..., Any]:
-    """The call of a tick kernel that takes no argument of its own.
-
-    The driver is bound in the closure, so that the compiled code knows it
-    - a global would be a name the compiler cannot type.
-    """
-
-    @njit_stable(name=name)
-    def call(group_idx: Any, ticks: Any, size: int, fill: int) -> Any:
-        return driver(group_idx, ticks, size, np.dtype(np.int64), np.dtype(np.int64), fill)
-
-    return call
-
-
-def make_tick_call_q(name: str, driver: Callable[..., Any], scale: float = 1.0) -> Callable[..., Any]:
-    """The call of a tick kernel that takes a quantile.
-
-    The scale is the factor the quantile is multiplied with before it
-    reaches the kernel: the percentile takes its argument in percent.
-    """
-
-    @njit_stable(name=name)
-    def call(group_idx: Any, ticks: Any, q: float, size: int, fill: int) -> Any:
-        return driver(group_idx, ticks, size, np.dtype(np.int64), np.dtype(np.int64), fill, q * scale, "linear")
-
-    return call
 
 
 # ---------------------------------------------------------------------------
@@ -1439,6 +1416,42 @@ class KernelHandle(NamedTuple):
     assembles: bool = False
     mt_driver: Callable[..., AResult | list[AResult]] | None = None
     mt_min_values: int = 0
+
+
+def make_tick_call(name: str, handle: KernelHandle) -> Callable[..., Any]:
+    """The call of a tick kernel that takes no argument of its own.
+
+    The driver is bound in the closure, so that the compiled code knows it
+    - a global would be a name the compiler cannot type.
+
+    The call is the sequential one: the parallel passes of the kernel are
+    reached through the operation of the backend, which is the path the
+    aggregate() takes - a compiled function that calls a parallel one
+    cannot be cached on disk, and the cache is worth more than the threads
+    of a call that is not the one of the aggregate().
+    """
+    driver = handle.driver
+
+    @njit_stable(name=name)
+    def call(group_idx: Any, ticks: Any, size: int, fill: int) -> Any:
+        return driver(group_idx, ticks, size, np.dtype(np.int64), np.dtype(np.int64), fill)
+
+    return call
+
+
+def make_tick_call_q(name: str, handle: KernelHandle, scale: float = 1.0) -> Callable[..., Any]:
+    """The call of a tick kernel that takes a quantile.
+
+    The scale is the factor the quantile is multiplied with before it
+    reaches the kernel: the percentile takes its argument in percent.
+    """
+    driver = handle.driver
+
+    @njit_stable(name=name)
+    def call(group_idx: Any, ticks: Any, q: float, size: int, fill: int) -> Any:
+        return driver(group_idx, ticks, size, np.dtype(np.int64), np.dtype(np.int64), fill, q * scale, "linear")
+
+    return call
 
 
 class KernelPair(NamedTuple):

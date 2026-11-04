@@ -831,8 +831,8 @@ median = build_custom_kernel(
     doc="Median of the values of every group",
     # the median of the temporal input is the median of the ticks
     tick=TickKernel(
-        plain=make_tick_call("tick_median_call", tick_median.plain.driver),
-        nan=make_tick_call("nantick_median_call", tick_median.nan.driver),
+        plain=make_tick_call("tick_median_call", tick_median.plain),
+        nan=make_tick_call("nantick_median_call", tick_median.nan),
     ),
 )
 
@@ -943,8 +943,8 @@ quantile = build_custom_kernel(
     doc="Quantile of the values of every group",
     # the quantile of the temporal input is the quantile of the ticks
     tick=TickKernel(
-        plain=make_tick_call_q("tick_quantile_call", tick_quantile.plain.driver),
-        nan=make_tick_call_q("nantick_quantile_call", tick_quantile.nan.driver),
+        plain=make_tick_call_q("tick_quantile_call", tick_quantile.plain),
+        nan=make_tick_call_q("nantick_quantile_call", tick_quantile.nan),
     ),
 )
 
@@ -962,8 +962,8 @@ percentile = build_custom_kernel(
     doc="Percentile of the values of every group - the quantile in percent",
     # the percentile of the temporal input is the percentile of the ticks
     tick=TickKernel(
-        plain=make_tick_call_q("tick_percentile_call", tick_quantile.plain.driver, scale=0.01),
-        nan=make_tick_call_q("nantick_percentile_call", tick_quantile.nan.driver, scale=0.01),
+        plain=make_tick_call_q("tick_percentile_call", tick_quantile.plain, scale=0.01),
+        nan=make_tick_call_q("nantick_percentile_call", tick_quantile.nan, scale=0.01),
     ),
 )
 
