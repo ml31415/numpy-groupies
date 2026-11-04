@@ -39,7 +39,7 @@ Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
 ## Why numpy-groupies?
 
 - **Fast.** With Numba installed, `aggregate` is the fastest group-by aggregation for plain NumPy arrays. See [Performance](#performance).
-- **One call, many functions.** The usual reductions plus `median`, `quantile`/`percentile`, `skew`/`kurt`, `sort` (ascending or descending), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
+- **One call, many functions.** The usual reductions plus `median`, `quantile`/`percentile`, `skew`/`kurt`, `sort` (ascending or descending), `topk` (the k largest values of each group), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
 - **Array in, array out.** Plain NumPy arrays, no DataFrame and no index. The result is an array indexed by group label, with empty groups filled with the value you choose. Multi-dimensional output (N-D binning) and aggregation along an `axis` are built in.
 - **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops.
 - **Numerically careful.** Integer sums, means and variances accumulate in a dtype wide enough not to wrap around, NaN handling follows NumPy, and complex and `float16` input are supported.
@@ -186,7 +186,7 @@ Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix 
 
 Not every implementation supports every function — the [function reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md) has the exact semantics, default fill values, complex-number behaviour and a function × implementation matrix.
 
-Every function is also a name of its own, with the function in the name instead of in the `func` argument. The name takes the arguments of its function — the `ddof` of the variance, the `q` of the quantile, the `dx` of the trapezoid, the `reverse` of the sort — and the rest like `aggregate` itself:
+Every function is also a name of its own, with the function in the name instead of in the `func` argument. The name takes the arguments of its function — the `ddof` of the variance, the `q` of the quantile, the `dx` of the trapezoid, the `reverse` of the sort, the `k` and the `largest` of the topk — and the rest like `aggregate` itself:
 
 ```python
 npg.mean(group_idx, a)              # the best implementation available
