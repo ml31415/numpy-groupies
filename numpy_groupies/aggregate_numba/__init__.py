@@ -145,8 +145,9 @@ def aggregate(
     # np.mean is the mean of the package and gets its answer.
     # The temporal operation is the other half of the operation of the
     # function, and the registry holds it beside the numeric one.
-    temporal = temporal_op is not None and is_temporal_input(a)
-    if temporal_op is not None and temporal:
+    temporal = False
+    if temporal_op is not None and is_temporal_input(a):
+        temporal = True
         if size is None:
             if not group_idx.size:
                 # the kernels of the operations refuse an empty input as well
@@ -156,7 +157,7 @@ def aggregate(
             size = int(group_idx.max()) + 1
         ret, fill_value = temporal_op(
             group_idx,
-            cast("AValue", a),
+            a,
             cast("int", size),
             fill_value,
             dtype,
@@ -317,6 +318,10 @@ nanmedian = specials.median.nan.stub
 # scales its argument down, so the kernel only knows the quantile
 quantile = specials.quantile.plain.stub
 nanquantile = specials.quantile.nan.stub
+# the percentile is the quantile in percent - a kernel of its own, so that
+# jitted code can call it like every other one
+percentile = specials.percentile.plain.stub
+nanpercentile = specials.percentile.nan.stub
 trapezoid = specials.trapezoid.plain.stub
 nantrapezoid = specials.trapezoid.nan.stub
 sort = specials.sort.plain.stub
@@ -342,63 +347,6 @@ cummax = cumulative.cummax.plain.stub
 nancummax = cumulative.cummax.nan.stub
 cummin = cumulative.cummin.plain.stub
 nancummin = cumulative.cummin.nan.stub
-
-
-# The two functions the kernels do not cover - the percentile is the quantile
-# in percent, so it is the entry point of the backend and not a kernel of its
-# own.
-
-
-def percentile(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    q: float = 50.0,
-    size: int | Sequence[int] | None = None,
-    fill_value: AFillValue = DEFAULT_FILL_VALUE,
-    order: RavelOrder = "C",
-    dtype: npt.DTypeLike | None = None,
-    axis: int | None = None,
-) -> AResult:
-    """The percentile of every group - the quantile of the group, in percent.
-
-    The kernel of the quantile is the one that does the work; the percentile
-    is the quantile with its argument in percent.
-    """
-    return aggregate(
-        group_idx,
-        a,
-        func="percentile",
-        q=q,
-        size=size,
-        fill_value=fill_value,
-        order=order,
-        dtype=dtype,
-        axis=axis,
-    )
-
-
-def nanpercentile(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    q: float = 50.0,
-    size: int | Sequence[int] | None = None,
-    fill_value: AFillValue = DEFAULT_FILL_VALUE,
-    order: RavelOrder = "C",
-    dtype: npt.DTypeLike | None = None,
-    axis: int | None = None,
-) -> AResult:
-    """The percentile of every group, the nans of the group left out."""
-    return aggregate(
-        group_idx,
-        a,
-        func="nanpercentile",
-        q=q,
-        size=size,
-        fill_value=fill_value,
-        order=order,
-        dtype=dtype,
-        axis=axis,
-    )
 
 
 def __dir__() -> list[str]:

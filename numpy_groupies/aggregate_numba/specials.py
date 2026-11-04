@@ -14,6 +14,7 @@ spacing ``dx`` as the argument of its own.
 import functools
 import math
 from collections.abc import Callable
+from functools import partial
 from typing import Any, NamedTuple
 
 import numba as nb
@@ -792,15 +793,18 @@ median = build_custom_kernel(
 )
 
 
-def _quantile_driver_factory(nans: bool) -> Any:
+def _quantile_driver_factory(nans: bool, scale: float = 1.0, name: str = "quantile") -> Any:
     """The driver of the quantile - the median is the quantile 0.5.
 
     The quantile is an order statistic, so it groups the data the same way the
     median does: a counting sort places the values of every group in a
     contiguous block, and the wanted quantile is then selected out of the block
     (O(n) on average) instead of sorting it.
+
+    The percentile is the quantile in percent: its driver is the one of the
+    quantile with the argument scaled down before it reaches the selection.
     """
-    op_name = "nanquantile" if nans else "quantile"
+    op_name = ("nan" if nans else "") + name
     group = _quantile_group_nan if nans else _quantile_group_plain
 
     def driver(
@@ -821,18 +825,23 @@ def _quantile_driver_factory(nans: bool) -> Any:
         # the nan variant filters the nans out into a buffer of its own, the
         # plain one leaves the values where they are and needs none
         buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
+        # the percentile takes its argument in percent
+        fraction = q * scale
         for g in range(size):
-            group(g, a_sorted, counts, starts, buf, out, fill_value, q)
+            group(g, a_sorted, counts, starts, buf, out, fill_value, fraction)
         return out
 
     return njit_stable(driver, name=f"{op_name}_driver")
 
 
-def _quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+def _quantile_mt_factory(
+    nans: bool, driver: Callable[..., npt.NDArray[np.number]], scale: float = 1.0, name: str = "quantile"
+) -> Any:
     """The parallel passes of the quantile, the groups cut into ranges.
 
     The same shape as ``_median_mt_factory``, for the same reasons.
     """
+    op_name = ("nan" if nans else "") + name
     group = _quantile_group_nan if nans else _quantile_group_plain
 
     def mt_passes(
@@ -847,18 +856,20 @@ def _quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number
     ) -> npt.NDArray[np.number]:
         setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
         if setup is None:
-            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q * scale)
         # unpacked before the prange - see the note in _median_mt_factory
         counts, starts, a_sorted, edges, largest = setup
         out = np.full(counts.size, fill_value, out_dtype)
         bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
+        # the percentile takes its argument in percent
+        fraction = q * scale
         for c in nb.prange(largest.size):
             buf = bufs[c]
             for g in range(edges[c], edges[c + 1]):
-                group(g, a_sorted, counts, starts, buf, out, fill_value, q)
+                group(g, a_sorted, counts, starts, buf, out, fill_value, fraction)
         return out
 
-    return njit_stable(mt_passes, name=f"{'nan' if nans else ''}quantile_mt_passes", parallel=True)
+    return njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
 
 
 quantile = build_custom_kernel(
@@ -869,6 +880,20 @@ quantile = build_custom_kernel(
     fill_default=np.nan,
     variant="q",
     doc="Quantile of the values of every group",
+)
+
+
+percentile = build_custom_kernel(
+    "percentile",
+    # the driver and the parallel passes of the quantile, with the argument
+    # scaled down: the percentile is the quantile in percent, and its kernel
+    # is a kernel of its own - jitted code calls it like every other one.
+    driver_factory=partial(_quantile_driver_factory, scale=0.01, name="percentile"),
+    mt_driver_factory=partial(_quantile_mt_factory, scale=0.01, name="percentile"),
+    rule=rule_float,
+    fill_default=np.nan,
+    variant="q",
+    doc="Percentile of the values of every group - the quantile in percent",
 )
 
 

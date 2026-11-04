@@ -685,7 +685,7 @@ _TABLE = (
     ("mean", averaging.mean),
     ("median", specials.median),
     ("quantile", specials.quantile),
-    ("percentile", specials.quantile),
+    ("percentile", specials.percentile),
     ("trapezoid", specials.trapezoid),
     ("std", averaging.std),
     ("var", averaging.var),
@@ -787,15 +787,15 @@ def _sort_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
 
 
 def _quantile_arguments(
-    op: Callable[..., AResult], *, name: FuncName, scale: float, default: float
+    op: Callable[..., AResult], *, name: FuncName, default: float, limit: float = 1.0
 ) -> Callable[..., AResult]:
     """Expose the quantile of the quantile and of the percentile.
 
-    The kernels receive the quantile in the slot of their own; the
-    percentile is the quantile in percent, so its argument is scaled down
-    before it goes there.  The compiled driver interpolates linearly - the way
-    numpy does it by default - while the other methods of numpy are answered
-    by the numpy implementation.
+    The kernels take the argument in the unit of their own - the quantile
+    takes a fraction, the percentile takes a percentage, and its kernel
+    scales the argument down itself.  The compiled driver interpolates
+    linearly - the way numpy does it by default - while the other methods of
+    numpy are answered by the numpy implementation.
     """
 
     def quantile_op(
@@ -809,8 +809,8 @@ def _quantile_arguments(
         q: float = default,
         method: str = "linear",
     ) -> AResult:
-        if not 0.0 <= q <= 1.0 / scale:
-            raise ValueError(f"Quantiles must be in the range [0, {round(1.0 / scale)}]")
+        if not 0.0 <= q <= limit:
+            raise ValueError(f"Quantiles must be in the range [0, {round(limit)}]")
         if method != "linear":
             # a method other than the linear one is an interpolation that
             # numpy does in its own way - the compiled kernel holds the
@@ -827,7 +827,7 @@ def _quantile_arguments(
                 q=q,
                 method=method,
             )
-        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q * scale, method=method)
+        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q, method=method)
 
     return quantile_op
 
@@ -837,10 +837,10 @@ _ARGUMENT_WRAPPERS: dict[str, Callable[[Callable[..., AResult]], Callable[..., A
     "trapezoid": _dx_argument,
     "sort": _sort_arguments,
     "topk": _topk_arguments,
-    "quantile": partial(_quantile_arguments, name="quantile", scale=1.0, default=0.5),
-    "nanquantile": partial(_quantile_arguments, name="nanquantile", scale=1.0, default=0.5),
-    "percentile": partial(_quantile_arguments, name="percentile", scale=0.01, default=50.0),
-    "nanpercentile": partial(_quantile_arguments, name="nanpercentile", scale=0.01, default=50.0),
+    "quantile": partial(_quantile_arguments, name="quantile", default=0.5),
+    "nanquantile": partial(_quantile_arguments, name="nanquantile", default=0.5),
+    "percentile": partial(_quantile_arguments, name="percentile", default=50.0, limit=100.0),
+    "nanpercentile": partial(_quantile_arguments, name="nanpercentile", default=50.0, limit=100.0),
 }
 
 
@@ -895,7 +895,7 @@ def _tick_quantile_arguments(op: Callable[..., AResult]) -> Callable[..., AResul
     ) -> AResult:
         if method not in QUANTILE_METHODS:
             raise ValueError(f"unknown interpolation method '{method}' - use one of {sorted(QUANTILE_METHODS)}")
-        return cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, q=q, method=method, **kwargs))
+        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q, method=method, **kwargs)
 
     return quantile_op
 

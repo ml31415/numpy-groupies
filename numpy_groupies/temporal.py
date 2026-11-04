@@ -653,7 +653,7 @@ def _flag_result(
             resolve_fill_value(policy.funcname, ctx.fill_value, np.dtype(np.bool_)),
             **ctx.kwargs,
         )
-        return cast("AResult", ret), ctx.fill_value
+        return ret, ctx.fill_value
     # the missing-value flags are the plain any and all of the NaT mask
     if resolve is None:
         raise missing_impl_error(policy.funcname)
@@ -666,7 +666,7 @@ def _flag_result(
         resolve_fill_value("all", ctx.fill_value, np.dtype(np.bool_)),
         **ctx.kwargs,
     )
-    return cast("AResult", ret), ctx.fill_value
+    return ret, ctx.fill_value
 
 
 def _nan_patches(ctx: _Context) -> None:
@@ -853,25 +853,19 @@ def _kernel_result(ctx: _Context, computed: npt.NDArray[Any] | None, value_resul
     """
     policy = ctx.policy
     if computed is not None:
-        return cast("AResult", computed)
+        return computed
     if value_result:
         fill_tick = _temporal_fill_tick(ctx.fill_value, ctx.a_dtype, policy.fill_is_nat)
-        return cast(
-            "AResult",
-            ctx.call(policy.op, ctx.ticks, fill_tick, dtype=np.dtype(np.int64), **ctx.kwargs),
-        )
+        return ctx.call(policy.op, ctx.ticks, fill_tick, dtype=np.dtype(np.int64), **ctx.kwargs)
     out_dtype = ctx.user_dtype if ctx.user_dtype is not None else np.dtype(np.int64)
     if policy.flag in ("allnan", "anynan"):
         out_dtype = np.dtype(np.bool_)
-    return cast(
-        "AResult",
-        ctx.call(
-            policy.op,
-            ctx.ticks,
-            resolve_fill_value(policy.funcname, ctx.fill_value, out_dtype),
-            dtype=ctx.user_dtype,
-            **ctx.kwargs,
-        ),
+    return ctx.call(
+        policy.op,
+        ctx.ticks,
+        resolve_fill_value(policy.funcname, ctx.fill_value, out_dtype),
+        dtype=ctx.user_dtype,
+        **ctx.kwargs,
     )
 
 
@@ -905,7 +899,7 @@ def _patch_result(ctx: _Context) -> AResult:
         ret = np.asarray(ret)
         empty_fill = resolve_fill_value(ctx.policy.funcname, ctx.fill_value, np.dtype(np.int64))
         ret[ctx.empty_groups] = cast("int", empty_fill if empty_fill is not None else -1)
-    return cast("AResult", ret)
+    return ret
 
 
 def _view_result(ret: AResult, a_dtype: np.dtype, user_dtype: np.dtype | None) -> AResult:
@@ -918,12 +912,12 @@ def _view_result(ret: AResult, a_dtype: np.dtype, user_dtype: np.dtype | None) -
     ret = np.asarray(ret)
     if user_dtype is not None:
         if user_dtype == np.dtype(np.int64):
-            return cast("AResult", ret)  # the ticks the caller asked for
+            return ret  # the ticks the caller asked for
         if user_dtype.kind in TEMPORAL_KINDS:
             # rescale from the unit of the input to the one asked for
-            return cast("AResult", ret.view(a_dtype).astype(user_dtype))
-        return cast("AResult", ret.view(np.int64).astype(user_dtype))
-    return cast("AResult", ret.view(a_dtype))
+            return ret.view(a_dtype).astype(user_dtype)
+        return ret.view(np.int64).astype(user_dtype)
+    return ret.view(a_dtype)
 
 
 def _temporal_aggregation(
@@ -980,7 +974,7 @@ def _temporal_aggregation(
             axis,
             **kwargs,
         )
-        return cast("AResult", ret), fill_value
+        return ret, fill_value
 
     plain_fill = isinstance(fill_value, (bool, np.bool_, int, np.integer))
     if policy.is_native and ctx.user_dtype is None and not plain_fill:
@@ -989,7 +983,7 @@ def _temporal_aggregation(
         # one pass, and the wrapper has nothing to prepare for it
         fill = _native_fill_value(ctx)
         ret = policy.call(
-            cast("Callable[..., AResult]", policy.native_op),
+            policy.native_op,
             group_idx,
             a,
             size,
@@ -999,7 +993,7 @@ def _temporal_aggregation(
             axis,
             **kwargs,
         )
-        return cast("AResult", ret), fill_value
+        return ret, fill_value
 
     if policy.swaps_nat:
         _swap_nat_rows(ctx)
@@ -1023,10 +1017,10 @@ def _temporal_aggregation(
 
     if computed is not None and computed_final:
         # the float mean is a float and not a tick - it is the final answer
-        return cast("AResult", ctx.result), fill_value
+        return ctx.result, fill_value
 
     ctx.result = _patch_result(ctx)
 
     if value_result:
         return _view_result(ctx.result, ctx.a_dtype, ctx.user_dtype), fill_value
-    return cast("AResult", ctx.result), fill_value
+    return ctx.result, fill_value

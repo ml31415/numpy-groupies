@@ -84,6 +84,7 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.mt import GROUP_MT_MIN_VALUES, MT_MIN_VALUES, chunk_count, should_use_mt
 from numpy_groupies.nptools import check_fill_value_for_dtype
+from numpy_groupies.registry import func_argument_default
 from numpy_groupies.temporal import NAT_TICK, TEMPORAL_KINDS
 from numpy_groupies.typing import AResult, AScalar
 from numpy_groupies.validation import (
@@ -417,7 +418,7 @@ def _numpy_dtype(dtype: Any) -> np.dtype | None:
         return None
     if isinstance(dtype, np.dtype):
         return dtype
-    return cast("np.dtype", nb.np.numpy_support.as_dtype(dtype))
+    return nb.np.numpy_support.as_dtype(dtype)
 
 
 def _fill_type_ok(fill_type: Any) -> bool:
@@ -849,18 +850,24 @@ def _kernel_ddof(name: str, driver: Callable[..., Any], resolve: _PythonPrologue
 
 
 def _kernel_q(name: str, driver: Callable[..., Any], resolve: _PythonPrologue, prepare: _TypingPrologue) -> _Kernel:
-    """The kernel of an operation that takes a quantile."""
+    """The kernel of an operation that takes a quantile.
 
-    def stub(group_idx: Any, a: Any, q: float = 0.5, size: int = -1, fill_value: float | None = None) -> Any:
+    The default of the argument is the one of the function - the quantile
+    takes a fraction, the percentile takes a percentage - and the registry
+    knows it.
+    """
+    default_q = func_argument_default(name, "q")
+
+    def stub(group_idx: Any, a: Any, q: float = default_q, size: int = -1, fill_value: float | None = None) -> Any:
         return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (q,))
 
-    def typing(group_idx: Any, a: Any, q: float = 0.5, size: int = -1, fill_value: float | None = None) -> Any:
+    def typing(group_idx: Any, a: Any, q: float = default_q, size: int = -1, fill_value: float | None = None) -> Any:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
 
         def _kernel_impl(
-            group_idx: Any, a: Any, q: float = 0.5, size: int = -1, fill_value: float | None = None
+            group_idx: Any, a: Any, q: float = default_q, size: int = -1, fill_value: float | None = None
         ) -> Any:
             _require_inputs(group_idx, a)
             if fill_value is None:

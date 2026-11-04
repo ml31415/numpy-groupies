@@ -85,7 +85,7 @@ def _aggregate_base(
     if temporal_op is not None and is_temporal_input(a):
         ret, fill_value = temporal_op(
             group_idx,
-            cast("AValue", a),
+            a,
             flat_size,
             fill_value,
             dtype,

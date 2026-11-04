@@ -56,8 +56,7 @@ def test_uint64_sum_kernel_keeps_integer_precision(name, large):
 # the kernels of ``make_stub``, which is where the input checks are written - as
 # many of the tests below ask them all.  ``step_count`` and ``step_indices`` are
 # jitted functions with a signature of their own, ``unpack`` and ``unpack_into``
-# gather a result back onto the input, the percentile is the quantile in percent
-# and so an entry point of the backend, and ``aggregate`` is the python-level
+# gather a result back onto the input, and ``aggregate`` is the python-level
 # dispatcher of the module: none of them is such an entry point
 _ALL_KERNELS = [
     name
@@ -69,8 +68,6 @@ _ALL_KERNELS = [
         "step_indices",
         "unpack",
         "unpack_into",
-        "percentile",
-        "nanpercentile",
     )
 ]
 
@@ -126,11 +123,15 @@ _FLOAT_OPS = [
     ("nanmedian", {}),
     ("quantile", {}),
     ("nanquantile", {}),
+    ("percentile", {}),
+    ("nanpercentile", {}),
     ("topk", {}),
     ("topk", {"k": 3}),
     ("topk", {"k": 3, "largest": False}),
     ("quantile", {"q": 0.9}),
     ("nanquantile", {"q": 0.9}),
+    ("percentile", {"q": 90.0}),
+    ("nanpercentile", {"q": 90.0}),
     ("trapezoid", {"dx": 1.0}),
     ("nantrapezoid", {"dx": 1.0}),
     ("sumofsquares", {}),
@@ -326,6 +327,21 @@ def test_float_ops_match_layer2(name, kwargs):
     expected = _layer2_result(name, FLOAT_A, **kwargs)
     np.testing.assert_allclose(_kernel_result(name, FLOAT_A, **kwargs), expected, equal_nan=True)
     np.testing.assert_allclose(_python_kernel_result(name, FLOAT_A, **kwargs), expected, equal_nan=True)
+
+
+@pytest.mark.parametrize("name", ["percentile", "nanpercentile"])
+def test_the_percentile_is_the_quantile_in_percent(name):
+    """The percentile is the quantile in percent - and it is a kernel of its own.
+
+    The kernel of the percentile scales its argument down before it reaches
+    the selection, so that jitted code can call it like every other kernel.
+    """
+    group_idx = np.array([0, 0, 1, 1])
+    values = np.array([1.0, 3.0, 5.0, 7.0])
+
+    percentile = getattr(aggregate_numba, name)(group_idx, values, 50.0, 2, None)
+    quantile = getattr(aggregate_numba, name.replace("percentile", "quantile"))(group_idx, values, 0.5, 2, None)
+    np.testing.assert_array_equal(percentile, quantile)
 
 
 @pytest.mark.parametrize("name,kwargs", _INT_OPS)
