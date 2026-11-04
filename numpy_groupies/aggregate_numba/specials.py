@@ -22,13 +22,10 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import (
-    TickKernel,
     _fill_differs,
     build_custom_kernel,
     build_kernel,
     complex_less,
-    make_tick_call,
-    make_tick_call_q,
     output_size,
     rule_float,
     rule_int64,
@@ -807,11 +804,6 @@ median = build_custom_kernel(
     rule=rule_float,
     fill_default=np.nan,
     doc="Median of the values of every group",
-    # the median of the temporal input is the median of the ticks
-    tick=TickKernel(
-        plain=make_tick_call("tick_median_call", tick_median.plain.driver),
-        nan=make_tick_call("nantick_median_call", tick_median.nan.driver),
-    ),
 )
 
 
@@ -919,11 +911,6 @@ quantile = build_custom_kernel(
     fill_default=np.nan,
     variant="q",
     doc="Quantile of the values of every group",
-    # the quantile of the temporal input is the quantile of the ticks
-    tick=TickKernel(
-        plain=make_tick_call_q("tick_quantile_call", tick_quantile.plain.driver),
-        nan=make_tick_call_q("nantick_quantile_call", tick_quantile.nan.driver),
-    ),
 )
 
 
@@ -938,11 +925,6 @@ percentile = build_custom_kernel(
     fill_default=np.nan,
     variant="q",
     doc="Percentile of the values of every group - the quantile in percent",
-    # the percentile of the temporal input is the percentile of the ticks
-    tick=TickKernel(
-        plain=make_tick_call_q("tick_percentile_call", tick_quantile.plain.driver, scale=0.01),
-        nan=make_tick_call_q("nantick_percentile_call", tick_quantile.nan.driver, scale=0.01),
-    ),
 )
 
 

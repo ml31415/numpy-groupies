@@ -505,17 +505,11 @@ _TEMPORAL_KERNELS = frozenset(
         "nanmin",
         "nunique",
         "nannunique",
-        # the mean, the median and the quantile are computed on the int64
-        # ticks of the values - the arithmetic of the ticks is exact, where
-        # the arithmetic of the values would be in float64
+        # the mean is computed on the int64 ticks of the values - the
+        # arithmetic of the ticks is exact, where the arithmetic of the
+        # values would be in float64
         "mean",
         "nanmean",
-        "median",
-        "nanmedian",
-        "quantile",
-        "nanquantile",
-        "percentile",
-        "nanpercentile",
         # the topk orders the values of a group and leaves the missing ones
         # out - a NaT is neither the largest nor the smallest value
         "topk",

@@ -828,9 +828,6 @@ def test_bare_kernel_refuses_what_it_cannot_compute(func):
         # which numba truncates
         ("mean", (2,), "2011-01-02T00:00:00"),
         ("nanmean", (2,), "2011-01-02T00:00:00"),
-        ("median", (2,), "2011-01-02T00:00:00"),
-        ("quantile", (0.5, 2), "2011-01-02T00:00:00"),
-        ("percentile", (50.0, 2), "2011-01-02T00:00:00"),
     ],
 )
 def test_bare_kernel_answers_the_temporal_input_on_the_ticks(func, args, expected):
