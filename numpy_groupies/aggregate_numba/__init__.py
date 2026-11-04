@@ -277,20 +277,6 @@ nanargmin = argreductions.argmin.nan.stub
 
 mean = averaging.mean.plain.stub
 nanmean = averaging.mean.nan.stub
-# the mean of the ticks of a temporal input - the kernel measures the
-# deviations from the first value of the group, so the sum of the ticks
-# stays exact and the answer is a tick again
-tick_mean = averaging.tick_mean.plain.stub
-nantick_mean = averaging.tick_mean.nan.stub
-# the median of the ticks of a temporal input - the exact middle of the
-# ticks, where the numeric kernel would promote the mean of the two
-# middles to float64 and round it off the tick grid
-tick_median = specials.tick_median.plain.stub
-nantick_median = specials.tick_median.nan.stub
-# the quantile of the ticks of a temporal input - numpy's rule of the
-# interpolation, on the ticks of the values
-tick_quantile = specials.tick_quantile.plain.stub
-nantick_quantile = specials.tick_quantile.nan.stub
 std = averaging.std.plain.stub
 nanstd = averaging.std.nan.stub
 var = averaging.var.plain.stub
@@ -302,12 +288,8 @@ nankurt = averaging.kurt.nan.stub
 
 median = specials.median.plain.stub
 nanmedian = specials.median.nan.stub
-# the percentile is the quantile in percent - the python-level aggregate
-# scales its argument down, so the kernel only knows the quantile
 quantile = specials.quantile.plain.stub
 nanquantile = specials.quantile.nan.stub
-# the percentile is the quantile in percent - a kernel of its own, so that
-# jitted code can call it like every other one
 percentile = specials.percentile.plain.stub
 nanpercentile = specials.percentile.nan.stub
 trapezoid = specials.trapezoid.plain.stub
@@ -315,12 +297,7 @@ nantrapezoid = specials.trapezoid.nan.stub
 sort = specials.sort.plain.stub
 nunique = specials.nunique.plain.stub
 nannunique = specials.nunique.nan.stub
-# the topk: the k largest (or the k smallest) values of every group - its
-# answer is a matrix with a row per group, not a value per group
 topk = specials.topk.plain.stub
-# the topk of the ticks of a temporal input - the same selection on the
-# int64 ticks, where the NaT is the smallest tick of all
-tick_topk = specials.tick_topk.plain.stub
 
 # the collecting function: its result is a sequence per group, so the kernel
 # hands out a list of the arrays of the groups - numba cannot hold an object

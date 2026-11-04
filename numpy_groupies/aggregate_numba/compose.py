@@ -75,7 +75,6 @@ every stage, and LLVM folds the empty calls away.
 
 import functools
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, Literal, NamedTuple, cast
 
 import numba as nb
@@ -593,8 +592,7 @@ def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
 # the stub of the function is the one a caller reaches.
 
 
-@dataclass(frozen=True)
-class TickKernel:
+class TickKernel(NamedTuple):
     """The kernel of a function on the int64 ticks of temporal values.
 
     ``plain`` and ``nan`` are the ways the kernel is called with the ticks:

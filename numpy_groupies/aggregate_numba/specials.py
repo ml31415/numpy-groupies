@@ -974,10 +974,9 @@ quantile = build_custom_kernel(
 percentile = build_custom_kernel(
     "percentile",
     # the driver and the parallel passes of the quantile, with the argument
-    # scaled down: the percentile is the quantile in percent, and its kernel
-    # is a kernel of its own - jitted code calls it like every other one.
-    # The five methods of numpy run in the kernel, the same way they run in
-    # the kernel of the quantile.
+    # scaled down: the percentile is the quantile in percent.  The five
+    # methods of numpy run in the kernel, the same way they run in the
+    # kernel of the quantile.
     driver_factory=partial(_quantile_driver_factory, scale=0.01, name="percentile"),
     mt_driver_factory=partial(_quantile_mt_factory, scale=0.01, name="percentile"),
     rule=rule_float,

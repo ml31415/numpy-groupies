@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate, aggregate_numba, aggregate_numpy
-from numpy_groupies.aggregate_numba import compose
+from numpy_groupies.aggregate_numba import averaging, compose, specials
 from numpy_groupies.registry import (
     func_extras,
 )
@@ -213,7 +213,17 @@ def _kernel_arguments(name, kwargs):
 # own.  An operation without such an argument has no extra argument at all.
 def test_the_python_and_the_jitted_signature_of_a_kernel_are_one():
     for name, typing_function in compose._TYPING_FUNCTIONS.items():
-        stub = getattr(aggregate_numba, name)
+        stub = getattr(aggregate_numba, name, None)
+        if stub is None:
+            # the kernel of the ticks: no name of the package shadows it, and
+            # its stub lives on the pair of its module
+            base = name.removeprefix("nan")
+            for module in (averaging, specials):
+                pair = getattr(module, base, None)
+                if pair is not None:
+                    stub = pair.nan.stub if name.startswith("nan") else pair.plain.stub
+                    break
+        assert stub is not None, name
         assert signature(stub) == signature(typing_function), name
 
 
