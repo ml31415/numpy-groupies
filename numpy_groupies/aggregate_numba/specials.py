@@ -22,10 +22,13 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import (
+    TickKernel,
     _fill_differs,
     build_custom_kernel,
     build_kernel,
     complex_less,
+    make_tick_call,
+    make_tick_call_q,
     output_size,
     rule_float,
     rule_int64,
@@ -200,8 +203,24 @@ def _select_kth(
 # the same helpers serve the median and the quantile - the same source, the same
 # signature, the same specializations: one compiled artifact serves both
 _valid_plain = njit_stable(_group_valid_plain)
+
+
 # the nan scan of the numbers - the temporal one is the same scan with the
 # NaT tick as the missing value (see ``_valid_nan_scan``)
+@njit_stable(name="tick_holds_nat")
+def _holds_nat_tick(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> bool:
+    """Whether the block of the ticks holds the NaT tick.
+
+    The NaT tick is the smallest of them all, so it is the first one of the
+    block - but the block is not ordered, and the scan is the price of the
+    answer.
+    """
+    for i in range(begin, begin + m):
+        if a_sorted[i] == NAT_TICK:
+            return True
+    return False
+
+
 _valid_nan = _valid_nan_scan(False)
 # the selection: the same block for every operation that selects, so one
 # compiled artifact serves the median and the quantile and both of their variants
@@ -331,12 +350,13 @@ def _median_group(ticks: bool, nans: bool) -> Callable[..., None]:
             else:
                 out[g] = middle(buf, 0, m)
         elif ticks:
-            # the plain variant of the ticks: a NaT tick is a value like any
-            # other here - the smallest of them all - and the group that
-            # holds one is answered NaT by the caller: the mask of the groups
-            # that hold a NaT is already in the hands of the temporal wrapper,
-            # and no scan of the block buys it
-            out[g] = middle(a_sorted, starts[g], counts[g])
+            # the plain variant of the ticks: a NaT tick takes the group
+            # over, the way a nan takes the group of the numbers over - the
+            # answer of such a group is the NaT of the unit
+            if _holds_nat_tick(a_sorted, starts[g], counts[g]):
+                out[g] = NAT_TICK
+            else:
+                out[g] = middle(a_sorted, starts[g], counts[g])
         else:
             # the plain variant of the numbers: a nan poisons the group (where
             # any nan is contagious) - the poison is shaped like the output,
@@ -498,11 +518,10 @@ _quantile_group_nan = njit_stable(_quantile_group_nan, name="nanquantile_group")
 def _tick_quantile_group(nans: bool) -> Callable[..., None]:
     """The quantile of one group of the ticks, the way numpy computes it.
 
-    The plain variant takes the NaT tick as a value like any other - it is the
-    smallest of them all, and the group that holds one is answered NaT by the
-    caller: the mask of the groups that hold a NaT is already in the hands of
-    the temporal wrapper, and no scan of the block buys it.  The nan variant
-    leaves the NaT tick out, as every nan variant leaves the nan out.
+    The plain variant takes the group over, the way the plain variant of the
+    numbers takes the group of a nan over: the answer of a group that holds
+    a NaT is the NaT of the unit.  The nan variant leaves the NaT tick out,
+    as every nan variant leaves the nan out.
     """
     valid_nan = _valid_nan_scan(True)
 
@@ -527,7 +546,13 @@ def _tick_quantile_group(nans: bool) -> Callable[..., None]:
             else:
                 out[g] = _quantile_at_ticks(buf, 0, m, q, method)
         else:
-            out[g] = _quantile_at_ticks(a_sorted, starts[g], counts[g], q, method)
+            # the plain variant of the ticks: a NaT tick takes the group
+            # over, the way a nan takes the group of the numbers over - the
+            # answer of such a group is the NaT of the unit
+            if _holds_nat_tick(a_sorted, starts[g], counts[g]):
+                out[g] = NAT_TICK
+            else:
+                out[g] = _quantile_at_ticks(a_sorted, starts[g], counts[g], q, method)
 
     return group
 
@@ -804,6 +829,11 @@ median = build_custom_kernel(
     rule=rule_float,
     fill_default=np.nan,
     doc="Median of the values of every group",
+    # the median of the temporal input is the median of the ticks
+    tick=TickKernel(
+        plain=make_tick_call("tick_median_call", tick_median.plain.driver),
+        nan=make_tick_call("nantick_median_call", tick_median.nan.driver),
+    ),
 )
 
 
@@ -911,6 +941,11 @@ quantile = build_custom_kernel(
     fill_default=np.nan,
     variant="q",
     doc="Quantile of the values of every group",
+    # the quantile of the temporal input is the quantile of the ticks
+    tick=TickKernel(
+        plain=make_tick_call_q("tick_quantile_call", tick_quantile.plain.driver),
+        nan=make_tick_call_q("nantick_quantile_call", tick_quantile.nan.driver),
+    ),
 )
 
 
@@ -925,6 +960,11 @@ percentile = build_custom_kernel(
     fill_default=np.nan,
     variant="q",
     doc="Percentile of the values of every group - the quantile in percent",
+    # the percentile of the temporal input is the percentile of the ticks
+    tick=TickKernel(
+        plain=make_tick_call_q("tick_percentile_call", tick_quantile.plain.driver, scale=0.01),
+        nan=make_tick_call_q("nantick_percentile_call", tick_quantile.nan.driver, scale=0.01),
+    ),
 )
 
 

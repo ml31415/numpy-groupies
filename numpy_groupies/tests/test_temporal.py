@@ -828,6 +828,12 @@ def test_bare_kernel_refuses_what_it_cannot_compute(func):
         # which numba truncates
         ("mean", (2,), "2011-01-02T00:00:00"),
         ("nanmean", (2,), "2011-01-02T00:00:00"),
+        ("median", (2,), "2011-01-02T00:00:00"),
+        ("nanmedian", (2,), "2011-01-02T00:00:00"),
+        ("quantile", (0.5, 2), "2011-01-02T00:00:00"),
+        ("nanquantile", (0.5, 2), "2011-01-02T00:00:00"),
+        ("percentile", (50.0, 2), "2011-01-02T00:00:00"),
+        ("nanpercentile", (50.0, 2), "2011-01-02T00:00:00"),
     ],
 )
 def test_bare_kernel_answers_the_temporal_input_on_the_ticks(func, args, expected):
@@ -1115,18 +1121,17 @@ def test_the_parallel_path_of_the_quantile_answers_the_same(impl):
 
 
 def test_the_bare_tick_median_poisons_the_nat_of_a_group():
-    # the plain kernel sees the NaT tick as the smallest value and averages
-    # it like any other - the caller knows the groups that hold a NaT and
-    # overwrites them with the NaT; the nan kernel leaves the NaT out on its
-    # own and answers the middle of the ticks that remain
+    # the plain kernel takes the group over, the way the plain kernel of the
+    # numbers takes the group of a nan over - the answer of a group that
+    # holds a NaT is the NaT of the unit; the nan kernel leaves the NaT out
+    # on its own and answers the middle of the ticks that remain
     from numpy_groupies import aggregate_numba
 
     group_idx = np.array([0, 0, 1, 1])
     ticks = np.array([np.iinfo(np.int64).min, 10, 3, 5], dtype=np.int64)
     plain = aggregate_numba.tick_median(group_idx, ticks, 2)
-    # what the kernel sees: the exact mean of the NaT tick and the 10
-    want = _round_half_even(Fraction(int(np.iinfo(np.int64).min) + 10, 2))
-    assert int(plain[0]) == want
+    # the NaT of the unit
+    assert int(plain[0]) == np.iinfo(np.int64).min
     assert int(plain[1]) == 4
     nan = aggregate_numba.nantick_median(group_idx, ticks, 2)
     np.testing.assert_array_equal(nan, np.array([10, 4], dtype=np.int64))

@@ -297,13 +297,6 @@ _NUMERIC_VALUES = "the kernels take numeric values"
 _TEMPORAL_KERNEL_REFUSED = frozenset(
     {
         "sort",
-        # the median and the quantile are computed on the ticks - the kernel
-        # of the ticks does not poison the group of a NaT the way the policy
-        # of the package does, so the kernel of the values refuses the
-        # temporal input
-        "median",
-        "quantile",
-        "percentile",
         "all",
         "any",
         "prod",
