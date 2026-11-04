@@ -42,6 +42,55 @@ from numpy_groupies.validation import (
 __all__ = ["aggregate", "blocks_to_object_array", "step_count", "step_indices", "unpack"]
 
 
+def _numeric_answer(
+    funcname: str | Callable[..., AScalar],
+    op: Callable[..., AResult],
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
+    flat_size: int,
+    fill_value: AFillValue,
+    dtype: npt.DTypeLike | None,
+    len_counts_values: bool,
+    **kwargs: Any,
+) -> tuple[AResult, AFillValue]:
+    """The answer of the numeric operation, and the fill value it resolved.
+
+    The cascade of one call: the callable of the caller's own, the filter of
+    the nans, the resolution of the output dtype and of the fill value - and
+    the call itself.  The operation is the resolved one of the dispatch - an
+    unimplemented function never reaches this call.
+    """
+    if not isinstance(funcname, str):
+        # a callable of the caller's own: it sees the values as they are, and
+        # its result is a number of its own making - the dtype it asked for is
+        # the one it gets
+        fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
+        return op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs), fill_value
+
+    # a known function: the nan variants drop the nans of the input first
+    if funcname.startswith("nan"):
+        if is_scalar_input(a):
+            raise ValueError("nan-version not supported for scalar input.")
+        if "arg" in funcname:
+            kwargs["_nansqueeze"] = True
+        elif "cum" not in funcname:
+            # the cumulative nan variants keep every row, the rest drops the
+            # nan values - a is not needed for len, nanlen
+            good = ~np.isnan(a)
+            if "len" not in funcname or len_counts_values:
+                # a scalar a raised a branch above, only columns remain
+                a = cast("npt.NDArray[np.generic]", a)[good]
+            group_idx = group_idx[good]
+
+    # the sum overflow guess needs the maximum number of values that can
+    # be summed into a single group, i.e. the (nan-filtered) input length
+    # - flat_size counts output groups and can be arbitrarily smaller
+    dtype = check_dtype(dtype, funcname, a, len(group_idx))
+    fill_value = resolve_fill_value(funcname, fill_value, dtype)
+    check_fill_value(fill_value, dtype, func=funcname)
+    return op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs), fill_value
+
+
 def _aggregate_base(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
@@ -73,6 +122,14 @@ def _aggregate_base(
         # have): it names no known function either, so the registry answers it
         # as a callable of the caller's own
         funcname, op, temporal_op = _dispatch.custom(func)
+
+    if op is None:
+        # a function that is known but not implemented here - one the backend
+        # cannot do at all cannot refuse itself for a dtype either, so the
+        # missing implementation is the answer before any temporal policy is
+        # asked
+        raise missing_impl_error(funcname)
+
     # datetime64 and timedelta64 run on their int64 ticks - the temporal
     # operation of the function takes the input apart, refuses what numpy
     # refuses, and answers with a temporal value.  Only the functions of the
@@ -94,40 +151,9 @@ def _aggregate_base(
             **kwargs,
         )
     else:
-        if op is None:
-            # a function that is known but not implemented here
-            raise missing_impl_error(funcname)
-        if isinstance(funcname, str):
-            # a known function: the nan variants drop the nans of the input first
-            if funcname.startswith("nan"):
-                if is_scalar_input(a):
-                    raise ValueError("nan-version not supported for scalar input.")
-                if "nan" in funcname:
-                    if "arg" in funcname:
-                        kwargs["_nansqueeze"] = True
-                    elif "cum" in funcname:
-                        pass
-                    else:
-                        good = ~np.isnan(a)
-                        if "len" not in funcname or len_counts_values:
-                            # a is not needed for len, nanlen!
-                            # a scalar a raised a branch above, only columns remain
-                            a = cast("npt.NDArray[np.generic]", a)[good]
-                        group_idx = group_idx[good]
-
-            # the sum overflow guess needs the maximum number of values that can
-            # be summed into a single group, i.e. the (nan-filtered) input length
-            # - flat_size counts output groups and can be arbitrarily smaller
-            dtype = check_dtype(dtype, funcname, a, len(group_idx))
-            fill_value = resolve_fill_value(funcname, fill_value, dtype)
-            check_fill_value(fill_value, dtype, func=funcname)
-        else:
-            # a callable of the caller's own: it sees the values as they are, and
-            # its result is a number of its own making - the dtype it asked for is
-            # the one it gets
-            fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
-
-        ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
+        ret, fill_value = _numeric_answer(
+            funcname, op, group_idx, a, flat_size, fill_value, dtype, len_counts_values, **kwargs
+        )
 
     if funcname == "topk":
         # the topk hands out k values per group: its result is a matrix with

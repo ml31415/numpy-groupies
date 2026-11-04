@@ -662,8 +662,15 @@ def test_datetime_refusals(impl, func):
     kwargs = {"q": 0.5} if func in ("quantile", "percentile") else {}
     group_idx = np.array([0, 0])
     a = np.array(["2011-01-01", "2011-03-01"], dtype="M8[s]")
-    with pytest.raises(TypeError, match="not supported"):
-        impl.aggregate(group_idx, a, func=func, size=1, **kwargs)
+    ops = getattr(impl, "ops", None)
+    if ops is not None and ops._op_dict.get(func) is None:
+        # a function the backend does not implement is one it cannot refuse
+        # for a dtype either - the missing implementation is the answer
+        with pytest.raises(NotImplementedError):
+            impl.aggregate(group_idx, a, func=func, size=1, **kwargs)
+    else:
+        with pytest.raises(TypeError, match="not supported"):
+            impl.aggregate(group_idx, a, func=func, size=1, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -682,8 +689,15 @@ def test_datetime_refusals(impl, func):
 def test_timedelta_refusals(impl, func):
     group_idx = np.array([0, 0])
     a = np.array([1, 3], dtype="m8[s]")
-    with pytest.raises(TypeError, match="not supported"):
-        impl.aggregate(group_idx, a, func=func, size=1)
+    ops = getattr(impl, "ops", None)
+    if ops is not None and ops._op_dict.get(func) is None:
+        # a function the backend does not implement is one it cannot refuse
+        # for a dtype either - the missing implementation is the answer
+        with pytest.raises(NotImplementedError):
+            impl.aggregate(group_idx, a, func=func, size=1)
+    else:
+        with pytest.raises(TypeError, match="not supported"):
+            impl.aggregate(group_idx, a, func=func, size=1)
 
 
 def test_custom_callable_sees_the_values(impl):
