@@ -69,13 +69,13 @@ def _aggregate_base(
         group_idx = group_idx.astype(int)
 
     try:
-        funcname, op = _dispatch[func]
+        funcname, op, temporal_op = _dispatch[func]
     except TypeError:
         # a func that cannot be a key of the table at all (a dict asks its keys
         # for a hash, which an object defining __eq__ without __hash__ does not
         # have): it names no known function either, so the registry answers it
         # as a callable of the caller's own
-        funcname, op = _dispatch.custom(func)
+        funcname, op, temporal_op = _dispatch.custom(func)
     # datetime64 and timedelta64 run on their int64 ticks - the temporal
     # operation of the function takes the input apart, refuses what numpy
     # refuses, and answers with a temporal value.  Only the functions of the
@@ -85,7 +85,6 @@ def _aggregate_base(
     # np.mean is the mean of the package and gets its answer.  The temporal
     # operation is the other half of the operation of the function, and the
     # registry holds it beside the numeric one.
-    temporal_op = _dispatch.temporal(funcname) if isinstance(funcname, str) else None
     if temporal_op is not None and is_temporal_input(a):
         ret, fill_value = temporal_op(
             group_idx,

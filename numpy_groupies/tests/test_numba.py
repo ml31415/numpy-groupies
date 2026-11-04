@@ -275,7 +275,7 @@ def test_every_known_function_is_implemented():
     collecting function included, which has no compiled kernel but a python
     implementation of its own.
     """
-    missing = sorted({name for name, impl in _dispatch.values() if impl is None})
+    missing = sorted({resolved.funcname for resolved in _dispatch.values() if resolved.op is None})
     assert missing == []
 
 

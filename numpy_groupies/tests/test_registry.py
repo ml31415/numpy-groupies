@@ -18,6 +18,7 @@ from numpy_groupies.registry import (
     Resolved,
     aliasing_py,
     build_dispatch,
+    build_op_table,
     custom_callable,
     funcs_common,
     function_names,
@@ -48,12 +49,12 @@ def test_build_dispatch_resolves_every_alias():
     op_dict = {"sum": sum, "min": min}
     aliasing = {"sum": "sum", "add": "sum", "min": "min", "amin": "min", "nansum": "nansum"}
 
-    dispatch = build_dispatch(op_dict, aliasing)
+    dispatch = build_dispatch(build_op_table(op_dict), aliasing)
 
     assert set(dispatch) == set(aliasing)
-    assert dispatch["add"] == ("sum", sum)
-    assert dispatch["amin"] == ("min", min)
-    assert dispatch["nansum"] == ("nansum", None)
+    assert dispatch["add"] == Resolved("sum", sum, None)
+    assert dispatch["amin"] == Resolved("min", min, None)
+    assert dispatch["nansum"] == Resolved("nansum", None, None)
 
 
 def test_a_name_is_resolved_without_asking_its_func_for_a_hash():
@@ -86,7 +87,7 @@ def _registry():
         callable_ = custom_callable(func)
         return Resolved(callable_, callable_)
 
-    return Registry(op_dict, aliasing, custom)
+    return Registry(build_op_table(op_dict), aliasing, custom)
 
 
 def test_the_registry_answers_both_kinds_of_func_with_one_lookup():
@@ -98,18 +99,20 @@ def test_the_registry_answers_both_kinds_of_func_with_one_lookup():
     """
     registry = _registry()
 
-    funcname, impl = registry["add"]
+    funcname, impl, temporal_op = registry["add"]
     assert (funcname, impl) == ("sum", sum)
+    assert temporal_op is None
     # a function the backend does not implement is a key of the table too
-    assert registry["nansum"] == ("nansum", None)
+    assert registry["nansum"] == Resolved("nansum", None, None)
 
     # a callable of the caller's own: the factory makes it the operation
     def my_func(values):
         return sum(values)
 
-    funcname, impl = registry[my_func]
+    funcname, impl, temporal_op = registry[my_func]
     assert funcname is my_func
     assert impl is my_func
+    assert temporal_op is None
 
 
 def test_the_registry_answers_a_func_that_cannot_be_a_key():
@@ -129,9 +132,10 @@ def test_the_registry_answers_a_func_that_cannot_be_a_key():
     func = Callable()
     with pytest.raises(TypeError):
         registry[func]
-    funcname, impl = registry.custom(func)
+    funcname, impl, temporal_op = registry.custom(func)
     assert funcname is func
     assert impl is func
+    assert temporal_op is None
 
 
 def test_a_func_that_named_nothing_is_said_so_by_the_factory():

@@ -66,6 +66,18 @@ funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan", "topk"])
 # work on numbers cannot take in one go
 funcs_collecting = frozenset(["array"])
 
+# the key of an operation in the table of a backend: the name of the
+# function and the kind of the operation.  A function has two operations -
+# the one that answers the numeric values and the one that answers the
+# datetime64 and the timedelta64 values - and they are two entries of one
+# table, so that a backend holds one table of operations and the registry
+# one dict.
+OpKey: TypeAlias = tuple[str, bool]
+
+# the two kinds of operation of a function
+NUMERIC: bool = False
+TEMPORAL: bool = True
+
 # the names the known functions answer to - their canonical names and the
 # string aliases of the alias table.  The literal type names them for the
 # type checker (a typo is a type error) and for the editor.
@@ -197,31 +209,56 @@ def custom_callable(func: Any) -> Callable[..., AScalar]:
     raise ValueError(f"func {func} is neither a valid function string nor a callable object")
 
 
-def build_dispatch(
-    op_dict: Mapping[str, Callable[..., Any]], aliasing: Mapping[Any, str]
-) -> dict[Any, tuple[str, Callable[..., Any] | None]]:
+def build_op_table(
+    numeric: Mapping[str, Callable[..., Any]], temporal: Mapping[str, Callable[..., Any]] | None = None
+) -> dict[OpKey, Callable[..., Any]]:
+    """The table of the operations of a backend.
+
+    A function has two operations - the one that answers the numeric values
+    and the one that answers the datetime64 and the timedelta64 values - and
+    they are two entries of one table, keyed by the name of the function and
+    by the kind of the operation.  One table per backend, and one dict in
+    the registry.
+    """
+    table: dict[OpKey, Callable[..., Any]] = {(name, NUMERIC): op for name, op in numeric.items()}
+    if temporal is not None:
+        table.update({(name, TEMPORAL): op for name, op in temporal.items()})
+    return table
+
+
+def build_dispatch(op_dict: Mapping[OpKey, Callable[..., Any]], aliasing: Mapping[Any, str]) -> dict[Any, Resolved]:
     """Fuse an aliasing and an implementation table for single-lookup dispatch.
 
-    Every alias of every known function is a key, holding a
-    ``(canonical name, implementation)`` tuple, so naming a function is one
-    subscript and a func missing from the table is not a function anybody knows
-    (``custom_callable``).  An alias whose name this backend does not implement
-    holds ``(name, None)``, which the caller reports with ``missing_impl_error``
-    - so the table answers that question too, without a second lookup.
+    Every alias of every known function is a key, holding the canonical name
+    of the function and the two operations of it - the numeric one and the
+    temporal one - so naming a function is one subscript and a func missing
+    from the table is not a function anybody knows (``custom_callable``).  An
+    alias whose name this backend does not implement holds ``(name, None)``,
+    which the caller reports with ``missing_impl_error`` - so the table
+    answers that question too, without a second lookup.
     """
-    return {alias: (name, op_dict.get(name)) for alias, name in aliasing.items()}
+    return {
+        alias: Resolved(name, op_dict.get((name, NUMERIC)), op_dict.get((name, TEMPORAL)))
+        for alias, name in aliasing.items()
+    }
 
 
 class Resolved(NamedTuple):
-    """What a func resolved to: the func it names and the operation that does the work.
+    """What a func resolved to: the func it names and the operations that do the work.
 
     The funcname is the canonical name of a known function, or the callable of
     the caller's own - which is what tells the two apart.  The operation is
     None where the backend knows the function but does not implement it.
+
+    The temporal operation is the other half of the operation of a function:
+    it answers the datetime64 and the timedelta64 input of it, and it is
+    None where the backend has none - the numeric operation of such a
+    function answers the temporal input on its own.
     """
 
     funcname: str | Callable[..., AScalar]
     op: Callable[..., Any] | None
+    temporal_op: Callable[..., Any] | None = None
 
 
 class Registry(dict[str | Callable[..., object], Resolved]):
@@ -244,21 +281,19 @@ class Registry(dict[str | Callable[..., object], Resolved]):
 
     The temporal operations of the backend live in the registry as well: the
     operation of a function for the datetime64 and timedelta64 input, built
-    like the numeric one and put beside it.  They are reached by their name
-    (``temporal``), and they are no aliases of the public functions - they
-    are the other half of the operation of a function.
+    like the numeric one and put beside it.  They are no aliases of the
+    public functions - they are the other half of the operation of a
+    function, and they are reached by the same lookup as the numeric one.
     """
 
     def __init__(
         self,
-        op_dict: Mapping[str, Callable[..., Any]],
+        op_dict: Mapping[OpKey, Callable[..., Any]],
         aliasing: Mapping[str | Callable[..., object], str],
         custom: Callable[..., Resolved],
-        temporal_op_dict: Mapping[str, Callable[..., Any]] | None = None,
     ) -> None:
-        super().__init__({alias: Resolved(name, op) for alias, (name, op) in build_dispatch(op_dict, aliasing).items()})
+        super().__init__(build_dispatch(op_dict, aliasing))
         self._custom_factory = custom
-        self._temporal_ops: dict[str, Callable[..., Any]] = dict(temporal_op_dict or {})
 
     def __missing__(self, key: Any) -> Resolved:
         """The operation of a func that names no known function.
@@ -276,15 +311,6 @@ class Registry(dict[str | Callable[..., object], Resolved]):
         function either, and is answered by the same factory.
         """
         return self._custom_factory(func)
-
-    def temporal(self, name: str) -> Callable[..., Any] | None:
-        """The operation of a function for temporal input.
-
-        It is None where the backend has none - the function is then answered
-        by its numeric operation, which is the right one for a backend whose
-        kernels take the temporal values as they are.
-        """
-        return self._temporal_ops.get(name)
 
 
 default_fill_values: dict[str, AFillValue] = {

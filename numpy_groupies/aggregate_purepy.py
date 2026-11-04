@@ -17,6 +17,7 @@ from numpy_groupies.registry import (
     Registry,
     Resolved,
     bind_functions,
+    build_op_table,
     custom_callable,
     forced_float_types,
     forced_real_float_types,
@@ -360,7 +361,7 @@ def _custom_operation(func: Any) -> Resolved:
     return Resolved(callable_, callable_)
 
 
-_dispatch = Registry(_op_dict, aliasing, _custom_operation)
+_dispatch = Registry(build_op_table(_op_dict), aliasing, _custom_operation)
 
 
 def _a_dtype(a: Sequence[Any]) -> type:
@@ -455,12 +456,12 @@ def aggregate(
                 raise ValueError("group_idx contains negative value")
 
     try:
-        funcname, op = _dispatch[func]
+        funcname, op, _temporal_op = _dispatch[func]
     except TypeError:
         # a func that cannot be a key of the table at all: it names no known
         # function either, so the registry answers it as a callable of the
         # caller's own
-        funcname, op = _dispatch.custom(func)
+        funcname, op, _temporal_op = _dispatch.custom(func)
     if op is None:
         # a function that is known but not implemented here - the registry
         # answers that too, and says it before a single group is aggregated

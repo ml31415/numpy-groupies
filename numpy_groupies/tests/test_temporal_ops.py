@@ -17,14 +17,11 @@ from numpy_groupies.tests.helpers import impl_name
 
 
 def _dispatch_of(impl):
-    """The dispatch table of a backend."""
-    from numpy_groupies import aggregate_numba, aggregate_numpy
-
-    if impl is aggregate_numpy:
-        return aggregate_numpy.ops._dispatch
-    if impl is aggregate_numba:
-        return aggregate_numba.ops._dispatch
-    return None
+    """The dispatch table of a backend - None for the pure python one, which
+    knows no temporal types."""
+    if impl_name(impl) == "purepy":
+        return None
+    return impl.ops._dispatch
 
 
 def test_every_function_has_a_temporal_operation(impl):
@@ -34,7 +31,7 @@ def test_every_function_has_a_temporal_operation(impl):
     if dispatch is None:
         pytest.skip("the pure python backend knows no temporal types")
     for name in function_names():
-        temporal_op = dispatch.temporal(name)
+        temporal_op = dispatch[name].temporal_op
         assert temporal_op is not None, name
         assert callable(temporal_op), name
 
@@ -47,7 +44,7 @@ def test_the_temporal_operations_are_not_aliases(impl):
     if dispatch is None:
         pytest.skip("the pure python backend knows no temporal types")
     for name in function_names():
-        temporal_op = dispatch.temporal(name)
+        temporal_op = dispatch[name].temporal_op
         assert temporal_op is not dispatch[name].op, name
         assert temporal_op.__name__ == f"temporal_{name}"
 

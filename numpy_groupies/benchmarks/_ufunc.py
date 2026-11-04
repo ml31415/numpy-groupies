@@ -13,6 +13,7 @@ from numpy_groupies.nptools import aliasing, maxval, minimum_dtype, minimum_dtyp
 from numpy_groupies.registry import (
     Registry,
     Resolved,
+    build_op_table,
     custom_callable,
     missing_impl_error,
 )
@@ -173,7 +174,7 @@ def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     raise NotImplementedError("No such ufunc available") from None
 
 
-_dispatch = Registry(_op_dict, aliasing, _custom_operation)
+_dispatch = Registry(build_op_table(_op_dict), aliasing, _custom_operation)
 
 
 def aggregate(
@@ -188,11 +189,11 @@ def aggregate(
     **kwargs: Any,
 ) -> npt.NDArray[np.generic]:
     try:
-        funcname, op = _dispatch[func]
+        funcname, op, _temporal_op = _dispatch[func]
     except TypeError:
         # a func that cannot be a key of the table at all: the registry answers
         # it as a callable of the caller's own, which a ufunc dispatch cannot do
-        funcname, op = _dispatch.custom(func)
+        funcname, op, _temporal_op = _dispatch.custom(func)
     if op is None:
         # a name that is known elsewhere says which one is missing here
         raise missing_impl_error(funcname)
