@@ -111,12 +111,11 @@ from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
 )
-from numpy_groupies.nptools import exact_integer_group_mean
+from numpy_groupies.nptools import exact_integer_group_mean, is_temporal_input
 from numpy_groupies.registry import (
     FuncName,
     missing_impl_error,
 )
-from numpy_groupies.temporal import is_temporal_input
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import EMPTY_GROUP_IDX
 

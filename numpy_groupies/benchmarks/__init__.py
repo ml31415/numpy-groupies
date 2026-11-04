@@ -25,10 +25,10 @@ import numpy as np
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
 from numpy_groupies.benchmarks import _ufunc
+from numpy_groupies.nptools import TEMPORAL_KINDS
 from numpy_groupies.registry import (
     funcs_collecting,
 )
-from numpy_groupies.temporal import TEMPORAL_KINDS
 from numpy_groupies.tests.reference import aggregate_ref
 
 # ---------------------------------------------------------------------------

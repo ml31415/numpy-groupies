@@ -4,12 +4,18 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
 )
-from numpy_groupies.nptools import aliasing, maxval, minimum_dtype, minimum_dtype_scalar, minval
+from numpy_groupies.nptools import (
+    _aggregate_wrap,
+    aliasing,
+    maxval,
+    minimum_dtype,
+    minimum_dtype_scalar,
+    minval,
+)
 from numpy_groupies.registry import (
     Registry,
     Resolved,
@@ -186,16 +192,16 @@ def aggregate(
     axis: int | None = None,
     **kwargs: Any,
 ) -> npt.NDArray[np.generic]:
-    return _aggregate_numpy(
+    return _aggregate_wrap(
         group_idx,
         a,
+        func,
         size=size,
         fill_value=fill_value,
         order=order,
         dtype=dtype,
-        func=func,
         axis=axis,
-        _dispatch=_dispatch,
+        dispatch=_dispatch,
         **kwargs,
     )
 

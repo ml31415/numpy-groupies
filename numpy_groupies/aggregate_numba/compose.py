@@ -88,9 +88,9 @@ from numpy_groupies.aggregate_numba.mt import (
     chunk_count,
     should_use_mt,
 )
-from numpy_groupies.nptools import check_fill_value_for_dtype
+from numpy_groupies.nptools import TEMPORAL_KINDS, check_fill_value_for_dtype, is_temporal_input
 from numpy_groupies.registry import func_argument_default, nan
-from numpy_groupies.temporal import NAT_TICK, TEMPORAL_KINDS, is_temporal_input
+from numpy_groupies.temporal import NAT_TICK
 from numpy_groupies.typing import AResult, AScalar
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,

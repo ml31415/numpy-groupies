@@ -30,7 +30,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.common import DEFAULT_FILL_VALUE, resolve_fill_value
-from numpy_groupies.nptools import exact_integer_group_mean
+from numpy_groupies.nptools import TEMPORAL_KINDS, exact_integer_group_mean
 from numpy_groupies.registry import missing_impl_error
 from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
 
@@ -61,9 +61,6 @@ from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
 # the tick of the NaT of a temporal value - the value every tick kernel
 # finds as the smallest tick of its group, and the one the nan forms leave
 # out and the plain ones take their group over with
-# the kinds of the temporal dtypes - datetime64 and timedelta64, the "M"
-# and the "m" of numpy
-TEMPORAL_KINDS = "Mm"
 
 NAT_TICK: int = -(2**63)
 
@@ -154,17 +151,6 @@ TEMPORAL_NAT_POISON = frozenset({"sum", "mean", "max", "median", "quantile", "pe
 # empty group is NaT for them, and 0 (the epoch, or no duration) for the
 # functions that fill with zero, like the sum of the durations
 TEMPORAL_NAT_FILL = frozenset({"min", "max", "mean", "median", "quantile", "percentile", "first", "last", "topk"})
-
-
-def is_temporal_input(a: Any) -> bool:
-    """Whether the input carries datetime64 or timedelta64 values - an array
-    of them, or the one scalar standing for a value of every group.
-
-    The kind of the dtype is asked, not the dtype itself: the check runs on
-    every call, and building a dtype out of a dtype is not free.
-    """
-    kind = getattr(getattr(a, "dtype", None), "kind", None)
-    return kind is not None and kind in TEMPORAL_KINDS
 
 
 def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:

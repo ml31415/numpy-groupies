@@ -7,14 +7,19 @@ from typing import Any, SupportsFloat, cast
 import numpy as np
 import numpy.typing as npt
 
+from numpy_groupies.common import DEFAULT_FILL_VALUE, resolve_fill_value
 from numpy_groupies.registry import (
+    Registry,
     forced_float_types,
     forced_real_float_types,
+    func_argument_default,
     get_aliasing,
+    missing_impl_error,
     resolve_name,
 )
 from numpy_groupies.typing import (
     AFillValue,
+    AResult,
     AScalar,
     AValue,
     RavelOrder,
@@ -30,6 +35,8 @@ from numpy_groupies.validation import (
     TOO_LARGE_FOR_SIZE,
     check_boolean,
     check_complex_dtype,
+    check_topk_input,
+    check_topk_shape,
     is_integer_dtype,
     is_scalar_input,
 )
@@ -320,7 +327,7 @@ def resolve_output_dtype(
                     return np.dtype(np.float64)
             else:
                 if func_str == "sum":
-                    if a_dtype.kind in "Mm":  # the kinds temporal holds as TEMPORAL_KINDS
+                    if a_dtype.kind in TEMPORAL_KINDS:
                         # the sum of durations is a duration - numpy answers
                         # in the unit of the input, and there is no integer
                         # size to guess for
@@ -740,6 +747,22 @@ def relabel_groups_masked(
     return cast("npt.NDArray[np.intp]", relabel[group_idx])
 
 
+# the kinds of the temporal dtypes - datetime64 and timedelta64, the "M"
+# and the "m" of numpy
+TEMPORAL_KINDS = "Mm"
+
+
+def is_temporal_input(a: Any) -> bool:
+    """Whether the input carries datetime64 or timedelta64 values - an array
+    of them, or the one scalar standing for a value of every group.
+
+    The kind of the dtype is asked, not the dtype itself: the check runs on
+    every call, and building a dtype out of a dtype is not free.
+    """
+    kind = getattr(getattr(a, "dtype", None), "kind", None)
+    return kind is not None and kind in TEMPORAL_KINDS
+
+
 def is_duck_array(value: object) -> bool:
     """This function was copied from xarray/core/utils.py under the terms of Xarray's Apache-2 license."""
 
@@ -895,3 +918,130 @@ def blocks_to_object_array(
     if fill_value is None or np.isscalar(fill_value):
         fill_untouched(group_idx, ret, cast("AScalar", fill_value))
     return ret
+
+
+# ---------------------------------------------------------------------------
+# the driver of the numpy based backends
+#
+# One call for both of them: the validation of the input, the resolution of
+# the operation and of the output dtype, the answer of the operation - and
+# the shape of the answer.  What differs from one backend to the next is the
+# table of its operations and the meaning of the nan lengths, and that is
+# what the caller feeds in.
+
+
+def _aggregate_wrap(
+    group_idx: npt.NDArray[np.integer],
+    a: AValue,
+    func: str | Callable[..., AScalar],
+    *,
+    size: int | Sequence[int] | npt.NDArray[np.integer] | None = None,
+    fill_value: AFillValue = DEFAULT_FILL_VALUE,
+    order: RavelOrder = "C",
+    dtype: npt.DTypeLike | None = None,
+    axis: int | None = None,
+    dispatch: Registry,
+    len_counts_values: bool = False,
+    **kwargs: Any,
+) -> AResult:
+    """The answer of one call of a numpy based backend, and the fill value it
+    resolved."""
+    iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
+    group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
+
+    if group_idx.dtype == np.dtype("uint64"):
+        # Force conversion to signed int, to avoid issues with bincount etc later
+        group_idx = group_idx.astype(int)
+
+    try:
+        funcname, op, temporal_op = dispatch[func]
+    except TypeError:
+        # a func that cannot be a key of the table at all (a dict asks its keys
+        # for a hash, which an object defining __eq__ without __hash__ does not
+        # have): it names no known function either, so the registry answers it
+        # as a callable of the caller's own
+        funcname, op, temporal_op = dispatch.custom(func)
+
+    if op is None:
+        # a function that is known but not implemented here - one the backend
+        # cannot do at all cannot refuse itself for a dtype either, so the
+        # missing implementation is the answer before any temporal policy is
+        # asked
+        raise missing_impl_error(funcname)
+
+    # datetime64 and timedelta64 run on their int64 ticks - the temporal
+    # operation of the function takes the input apart, refuses what numpy
+    # refuses, and answers with a temporal value.  Only the functions of the
+    # package go through it: a callable of the caller's own defines its own
+    # semantics and sees the values as they are.  The numpy functions that
+    # mean the same thing are aliases of the functions of the package, so
+    # np.mean is the mean of the package and gets its answer.  The temporal
+    # operation is the other half of the operation of the function, and the
+    # registry holds it beside the numeric one.
+    if temporal_op is not None and is_temporal_input(a):
+        ret, fill_value = temporal_op(
+            group_idx,
+            a,
+            flat_size,
+            fill_value,
+            dtype,
+            order=order,
+            axis=axis,
+            **kwargs,
+        )
+    elif not isinstance(funcname, str):
+        # a callable of the caller's own: it sees the values as they are, and
+        # its result is a number of its own making - the dtype it asked for is
+        # the one it gets
+        fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
+        ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
+    else:
+        # a known function: the nan variants drop the nans of the input first
+        if funcname.startswith("nan"):
+            if is_scalar_input(a):
+                raise ValueError("nan-version not supported for scalar input.")
+            if "arg" in funcname:
+                kwargs["_nansqueeze"] = True
+            elif "cum" not in funcname:
+                # the cumulative nan variants keep every row, the rest drops
+                # the nan values - a is not needed for len, nanlen
+                good = ~np.isnan(a)
+                if "len" not in funcname or len_counts_values:
+                    # a scalar a raised a branch above, only columns remain
+                    a = cast("npt.NDArray[np.generic]", a)[good]
+                group_idx = group_idx[good]
+
+        # the sum overflow guess needs the maximum number of values that can
+        # be summed into a single group, i.e. the (nan-filtered) input length
+        # - flat_size counts output groups and can be arbitrarily smaller
+        dtype = check_dtype(dtype, funcname, a, len(group_idx))
+        fill_value = resolve_fill_value(funcname, fill_value, dtype)
+        check_fill_value(fill_value, dtype, func=funcname)
+        ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
+
+    if funcname == "topk":
+        # the topk hands out k values per group: its result is a matrix with
+        # a row per group, and the unravelling of a multidimensional group
+        # index has no place in that
+        check_topk_input(ndim_idx, size)
+
+    # deal with ndimensional indexing
+    if ndim_idx > 1:
+        if unravel_shape is not None:
+            # A negative fill_value cannot, and should not, be unraveled.
+            mask = ret == fill_value
+            ret[mask] = 0
+            # the axis is not None whenever the shape to unravel to is known
+            assert axis is not None
+            ret = cast(
+                "AResult",
+                np.unravel_index(cast("npt.NDArray[np.integer]", ret), unravel_shape)[axis],
+            )
+            ret[mask] = cast("AScalar", fill_value)
+        check_nton_shape(ret, size, funcname)
+        ret = ret.reshape(size, order=order)
+    elif funcname == "topk":
+        # the topk gives k values per group, so its shape is (size, k) - the
+        # check of the shape of a one-out-per-in function does not apply to it
+        check_topk_shape(ret, flat_size, int(kwargs.get("k", func_argument_default("topk", "k"))))
+    return cast(AResult, ret)
