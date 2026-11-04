@@ -30,6 +30,8 @@ from numpy_groupies.aggregate_numba.mt import (
 )
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
 from numpy_groupies.common import (
+    DEFAULT_FILL_VALUE,
+    DefaultFillValue,
     resolve_fill_value,
 )
 from numpy_groupies.nptools import (
@@ -43,8 +45,6 @@ from numpy_groupies.nptools import (
     scalar_dtype,
 )
 from numpy_groupies.registry import (
-    DEFAULT_FILL_VALUE,
-    DefaultFillValue,
     FuncName,
     Registry,
     Resolved,

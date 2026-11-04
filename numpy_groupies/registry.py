@@ -5,6 +5,11 @@ properties - the result type it settles, the default that fills a group it
 never saw, the arguments it has of its own.  All of that lives here, so that
 the implementations can ask for it without knowing of each other.
 
+The sentinel that asks for the default of a function lives in
+``numpy_groupies.common``, next to the resolution of the fill value: the
+registry knows the default of every function, and the sentinel is the way of
+asking for it.
+
 This module must not import numpy: the pure python implementation is loaded
 before numpy is known to be available, and has to work without it.
 """
@@ -466,16 +471,6 @@ def func_argument_default(func: str, argument: str) -> Any:
         if name == argument:
             return default
     raise KeyError(f"{func!r} has no argument {argument!r}")
-
-
-class DefaultFillValue:
-    """Sentinel for ``fill_value``, asking for the function specific default."""
-
-    def __repr__(self) -> str:
-        return "DEFAULT_FILL_VALUE"
-
-
-DEFAULT_FILL_VALUE = DefaultFillValue()
 
 
 def bind_functions(

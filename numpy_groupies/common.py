@@ -4,6 +4,11 @@ What every implementation shares: the documentation of the functions, the
 fill value they use for a group they never saw, and the backend that carries
 the functions of an implementation as its attributes.
 
+The sentinel that asks for the default of a function - ``DEFAULT_FILL_VALUE``
+- lives here, next to the resolution of the fill value.  The default of every
+function of the package lives in ``numpy_groupies.registry``, which knows the
+functions and their properties.
+
 This module must not import numpy - the pure python implementation is loaded
 before numpy is known to be available, and has to work without it.
 
@@ -17,7 +22,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from numpy_groupies.registry import (
-    DEFAULT_FILL_VALUE,
     FuncName,
     default_fill_values,
     fill_value_key,
@@ -37,6 +41,22 @@ if TYPE_CHECKING:
     from numpy_groupies.typing import AFillValue, AScalar
 
 nan = float("nan")  # nan is just this float
+
+
+class DefaultFillValue:
+    """Sentinel for ``fill_value``, asking for the function specific default.
+
+    The registry knows the default of every function of the package, and the
+    sentinel is the way of asking for it: a call that carries it is answered
+    with the default of its function, resolved against the dtype of its
+    answer (see ``resolve_fill_value``).
+    """
+
+    def __repr__(self) -> str:
+        return "DEFAULT_FILL_VALUE"
+
+
+DEFAULT_FILL_VALUE = DefaultFillValue()
 
 
 aggregate_common_doc = """

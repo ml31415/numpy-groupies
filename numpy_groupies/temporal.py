@@ -29,9 +29,9 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.common import resolve_fill_value
+from numpy_groupies.common import DEFAULT_FILL_VALUE, resolve_fill_value
 from numpy_groupies.nptools import exact_integer_group_mean
-from numpy_groupies.registry import DEFAULT_FILL_VALUE, missing_impl_error
+from numpy_groupies.registry import missing_impl_error
 from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
 
 # ---------------------------------------------------------------------------
