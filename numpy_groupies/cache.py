@@ -60,20 +60,24 @@ def _count_files(directory: str) -> int:
     return sum(len(files) for _root, _dirs, files in os.walk(directory))
 
 
-def _package_dir() -> str:
+def package_dir() -> str:
     """The directory of the package - its source tree with the caches in it.
 
     The leftovers of the versions that cached next to their source are in the
-    ``__pycache__`` directories of the whole package, and this module sits in
-    ``utils`` - so the walk needs the root of the package, not the directory
-    of this file.
+    ``__pycache__`` directories of the whole package, and the caller of
+    ``purge_cache()`` has to know where the package sits.
+
+    The directory of the package is the one of its ``__init__.py``, and not
+    the one of this file - the modules of the package live next to each
+    other.
     """
     package = sys.modules.get(__package__.partition(".")[0])
     paths = getattr(package, "__path__", None)
     if paths:
         return str(paths[0])
-    # the module runs outside of its package: the root is two levels up
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # the module runs outside of its package: the directory of this file
+    # is the directory of the package
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 def purge_cache() -> int:
@@ -98,7 +102,7 @@ def purge_cache() -> int:
         # the files the removal did not reach are not counted: the counter is
         # the number of the files that are really gone
         removed += before - _count_files(cache)
-    for root, _dirs, files in os.walk(_package_dir()):
+    for root, _dirs, files in os.walk(package_dir()):
         for name in files:
             if name.endswith((".nbi", ".nbc", ".nbi.lock")):
                 try:
