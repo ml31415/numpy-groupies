@@ -42,56 +42,7 @@ from numpy_groupies.validation import (
 __all__ = ["aggregate", "blocks_to_object_array", "step_count", "step_indices", "unpack"]
 
 
-def _numeric_answer(
-    funcname: str | Callable[..., AScalar],
-    op: Callable[..., AResult],
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    flat_size: int,
-    fill_value: AFillValue,
-    dtype: npt.DTypeLike | None,
-    len_counts_values: bool,
-    **kwargs: Any,
-) -> tuple[AResult, AFillValue]:
-    """The answer of the numeric operation, and the fill value it resolved.
-
-    The cascade of one call: the callable of the caller's own, the filter of
-    the nans, the resolution of the output dtype and of the fill value - and
-    the call itself.  The operation is the resolved one of the dispatch - an
-    unimplemented function never reaches this call.
-    """
-    if not isinstance(funcname, str):
-        # a callable of the caller's own: it sees the values as they are, and
-        # its result is a number of its own making - the dtype it asked for is
-        # the one it gets
-        fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
-        return op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs), fill_value
-
-    # a known function: the nan variants drop the nans of the input first
-    if funcname.startswith("nan"):
-        if is_scalar_input(a):
-            raise ValueError("nan-version not supported for scalar input.")
-        if "arg" in funcname:
-            kwargs["_nansqueeze"] = True
-        elif "cum" not in funcname:
-            # the cumulative nan variants keep every row, the rest drops the
-            # nan values - a is not needed for len, nanlen
-            good = ~np.isnan(a)
-            if "len" not in funcname or len_counts_values:
-                # a scalar a raised a branch above, only columns remain
-                a = cast("npt.NDArray[np.generic]", a)[good]
-            group_idx = group_idx[good]
-
-    # the sum overflow guess needs the maximum number of values that can
-    # be summed into a single group, i.e. the (nan-filtered) input length
-    # - flat_size counts output groups and can be arbitrarily smaller
-    dtype = check_dtype(dtype, funcname, a, len(group_idx))
-    fill_value = resolve_fill_value(funcname, fill_value, dtype)
-    check_fill_value(fill_value, dtype, func=funcname)
-    return op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs), fill_value
-
-
-def _aggregate_base(
+def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
     func: FuncName | Callable[..., AScalar] = "sum",
@@ -100,13 +51,18 @@ def _aggregate_base(
     order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
+    out: AResult | None = None,
     _dispatch: Registry = _dispatch,
     len_counts_values: bool = False,
     **kwargs: Any,
 ) -> AResult:
-    """The driver of the numpy implementation: the validation of the input, the
-    resolution of the operation and of the output dtype, and the answer itself.
-    """
+    # the argument the numba implementation honours and this one does not:
+    # there is no compiled loop here to write into an array of the caller -
+    # the argument is taken, so that the signature of every backend is the
+    # same, and it says what it cannot do
+    if out is not None:
+        raise NotImplementedError("out= is only supported by the numba implementation")
+
     iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
     group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
@@ -150,10 +106,35 @@ def _aggregate_base(
             axis=axis,
             **kwargs,
         )
+    elif not isinstance(funcname, str):
+        # a callable of the caller's own: it sees the values as they are, and
+        # its result is a number of its own making - the dtype it asked for is
+        # the one it gets
+        fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
+        ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
     else:
-        ret, fill_value = _numeric_answer(
-            funcname, op, group_idx, a, flat_size, fill_value, dtype, len_counts_values, **kwargs
-        )
+        # a known function: the nan variants drop the nans of the input first
+        if funcname.startswith("nan"):
+            if is_scalar_input(a):
+                raise ValueError("nan-version not supported for scalar input.")
+            if "arg" in funcname:
+                kwargs["_nansqueeze"] = True
+            elif "cum" not in funcname:
+                # the cumulative nan variants keep every row, the rest drops
+                # the nan values - a is not needed for len, nanlen
+                good = ~np.isnan(a)
+                if "len" not in funcname or len_counts_values:
+                    # a scalar a raised a branch above, only columns remain
+                    a = cast("npt.NDArray[np.generic]", a)[good]
+                group_idx = group_idx[good]
+
+        # the sum overflow guess needs the maximum number of values that can
+        # be summed into a single group, i.e. the (nan-filtered) input length
+        # - flat_size counts output groups and can be arbitrarily smaller
+        dtype = check_dtype(dtype, funcname, a, len(group_idx))
+        fill_value = resolve_fill_value(funcname, fill_value, dtype)
+        check_fill_value(fill_value, dtype, func=funcname)
+        ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
     if funcname == "topk":
         # the topk hands out k values per group: its result is a matrix with
@@ -181,37 +162,6 @@ def _aggregate_base(
         # check of the shape of a one-out-per-in function does not apply to it
         check_topk_shape(ret, flat_size, int(kwargs.get("k", func_argument_default("topk", "k"))))
     return cast(AResult, ret)
-
-
-def aggregate(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    func: FuncName | Callable[..., AScalar] = "sum",
-    size: int | Sequence[int] | None = None,
-    fill_value: AFillValue = DEFAULT_FILL_VALUE,
-    order: RavelOrder = "C",
-    dtype: npt.DTypeLike | None = None,
-    axis: int | None = None,
-    out: AResult | None = None,
-    **kwargs: Any,
-) -> AResult:
-    # the argument the numba implementation honours and this one does not:
-    # there is no compiled loop here to write into an array of the caller -
-    # the argument is taken, so that the signature of every backend is the
-    # same, and it says what it cannot do
-    if out is not None:
-        raise NotImplementedError("out= is only supported by the numba implementation")
-    return _aggregate_base(
-        group_idx,
-        a,
-        size=size,
-        fill_value=fill_value,
-        order=order,
-        dtype=dtype,
-        func=func,
-        axis=axis,
-        **kwargs,
-    )
 
 
 aggregate.__doc__ = (

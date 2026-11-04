@@ -6,7 +6,6 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
@@ -55,7 +54,7 @@ def _wrapper(
     if funcname in ("var", "std"):
         kwargs["ddof"] = ddof
     # kwargs starting with "_" are internal flags (e.g. _nansqueeze injected by
-    # _aggregate_base) that pandas does not understand - the rest is forwarded.
+    # aggregate) that pandas does not understand - the rest is forwarded.
     kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
     # grouping a Series over the raw arrays skips per-call DataFrame
     # construction (~2ms) and direct method calls skip the generic
@@ -177,7 +176,7 @@ def aggregate(
             axis=axis,
             **kwargs,
         )
-    return _aggregate_base(
+    return _aggregate_numpy(
         group_idx,
         a,
         size=size,
