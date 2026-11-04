@@ -682,25 +682,24 @@ def _nan_patches(ctx: _Context) -> None:
     """The patches the NaT of the values puts on the answer of the kernels."""
     policy = ctx.policy
     patches = ctx.patches
+    if policy.patch not in ("argmax", "poison", "sort", "running"):
+        return
+    nat = np.isnat(ctx.values)
+    if not nat.any():
+        return
     if policy.patch == "argmax":
-        nat = np.isnat(ctx.values)
-        if nat.any():
-            patches.nat_groups, patches.nat_positions = _first_true_position_per_group(ctx.group_idx, nat, ctx.size)
-    elif policy.patch == "poison":
-        nat = np.isnat(ctx.values)
-        if nat.any():
-            patches.nat_groups = _groups_holding(ctx.group_idx, nat, ctx.size)
-    elif policy.patch == "sort":
+        patches.nat_groups, patches.nat_positions = _first_true_position_per_group(ctx.group_idx, nat, ctx.size)
+        return
+    if policy.patch == "poison":
+        patches.nat_groups = _groups_holding(ctx.group_idx, nat, ctx.size)
+        return
+    if policy.patch == "sort":
         # the largest tick stands in for the NaT on the way through the sort,
         # and the answer turns it back into NaT
-        nat = np.isnat(ctx.values)
-        if nat.any():
-            ctx.ticks = np.where(nat, np.iinfo(np.int64).max, ctx.ticks)
-            patches.sort_nat_restore = True
-    elif policy.patch == "running":
-        nat = np.isnat(ctx.values)
-        if nat.any():
-            patches.running_nat = _per_group_running_mask(ctx.group_idx, nat)
+        ctx.ticks = np.where(nat, np.iinfo(np.int64).max, ctx.ticks)
+        patches.sort_nat_restore = True
+        return
+    patches.running_nat = _per_group_running_mask(ctx.group_idx, nat)
 
 
 def _mean_result(ctx: _Context) -> tuple[npt.NDArray[Any] | None, bool, bool]:

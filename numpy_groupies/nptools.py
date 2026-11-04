@@ -105,8 +105,9 @@ def _ravel_group_idx(
     # the labels are collected per input dimension before ravel_multi_index folds them
     labels: list[npt.NDArray[np.integer]] = []
     size = []
+    ravel = method == "ravel"
     for ii, s in enumerate(a.shape):
-        if method == "ravel":
+        if ravel:
             if ii == axis:
                 ii_idx = group_idx_in
                 if ii_idx.ndim == 1:
@@ -124,7 +125,7 @@ def _ravel_group_idx(
         size.append(size_in if ii == axis else s)
     # Use the indexing, and return. It's a bit simpler than
     # using trying to keep all the logic below happy
-    if method == "ravel":
+    if ravel:
         group_idx = np.ravel_multi_index(labels, size, order=order, mode="raise")
     elif method == "offset":
         group_idx = offset_labels(group_idx_in, a.shape, axis, order, size_in)
@@ -149,8 +150,7 @@ def offset_labels(
     group_idx = group_idx + np.arange(np.prod(newshape[:-1]), dtype=int).reshape(newshape) * size
     if axis not in (-1, len(inshape) - 1):
         return np.moveaxis(group_idx, -1, axis)
-    else:
-        return group_idx
+    return group_idx
 
 
 def input_validation(
@@ -201,9 +201,9 @@ def input_validation(
     if axis is None:
         if ndim_a > 1:
             raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten. Alternatively specify axis.")
-    elif axis >= ndim_a or axis < -ndim_a:
-        raise ValueError("axis arg too large for np.ndim(a)")
     else:
+        if axis >= ndim_a or axis < -ndim_a:
+            raise ValueError("axis arg too large for np.ndim(a)")
         axis = axis if axis >= 0 else ndim_a + axis  # negative indexing
         if ndim_idx > 1:
             # multidimensional group labels - e.g. separate group labels for
@@ -220,32 +220,28 @@ def input_validation(
             ndim_idx = 1
         if group_idx.ndim == 1 and a.shape[axis] != group_idx.shape[0]:
             raise ValueError("a.shape[axis] doesn't match length of group_idx.")
-        elif size is not None and not np.isscalar(size):
+        if size is not None and not np.isscalar(size):
             raise NotImplementedError("when using axis arg, size must be None or scalar.")
-        else:
-            is_form_3 = ndim_a > 1
-            orig_shape = a.shape if is_form_3 else group_idx.shape
-            func_name = resolve_name(func, aliasing)
-            if isinstance(func_name, str) and "arg" in func_name:
-                unravel_shape = orig_shape
-            else:
-                unravel_shape = None
+        is_form_3 = ndim_a > 1
+        orig_shape = a.shape if is_form_3 else group_idx.shape
+        func_name = resolve_name(func, aliasing)
+        unravel_shape = orig_shape if isinstance(func_name, str) and "arg" in func_name else None
 
-            method = "offset" if axis == ndim_a - 1 and order == "C" else "ravel"
-            group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order, method=method)
-            flat_size = np.prod(size)
-            ndim_idx = ndim_a
-            one_to_one = is_form_3 and isinstance(func_name, str) and ("cum" in func_name or func_name == "sort")
-            size = orig_shape if one_to_one else size
-            ravel_order = order if one_to_one else "C"
-            return (
-                group_idx.ravel(order=ravel_order),
-                a.ravel(order=ravel_order),
-                flat_size,
-                ndim_idx,
-                size,
-                unravel_shape,
-            )
+        method = "offset" if axis == ndim_a - 1 and order == "C" else "ravel"
+        group_idx, size = _ravel_group_idx(group_idx, a, axis, size, order, method=method)
+        flat_size = np.prod(size)
+        ndim_idx = ndim_a
+        one_to_one = is_form_3 and isinstance(func_name, str) and ("cum" in func_name or func_name == "sort")
+        size = orig_shape if one_to_one else size
+        ravel_order = order if one_to_one else "C"
+        return (
+            group_idx.ravel(order=ravel_order),
+            a.ravel(order=ravel_order),
+            flat_size,
+            ndim_idx,
+            size,
+            unravel_shape,
+        )
 
     if ndim_idx == 1:
         if size is None:
@@ -261,10 +257,11 @@ def input_validation(
     else:
         if size is None:
             size = np.max(group_idx, axis=1).astype(int) + 1
-        elif np.isscalar(size):
-            raise ValueError(f"output size must be of length {len(group_idx)}")
-        elif len(size) != len(group_idx):
-            raise ValueError(f"{len(size)} sizes given, but {len(group_idx)} output dimensions specified in index")
+        else:
+            if np.isscalar(size):
+                raise ValueError(f"output size must be of length {len(group_idx)}")
+            if len(size) != len(group_idx):
+                raise ValueError(f"{len(size)} sizes given, but {len(group_idx)} output dimensions specified in index")
         if ravel_group_idx:
             group_idx = np.ravel_multi_index(group_idx, size, order=order, mode="raise")
         flat_size = np.prod(size)
@@ -358,12 +355,11 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
 
     if np.issubdtype(dtype, np.inexact):
         return type_loop(x, dtype, _next_float_dtype)
-    else:
-        # the last step of the ladder: the value does not fit into any of the
-        # integer types - float64, and never float32, whose mantissa of 24
-        # bits is too coarse for the sums it would carry (numpy has no float
-        # here at all: it sums into int64 or uint64 and wraps)
-        return type_loop(x, dtype, _next_int_dtype, default=np.float64)
+    # the last step of the ladder: the value does not fit into any of the
+    # integer types - float64, and never float32, whose mantissa of 24
+    # bits is too coarse for the sums it would carry (numpy has no float
+    # here at all: it sums into int64 or uint64 and wraps)
+    return type_loop(x, dtype, _next_int_dtype, default=np.float64)
 
 
 def minimum_dtype_scalar(x: AFillValue, dtype: npt.DTypeLike | None, a: AValue) -> np.dtype:
@@ -631,8 +627,7 @@ def check_fill_value(
     if func in ("all", "any", "allnan", "anynan"):
         check_boolean(fill_value)
         return None
-    else:
-        return check_fill_value_for_dtype(fill_value, dtype)
+    return check_fill_value_for_dtype(fill_value, dtype)
 
 
 # ---------------------------------------------------------------------------
@@ -957,6 +952,32 @@ aliasing = get_aliasing(_alias_numpy)
 # what the caller feeds in.
 
 
+def _drop_nans(
+    funcname: str,
+    a: AValue,
+    group_idx: npt.NDArray[np.integer],
+    kwargs: dict[str, Any],
+    len_counts_values: bool,
+) -> tuple[AValue, npt.NDArray[np.integer]]:
+    """The input of a known nan function without its nan values.
+
+    The cumulative nan variants keep every row, the rest drops the nan
+    values - a is not needed for len, nanlen.
+    """
+    if is_scalar_input(a):
+        raise ValueError("nan-version not supported for scalar input.")
+    if "arg" in funcname:
+        kwargs["_nansqueeze"] = True
+        return a, group_idx
+    if "cum" in funcname:
+        return a, group_idx
+    good = ~np.isnan(a)
+    if "len" not in funcname or len_counts_values:
+        # a scalar a raised a branch above, only columns remain
+        a = cast("npt.NDArray[np.generic]", a)[good]
+    return a, group_idx[good]
+
+
 def _aggregate_wrap(
     dispatch: Registry,
     group_idx: npt.NDArray[np.integer],
@@ -1033,18 +1054,7 @@ def _aggregate_wrap(
     else:
         # a known function: the nan variants drop the nans of the input first
         if funcname.startswith("nan"):
-            if is_scalar_input(a):
-                raise ValueError("nan-version not supported for scalar input.")
-            if "arg" in funcname:
-                kwargs["_nansqueeze"] = True
-            elif "cum" not in funcname:
-                # the cumulative nan variants keep every row, the rest drops
-                # the nan values - a is not needed for len, nanlen
-                good = ~np.isnan(a)
-                if "len" not in funcname or len_counts_values:
-                    # a scalar a raised a branch above, only columns remain
-                    a = cast("npt.NDArray[np.generic]", a)[good]
-                group_idx = group_idx[good]
+            a, group_idx = _drop_nans(funcname, a, group_idx, kwargs, len_counts_values)
 
         # the sum overflow guess needs the maximum number of values that can
         # be summed into a single group, i.e. the (nan-filtered) input length
@@ -1074,8 +1084,8 @@ def _aggregate_wrap(
             )
             ret[mask] = cast("AScalar", fill_value)
         check_nton_shape(ret, size, funcname)
-        ret = ret.reshape(size, order=order)
-    elif funcname == "topk":
+        return cast(AResult, ret.reshape(size, order=order))
+    if funcname == "topk":
         # the topk gives k values per group, so its shape is (size, k) - the
         # check of the shape of a one-out-per-in function does not apply to it
         check_topk_shape(ret, flat_size, int(kwargs.get("k", func_argument_default("topk", "k"))))
