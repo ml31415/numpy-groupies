@@ -80,7 +80,6 @@ input has its own kernels - ``tick_mean`` and ``nantick_mean`` - which
 answer it exactly, half to even, on the int64 ticks the caller hands them.
 """
 
-import builtins
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
@@ -90,7 +89,7 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.aggregate_numba.fallback import FALLBACK
 from numpy_groupies.aggregate_numba.gather import unpack, unpack_into
-from numpy_groupies.aggregate_numba.ops import _dispatch, _driver_call
+from numpy_groupies.aggregate_numba.ops import _dispatch
 from numpy_groupies.aggregate_numba.steps import step_count, step_indices
 
 # The numpy implementation answers the three calls of this backend that
@@ -104,7 +103,7 @@ from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
 )
-from numpy_groupies.nptools import QUANTILE_METHODS, exact_integer_group_mean
+from numpy_groupies.nptools import exact_integer_group_mean
 from numpy_groupies.registry import (
     FuncName,
     funcs_collecting,
@@ -112,7 +111,7 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.temporal import is_temporal_input
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
-from numpy_groupies.validation import EMPTY_GROUP_IDX, EXACT_FLOAT64_INTEGER_LIMIT
+from numpy_groupies.validation import EMPTY_GROUP_IDX
 
 FALLBACK.set_implementation(_numpy_aggregate)
 

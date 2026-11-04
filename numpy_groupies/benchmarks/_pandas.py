@@ -6,8 +6,8 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
+from numpy_groupies.aggregate_numpy import _aggregate_base
 from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,

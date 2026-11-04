@@ -16,7 +16,6 @@ one and fits the cost model that decides between them.
 """
 
 import argparse
-import os
 import platform
 import sys
 import timeit
