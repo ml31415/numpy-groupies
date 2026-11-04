@@ -138,6 +138,7 @@ func_list = (
     arbitrary,
     "sort",
     "array",
+    "topk",
 )
 
 # the functions that take datetime64 and timedelta64 values, and the ones that
@@ -174,6 +175,7 @@ temporal_datetime_funcs = (
     "nanquantile",
     "sort",
     "array",
+    "topk",
 )
 temporal_timedelta_funcs = temporal_datetime_funcs + (
     np.sum,

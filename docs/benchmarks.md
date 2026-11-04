@@ -61,6 +61,7 @@ The result of a run on the machine of the numeric table (same conditions, `--run
 | nanquantile datetime64  |       37.898 |        6.212 |
 | sort datetime64         |       53.429 |        6.347 |
 | array datetime64        |        7.791 |        7.952 |
+| topk datetime64         |       14.106 |        2.867 |
 | min timedelta64         |        1.697 |        0.413 |
 | max timedelta64         |        1.343 |        0.506 |
 | nanmin timedelta64      |        5.011 |        0.523 |
@@ -87,6 +88,7 @@ The result of a run on the machine of the numeric table (same conditions, `--run
 | nanquantile timedelta64 |       37.722 |        6.264 |
 | sort timedelta64        |       53.893 |        6.532 |
 | array timedelta64       |        8.151 |        8.059 |
+| topk timedelta64        |       13.472 |        3.004 |
 | sum timedelta64         |        1.650 |        0.431 |
 | nansum timedelta64      |        4.759 |        0.423 |
 | cumsum timedelta64      |       14.596 |        0.887 |
@@ -94,7 +96,7 @@ The result of a run on the machine of the numeric table (same conditions, `--run
 | median timedelta64      |       41.333 |        2.951 |
 | nanmedian timedelta64   |       36.587 |        3.736 |
 
-The kernels of the temporal rows are the ones of the numeric table working on the values or their ticks: the selection of the extrema, the positions, the counts and the truth of the values orders them and finds their `NaT` as it finds a nan, the sums and the accumulations of the durations add in the compiled code, the mean and the median of the ticks answer in exact int64 arithmetic, and the quantile of the ticks interpolates the way numpy interpolates it - the difference of the two ticks it falls between is a duration, its product with the fraction is truncated towards zero, and the answer is a tick again. The numba backend compiles all of it: the quantile of the ticks runs in a kernel of its own, with the same counting sort and the same selection the median uses, and all five methods of numpy are in it. The numpy backend is the reference implementation and computes the quantile of the ticks in python - that is why its quantile takes ten times the time of the median. The nan variants sit at the level of their float counterparts: the check of the NaT costs what the check of the nan costs.
+The kernels of the temporal rows are the ones of the numeric table working on the values or their ticks: the selection of the extrema, the positions, the counts and the truth of the values orders them and finds their `NaT` as it finds a nan, the sums and the accumulations of the durations add in the compiled code, the mean and the median of the ticks answer in exact int64 arithmetic, the topk of the ticks selects the wanted ones out of the ticks of every group, and the quantile of the ticks interpolates the way numpy interpolates it - the difference of the two ticks it falls between is a duration, its product with the fraction is truncated towards zero, and the answer is a tick again. The numba backend compiles all of it: the quantile of the ticks runs in a kernel of its own, with the same counting sort and the same selection the median uses, and all five methods of numpy are in it. The numpy backend is the reference implementation and computes the quantile of the ticks in python - that is why its quantile takes ten times the time of the median. The nan variants sit at the level of their float counterparts: the check of the NaT costs what the check of the nan costs.
 
 ## The calibration of the parallel path
 
@@ -107,8 +109,8 @@ python -m numpy_groupies.benchmarks.mt
 
 The tool measures the parallel kernels against the sequential ones over a
 grid of sizes, group counts and thread counts - the chunked path (the sum),
-the group path (the median, the quantile, the sort and the number of the
-distinct values) and the gather - fits the constants of the model to the
+the group path (the median, the quantile, the sort, the topk and the number
+of the distinct values) and the gather - fits the constants of the model to the
 measurements and prints them together with the crossovers, the sizes from
 which the parallel path is faster. It writes no file: its output is the
 result, and the constants in `numpy_groupies/aggregate_numba/mt.py` are the
@@ -188,5 +190,6 @@ python -m numpy_groupies.benchmarks.mt --scaling
 | arbitrary   |    112.480 |      2.842 |       ---- |     81.065 |     98.810 |       ---- |
 | sort        |     71.208 |      6.277 |       ---- |       ---- |       ---- |       ---- |
 | array       |      7.562 |      1.952 |       ---- |       ---- |       ---- |       ---- |
+| topk        |     13.866 |      2.890 |       ---- |       ---- |       ---- |       ---- |
 
 *Linux(x86_64), Python 3.14.7, Numpy 2.5.4, Numba 0.68.0, numbagg 0.9.6, Pandas 3.0.6, Polars 2.0.0 (6 threads max)*

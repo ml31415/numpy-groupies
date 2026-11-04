@@ -597,7 +597,7 @@ def output_size(group_idx: npt.NDArray[np.integer], size_arg: int) -> int:
 # a driver that carries something named after something else is what the
 # kernels of an earlier version of this module had to write by hand, and what
 # the explicit signatures below make impossible.
-Variant = Literal["none", "ddof", "q", "q_method", "dx", "reverse"]
+Variant = Literal["none", "ddof", "q", "q_method", "dx", "reverse", "topk"]
 
 # the defaults the kernels carry for the argument an operation has of its own.
 # They are the defaults of the registry (``numpy_groupies.registry.FUNC_EXTRAS``)
@@ -980,6 +980,48 @@ def _kernel_q_method(
     return stub, typing
 
 
+def _kernel_topk(name: str, driver: Callable[..., Any], resolve: _PythonPrologue, prepare: _TypingPrologue) -> _Kernel:
+    """The kernel of the topk: how many values of every group it keeps, and
+    whether it keeps the largest ones or the smallest.
+
+    The two arguments arrive in the slots the other operations use for the
+    ``ddof`` and the ``q``: the number of the values in the first of them,
+    the flag of the direction in the second.
+    """
+
+    def stub(
+        group_idx: Any, a: Any, k: int = 5, largest: bool = True, size: int = -1, fill_value: float | None = None
+    ) -> Any:
+        return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, ((k, largest),))
+
+    def typing(
+        group_idx: Any, a: Any, k: int = 5, largest: bool = True, size: int = -1, fill_value: float | None = None
+    ) -> Any:
+        out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
+            group_idx, a, fill_value
+        )
+
+        def _kernel_impl(
+            group_idx: Any,
+            a: Any,
+            k: int = 5,
+            largest: bool = True,
+            size: int = -1,
+            fill_value: float | None = None,
+        ) -> Any:
+            _require_inputs(group_idx, a)
+            if fill_value is None:
+                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, (k, largest))
+            else:
+                _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
+                return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, (k, largest))
+
+        _kernel_impl.__qualname__ = f"{name}_kernel_impl"
+        return _kernel_impl
+
+    return stub, typing
+
+
 _KERNEL_BUILDERS: dict[Variant, Callable[[str, Callable[..., Any], _PythonPrologue, _TypingPrologue], _Kernel]] = {
     "none": _kernel_none,
     "ddof": _kernel_ddof,
@@ -987,6 +1029,7 @@ _KERNEL_BUILDERS: dict[Variant, Callable[[str, Callable[..., Any], _PythonProlog
     "q_method": _kernel_q_method,
     "dx": _kernel_dx,
     "reverse": _kernel_reverse,
+    "topk": _kernel_topk,
 }
 
 

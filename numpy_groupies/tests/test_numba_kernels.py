@@ -126,6 +126,9 @@ _FLOAT_OPS = [
     ("nanmedian", {}),
     ("quantile", {}),
     ("nanquantile", {}),
+    ("topk", {}),
+    ("topk", {"k": 3}),
+    ("topk", {"k": 3, "largest": False}),
     ("quantile", {"q": 0.9}),
     ("nanquantile", {"q": 0.9}),
     ("trapezoid", {"dx": 1.0}),
@@ -144,6 +147,9 @@ _FLOAT_OPS = [
     ("nancummax", {}),
     ("sort", {}),
     ("sort", {"reverse": True}),
+    ("topk", {}),
+    ("topk", {"k": 3}),
+    ("topk", {"k": 3, "largest": False}),
 ]
 _INT_OPS = [
     ("sum", {}),
@@ -166,6 +172,9 @@ _INT_OPS = [
     ("cummin", {}),
     ("sort", {}),
     ("sort", {"reverse": True}),
+    ("topk", {}),
+    ("topk", {"k": 3}),
+    ("topk", {"k": 3, "largest": False}),
 ]
 _BOOL_OPS = [
     ("all", {}),
@@ -174,21 +183,24 @@ _BOOL_OPS = [
     ("nanany", {}),
     ("sort", {}),
     ("sort", {"reverse": True}),
+    ("topk", {}),
+    ("topk", {"k": 3}),
+    ("topk", {"k": 3, "largest": False}),
 ]
 
 
 def _kernel_arguments(name, kwargs):
-    """The argument the function of ``name`` has of its own, as a tuple.
+    """The arguments the function of ``name`` has of its own, as a tuple.
 
-    Every kernel carries the signature of its function, so the argument it has
-    of its own comes first, the size and the fill value after it.  It is always
-    passed, with its default if the test does not ask for another one.
+    Every kernel carries the signature of its function, so the arguments it
+    has of its own come first, the size and the fill value after it.  They
+    are always passed, with their default where the test does not ask for
+    another one - a function with two of them (the topk) passes both.
     """
     extras = func_extras(name)
-    own = next(iter(kwargs.values()), None) if extras else None
-    if own is None and extras:
-        own = extras[0][2]
-    return () if own is None else (own,)
+    if not extras:
+        return ()
+    return tuple(kwargs.get(arg, default) for arg, _annotation, default in extras)
 
 
 # The outward signature of a kernel is one: the python call and the jitted
@@ -259,16 +271,18 @@ def _make_jitted_caller_with_extra(kernel, extra, name):
     the two arrays, and the value of it is a constant of the caller - the
     kernel is called with it, not with a parameter of its own.
     """
+    # the call is positional throughout: numba cannot compile a call that
+    # spreads a tuple and names its arguments at the same time
     if extra is None:
 
         def caller(group_idx, a, size, fill_value):
-            return kernel(group_idx, a, size=size, fill_value=fill_value)
+            return kernel(group_idx, a, size, fill_value)
 
     else:
         value = extra
 
         def caller(group_idx, a, size, fill_value):
-            return kernel(group_idx, a, value, size=size, fill_value=fill_value)
+            return kernel(group_idx, a, *value, size, fill_value)
 
     caller.__qualname__ = caller.__name__ = name
     return nb.njit(caller)
@@ -289,7 +303,7 @@ def _jitted_caller(name, own):
 def _kernel_result(name, values, **kwargs):
     """Call the kernel of ``name`` from jitted code (fill default via None)."""
     own = _kernel_arguments(name, kwargs)
-    caller = _jitted_caller(name, own[0] if own else None)
+    caller = _jitted_caller(name, own if own else None)
     return caller(GROUP_IDX, values, -1, None)
 
 
@@ -475,6 +489,9 @@ _TEMPORAL_KERNELS = frozenset(
         "nanmin",
         "nunique",
         "nannunique",
+        # the topk orders the values of a group and leaves the missing ones
+        # out - a NaT is neither the largest nor the smallest value
+        "topk",
     }
 )
 # the durations add up (NaT included, which the addition propagates), so the

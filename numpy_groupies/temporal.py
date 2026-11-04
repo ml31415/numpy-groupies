@@ -72,6 +72,7 @@ TEMPORAL_VALUE_FUNCS = frozenset(
         "first",
         "last",
         "sort",
+        "topk",
         "cumsum",
         "cummax",
         "cummin",
@@ -145,7 +146,7 @@ TEMPORAL_NAT_POISON = frozenset({"sum", "mean", "max", "median", "quantile", "pe
 # the value functions whose default fill is nan - the temporal answer of an
 # empty group is NaT for them, and 0 (the epoch, or no duration) for the
 # functions that fill with zero, like the sum of the durations
-TEMPORAL_NAT_FILL = frozenset({"min", "max", "mean", "median", "quantile", "percentile", "first", "last"})
+TEMPORAL_NAT_FILL = frozenset({"min", "max", "mean", "median", "quantile", "percentile", "first", "last", "topk"})
 
 
 def is_temporal_input(a: Any) -> bool:
@@ -416,7 +417,7 @@ def _temporal_aggregation(
         funcname.startswith("nan")
         and base not in ("cumsum", "mean")
         and not (base == "median" and tick_median is not None)
-    ):
+    ) or base == "topk":
         # the nan-variants skip NaT like they skip nan - the plain ones
         # propagate it, and the cumulative ones carry it through their group
         # like numpy does.  Deliberately unlike numpy for the argreductions:
@@ -435,6 +436,12 @@ def _temporal_aggregation(
         # its rows.  The nan count of the distinct values does not filter
         # them either: the hash table of the kernel skips a NaT like it
         # skips a nan, and it takes the values as they are.
+        # The topk has no nan variant, and it leaves the NaT out as well: a
+        # NaT is neither the largest nor the smallest value of a group, and
+        # the sort of a group puts it last.  The rows are dropped here and
+        # the kernel drops the NaT again: the kernels are public entry points
+        # of their own, and one that is handed a NaT has to leave it out
+        # without the wrapper having prepared anything.
         nat = np.isnat(a)
         if nat.any():
             good = ~nat

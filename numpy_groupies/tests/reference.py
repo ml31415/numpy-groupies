@@ -235,6 +235,35 @@ def _sort_ref(values: npt.NDArray[np.number], reverse: bool = False) -> npt.NDAr
     return ordered[::-1]
 
 
+def _topk_ref(
+    values: npt.NDArray[np.number],
+    pos: npt.NDArray[np.integer],
+    k: int = 5,
+    largest: bool = True,
+    fill_value: Any = DEFAULT_FILL_VALUE,
+) -> Any:
+    """one group, the k largest (or the k smallest) of its values.
+
+    The values that are missing are in no selection: a nan is neither the
+    largest nor the smallest value of a group.  The places a group has fewer
+    than k values take the fill value.
+    """
+    if values.dtype.kind in "fc":
+        usable = values[~np.isnan(values)]
+    else:
+        usable = values
+    ordered = np.sort(usable)
+    if largest:
+        ordered = ordered[::-1]
+    if ordered.size < k:
+        if fill_value is DEFAULT_FILL_VALUE:
+            fill = default_fill_value("topk", values.dtype)
+        else:
+            fill = fill_value
+        ordered = np.concatenate((ordered, np.full(k - ordered.size, fill, dtype=values.dtype)))
+    return ordered[:k]
+
+
 def _result_dtype(call: Callable[..., Any], in_dtype: np.dtype) -> np.dtype:
     """the dtype the operation yields for values of ``in_dtype``, asked of numpy.
 
@@ -312,7 +341,13 @@ _REF_ONE_PER_ITEM: dict[str, Callable[..., Any]] = {
     "sort": lambda v, pos, reverse=False: _sort_ref(v, reverse=reverse),
 }
 
-_REF_FUNCS = {**_REF_ONE_PER_GROUP, **_REF_ONE_PER_ITEM}
+# the functions that keep k values of every group: their result is a matrix
+# with a row per group
+_REF_TOPK: dict[str, Callable[..., Any]] = {
+    "topk": _topk_ref,
+}
+
+_REF_FUNCS = {**_REF_ONE_PER_GROUP, **_REF_ONE_PER_ITEM, **_REF_TOPK}
 
 # the functions that collect the values of a group instead of reducing them:
 # their result is a sequence per group, and the object array of them is built
@@ -387,7 +422,10 @@ def aggregate_ref(
         pos = order[bounds[group] : bounds[group + 1]]
         if not pos.size:
             continue
-        value = call(a[pos], pos, **kwargs)
+        if name in _REF_TOPK:
+            value = call(a[pos], pos, fill_value=fill_value, **kwargs)
+        else:
+            value = call(a[pos], pos, **kwargs)
         if value is None:
             # the function has no answer for this group, which is handled like
             # an empty one: it takes the fill value
@@ -411,6 +449,24 @@ def aggregate_ref(
             flat[group] = fill
         for group, value in results.items():
             flat[group] = value
+        return ret
+
+    if name in _REF_TOPK:
+        # the result holds k values per group, so it is a matrix with a row per
+        # group - a group that received no value takes the fill value in every
+        # one of its columns
+        out_dtype = dtype or a.dtype
+        if fill_value is DEFAULT_FILL_VALUE:
+            fill = default_fill_value(name, out_dtype)
+        else:
+            check_fill_value(fill_value, out_dtype, name)
+            fill = fill_value
+        # the default of k is written down here on purpose: the reference
+        # measures the package and must not import the policy it judges
+        k = int(kwargs.get("k", 5))
+        ret = np.full((n_groups, k), fill, dtype=out_dtype)
+        for group, value in results.items():
+            ret[group, :] = value
         return ret
 
     if name in _REF_ONE_PER_ITEM:

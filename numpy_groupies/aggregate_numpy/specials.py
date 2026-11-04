@@ -188,6 +188,71 @@ def _percentile(
     return _quantile(group_idx, a, size, fill_value, dtype=dtype, q=q / 100.0, method=method)
 
 
+def _topk(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
+    size: int,
+    fill_value: AScalar,
+    dtype: npt.DTypeLike | None = None,
+    k: int = 5,
+    largest: bool = True,
+) -> npt.NDArray[np.generic]:
+    """The k largest (or the k smallest) values of every group.
+
+    The result is a matrix with one row per group and k columns: the values
+    of the group in the order of their rank - the largest one first, if
+    ``largest`` is true, the smallest one first otherwise.  A group with
+    fewer than k values fills the places it has none with the fill value.
+
+    The values that are missing - the nans of the inexact dtypes, the NaT of
+    the temporal ones - are in no selection: they are neither the largest
+    nor the smallest value of a group, and the sort of a group puts them
+    last.  A group that holds nothing but missing values has no value to
+    name and answers the fill value in every column.
+
+    The values of a group are ordered with the partition of numpy, which
+    leaves the k wanted ones at the end of the block - one partition per
+    group, the same work the median does.
+    """
+    if k < 0:
+        raise ValueError(f"k must not be negative, got {k}")
+    out_dtype = np.dtype(dtype) if dtype is not None else a.dtype
+    out = np.full((size, k), fill_value, dtype=out_dtype)
+    if k == 0 or a.size == 0:
+        return out
+    # the missing values are left out before the groups are gathered
+    good: npt.NDArray[np.bool_] | None = None
+    if a.dtype.kind in "fc":
+        good = ~np.isnan(a)
+    elif a.dtype.kind in "mM":
+        good = ~np.isnat(a)
+    order = group_order(group_idx, a, good)
+    starts, counts, values = order.starts, order.counts, order.values
+    labels = order.group_idx
+    for grp in range(starts.size):
+        count = int(counts[grp])
+        if count == 0:
+            continue
+        block = values[starts[grp] : starts[grp] + count]
+        if count <= k:
+            chosen = np.sort(block)
+        elif largest:
+            # the partition puts the k wanted values behind the k-th, and
+            # they are ordered afterwards - the partition leaves them in no
+            # order of their own
+            chosen = np.sort(np.partition(block, count - k)[count - k :])
+        else:
+            # the k smallest are in front of the k-th, which the partition
+            # puts in its place
+            chosen = np.sort(np.partition(block, k - 1)[:k])
+        if largest:
+            chosen = chosen[::-1]
+        # the row of the group is the row of its label - a group that holds
+        # no value at all has no block and keeps the fill value
+        out[labels[starts[grp]], : min(count, k)] = chosen[:k]
+    return out
+
+
 def _nunique(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],

@@ -47,13 +47,14 @@ funcs_common = [
     "argmin",
     "sort",
     "array",
+    "topk",
     "sumofsquares",
     "cumsum",
     "cumprod",
     "cummax",
     "cummin",
 ]
-funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan"])
+funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan", "topk"])
 
 # the functions that collect the values of a group instead of reducing them to
 # one number: their result is a sequence per group, which the comparisons that
@@ -77,7 +78,7 @@ FuncName: TypeAlias = Literal[
     "nantrapezoid", "nanvar", "or", "skew", "kurt", "kurtosis",
     "percentile", "plus", "prod", "product", "quantile",
     "rsorted", "sort", "sorted", "splice", "split", "std",
-    "sum", "sumofsquares", "times", "trapezoid", "var", "nunique",
+    "sum", "sumofsquares", "times", "topk", "trapezoid", "var", "nunique",
 ]
 # fmt: on
 
@@ -299,6 +300,10 @@ default_fill_values: dict[str, AFillValue] = {
     # handed out below so that callers cannot alias each other's results.
     "array": [],
     "sort": [],
+    # the topk fills the places a group does not have values for with the
+    # default of the output dtype - a nan where the output can hold one, and
+    # a zero where it cannot
+    "topk": nan,
 }
 
 
@@ -407,6 +412,14 @@ FUNC_EXTRAS: dict[str, tuple[tuple[str, str, Any], ...]] = {
     "percentile": (("q", "float", 50.0),),
     "trapezoid": (("dx", "float", 1.0),),
     "sort": (("reverse", "bool", False),),
+    # the topk: how many values of every group it keeps, and whether it keeps
+    # the largest ones or the smallest
+    "topk": (("k", "int", 5), ("largest", "bool", True)),
+    # the bare kernel of the topk of the ticks - the topk of a temporal
+    # input, on the int64 ticks of its values.  It is no function of the
+    # package - it is the kernel behind its temporal answer - but it takes
+    # the arguments of the topk the same way.
+    "tick_topk": (("k", "int", 5), ("largest", "bool", True)),
     # the bare kernel of the quantile of the ticks - the quantile of a
     # temporal input, on the int64 ticks of its values.  It is no function
     # of the package - it is the kernel behind its temporal answer - but it
@@ -423,6 +436,19 @@ def func_extras(name: str) -> tuple[tuple[str, str, Any], ...]:
     plain one, so the name is stripped of its prefix before the lookup.
     """
     return FUNC_EXTRAS.get(name.removeprefix("nan"), ())
+
+
+def func_argument_default(func: str, argument: str) -> Any:
+    """The default of one argument of a function - the registry holds them.
+
+    The registry is the one place that knows the arguments a function has of
+    its own and their defaults, so a caller that needs one of them asks
+    there instead of writing the number down a second time.
+    """
+    for name, _annotation, default in func_extras(func):
+        if name == argument:
+            return default
+    raise KeyError(f"{func!r} has no argument {argument!r}")
 
 
 class DefaultFillValue:

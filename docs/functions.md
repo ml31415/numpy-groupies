@@ -33,12 +33,14 @@ aggregate(group_idx, a, func="sum", size=None, fill_value=DEFAULT_FILL_VALUE,
 | `ddof`       | Delta degrees of freedom for `var` and `std`; the divisor is `N - ddof`. Default 0. |
 | `dx`         | Sample spacing for `trapezoid`. Default 1.0. |
 | `reverse`    | Only for `sort`: sort descending instead of ascending. |
+| `k`          | Only for `topk`: how many values of every group to keep. Default 5. |
+| `largest`    | Only for `topk`: keep the largest values of every group (`True`, the default) or the smallest ones (`False`). |
 
 Exceptions are raised in most cases where `fill_value` and `dtype` are incompatible, rather than silently coercing.
 
 ### The function in the name
 
-Every function has a name of its own, with the function in the name instead of in the `func` argument. The name takes the arguments of its function - the `ddof` of the variance, the `q` of the quantile, the `dx` of the trapezoid, the `reverse` of the sort - and the rest like `aggregate` itself:
+Every function has a name of its own, with the function in the name instead of in the `func` argument. The name takes the arguments of its function - the `ddof` of the variance, the `q` of the quantile, the `dx` of the trapezoid, the `reverse` of the sort, the `k` and the `largest` of the topk - and the rest like `aggregate` itself:
 
 ```python
 npg.mean(group_idx, a)                       # the best implementation available
@@ -153,8 +155,9 @@ These do not reduce the data; the output has the size of the input. There are no
 | Function | Result |
 | -------- | ------ |
 | `array`  | The grouped items themselves, in the order they appear in `a` — one sequence per group. (aliases: `split`, `splice`) |
+| `topk`  | The `k` largest values of every group (`largest=False` for the `k` smallest ones), in the order of their rank — the largest one first. The output is a matrix with one row per group and `k` columns; a group with fewer than `k` values fills the places it has none with the fill value. The missing values - the nans, the NaT of the temporal ones - are in no selection: they are neither the largest nor the smallest value of a group, the way the `sort` of a group puts them last. A group index of more than one dimension has no place in a matrix of groups, so the `topk` refuses it. |
 
-The NumPy and the Numba implementation hand out an object array whose entries are the arrays of the groups; the pure Python one a list of lists.
+The NumPy and the Numba implementation hand out an object array whose entries are the arrays of the groups; the pure Python one a list of lists. The `topk` hands out a matrix in the NumPy and the Numba implementation, and a list of lists in the pure Python one.
 
 ## Function × implementation matrix
 
@@ -179,10 +182,11 @@ The nan-variants are supported wherever the plain function is.
 | `cumprod`, `cummin`, `cummax`  |  -    |  x    |      -      |
 | `sort`                         |  x    |  x    |      x      |
 | `array`                        |  x    |  x    |      x      |
+| `topk`                         |  x    |  x    |      x      |
 | `nan…` variants of the above   |  x¹   |  x¹   |     x¹      |
 | custom callables               |  x    |  x²   |      x      |
 
-¹ For the same functions as in the plain row.
+¹ For the same functions as in the plain row. The `topk` has no nan-variant: the missing values are in no selection, the way the `sort` of a group puts them last.
 ² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use the NumPy implementation (`numpy_groupies.aggregate_numpy`) instead.
 
 Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call the NumPy or the pure Python implementation for the functions the default implementation lacks.
@@ -202,6 +206,7 @@ Groups without any item are filled with `fill_value`. By default this matches wh
 | `argmax`, `argmin` (and `nan`-forms)                   | `-1` — for a group without items, and for a group whose items include a NaN (an index cannot be a NaN, so there is nothing to name); `nanargmax` / `nanargmin` name an index for such a group, unless all of its items are NaN |
 | `trapezoid`, `nantrapezoid`                            | `0`, as for a single sample |
 | `array`, `sort`                                        | an empty sequence  |
+| `topk`                                                 | `nan` for floating input, `0` where the output is an integer type, which cannot hold `nan` |
 | a custom `func`                                        | `nan` for floating input, `0` otherwise |
 
 The cumulative functions and `sort` return one value per input item, so no group is ever empty in their output and `fill_value` has no effect.
@@ -218,7 +223,7 @@ npg.default_fill_value("argmin")         # -1
 
 Complex input is supported wherever the result is well defined, following NumPy's conventions.
 
-- **Keep the complex dtype:** `sum`, `prod`, `mean`, `median`, `quantile`, `percentile`, `trapezoid`, `sort`, `first`, `last`, `array` and the `cumsum` functions. `median`, `quantile` and `sort` use NumPy's lexicographic ordering (real part first, then imaginary part) - the Numba implementation compares the two parts itself, since neither Python nor Numba orders complex numbers. (NumPy's own `np.quantile` takes real values only; the quantile of a complex group is the one of this package.)
+- **Keep the complex dtype:** `sum`, `prod`, `mean`, `median`, `quantile`, `percentile`, `trapezoid`, `sort`, `topk`, `first`, `last`, `array` and the `cumsum` functions. `median`, `quantile`, `sort` and `topk` use NumPy's lexicographic ordering (real part first, then imaginary part) - the Numba implementation compares the two parts itself, since neither Python nor Numba orders complex numbers. (NumPy's own `np.quantile` takes real values only; the quantile of a complex group is the one of this package.)
 - **Return a real dtype:** `var`, `std` and `sumofsquares` measure squared magnitudes, like `np.var` on complex input.
 - **Not supported:** `skew` and `kurt` raise a `TypeError` on a complex input — the third and the fourth moment of the deviations from the mean have no meaning for a complex value.
 - **Order statistics** `min`, `max`, `argmin`, `argmax` and their `nan` counterparts follow the same lexicographic ordering everywhere — the real part decides, the imaginary part only breaks ties — including the Numba implementation, which compares the two parts itself since neither Python nor Numba orders complex numbers. As in NumPy, a value with a NaN in either part compares neither smaller nor greater.

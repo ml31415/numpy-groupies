@@ -36,7 +36,14 @@ from numpy_groupies.aggregate_numpy.reductions import (
     _prod,
     _sum,
 )
-from numpy_groupies.aggregate_numpy.specials import _median, _nunique, _percentile, _quantile, _sort
+from numpy_groupies.aggregate_numpy.specials import (
+    _median,
+    _nunique,
+    _percentile,
+    _quantile,
+    _sort,
+    _topk,
+)
 from numpy_groupies.nptools import aliasing
 from numpy_groupies.registry import (
     Registry,
@@ -66,6 +73,7 @@ _op_dict: dict[str, Callable[..., AResult]] = {
     "anynan": _anynan,
     "allnan": _allnan,
     "sort": _sort,
+    "topk": _topk,
     "array": _array,
     "argmax": _argmax,
     "argmin": _argmin,

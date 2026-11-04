@@ -17,11 +17,16 @@ from numpy_groupies.nptools import check_dtype, check_fill_value, check_nton_sha
 from numpy_groupies.registry import (
     FuncName,
     Registry,
+    func_argument_default,
     missing_impl_error,
 )
 from numpy_groupies.temporal import is_own_function, is_temporal_input
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
-from numpy_groupies.validation import is_scalar_input
+from numpy_groupies.validation import (
+    check_topk_input,
+    check_topk_shape,
+    is_scalar_input,
+)
 
 
 def numpy_fallback(
@@ -127,6 +132,12 @@ def _aggregate_base(
 
         ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
+    if funcname == "topk":
+        # the topk hands out k values per group: its result is a matrix with
+        # a row per group, and the unravelling of a multidimensional group
+        # index has no place in that
+        check_topk_input(ndim_idx, size)
+
     # deal with ndimensional indexing
     if ndim_idx > 1:
         if unravel_shape is not None:
@@ -142,4 +153,8 @@ def _aggregate_base(
             ret[mask] = cast("AScalar", fill_value)
         check_nton_shape(ret, size, funcname)
         ret = ret.reshape(size, order=order)
+    elif funcname == "topk":
+        # the topk gives k values per group, so its shape is (size, k) - the
+        # check of the shape of a one-out-per-in function does not apply to it
+        check_topk_shape(ret, flat_size, int(kwargs.get("k", func_argument_default("topk", "k"))))
     return cast(AResult, ret)

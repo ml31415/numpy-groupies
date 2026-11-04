@@ -45,6 +45,9 @@ FILL_NOT_BOOLEAN = "Value not boolean"
 FILL_NOT_CONVERTIBLE = "fill_value must be convertible into {dtype}"
 MOMENTS_NOT_FOR_COMPLEX = "the skewness and the kurtosis are not defined for complex values"
 FILL_NOT_INTEGER = "fill_value must be convertible into an integer"
+# the topk answers a matrix with a row per group, and a group index of more
+# than one dimension has no place in it
+TOPK_NEEDS_FLAT_GROUP_IDX = "the topk needs a flat group index and a size that is a number"
 FILL_NONE_NOT_HELD = (
     "fill_value=None fills an object result, which is what func='array' returns and no other function does "
     "(the default of a function is asked for with DEFAULT_FILL_VALUE)"
@@ -308,3 +311,31 @@ def check_complex_dtype(
             f"function {func_str} cannot aggregate complex values into the non-complex dtype "
             f"{dtype} - pass a complex dtype to keep the imaginary part"
         )
+
+
+# ---------------------------------------------------------------------------
+# the rules of the topk
+#
+# The topk is the only function of the package that answers a row per group
+# instead of one value per group, and the only one that has no place for a
+# group index of more than one dimension.  The two backends run their own
+# entry points and never each other's, so the rules live here - one place
+# for both of them, and one place to change them in.
+
+
+def check_topk_input(ndim_idx: int, size: Any) -> None:
+    """The input the topk cannot take: a group index of more than one
+    dimension, and a size that is a sequence.
+
+    A group index of more than one dimension names its groups in more than
+    one way, and the answer of the topk is a matrix with a row per group -
+    the unravelling of such an index has no place in it.
+    """
+    if ndim_idx > 1 or isinstance(size, tuple):
+        raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX)
+
+
+def check_topk_shape(ret: Any, size: int, k: int) -> None:
+    """The shape the answer of the topk has: a row per group, k columns."""
+    if ret.shape != (size, k):
+        raise ValueError(f"the topk of {size} groups with k={k} has the shape {ret.shape}")

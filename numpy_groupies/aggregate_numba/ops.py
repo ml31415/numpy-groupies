@@ -49,10 +49,16 @@ from numpy_groupies.registry import (
     Resolved,
     can_name_a_function,
     custom_callable,
+    func_extras,
     funcs_no_separate_nan,
 )
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
-from numpy_groupies.validation import is_scalar_input
+from numpy_groupies.validation import (
+    TOPK_NEEDS_FLAT_GROUP_IDX,
+    check_topk_input,
+    check_topk_shape,
+    is_scalar_input,
+)
 
 # input dtypes for which the 'sum' output dtype depends on the input length
 # (the overflow guesses in resolve_output_dtype)
@@ -88,11 +94,13 @@ def _dtype_fill_plan_cached(
     if scalar and func not in ("sum", "prod", "len"):
         raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
     out_dtype = resolve_output_dtype(dtype, func, a_dtype, n)
-    if func == "sort":
+    if func in ("sort", "topk"):
         # sort writes the input values back unchanged - the numpy twin
         # allocates ``np.empty_like(a)`` and the pure python one rebuilds the
         # list, so both hand out the input dtype whatever was requested, and
-        # the compiled rule of the kernel (``rule_same``) says the same
+        # the compiled rule of the kernel (``rule_same``) says the same.
+        # The topk hands out the values of the group themselves, so their
+        # dtype is the dtype of its answer.
         out_dtype = a_dtype
     resolved = resolve_fill_value(func, fill_value, out_dtype)
     check_fill_value(resolved, out_dtype, func=func)
@@ -257,6 +265,29 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
 
         return call_q_method
 
+    if handle.variant == "topk":
+        # the topk: how many values of every group it keeps, and whether it
+        # keeps the largest ones or the smallest - the two arrive in the
+        # slots of the ddof and the q
+
+        def call_topk(
+            group_idx: npt.NDArray[np.integer],
+            a: npt.NDArray[np.number],
+            size_arg: int,
+            out_dtype: np.dtype,
+            aux_dtype: np.dtype,
+            fill_value: AScalar,
+            ddof: float,
+            q: float,
+        ) -> Any:
+            if mt_driver is not None and group_idx.size >= min_values:
+                n_threads = mt_thread_count()
+                if n_threads > 1:
+                    return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, (ddof, q))
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, (ddof, q))
+
+        return call_topk
+
     # ddof, dx and reverse: the three arrive in the ddof of the call
 
     def call_ddof(
@@ -289,6 +320,9 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
     go to the numpy implementation, the complex moments refuse).
     """
     driver_call = _driver_call(handle)
+    # the names of the arguments the operation has of its own - only those
+    # reach the fallback of the backend, under their own names
+    extra_names = {name for name, _annotation, _default in func_extras(func)}
 
     def aggregate(
         group_idx: npt.NDArray[np.integer],
@@ -300,11 +334,19 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         axis: int | None = None,
         ddof: float = 0,
         q: float = 0.5,
+        **kwargs: Any,
     ) -> AResult:
         # dtypes the compiled driver cannot handle, handed to the numpy twin
         if (handle.fallback is not None or handle.refusal is not None) and _needs_fallback(handle, a):
             if handle.fallback is not None:
-                return handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis)
+                # the arguments of the operation go with it: the fallback is
+                # the numpy implementation, which knows them under their own
+                # names - the two slots of the signature carry the ddof and
+                # the q, and only the function itself knows which of them
+                # are its own
+                extra = {name: value for name, value in (("ddof", ddof), ("q", q)) if name in extra_names}
+                extra.update(kwargs)
+                return handle.fallback(group_idx, a, func, size, fill_value, order, dtype, axis, **extra)
             # nothing runs parallel here: the refusal of the operation is
             # thrown while the call is still being prepared
             raise TypeError(handle.refusal)
@@ -354,6 +396,14 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
 
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=func)
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
+        if func == "topk":
+            # the topk answers a matrix with a row per group - a group index
+            # of more than one dimension has no place in it
+            check_topk_input(ndim_idx, size)
+            if axis is not None:
+                # the numpy backend catches the axis by the size it makes of
+                # it, and says the very same words
+                raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX)
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
         scalar = is_scalar_input(a)
@@ -412,6 +462,11 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
             # numpy takes the shape as an int, a sequence of ints or an array
             # of them
             ret = cast("AResult", ret.reshape(size, order=order))
+        elif func == "topk":
+            # the topk answers k values per group: its shape is (size, k),
+            # and the shape of a one-out-per-in function does not apply to it.
+            # The number of the values travels in the slot of the ddof.
+            check_topk_shape(ret, flat_size, int(ddof))
         return ret
 
     return aggregate
@@ -632,11 +687,40 @@ _TABLE = (
     ("cummax", cumulative.cummax),
     ("cummin", cumulative.cummin),
     ("sort", specials.sort),
+    ("topk", specials.topk),
     ("nunique", specials.nunique),
     # the collecting function: its result is a sequence per group, which the
     # driver assembles into the object array the caller expects
     ("array", collect.array),
 )
+
+
+def _topk_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
+    """Expose the arguments of the topk under their public names.
+
+    The number of the values and the flag of the direction reach the driver
+    in the positions otherwise used for ``ddof`` and ``q``.
+    """
+
+    def topk_op(
+        group_idx: npt.NDArray[np.integer],
+        a: AValue,
+        size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
+        fill_value: AFillValue = DEFAULT_FILL_VALUE,
+        order: RavelOrder = "C",
+        dtype: npt.DTypeLike | None = None,
+        axis: int | None = None,
+        k: int = 5,
+        largest: bool = True,
+    ) -> AResult:
+        if k < 0:
+            raise ValueError(f"k must not be negative, got {k}")
+        # the arguments travel twice: in the slots of the signature, which is
+        # how the compiled driver takes them, and under their own names, which
+        # is how the fallback of the backend takes them
+        return op(group_idx, a, size, fill_value, order, dtype, axis, k, largest, k=k, largest=largest)
+
+    return topk_op
 
 
 def _dx_argument(op: Callable[..., AResult]) -> Callable[..., AResult]:
@@ -687,7 +771,7 @@ def _sort_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
     ) -> AResult:
         if fill_value is DEFAULT_FILL_VALUE:
             fill_value = 0
-        return op(group_idx, a, size, fill_value, order, dtype, axis, reverse)
+        return op(group_idx, a, size, fill_value, order, dtype, axis, reverse, reverse=reverse)
 
     return sort_op
 
@@ -733,7 +817,7 @@ def _quantile_arguments(
                 q=q,
                 method=method,
             )
-        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q * scale)
+        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q * scale, method=method)
 
     return quantile_op
 
@@ -742,6 +826,7 @@ def _quantile_arguments(
 _ARGUMENT_WRAPPERS: dict[str, Callable[[Callable[..., AResult]], Callable[..., AResult]]] = {
     "trapezoid": _dx_argument,
     "sort": _sort_arguments,
+    "topk": _topk_arguments,
     "quantile": partial(_quantile_arguments, name="quantile", scale=1.0, default=0.5),
     "nanquantile": partial(_quantile_arguments, name="nanquantile", scale=1.0, default=0.5),
     "percentile": partial(_quantile_arguments, name="percentile", scale=0.01, default=50.0),
