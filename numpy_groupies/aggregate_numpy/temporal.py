@@ -26,7 +26,7 @@ from numpy_groupies.aggregate_numpy.reductions import _all, _any
 from numpy_groupies.aggregate_numpy.specials import _temporal_median, _temporal_quantile
 from numpy_groupies.nptools import exact_integer_group_mean
 from numpy_groupies.registry import function_names
-from numpy_groupies.temporal import NAT_TICK, build_temporal_op, call_by_keyword
+from numpy_groupies.temporal import NAT_TICK, build_temporal_op
 from numpy_groupies.typing import AResult
 
 
@@ -153,7 +153,6 @@ def build_temporal_ops(op_dict: Mapping[str, Callable[..., AResult]]) -> dict[st
             name,
             op_dict.get(name),
             tick_op=_TICK_OPS.get(name),
-            call=call_by_keyword,
             resolve=_resolve,
         )
     return ops

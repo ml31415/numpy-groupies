@@ -54,7 +54,7 @@ from numpy_groupies.registry import (
     funcs_no_separate_nan,
     function_names,
 )
-from numpy_groupies.temporal import build_temporal_op, call_with_order
+from numpy_groupies.temporal import build_temporal_op
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import (
     TOPK_NEEDS_FLAT_GROUP_IDX,
@@ -927,6 +927,26 @@ def get_tick_ops() -> dict[str, Callable[..., AResult]]:
 _tick_ops = get_tick_ops()
 
 
+def _call_operation(
+    op: Callable[..., AResult],
+    group_idx: npt.NDArray[np.integer],
+    values: AValue,
+    size: int,
+    fill_value: AFillValue,
+    dtype: npt.DTypeLike | None,
+    order: RavelOrder,
+    axis: int | None,
+    **kwargs: Any,
+) -> AResult:
+    """The call of an operation of this backend.
+
+    The operations of the numba backend take the order of the flattening and
+    the axis between the fill value and the dtype - the two are its own, and
+    the temporal policy of the package does not have to know them.
+    """
+    return op(group_idx, values, size, fill_value, order, dtype, axis, **kwargs)
+
+
 def get_temporal_ops(
     op_dict: Mapping[str, Callable[..., AResult]],
     tick_ops: Mapping[str, Callable[..., AResult]],
@@ -953,7 +973,7 @@ def get_temporal_ops(
             # the compiled kernels of this backend take the temporal values
             # as they are
             native=True,
-            call=call_with_order,
+            call=_call_operation,
             resolve=resolve,
         )
     return ops

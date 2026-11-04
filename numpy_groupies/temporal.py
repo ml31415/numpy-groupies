@@ -268,16 +268,19 @@ def _per_group_running_mask(group_idx: npt.NDArray[np.integer], nat: npt.NDArray
 
 
 # ---------------------------------------------------------------------------
-# the operations of a backend, and the way they are called
+# the way a backend calls its operations
 #
-# The two backends have two conventions: the numpy one takes the size, the
-# fill value and the dtype behind the values, the numba one takes the order
-# of the flattening and the axis as well.  The builder of a temporal
-# operation is told which convention it is talking to, so that the policy
-# of this module does not have to know which backend it is serving.
+# The operations of a backend have the signature of that backend, and the
+# builder of a temporal operation is told how to call them: the two
+# backends have two conventions, and each of them knows its own.  The
+# convention is a function of the signature of the operation of the backend
+#
+#     call(op, group_idx, values, size, fill_value, dtype, order, axis, **kwargs)
+#
+# and the builder hands the arguments of the call to it.
 
 
-def call_by_keyword(
+def _call_by_keyword(
     op: Callable[..., AResult],
     group_idx: npt.NDArray[np.integer],
     values: AValue,
@@ -288,24 +291,9 @@ def call_by_keyword(
     axis: int | None,
     **kwargs: Any,
 ) -> AResult:
-    """The call of an operation of the numpy backend."""
+    """The call of an operation whose arguments behind the values are keyword
+    arguments - the default of the builder."""
     return op(group_idx, values, size, fill_value=fill_value, dtype=dtype, **kwargs)
-
-
-def call_with_order(
-    op: Callable[..., AResult],
-    group_idx: npt.NDArray[np.integer],
-    values: AValue,
-    size: int,
-    fill_value: AFillValue,
-    dtype: npt.DTypeLike | None,
-    order: RavelOrder,
-    axis: int | None,
-    **kwargs: Any,
-) -> AResult:
-    """The call of an operation of the numba backend: the order of the
-    flattening and the axis come between the fill value and the dtype."""
-    return op(group_idx, values, size, fill_value, order, dtype, axis, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +363,7 @@ def build_temporal_op(
     op: Callable[..., AResult] | None,
     tick_op: Callable[..., AResult] | None = None,
     native: bool = False,
-    call: Callable[..., AResult] = call_by_keyword,
+    call: Callable[..., AResult] | None = None,
     resolve: Callable[[str], Callable[..., AResult] | None] | None = None,
 ) -> Callable[..., tuple[AResult, AFillValue]]:
     """The operation of one function for temporal input.
@@ -394,8 +382,8 @@ def build_temporal_op(
     no, and every function of it is answered on the ticks.
 
     ``call`` is the way the operations of the backend are called - the two
-    backends have two conventions, and the policy of this module does not
-    have to know which one it is serving.
+    backends have two conventions, and each of them knows its own: the
+    policy of this module does not have to know which one it is serving.
 
     The operation that comes out of this builder has the signature of the
     other operations of the backend: the values, the size, the fill value
@@ -403,6 +391,8 @@ def build_temporal_op(
     """
     base = funcname.removeprefix("nan")
     is_nan = funcname.startswith("nan")
+    if call is None:
+        call = _call_by_keyword
     if op is None:
         # the backend does not implement the function - the policy of the
         # temporal input still refuses what numpy refuses for it
