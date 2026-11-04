@@ -975,6 +975,11 @@ def get_temporal_ops(
             native=True,
             call=_call_operation,
             resolve=resolve,
+            # the kernels of the ticks carry the NaT policy of the function
+            # themselves: the plain form poisons the group of a NaT, the nan
+            # form leaves the NaT out - the engine hands the rows over as
+            # they are
+            tick_handles_nat=tick_ops.get(name) is not None,
         )
     return ops
 

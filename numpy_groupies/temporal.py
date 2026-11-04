@@ -330,6 +330,9 @@ class _Policy:
     # nan-variants of the argreductions stand in for a sentinel
     drops_nat: bool
     swaps_nat: bool
+    # whether the operation of the backend on the ticks carries the NaT
+    # policy of the function itself
+    tick_handles_nat: bool
     # the question the function asks, if it asks one
     flag: str | None
     # what the NaT does to the answer of the kernel
@@ -364,6 +367,7 @@ def build_temporal_op(
     native: bool = False,
     call: Callable[..., AResult] | None = None,
     resolve: Callable[[str], Callable[..., AResult] | None] | None = None,
+    tick_handles_nat: bool = False,
 ) -> Callable[..., tuple[AResult, AFillValue]]:
     """The operation of one function for temporal input.
 
@@ -387,6 +391,12 @@ def build_temporal_op(
     ``resolve`` is the way the backend resolves the name of an operation -
     the missing-value flags are the plain any and all of the NaT mask, and
     their operation is resolved here, when the operation is built.
+
+    ``tick_handles_nat`` says that the operation of the backend on the
+    ticks carries the NaT policy of the function itself: the plain form
+    poisons the group of a NaT and the nan form leaves the NaT out.  The
+    engine then hands the rows over as they are - no row of the NaT is
+    dropped, and the answer of the kernel is not patched afterwards.
 
     The operation that comes out of this builder has the signature of the
     other operations of the backend: the values, the size, the fill value
@@ -417,9 +427,22 @@ def build_temporal_op(
     # variant, and it leaves the NaT out as well: a NaT is neither the
     # largest nor the smallest value of a group, and the sort of a group puts
     # it last.
+    #
+    # the operation of the backend on the ticks can carry the NaT policy of
+    # the function itself - the plain form poisons the group of a NaT and
+    # the nan form leaves the NaT out - and then the engine does neither:
+    # no row of the NaT is dropped, and the answer of the kernel is not
+    # patched afterwards.  The kernel of the numba backend does that for
+    # the mean, the median and the quantile.
+    handles_nat = tick_handles_nat and tick_op is not None
     drops_nat = (
-        is_nan and base not in ("cumsum", "mean") and not (base == "median" and tick_op is not None)
-    ) or base == "topk"
+        False
+        if handles_nat
+        else (
+            (is_nan and base not in ("cumsum", "mean") and not (base == "median" and tick_op is not None))
+            or base == "topk"
+        )
+    )
     # what the NaT does to the answer: the plain argmin finds the NaT on its
     # own - its tick is the smallest one - while the plain argmax never
     # picks it, and numpy answers the position of the first NaT of the
@@ -431,10 +454,11 @@ def build_temporal_op(
     # nancumsum included.
     if base in ("argmin", "argmax"):
         patch = "argmax" if base == "argmax" else None
-    elif base in TEMPORAL_NAT_POISON and not is_nan and not (native and base == "mean"):
-        # the mean of the native backend is not among them: its kernel
-        # poisons the group on its own, and the numpy backend poisons
-        # through the patch
+    elif base in TEMPORAL_NAT_POISON and not is_nan and not handles_nat:
+        # the plain variants of these poison their group with a NaT - unless
+        # the operation of the backend on the ticks poisons it on its own,
+        # which the kernel of the numba backend does for the mean, the
+        # median and the quantile
         patch = "poison"
     elif base == "sort":
         patch = "sort"
@@ -467,6 +491,7 @@ def build_temporal_op(
         is_native=is_native,
         drops_nat=drops_nat,
         swaps_nat=swaps_nat,
+        tick_handles_nat=handles_nat,
         flag=flag,
         patch=patch,
         value_result=base in TEMPORAL_VALUE_FUNCS,

@@ -49,6 +49,36 @@ def test_the_temporal_operations_are_not_aliases(impl):
         assert temporal_op.__name__ == f"temporal_{name}"
 
 
+def test_a_backend_that_carries_the_nat_policy_hands_the_rows_over():
+    """The engine drops no NaT row when the operation of the backend on the
+    ticks carries the NaT policy of the function itself - the kernel finds
+    the NaT of a group and leaves it out on its own, so a copy of the data
+    buys nothing.  A backend whose tick operation does not carry the policy
+    gets the rows without the NaT, as before."""
+    from numpy_groupies.temporal import build_temporal_op
+
+    def op(group_idx, a, size, fill_value=None, dtype=None, **kwargs):
+        seen.append(np.asarray(a))
+        return np.zeros(size, dtype=np.int64)
+
+    a = np.array([1, "NaT", 3], dtype="m8[s]")
+    group_idx = np.array([0, 0, 1])
+    kwargs = {"q": 0.5, "method": "linear"}
+
+    # the kernel carries the policy: every row reaches it
+    seen = []
+    carries = build_temporal_op("nanquantile", op, tick_op=op, tick_handles_nat=True)
+    carries(group_idx, a, 2, None, **kwargs)
+    assert len(seen[0]) == 3
+    np.testing.assert_array_equal(seen[0], a.view(np.int64))
+
+    # the engine carries the policy: the NaT rows are dropped on the way
+    seen = []
+    drops = build_temporal_op("nanquantile", op, tick_op=op)
+    drops(group_idx, a, 2, None, **kwargs)
+    np.testing.assert_array_equal(seen[0], np.array([1, 3], dtype=np.int64))
+
+
 def test_the_operations_on_the_ticks_are_operations_of_the_backend():
     """The operations on the int64 ticks of the temporal values are built by
     the same factory as every other operation of the numba backend - they
