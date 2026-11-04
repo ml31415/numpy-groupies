@@ -16,7 +16,10 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
-from numpy_groupies.nptools import minimum_dtype, resolve_output_dtype
+from numpy_groupies.dtypes import (
+    minimum_dtype,
+    resolve_output_dtype,
+)
 from numpy_groupies.tests.helpers import impl_name, is_purepy
 
 float_funcs = [np.std, np.var, np.mean, np.median, np.nanmedian]

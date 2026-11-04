@@ -1,14 +1,16 @@
-"""The registry of the functions of the package: their names and their aliases.
+"""The registry of the functions of the package: their names, their aliases
+and the operations of a backend.
 
 Every function of the package has a name, a set of aliases and a set of
 properties - the result type it settles, the default that fills a group it
-never saw, the arguments it has of its own.  All of that lives here, so that
-the implementations can ask for it without knowing of each other.
+never saw, the arguments it has of its own.  The names and the aliases live
+here, and so does the dispatch that resolves one of them to the operations of
+a backend: one lookup answers the canonical name of the function and the two
+operations that do the work.
 
-The sentinel that asks for the default of a function lives in
-``numpy_groupies.common``, next to the resolution of the fill value: the
-registry knows the default of every function, and the sentinel is the way of
-asking for it.
+The properties of the functions live in ``numpy_groupies.functions``, next to
+the sentinel that asks for the default of a function, which lives in
+``numpy_groupies.fills`` with the resolution of the fill value.
 
 This module must not import numpy: the pure python implementation is loaded
 before numpy is known to be available, and has to work without it.
@@ -16,14 +18,14 @@ before numpy is known to be available, and has to work without it.
 
 from __future__ import annotations
 
-import inspect
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias, cast
 
 if TYPE_CHECKING:
-    from numpy_groupies.typing import AFillValue, AScalar
+    from numpy_groupies.typing import AScalar
 
-nan = float("nan")  # nan is just this float
+
+# fmt: on
 
 
 funcs_common = [
@@ -59,33 +61,93 @@ funcs_common = [
     "cummax",
     "cummin",
 ]
+
+
 funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan", "topk"])
 
-# the functions that collect the values of a group instead of reducing them to
-# one number: their result is a sequence per group, which the comparisons that
-# work on numbers cannot take in one go
+
 funcs_collecting = frozenset(["array"])
 
-# the names the known functions answer to - their canonical names and the
-# string aliases of the alias table.  The literal type names them for the
-# type checker (a typo is a type error) and for the editor.
-# fmt: off
+
 FuncName: TypeAlias = Literal[
-    "add", "all", "allnan", "amax", "amin", "and",
-    "any", "anynan", "argmax", "argmin", "array", "asort",
-    "asorted", "count", "cummax", "cummin", "cumprod", "cumsum",
-    "dsort", "first", "last", "len", "max", "maximum", "nannunique",
-    "mean", "median", "min", "minimum", "multiply", "nanall",
-    "nanany", "nanargmax", "nanargmin", "nancummax", "nancummin", "nancumprod",
-    "nancumsum", "nanfirst", "nanlast", "nanlen", "nanmax", "nanmean",
-    "nanmedian", "nanmin", "nanpercentile", "nanprod", "nanquantile",
-    "nanskew", "nankurt", "nanstd", "nansum", "nansumofsquares",
-    "nantrapezoid", "nanvar", "or", "skew", "kurt", "kurtosis",
-    "percentile", "plus", "prod", "product", "quantile",
-    "rsorted", "sort", "sorted", "splice", "split", "std",
-    "sum", "sumofsquares", "times", "topk", "trapezoid", "var", "nunique",
+    "add",
+    "all",
+    "allnan",
+    "amax",
+    "amin",
+    "and",
+    "any",
+    "anynan",
+    "argmax",
+    "argmin",
+    "array",
+    "asort",
+    "asorted",
+    "count",
+    "cummax",
+    "cummin",
+    "cumprod",
+    "cumsum",
+    "dsort",
+    "first",
+    "last",
+    "len",
+    "max",
+    "maximum",
+    "nannunique",
+    "mean",
+    "median",
+    "min",
+    "minimum",
+    "multiply",
+    "nanall",
+    "nanany",
+    "nanargmax",
+    "nanargmin",
+    "nancummax",
+    "nancummin",
+    "nancumprod",
+    "nancumsum",
+    "nanfirst",
+    "nanlast",
+    "nanlen",
+    "nanmax",
+    "nanmean",
+    "nanmedian",
+    "nanmin",
+    "nanpercentile",
+    "nanprod",
+    "nanquantile",
+    "nanskew",
+    "nankurt",
+    "nanstd",
+    "nansum",
+    "nansumofsquares",
+    "nantrapezoid",
+    "nanvar",
+    "or",
+    "skew",
+    "kurt",
+    "kurtosis",
+    "percentile",
+    "plus",
+    "prod",
+    "product",
+    "quantile",
+    "rsorted",
+    "sort",
+    "sorted",
+    "splice",
+    "split",
+    "std",
+    "sum",
+    "sumofsquares",
+    "times",
+    "topk",
+    "trapezoid",
+    "var",
+    "nunique",
 ]
-# fmt: on
 
 
 _alias_str = {
@@ -110,6 +172,7 @@ _alias_str = {
     "dsort": "sort",
     "kurtosis": "kurt",
 }
+
 
 _alias_builtin: dict[str | Callable[..., object], str] = {
     all: "all",
@@ -174,6 +237,18 @@ def resolve_name(func: Any, aliasing: Mapping[str | Callable[..., object], str] 
     function anybody knows, and is not asked for one.
     """
     return aliasing.get(func) if can_name_a_function(func) else None
+
+
+def function_names() -> list[str]:
+    """The names of the functions of the package: the plain ones and the
+    nan-skipping ones beside them.
+
+    The four functions that do not skip nans have no nan variant of their
+    own, so they appear once.
+    """
+    names = list(funcs_common)
+    names += ["nan" + name for name in funcs_common if name not in funcs_no_separate_nan]
+    return names
 
 
 def missing_impl_error(name: str | Callable[..., AScalar]) -> Exception:
@@ -289,279 +364,3 @@ class Registry(dict[str | Callable[..., object], Resolved]):
         function either, and is answered by the same factory.
         """
         return self._custom_factory(func)
-
-
-default_fill_values: dict[str, AFillValue] = {
-    "sum": 0,
-    "prod": 1,
-    "all": False,
-    "any": False,
-    "allnan": False,
-    "anynan": False,
-    "len": 0,
-    "nunique": 0,
-    "mean": nan,
-    "median": nan,
-    "quantile": nan,
-    "percentile": nan,
-    # an empty domain has a zero integral, just like a single sample does
-    "trapezoid": 0,
-    "var": nan,
-    "std": nan,
-    "skew": nan,
-    "kurt": nan,
-    "min": nan,
-    "max": nan,
-    "first": nan,
-    "last": nan,
-    "argmax": -1,
-    "argmin": -1,
-    "sumofsquares": 0,
-    "cumsum": 0,
-    "cumprod": 1,
-    "cummax": 0,
-    "cummin": 0,
-    # 'array' and 'sort' ask for an empty sequence, which their implementations
-    # interpret as 'leave the empty group as it is' - a fresh list per call is
-    # handed out below so that callers cannot alias each other's results.
-    "array": [],
-    "sort": [],
-    # the topk fills the places a group does not have values for with the
-    # default of the output dtype - a nan where the output can hold one, and
-    # a zero where it cannot
-    "topk": nan,
-}
-
-
-def fill_value_key(func: str | Callable[..., AScalar]) -> str:
-    """Map a function (name, alias or callable) onto a ``default_fill_values`` key."""
-    name = resolve_name(func)
-    if name is None:
-        # a custom callable is keyed by the name it carries, which it usually
-        # does not carry at all (a lambda, a bound method of one's own)
-        name = getattr(func, "__name__", "")
-    if name not in default_fill_values and str(name).startswith("nan"):
-        # nan-variants fill like their plain counterparts
-        name = name[3:]
-    return name
-
-
-forced_float_types = {
-    "mean",
-    "median",
-    "skew",
-    "kurt",
-    "nanskew",
-    "nankurt",
-    "quantile",
-    "percentile",
-    "trapezoid",
-    "nanmean",
-    "nanmedian",
-    "nanquantile",
-    "nanpercentile",
-    "nantrapezoid",
-}
-
-# var/std (and sumofsquares) measure the squared magnitude of the deviations,
-# which is real even for complex input - like np.var returning a real dtype
-forced_real_float_types = {
-    "var",
-    "std",
-    "nanvar",
-    "nanstd",
-    "sumofsquares",
-    "nansumofsquares",
-}
-
-
-# functions whose result type the function settles rather than taking it from
-# the values aggregated: a boolean answer, a count, a position, and the object
-# array of ``array``.  The python counterpart of each result type is here, where
-# no numpy is imported; the numpy dtypes of them in utils, which also knows how
-# wide a count is on the platform it runs on
-fixed_result_types: dict[str, type] = {
-    "array": object,
-    "all": bool,
-    "any": bool,
-    "nanall": bool,
-    "nanany": bool,
-    "allnan": bool,
-    "anynan": bool,
-    "len": int,
-    "nanlen": int,
-    "nunique": int,
-    "nannunique": int,
-    "argmax": int,
-    "argmin": int,
-    "nanargmin": int,
-    "nanargmax": int,
-}
-
-
-# functions whose result is not complex even for complex input - only these may
-# be asked for a non-complex dtype, everything else would throw the imaginary
-# part of the values away
-# the names of the dtype table in utils (which holds the numpy dtypes
-# themselves) - everything here may aggregate complex input into a
-# non-complex dtype without throwing the imaginary part away
-complex_real_result = (
-    frozenset(
-        [
-            "array",
-            "all",
-            "any",
-            "nanall",
-            "nanany",
-            "len",
-            "nanlen",
-            "allnan",
-            "anynan",
-            "argmax",
-            "argmin",
-            "nanargmin",
-            "nanargmax",
-        ]
-    )
-    | forced_real_float_types
-)
-
-
-# the arguments a function has of its own, beyond the size and the fill value
-# that every function takes: the name it carries in the signature, the
-# annotation and the default.  The njit kernels and the python entry points
-# of a backend take the same arguments, so both read them from here.
-FUNC_EXTRAS: dict[str, tuple[tuple[str, str, Any], ...]] = {
-    "std": (("ddof", "int", 0),),
-    "var": (("ddof", "int", 0),),
-    "quantile": (("q", "float", 0.5), ("method", "str", "linear")),
-    "percentile": (("q", "float", 50.0), ("method", "str", "linear")),
-    "trapezoid": (("dx", "float", 1.0),),
-    "sort": (("reverse", "bool", False),),
-    # the topk: how many values of every group it keeps, and whether it keeps
-    # the largest ones or the smallest
-    "topk": (("k", "int", 5), ("largest", "bool", True)),
-    # the bare kernel of the topk of the ticks - the topk of a temporal
-    # input, on the int64 ticks of its values.  It is no function of the
-    # package - it is the kernel behind its temporal answer - but it takes
-    # the arguments of the topk the same way.
-    "tick_topk": (("k", "int", 5), ("largest", "bool", True)),
-    # the bare kernel of the quantile of the ticks - the quantile of a
-    # temporal input, on the int64 ticks of its values.  It is no function
-    # of the package - it is the kernel behind its temporal answer - but it
-    # takes the quantile and the method the same way the quantile of the
-    # package does.
-    "tick_quantile": (("q", "float", 0.5), ("method", "str", "linear")),
-}
-
-
-def func_extras(name: str) -> tuple[tuple[str, str, Any], ...]:
-    """The arguments the function has of its own.
-
-    The nan-skipping variant of a function has the same arguments as the
-    plain one, so the name is stripped of its prefix before the lookup.
-    """
-    return FUNC_EXTRAS.get(name.removeprefix("nan"), ())
-
-
-def func_argument_default(func: str, argument: str) -> Any:
-    """The default of one argument of a function - the registry holds them.
-
-    The registry is the one place that knows the arguments a function has of
-    its own and their defaults, so a caller that needs one of them asks
-    there instead of writing the number down a second time.
-    """
-    for name, _annotation, default in func_extras(func):
-        if name == argument:
-            return default
-    raise KeyError(f"{func!r} has no argument {argument!r}")
-
-
-def bind_functions(
-    func: Callable[..., Any],
-    names: Iterable[str],
-    doc: str | None = None,
-) -> dict[str, Callable[..., Any]]:
-    """One entry point per function name, with the function in the name.
-
-    The entry points call the backend's ``aggregate`` with the name of their
-    function, and pass on the arguments they are given - the ``ddof`` of the
-    variance, the ``q`` of the quantile, the ``dx`` of the trapezoid, the
-    ``reverse`` of the sort.
-    """
-    return {name: _bind_one(func, name, doc) for name in names}
-
-
-def _bind_one(func: Callable[..., Any], name: str, doc: str | None) -> Callable[..., Any]:
-    """The entry point of one function of a backend.
-
-    It is the aggregate of the backend with the name of the function in it:
-    the entry point of the quantile is the aggregate with ``func="quantile"``.
-    The arguments behind the values are keyword arguments - the ones of the
-    function itself among them.
-    """
-
-    def entry_point(group_idx: Any, a: Any, **kwargs: Any) -> Any:
-        return func(group_idx, a, func=name, **kwargs)
-
-    entry_point.__name__ = name
-    entry_point.__qualname__ = name
-    entry_point.__module__ = getattr(func, "__module__", __name__)
-    entry_point.__doc__ = doc or f"The {name} of every group - see the documentation of the package."
-    # the signature of the entry point: the aggregate's, without the name of
-    # the function and with the arguments the function has of its own - so
-    # that the help of the entry point says what it takes
-    vars(entry_point)["__signature__"] = _signature_of(func, name)
-    return entry_point
-
-
-def _signature_of(func: Callable[..., Any], name: str) -> inspect.Signature:
-    """The signature an entry point shows.
-
-    It is the signature of the aggregate, without the name of the function -
-    that is what the entry point carries - and with the arguments the
-    function has of its own, which the entry point takes as keyword
-    arguments.
-    """
-    signature = inspect.signature(func)
-    parameters: list[inspect.Parameter] = []
-    behind_the_values = False
-    for parameter in signature.parameters.values():
-        if parameter.name == "func":
-            # the name of the function is in the entry point, not in a
-            # parameter of it
-            continue
-        if parameter.name == "cache":
-            # the cache is the policy of the compiled loop of a callable of
-            # the caller - a named function has a kernel of its own and no
-            # loop to cache
-            continue
-        if parameter.kind is inspect.Parameter.VAR_KEYWORD:
-            parameters.append(parameter)
-            continue
-        if parameter.name == "a":
-            behind_the_values = True
-            parameters.append(parameter)
-            parameters.extend(
-                inspect.Parameter(extra, inspect.Parameter.KEYWORD_ONLY, default=default)
-                for extra, _annotation, default in FUNC_EXTRAS.get(name, ())
-            )
-            continue
-        if behind_the_values:
-            # everything behind the values is a keyword argument
-            parameters.append(parameter.replace(kind=inspect.Parameter.KEYWORD_ONLY))
-        else:
-            parameters.append(parameter)
-    return signature.replace(parameters=parameters)
-
-
-def function_names() -> list[str]:
-    """The names of the functions of the package: the plain ones and the
-    nan-skipping ones beside them.
-
-    The four functions that do not skip nans have no nan variant of their
-    own, so they appear once.
-    """
-    names = list(funcs_common)
-    names += ["nan" + name for name in funcs_common if name not in funcs_no_separate_nan]
-    return names

@@ -45,7 +45,7 @@ from numpy_groupies.aggregate_numpy.specials import (
     _topk,
 )
 from numpy_groupies.aggregate_numpy.temporal import build_temporal_ops
-from numpy_groupies.nptools import aliasing
+from numpy_groupies.driver import aliasing
 from numpy_groupies.registry import (
     Registry,
     Resolved,

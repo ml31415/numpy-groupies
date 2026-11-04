@@ -3,7 +3,7 @@ function, behind one dispatch.
 
 The entry point of the implementation is here - the driver it calls, the
 validation of the input, the resolution of the operation and of the output
-dtype, and the answer itself, is the one of ``nptools``, which both numpy
+dtype, and the answer itself, is the one of ``numpy_groupies``, which both numpy
 based backends share.  The operations themselves live in the modules beside
 this one, one per function family.
 """
@@ -18,14 +18,14 @@ from numpy_groupies.aggregate_numpy.collect import blocks_to_object_array
 from numpy_groupies.aggregate_numpy.gather import unpack
 from numpy_groupies.aggregate_numpy.ops import _dispatch
 from numpy_groupies.aggregate_numpy.steps import step_count, step_indices
-from numpy_groupies.common import (
-    DEFAULT_FILL_VALUE,
+from numpy_groupies.driver import _aggregate_wrap
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.functions import (
     aggregate_common_doc,
+    bind_functions,
 )
-from numpy_groupies.nptools import _aggregate_wrap
 from numpy_groupies.registry import (
     FuncName,
-    bind_functions,
     function_names,
 )
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder

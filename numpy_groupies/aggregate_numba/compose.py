@@ -88,8 +88,11 @@ from numpy_groupies.aggregate_numba.mt import (
     chunk_count,
     should_use_mt,
 )
-from numpy_groupies.nptools import TEMPORAL_KINDS, check_fill_value_for_dtype, is_temporal_input
-from numpy_groupies.registry import func_argument_default, nan
+from numpy_groupies.dtypes import (
+    TEMPORAL_KINDS,
+    is_temporal_input,
+)
+from numpy_groupies.functions import func_argument_default, nan
 from numpy_groupies.temporal import NAT_TICK
 from numpy_groupies.typing import AResult, AScalar
 from numpy_groupies.validation import (
@@ -101,6 +104,7 @@ from numpy_groupies.validation import (
     NON_INTEGER_GROUP_IDX,
     TOO_LARGE,
     TOO_LARGE_SIZE_PREFIX,
+    check_fill_value_for_dtype,
     is_integer_dtype,
     is_numeric_dtype,
 )
@@ -274,7 +278,7 @@ def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar
 # those entry points as well (see ``_make_stub``).  ``aggregate()`` is the entry
 # point that knows an axis, an indexed ``group_idx`` and a single value
 # repeated over every label, and it validates all of that in
-# ``nptools.input_validation`` before a driver sees anything - no call of a
+# ``numpy_groupies.input_validation`` before a driver sees anything - no call of a
 # driver ever validates twice.
 #
 # The words of the complaints live in ``numpy_groupies.validation``: the
@@ -629,7 +633,7 @@ class TickKernel(NamedTuple):
 Variant = Literal["none", "ddof", "q_method", "dx", "reverse", "topk"]
 
 # the defaults the kernels carry for the argument an operation has of its own.
-# They are the defaults of the registry (``numpy_groupies.registry.FUNC_EXTRAS``)
+# They are the defaults of the table (``numpy_groupies.functions.FUNC_EXTRAS``)
 # - the one exception is the sample spacing of the trapezoid, which the kernel
 # carries as the integer 1 and not as the float 1.0: a float in the slot of
 # the driver compiles the kernel of the trapezoid a few percent slower than

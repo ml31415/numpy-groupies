@@ -42,7 +42,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from numpy_groupies import aggregate_purepy
 from numpy_groupies.cache import purge_cache
-from numpy_groupies.registry import bind_functions, function_names
+from numpy_groupies.functions import bind_functions
+from numpy_groupies.registry import function_names
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -179,8 +180,8 @@ else:
 
     aggregate_np = aggregate
 
-    from numpy_groupies.common import default_fill_value
-    from numpy_groupies.nptools import (
+    from numpy_groupies.fills import default_fill_value
+    from numpy_groupies.groups import (
         label_contiguous_1d,
         multi_arange,
         relabel_groups_masked,

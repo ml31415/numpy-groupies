@@ -7,7 +7,10 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.reductions import _max, _min
-from numpy_groupies.nptools import maxval, minval
+from numpy_groupies.dtypes import (
+    maxval,
+    minval,
+)
 from numpy_groupies.typing import AScalar
 
 

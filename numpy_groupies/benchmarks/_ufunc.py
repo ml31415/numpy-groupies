@@ -4,18 +4,18 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.common import (
-    DEFAULT_FILL_VALUE,
-    aggregate_common_doc,
-)
-from numpy_groupies.nptools import (
+from numpy_groupies.driver import (
     _aggregate_wrap,
     aliasing,
+)
+from numpy_groupies.dtypes import (
     maxval,
     minimum_dtype,
     minimum_dtype_scalar,
     minval,
 )
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.functions import aggregate_common_doc
 from numpy_groupies.registry import (
     Registry,
     Resolved,

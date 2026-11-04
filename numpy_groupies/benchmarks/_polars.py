@@ -14,11 +14,16 @@ import numpy.typing as npt
 import polars as pl
 
 from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
-from numpy_groupies.common import (
-    DEFAULT_FILL_VALUE,
-    aggregate_common_doc,
+from numpy_groupies.driver import (
+    _aggregate_wrap,
+    aliasing,
 )
-from numpy_groupies.nptools import _aggregate_wrap, aliasing, check_dtype, iscomplexobj
+from numpy_groupies.dtypes import (
+    check_dtype,
+    iscomplexobj,
+)
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.functions import aggregate_common_doc
 from numpy_groupies.registry import (
     Registry,
     Resolved,

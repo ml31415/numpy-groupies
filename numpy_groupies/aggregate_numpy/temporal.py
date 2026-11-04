@@ -24,7 +24,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.reductions import _all, _any
 from numpy_groupies.aggregate_numpy.specials import _temporal_median, _temporal_quantile
-from numpy_groupies.nptools import exact_integer_group_mean
+from numpy_groupies.groups import exact_integer_group_mean
 from numpy_groupies.registry import function_names
 from numpy_groupies.temporal import NAT_TICK, build_temporal_op
 from numpy_groupies.typing import AResult
@@ -45,7 +45,7 @@ def _tick_mean(
     for a datetime64 in nanoseconds that is a number around 1.6e18, and the
     sum of the ticks of a group leaves the window float64 represents
     exactly.  The sums are therefore exact (see
-    ``nptools.exact_integer_group_mean``), and the remainder of the
+    ``numpy_groupies.exact_integer_group_mean``), and the remainder of the
     division rounds half to even.
     """
     if nan:

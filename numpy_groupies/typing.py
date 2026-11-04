@@ -21,7 +21,7 @@ from typing import Literal, TypeAlias
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.common import DefaultFillValue
+from numpy_groupies.fills import DefaultFillValue
 
 # the values as the dispatchers carry them on: an array of any dtype, or
 # the one python scalar that stands for that value repeated over every label

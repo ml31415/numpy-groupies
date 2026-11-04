@@ -28,34 +28,36 @@ from numpy_groupies.aggregate_numba.mt import (
     should_use_group_mt,
 )
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
-from numpy_groupies.common import (
+from numpy_groupies.driver import aliasing
+from numpy_groupies.dtypes import (
+    check_dtype,
+    resolve_output_dtype,
+    scalar_dtype,
+)
+from numpy_groupies.fills import (
     DEFAULT_FILL_VALUE,
     DefaultFillValue,
     resolve_fill_value,
 )
-from numpy_groupies.nptools import (
-    QUANTILE_METHODS,
-    aliasing,
-    check_dtype,
-    check_fill_value,
+from numpy_groupies.functions import QUANTILE_METHODS, func_extras
+from numpy_groupies.inputs import (
     check_nton_shape,
     input_validation,
-    resolve_output_dtype,
-    scalar_dtype,
 )
 from numpy_groupies.registry import (
     Registry,
     Resolved,
     can_name_a_function,
     custom_callable,
-    func_extras,
     funcs_no_separate_nan,
     function_names,
+    resolve_name,
 )
 from numpy_groupies.temporal import build_temporal_op
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import (
     TOPK_NEEDS_FLAT_GROUP_IDX,
+    check_fill_value,
     check_topk_input,
     check_topk_shape,
     is_scalar_input,
@@ -393,7 +395,15 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
                     ret = cast(AResult, _round_float16(ret))
                 return ret
 
-        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=func)
+        iv = input_validation(
+            group_idx,
+            a,
+            size=size,
+            order=order,
+            axis=axis,
+            check_bounds=False,
+            func_name=resolve_name(func, aliasing),
+        )
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
         if func == "topk":
             # the topk answers a matrix with a row per group - a group index
@@ -587,7 +597,7 @@ def build_generic_aggregate(func: Callable[..., AScalar]) -> Callable[..., AResu
     ) -> AResult:
         # a func reaching this loop is no key of the dispatch table, so it names
         # no function and cannot be an arg reduction or a one-to-one answer
-        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=None)
+        iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func_name=None)
         group_idx, a, flat_size, ndim_idx, size, _ = iv
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype

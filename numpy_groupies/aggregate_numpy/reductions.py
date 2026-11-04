@@ -9,14 +9,14 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.nptools import (
-    fill_untouched,
+from numpy_groupies.dtypes import (
     iscomplexobj,
     maxval,
     minimum_dtype,
     minimum_dtype_scalar,
     minval,
 )
+from numpy_groupies.groups import fill_untouched
 from numpy_groupies.typing import AScalar
 from numpy_groupies.validation import check_boolean, is_scalar_input
 

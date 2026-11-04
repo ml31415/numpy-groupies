@@ -1,6 +1,7 @@
 """The vocabulary of the package: the names, the aliases and the registry.
 
-``registry`` holds what every implementation shares - and it must not import
+``registry`` holds the names of the functions and the dispatch of a backend -
+and it must not import
 numpy, because the pure python implementation is loaded before numpy is
 known to be available.
 """
@@ -11,7 +12,7 @@ from typing import get_args
 import numpy as np
 import pytest
 
-from numpy_groupies.nptools import aliasing
+from numpy_groupies.driver import aliasing
 from numpy_groupies.registry import (
     FuncName,
     Registry,
@@ -152,10 +153,10 @@ def test_the_functions_that_hold_a_none_match_the_registry():
     fill values knows every function of the package.  The two have to agree,
     or a function would be filled with a None its result cannot hold.
     """
-    from numpy_groupies import common, validation
+    from numpy_groupies import functions, validation
 
     assert validation.NONE_RESULT_FUNCTIONS == frozenset({"array"})
-    assert frozenset(common.default_fill_values) - validation.NONE_RESULT_FUNCTIONS
+    assert frozenset(functions.default_fill_values) - validation.NONE_RESULT_FUNCTIONS
 
 
 def test_every_function_of_the_package_has_an_entry_point_on_every_backend():

@@ -107,11 +107,10 @@ from numpy_groupies.aggregate_numba.steps import step_count, step_indices
 # is here and nowhere else - the modules take the box, and the box gets
 # the implementation now.
 from numpy_groupies.aggregate_numpy import aggregate as _numpy_aggregate
-from numpy_groupies.common import (
-    DEFAULT_FILL_VALUE,
-    aggregate_common_doc,
-)
-from numpy_groupies.nptools import exact_integer_group_mean, is_temporal_input
+from numpy_groupies.dtypes import is_temporal_input
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.functions import aggregate_common_doc
+from numpy_groupies.groups import exact_integer_group_mean
 from numpy_groupies.registry import (
     FuncName,
     missing_impl_error,

@@ -7,17 +7,19 @@ import numpy.typing as npt
 import pandas as pd
 
 from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
-from numpy_groupies.common import (
-    DEFAULT_FILL_VALUE,
-    aggregate_common_doc,
-)
-from numpy_groupies.nptools import (
+from numpy_groupies.driver import (
     _aggregate_wrap,
     aliasing,
-    allnan,
-    anynan,
+)
+from numpy_groupies.dtypes import (
     check_dtype,
     iscomplexobj,
+)
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.functions import aggregate_common_doc
+from numpy_groupies.groups import (
+    allnan,
+    anynan,
 )
 from numpy_groupies.registry import (
     Registry,

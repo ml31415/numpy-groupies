@@ -3,7 +3,7 @@
 Every path into a computation checks its input and says the same words about
 what is wrong with it: the python-level ``aggregate()``, the pure python one
 and the compiled kernels of the numba backend share the messages below and the
-checks that go with them.  The checks that need numpy live in ``nptools``,
+checks that go with them.  The checks that need numpy live in ``numpy_groupies``,
 the ones that have to run inside compiled code are written where they are
 compiled - but they speak the words of this module.
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
-from numpy_groupies.registry import complex_real_result, fill_value_key, fixed_result_types
+from numpy_groupies.functions import complex_real_result, fill_value_key, fixed_result_types
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -180,8 +180,8 @@ def check_filling_with_none(key: str) -> None:
     numba one failed to type a kernel, and the pure python one wrote the ``None``
     into a column of floats, which turned the result into an object array.
 
-    ``key`` is the name of the function in the registry of the fill values -
-    the caller resolves it, this module knows nothing of the registry.
+    ``key`` is the name of the function in the table of the fill values -
+    the caller resolves it, this module knows nothing of the table.
     """
     if key not in NONE_RESULT_FUNCTIONS:
         raise TypeError(FILL_NONE_NOT_HELD)
@@ -190,7 +190,7 @@ def check_filling_with_none(key: str) -> None:
 def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
     """Refuse a ``fill_value`` that the result type of a function cannot hold.
 
-    This is the rule ``nptools.check_fill_value`` tells against a numpy
+    This is the rule ``numpy_groupies.check_fill_value`` tells against a numpy
     dtype, told without one: a boolean answer is filled with 0 or 1 - a nan
     would pass for ``bool``, which is why the two values are asked for
     themselves - and a count or a position with whatever turns into an integer,
@@ -203,6 +203,41 @@ def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
             int(cast("SupportsInt", fill_value))
         except ValueError:
             raise ValueError(FILL_NOT_INTEGER)
+
+
+def check_fill_value_for_dtype(fill_value: AFillValue, dtype: npt.DTypeLike) -> AScalar:
+    """The fill value as the output dtype holds it - the check of a kernel.
+
+    The rules are the ones ``check_fill_value`` applies to the python-level
+    call, without the function-specific part: a kernel knows its output dtype
+    and nothing else, so the value has to fit that dtype - a nan does not fit
+    an integer output, and a boolean output takes the two booleans only.
+    """
+    # numpy is imported here and not at the top of the module: the module has
+    # to be importable without numpy - the pure python implementation is
+    # loaded before numpy is known to be available - but the dtype of the
+    # answer is one of numpy, so numpy is there when this is called
+    import numpy as np
+
+    out_dtype: np.dtype = np.dtype(dtype)
+    if issubclass(out_dtype.type, np.bool_) and not isinstance(fill_value, (list, tuple, np.ndarray)):
+        # a sequence is the fill of a group that holds a sequence (the sorting
+        # function) - it is not a boolean and does not have to be one
+        check_boolean(fill_value)
+        return np.bool_(fill_value)
+    try:
+        return cast("AScalar", out_dtype.type(fill_value))
+    except (ValueError, TypeError, OverflowError) as err:
+        raise ValueError(FILL_NOT_CONVERTIBLE.format(dtype=out_dtype.type.__name__)) from err
+
+
+def check_fill_value(
+    fill_value: AFillValue, dtype: npt.DTypeLike, func: str | Callable[..., AScalar] | None = None
+) -> AFillValue | None:
+    if func in ("all", "any", "allnan", "anynan"):
+        check_boolean(fill_value)
+        return None
+    return check_fill_value_for_dtype(fill_value, dtype)
 
 
 def check_fixed_fill_value(func: str | Callable[..., AScalar], fill_value: AFillValue) -> None:

@@ -15,7 +15,7 @@ and the kernel of the backend that takes the temporal values as they are,
 resolves the policy of the function name once, and hands out the operation
 that answers the function for temporal input.
 
-The dtype facts stay in ``nptools``: the kinds of the temporal dtypes.
+The dtype facts stay in ``numpy_groupies``: the kinds of the temporal dtypes.
 The order statistics of the numpy backend live in
 ``aggregate_numpy.specials`` - the exact median of the ticks - and the
 numba kernels in ``aggregate_numba``: nothing in this module reaches into
@@ -29,8 +29,12 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.common import DEFAULT_FILL_VALUE, resolve_fill_value
-from numpy_groupies.nptools import TEMPORAL_KINDS, exact_integer_group_mean
+from numpy_groupies.dtypes import TEMPORAL_KINDS
+from numpy_groupies.fills import (
+    DEFAULT_FILL_VALUE,
+    resolve_fill_value,
+)
+from numpy_groupies.groups import exact_integer_group_mean
 from numpy_groupies.registry import missing_impl_error
 from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
 
