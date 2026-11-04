@@ -438,7 +438,10 @@ def _temporal_aggregation(
         # skips a nan, and it takes the values as they are.
         # The topk has no nan variant, and it leaves the NaT out as well: a
         # NaT is neither the largest nor the smallest value of a group, and
-        # the sort of a group puts it last.
+        # the sort of a group puts it last.  The rows are dropped here and
+        # the kernel drops the NaT again: the kernels are public entry points
+        # of their own, and one that is handed a NaT has to leave it out
+        # without the wrapper having prepared anything.
         nat = np.isnat(a)
         if nat.any():
             good = ~nat

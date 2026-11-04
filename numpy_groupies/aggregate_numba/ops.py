@@ -30,6 +30,8 @@ from numpy_groupies.aggregate_numba.mt import (
 )
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
 from numpy_groupies.common import (
+    check_topk_input,
+    check_topk_shape,
     resolve_fill_value,
 )
 from numpy_groupies.nptools import (
@@ -391,10 +393,10 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
 
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=func)
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
-        if func == "topk" and (ndim_idx > 1 or axis is not None or isinstance(size, tuple)):
+        if func == "topk":
             # the topk answers a matrix with a row per group - a group index
             # of more than one dimension has no place in it
-            raise ValueError("the topk needs a flat group index and a size that is a number")
+            check_topk_input(ndim_idx, size, axis)
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
         scalar = is_scalar_input(a)
@@ -457,9 +459,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
             # the topk answers k values per group: its shape is (size, k),
             # and the shape of a one-out-per-in function does not apply to it.
             # The number of the values travels in the slot of the ddof.
-            k = int(ddof)
-            if ret.shape != (flat_size, k):
-                raise ValueError(f"the topk of {flat_size} groups with k={k} has the shape {ret.shape}")
+            check_topk_shape(ret, flat_size, int(ddof))
         return ret
 
     return aggregate
@@ -708,6 +708,9 @@ def _topk_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
     ) -> AResult:
         if k < 0:
             raise ValueError(f"k must not be negative, got {k}")
+        # the arguments travel twice: in the slots of the signature, which is
+        # how the compiled driver takes them, and under their own names, which
+        # is how the fallback of the backend takes them
         return op(group_idx, a, size, fill_value, order, dtype, axis, k, largest, k=k, largest=largest)
 
     return topk_op

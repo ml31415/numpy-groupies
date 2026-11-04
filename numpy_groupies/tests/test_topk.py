@@ -180,3 +180,40 @@ def test_the_topk_of_the_numba_backend_of_float16_runs_on_float32():
     answer = npgb.aggregate(group_idx, a, func="topk", k=1)
     assert answer.dtype == np.float16
     np.testing.assert_array_equal(answer, np.array([[9.0], [4.0]], dtype=np.float16))
+
+
+def test_the_values_at_the_border_are_the_ones_the_group_holds(impl):
+    """The k-th value of the group is the border of the selection.
+
+    A group whose values are equal at the border has as many of them as the
+    selection needs - the kernel fills the places the better values leave
+    with the border itself, and it has to be a value the group holds.
+    """
+    group_idx = np.array([0, 0, 0, 0, 1, 1, 1])
+    a = np.array([7.0, 7.0, 7.0, 1.0, 5.0, 5.0, 9.0])
+    answer = _rows(impl.aggregate(group_idx, a, func="topk", k=3))
+    np.testing.assert_array_equal(answer[0], [7.0, 7.0, 7.0])
+    np.testing.assert_array_equal(answer[1], [9.0, 5.0, 5.0])
+
+
+def test_the_values_at_the_border_are_the_ones_the_group_holds_for_the_smallest(impl):
+    """The border of the selection of the smallest values is the k-th one."""
+    group_idx = np.array([0, 0, 0, 0, 1, 1, 1])
+    a = np.array([7.0, 7.0, 7.0, 1.0, 5.0, 5.0, 9.0])
+    answer = _rows(impl.aggregate(group_idx, a, func="topk", k=2, largest=False))
+    np.testing.assert_array_equal(answer[0], [1.0, 7.0])
+    np.testing.assert_array_equal(answer[1], [5.0, 5.0])
+
+
+def test_a_group_index_of_more_than_one_dimension_is_refused(impl):
+    """The answer of the topk is a matrix with a row per group - a group
+    index of more than one dimension names its groups in more than one way,
+    and has no place in it.
+
+    The values are two-dimensional as well, so that the complaint is about
+    the group index and not about the shape of the values.
+    """
+    group_idx = np.array([[0, 0], [1, 1]])
+    a = np.array([[1.0, 2.0], [3.0, 4.0]])
+    with pytest.raises(ValueError):
+        impl.aggregate(group_idx, a, func="topk", k=1)

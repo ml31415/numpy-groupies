@@ -62,6 +62,7 @@ GROUP_PARALLEL = [
     "sort",
     "nunique",
     "nannunique",
+    "topk",
 ]
 
 N_GROUPS = 100
@@ -428,12 +429,17 @@ def test_the_untouched_groups_of_the_group_path_keep_the_fill_value(func, group_
     # hold nothing but groups that are empty
     group_idx, values = group_data
     # the sort writes one value per value and not one per group, so it has no
-    # cell a fill value could stand in
+    # cell a fill value could stand in; the topk writes k values per group, so
+    # its answer is a matrix with a row per group
     per_group = func != "sort"
+    columns = 5 if func == "topk" else 0
     for fill in (DEFAULT_FILL_VALUE, -7.0):
         parallel, sequential = _both_ways(group_idx, values, func, size=500, fill_value=fill)
         _same(parallel, sequential, 0)
-        assert parallel.shape == ((500,) if per_group else values.shape)
+        if per_group:
+            assert parallel.shape == ((500, columns) if columns else (500,))
+        else:
+            assert parallel.shape == values.shape
         if fill != DEFAULT_FILL_VALUE and per_group:
             # the fill value has to reach the groups of both paths alike
             assert (parallel[N_GROUPS:] == -7.0).all()

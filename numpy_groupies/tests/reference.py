@@ -461,6 +461,8 @@ def aggregate_ref(
         else:
             check_fill_value(fill_value, out_dtype, name)
             fill = fill_value
+        # the default of k is written down here on purpose: the reference
+        # measures the package and must not import the policy it judges
         k = int(kwargs.get("k", 5))
         ret = np.full((n_groups, k), fill, dtype=out_dtype)
         for group, value in results.items():

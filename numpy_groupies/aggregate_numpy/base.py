@@ -11,6 +11,9 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numpy.ops import _dispatch
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
+    check_topk_input,
+    check_topk_shape,
+    func_argument_default,
     resolve_fill_value,
 )
 from numpy_groupies.nptools import check_dtype, check_fill_value, check_nton_shape, input_validation
@@ -127,11 +130,11 @@ def _aggregate_base(
 
         ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
-    # the topk hands out k values per group: its result is a matrix with a
-    # row per group, and the unravelling of a multidimensional group index
-    # has no place in that
-    if funcname == "topk" and (ndim_idx > 1 or isinstance(size, tuple)):
-        raise ValueError("the topk needs a flat group index and a size that is a number")
+    if funcname == "topk":
+        # the topk hands out k values per group: its result is a matrix with
+        # a row per group, and the unravelling of a multidimensional group
+        # index has no place in that
+        check_topk_input(ndim_idx, size, axis)
 
     # deal with ndimensional indexing
     if ndim_idx > 1:
@@ -151,7 +154,5 @@ def _aggregate_base(
     elif funcname == "topk":
         # the topk gives k values per group, so its shape is (size, k) - the
         # check of the shape of a one-out-per-in function does not apply to it
-        k = kwargs.get("k", 5)
-        if ret.shape != (flat_size, k):
-            raise ValueError(f"the topk of {flat_size} groups with k={k} has the shape {ret.shape}")
+        check_topk_shape(ret, flat_size, int(kwargs.get("k", func_argument_default("topk", "k"))))
     return cast(AResult, ret)
