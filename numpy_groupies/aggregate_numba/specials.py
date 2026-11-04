@@ -22,10 +22,13 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import (
+    TickKernel,
     _fill_differs,
     build_custom_kernel,
     build_kernel,
     complex_less,
+    make_tick_call,
+    make_tick_call_q,
     output_size,
     rule_float,
     rule_int64,
@@ -783,6 +786,20 @@ def _tick_quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.i
     return njit_stable(mt_passes, name=f"{'nan' if nans else ''}tick_quantile_mt_passes", parallel=True)
 
 
+tick_median = build_custom_kernel(
+    "tick_median",
+    # the same driver and the same parallel passes as the numeric median,
+    # with the tick bodies: the exact int64 middle, and the NaT tick as the
+    # missing value of the nan variant.  The answer stays on the tick grid -
+    # an int64 output, where the numeric kernel promotes to float64.
+    driver_factory=lambda nans: _median_driver_factory(nans, True),
+    mt_driver_factory=lambda nans, driver: _median_mt_factory(nans, driver, True),
+    rule=rule_int64,
+    fill_default=0,
+    doc="Median of the ticks of every group, the exact middle of the ticks - the tick of a NaT poisons its group, and the nan form leaves it out",
+)
+
+
 median = build_custom_kernel(
     "median",
     driver_factory=_median_driver_factory,
@@ -790,6 +807,11 @@ median = build_custom_kernel(
     rule=rule_float,
     fill_default=np.nan,
     doc="Median of the values of every group",
+    # the median of the temporal input is the median of the ticks
+    tick=TickKernel(
+        plain=make_tick_call("tick_median_call", tick_median.plain.driver),
+        nan=make_tick_call("nantick_median_call", tick_median.nan.driver),
+    ),
 )
 
 
@@ -872,45 +894,6 @@ def _quantile_mt_factory(
     return njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
 
 
-quantile = build_custom_kernel(
-    "quantile",
-    driver_factory=_quantile_driver_factory,
-    mt_driver_factory=_quantile_mt_factory,
-    rule=rule_float,
-    fill_default=np.nan,
-    variant="q",
-    doc="Quantile of the values of every group",
-)
-
-
-percentile = build_custom_kernel(
-    "percentile",
-    # the driver and the parallel passes of the quantile, with the argument
-    # scaled down: the percentile is the quantile in percent, and its kernel
-    # is a kernel of its own - jitted code calls it like every other one.
-    driver_factory=partial(_quantile_driver_factory, scale=0.01, name="percentile"),
-    mt_driver_factory=partial(_quantile_mt_factory, scale=0.01, name="percentile"),
-    rule=rule_float,
-    fill_default=np.nan,
-    variant="q",
-    doc="Percentile of the values of every group - the quantile in percent",
-)
-
-
-tick_median = build_custom_kernel(
-    "tick_median",
-    # the same driver and the same parallel passes as the numeric median,
-    # with the tick bodies: the exact int64 middle, and the NaT tick as the
-    # missing value of the nan variant.  The answer stays on the tick grid -
-    # an int64 output, where the numeric kernel promotes to float64.
-    driver_factory=lambda nans: _median_driver_factory(nans, True),
-    mt_driver_factory=lambda nans, driver: _median_mt_factory(nans, driver, True),
-    rule=rule_int64,
-    fill_default=0,
-    doc="Median of the ticks of every group, the exact middle of the ticks - the tick of a NaT poisons its group, and the nan form leaves it out",
-)
-
-
 tick_quantile = build_custom_kernel(
     "tick_quantile",
     # the same counting sort and the same selection as the median, with
@@ -925,6 +908,41 @@ tick_quantile = build_custom_kernel(
     fill_default=0,
     variant="q_method",
     doc="Quantile of the ticks of every group, the way numpy computes it - the tick of a NaT poisons its group, and the nan form leaves it out",
+)
+
+
+quantile = build_custom_kernel(
+    "quantile",
+    driver_factory=_quantile_driver_factory,
+    mt_driver_factory=_quantile_mt_factory,
+    rule=rule_float,
+    fill_default=np.nan,
+    variant="q",
+    doc="Quantile of the values of every group",
+    # the quantile of the temporal input is the quantile of the ticks
+    tick=TickKernel(
+        plain=make_tick_call_q("tick_quantile_call", tick_quantile.plain.driver),
+        nan=make_tick_call_q("nantick_quantile_call", tick_quantile.nan.driver),
+    ),
+)
+
+
+percentile = build_custom_kernel(
+    "percentile",
+    # the driver and the parallel passes of the quantile, with the argument
+    # scaled down: the percentile is the quantile in percent, and its kernel
+    # is a kernel of its own - jitted code calls it like every other one.
+    driver_factory=partial(_quantile_driver_factory, scale=0.01, name="percentile"),
+    mt_driver_factory=partial(_quantile_mt_factory, scale=0.01, name="percentile"),
+    rule=rule_float,
+    fill_default=np.nan,
+    variant="q",
+    doc="Percentile of the values of every group - the quantile in percent",
+    # the percentile of the temporal input is the percentile of the ticks
+    tick=TickKernel(
+        plain=make_tick_call_q("tick_percentile_call", tick_quantile.plain.driver, scale=0.01),
+        nan=make_tick_call_q("nantick_percentile_call", tick_quantile.nan.driver, scale=0.01),
+    ),
 )
 
 

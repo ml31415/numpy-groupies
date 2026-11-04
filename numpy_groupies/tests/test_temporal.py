@@ -809,7 +809,7 @@ def test_bare_kernel_accumulates_the_durations_with_the_nat():
     )
 
 
-@pytest.mark.parametrize("func", ["mean", "nanmean", "median", "quantile", "sort", "var", "std"])
+@pytest.mark.parametrize("func", ["sort", "var", "std"])
 def test_bare_kernel_refuses_what_it_cannot_compute(func):
     from numpy_groupies import aggregate_numba
 
@@ -820,16 +820,61 @@ def test_bare_kernel_refuses_what_it_cannot_compute(func):
         kernel(group_idx, a, 2)
 
 
-def test_bare_kernel_refuses_the_mean_of_the_durations():
+@pytest.mark.parametrize(
+    "func,args,expected",
+    [
+        # the mean of the ticks, rounded half to even - the mean of the
+        # values themselves would be the business of a division of durations,
+        # which numba truncates
+        ("mean", (2,), "2011-01-02T00:00:00"),
+        ("nanmean", (2,), "2011-01-02T00:00:00"),
+        ("median", (2,), "2011-01-02T00:00:00"),
+        ("quantile", (0.5, 2), "2011-01-02T00:00:00"),
+        ("percentile", (50.0, 2), "2011-01-02T00:00:00"),
+    ],
+)
+def test_bare_kernel_answers_the_temporal_input_on_the_ticks(func, args, expected):
+    """The kernel of the mean, the median and the quantile answers the
+    temporal input: it hands the ticks to the kernel of the ticks and views
+    the answer back into the unit of the input."""
+    from numpy_groupies import aggregate_numba
+
+    group_idx = np.array([0, 0])
+    a = np.array(["2011-01-03", "2011-01-01"], dtype="M8[s]")
+    kernel = getattr(aggregate_numba, func)
+    res = kernel(group_idx, a, *args)
+    assert res.dtype == a.dtype
+    # the second group holds no value - it answers the NaT of the unit
+    np.testing.assert_array_equal(res, np.array([expected, "NaT"], dtype="M8[s]"))
+
+
+def test_bare_kernel_answers_the_mean_of_the_durations_on_the_ticks():
     # numba's division of durations truncates, and the package rounds the
-    # mean of a duration half to even - the mean of the values themselves
-    # is the business of aggregate(), which rounds it on the ticks
+    # mean of a duration half to even - the kernel of the mean answers the
+    # durations on their ticks, where the rounding is the one of numpy
     from numpy_groupies import aggregate_numba
 
     group_idx = np.array([0, 0])
     a = np.array([1, 2], dtype="m8[s]")
-    with pytest.raises((TypeError, nb.TypingError), match="takes no timedelta64"):
-        aggregate_numba.mean(group_idx, a, 2)
+    res = aggregate_numba.mean(group_idx, a, 2)
+    assert res.dtype == a.dtype
+    # the mean of the ticks 1 and 2 is 1.5 - rounded half to even, that is 2
+    np.testing.assert_array_equal(res, np.array([2, "NaT"], dtype="m8[s]"))
+
+
+def test_the_jitted_kernel_answers_the_temporal_input():
+    """The kernel of the mean is called from jitted code with temporal
+    values - the ticks are the int64 the kernel works on."""
+    from numpy_groupies import aggregate_numba
+
+    @nb.njit
+    def jitted_mean(group_idx, values):
+        return aggregate_numba.mean(group_idx, values)
+
+    group_idx = np.array([0, 0])
+    a = np.array(["2011-01-03", "2011-01-01"], dtype="M8[s]")
+    res = jitted_mean(group_idx, a)
+    np.testing.assert_array_equal(res, np.array(["2011-01-02T00:00:00"], dtype="M8[s]"))
 
 
 @pytest.mark.parametrize("unit", ["M8[s]", "m8[s]"])

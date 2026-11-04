@@ -17,7 +17,15 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_int64, rule_real_float
+from numpy_groupies.aggregate_numba.compose import (
+    TickKernel,
+    build_kernel,
+    complex_less,
+    make_tick_call,
+    rule_float,
+    rule_int64,
+    rule_real_float,
+)
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.registry import FuncName
 from numpy_groupies.temporal import NAT_TICK
@@ -436,6 +444,12 @@ mean = build_kernel(
     fill_default=np.nan,
     rule=rule_float,
     doc="Arithmetic mean of the values of every group",
+    # the mean of the temporal input is the mean of the ticks: the stub
+    # hands the ticks to the tick kernel and views the answer back
+    tick=TickKernel(
+        plain=make_tick_call("tick_mean_call", tick_mean.plain.driver),
+        nan=make_tick_call("nantick_mean_call", tick_mean.nan.driver),
+    ),
 )
 
 
