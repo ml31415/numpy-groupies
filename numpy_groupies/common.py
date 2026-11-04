@@ -119,6 +119,13 @@ aggregate_common_doc = """
     reverse: default=False
         only relevant for ``func='sort'`` - sorts the items within each group
         in descending order instead of ascending.
+    k: default=5
+        only relevant for ``func='topk'`` - how many values of every group the
+        answer holds.  The answer is a matrix with one row per group and k
+        columns.
+    largest: default=True
+        only relevant for ``func='topk'`` - keeps the largest values of every
+        group, or the smallest ones when it is false.
     ddof: default=0
         passed through into calculations of variance and standard deviation
         (see above).

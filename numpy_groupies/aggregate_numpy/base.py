@@ -127,6 +127,12 @@ def _aggregate_base(
 
         ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
+    # the topk hands out k values per group: its result is a matrix with a
+    # row per group, and the unravelling of a multidimensional group index
+    # has no place in that
+    if funcname == "topk" and (ndim_idx > 1 or isinstance(size, tuple)):
+        raise ValueError("the topk needs a flat group index and a size that is a number")
+
     # deal with ndimensional indexing
     if ndim_idx > 1:
         if unravel_shape is not None:
@@ -142,4 +148,10 @@ def _aggregate_base(
             ret[mask] = cast("AScalar", fill_value)
         check_nton_shape(ret, size, funcname)
         ret = ret.reshape(size, order=order)
+    elif funcname == "topk":
+        # the topk gives k values per group, so its shape is (size, k) - the
+        # check of the shape of a one-out-per-in function does not apply to it
+        k = kwargs.get("k", 5)
+        if ret.shape != (flat_size, k):
+            raise ValueError(f"the topk of {flat_size} groups with k={k} has the shape {ret.shape}")
     return cast(AResult, ret)

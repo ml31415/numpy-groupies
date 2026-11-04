@@ -268,6 +268,24 @@ def _sort(group_idx: Sequence[int], a: Sequence[Any], reverse: bool = False) -> 
     return [a_srt[ri] for ri in revidx]
 
 
+def _topk(x: Sequence[Any], k: int, largest: bool, fill_value: Any) -> list[Any]:
+    """The k largest (or the k smallest) values of the group.
+
+    The values that are missing - the nans - are in no selection: they are
+    neither the largest nor the smallest value of the group.  A group with
+    fewer than k values fills the places it has none with the fill value.
+    """
+    if k < 0:
+        raise ValueError(f"k must not be negative, got {k}")
+    values = [val for val in x if val == val]
+    ordered = sorted(values)
+    if largest:
+        ordered = ordered[::-1]
+    if len(ordered) < k:
+        ordered = ordered + [fill_value] * (k - len(ordered))
+    return ordered[:k]
+
+
 def _propagate_nan(reduction: Callable[[Sequence[Any]], Any]) -> Callable[[Sequence[Any]], Any]:
     """Let a nan of the group win over its other values, like np.min and np.max do.
 
@@ -322,6 +340,7 @@ _op_dict: dict[str, Callable[..., Any]] = {
     "anynan": _anynan,
     "allnan": _allnan,
     "sort": _sort,
+    "topk": _topk,
     "array": _array,
     "argmax": _argmax,
     "argmin": _argmin,
@@ -496,25 +515,36 @@ def aggregate(
 
     if op is _sort:
         return _sort(idx, vals, reverse=kwargs.get("reverse", False))
+    if op is _topk:
+        # the topk answers k values per group: a list per group, the way the
+        # collecting function answers its sequences - the pure python
+        # implementation has no arrays to hold a matrix
+        k = kwargs.get("k", 5)
+        largest = kwargs.get("largest", True)
+        topk_ret: list[Any] = [[fill_value] * k for _ in range(size)]
+        topk_data = sorted(zip(idx, vals), key=operator.itemgetter(0))
+        for ix, group in itertools.groupby(topk_data, key=operator.itemgetter(0)):
+            topk_ret[ix] = _topk([val for _, val in group], k, largest, fill_value)
+        return topk_ret
     if op in (_mean, _var, _std):
         _check_integer_precision(vals, op)
 
     # sort data and evaluate function on groups
     ret = [fill_value] * size
     if not getattr(op, "x_and_idx", False):
-        data: list[tuple[Any, ...]] = sorted(zip(idx, vals), key=operator.itemgetter(0))
-        for ix, group in itertools.groupby(data, key=operator.itemgetter(0)):
-            ret[ix] = op([val for _, val in group], **kwargs)
+        data = sorted(zip(idx, vals), key=operator.itemgetter(0))
+        for ix, values_of_group in itertools.groupby(data, key=operator.itemgetter(0)):
+            ret[ix] = op([val for _, val in values_of_group], **kwargs)
     else:
         # a group holding a nan has no extreme to point at, and so no position to
         # name either: the vectorised kernels leave such a group to the fill
         # value, and the nan counterparts reach here with none of them left
         poisoned = {ix for ix, val in zip(idx, vals) if val != val}
-        data = sorted(zip(pos, idx, vals), key=operator.itemgetter(1))
-        for ix, group in itertools.groupby(data, key=operator.itemgetter(1)):
+        data_with_pos = sorted(zip(pos, idx, vals), key=operator.itemgetter(1))
+        for ix, entries in itertools.groupby(data_with_pos, key=operator.itemgetter(1)):
             if ix in poisoned:
                 continue  # stays at the fill value
-            ret[ix] = op([(p, val) for p, _, val in group], **kwargs)
+            ret[ix] = op([(p, val) for p, _, val in entries], **kwargs)
 
     return ret
 

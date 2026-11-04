@@ -33,6 +33,7 @@ from numpy_groupies.aggregate_numba.compose import (
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.mt import group_chunk_count, should_use_group_mt
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
+from numpy_groupies.registry import nan
 from numpy_groupies.temporal import NAT_TICK
 
 
@@ -630,6 +631,9 @@ _group_mt_setup = njit_stable(_group_mt_setup)
 _NS_PER_VALUE_SELECT = 18.0
 _NS_PER_VALUE_NUNIQUE = 19.0
 _NS_PER_VALUE_SORT = 68.0
+# the selection of the topk, with the gathering of the values that are
+# better than the border - the work of the median and a sweep over the block
+_NS_PER_VALUE_TOPK = 24.0
 
 
 def _median_driver_factory(nans: bool, ticks: bool = False) -> Any:
@@ -1078,6 +1082,263 @@ sort = build_custom_kernel(
     nton=True,
     variant="reverse",
     doc="Values of every group in ascending, or with reverse=True in descending order",
+)
+
+
+# ---------------------------------------------------------------------------
+# the k largest (or the k smallest) values of every group
+#
+# The values of a group are selected, not ordered: the k wanted ones are
+# found with the quickselect of the module - the same one the median and the
+# quantile use - and the values that are better than the border it names are
+# gathered.  The order of the k is set afterwards, over the few values that
+# are left.
+#
+# The values that are missing are in no selection: the nans of the numbers
+# and the NaT of the ticks are neither the largest nor the smallest value of
+# a group, and the sort of a group puts them last.  They are therefore
+# pushed to the end of the block before the selection runs - the comparisons
+# of a nan with a value answer neither way, and a selection that ran over
+# them would name a border that is no border at all.
+# ---------------------------------------------------------------------------
+
+
+@functools.lru_cache(maxsize=2)
+def _compact_valid_of(ticks: bool) -> Callable[..., int]:
+    """The values of the block that are no missing value, pushed to its front.
+
+    The number of them is handed back; the block is shorter from there on.
+    The write index never runs ahead of the read index, so no value that is
+    not read yet is overwritten.
+
+    The two kinds of values need two bodies: the missing value of the
+    numbers is the nan, the only value that is not equal to itself, and the
+    missing value of the ticks is the NaT, the smallest tick of all - a
+    comparison of a tick with a number is no comparison numba has.  The flag
+    is settled when the body is compiled, so the branch that does not belong
+    to the call is not even typed.
+    """
+
+    if ticks:
+
+        @njit_stable(name="compact_valid_ticks")
+        def compact_valid(block: npt.NDArray[np.number], begin: int, m: int) -> int:
+            good = 0
+            for i in range(begin, begin + m):
+                v = block[i]
+                if v != NAT_TICK:
+                    block[begin + good] = v
+                    good += 1
+            return good
+
+    else:
+
+        @njit_stable(name="compact_valid_numbers")
+        def compact_valid(block: npt.NDArray[np.number], begin: int, m: int) -> int:
+            good = 0
+            for i in range(begin, begin + m):
+                v = block[i]
+                if v == v:
+                    block[begin + good] = v
+                    good += 1
+            return good
+
+    return compact_valid
+
+
+@njit_stable
+def _rank_order(values: npt.NDArray[np.number], g: int, k: int, largest: int) -> None:
+    """The k values of the row in the order of their rank.
+
+    The largest one comes first when ``largest`` is true, the smallest one
+    otherwise - the order a reader of the row expects.  The few values are
+    ordered in place; a row of a hundred values and more goes through the
+    library sort, which is the cheaper of the two there.
+    """
+    if k < 2:
+        return
+    if k > _INSERTION_SORT_LIMIT:
+        # the library sort of a row of a matrix is a sort of a copy - the
+        # slice of a two dimensional array is a copy in numba - so the values
+        # are copied into a buffer of their own and sorted there
+        row = np.empty(k, values.dtype)
+        row[:] = values[g, :k]
+        row.sort()
+        if largest != 0:
+            lo, hi = 0, k - 1
+            while lo < hi:
+                v = row[lo]
+                row[lo] = row[hi]
+                row[hi] = v
+                lo += 1
+                hi -= 1
+        values[g, :k] = row
+        return
+    for i in range(1, k):
+        v = values[g, i]
+        j = i - 1
+        while j >= 0:
+            w = values[g, j]
+            # the order of the package: the larger value comes first
+            before = complex_less(w, v) if largest != 0 else complex_less(v, w)
+            if not before:
+                break
+            values[g, j + 1] = w
+            j -= 1
+        values[g, j + 1] = v
+
+
+@njit_stable
+def _topk_group(
+    block: npt.NDArray[np.number],
+    begin: int,
+    m: int,
+    out: npt.NDArray[np.number],
+    g: int,
+    k: int,
+    largest: int,
+) -> None:
+    """The k largest (or smallest) values of the block, into the row ``g``.
+
+    The border of the selection is the k-th value of the group in the order
+    of the rank: the (m-k)-th one when the largest values are wanted, the
+    (k-1)-th one when the smallest are.  The values that are better than the
+    border are the ones the answer holds, and the places they leave are
+    filled with the border itself - the group holds enough of them, since
+    the border is the k-th of the group.
+    """
+    if m == 0:
+        return
+    if m <= k:
+        # every value of the group fits: the row holds them all, ordered
+        for i in range(m):
+            out[g, i] = block[begin + i]
+        _rank_order(out, g, m, largest)
+        return
+    if largest != 0:
+        border_index = begin + m - k
+    else:
+        border_index = begin + k - 1
+    border = _select(block, begin, begin + m, border_index)
+    found = 0
+    for i in range(begin, begin + m):
+        v = block[i]
+        if largest != 0:
+            better = complex_less(border, v)
+        else:
+            better = complex_less(v, border)
+        if better:
+            out[g, found] = v
+            found += 1
+    # the places the better values leave: the border itself, which the group
+    # holds often enough
+    i = found
+    while i < k:
+        out[g, i] = border
+        i += 1
+    _rank_order(out, g, k, largest)
+
+
+def _topk_driver_factory(ticks: bool) -> Any:
+    """The compiled driver of the topk.
+
+    The values of every group are placed in their blocks, the missing values
+    of a block are pushed to its end, and the k wanted values of every group
+    are selected out of what is left.
+    """
+
+    compact = _compact_valid_of(ticks)
+
+    def driver(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        extra: Any,
+    ) -> npt.NDArray[np.number]:
+        k, largest = extra
+        size = output_size(group_idx, size_arg)
+        counts, starts, a_sorted = _place_values(group_idx, a, size)
+        out = np.full((size, k), fill_value, out_dtype)
+        if k == 0:
+            # no value is wanted: the answer is a matrix of no columns
+            return out
+        for g in range(size):
+            if counts[g] > 0:
+                m = compact(a_sorted, starts[g], counts[g])
+                if m > 0:
+                    _topk_group(a_sorted, starts[g], m, out, g, k, largest)
+        return out
+
+    return njit_stable(driver, name=f"{'tick_' if ticks else ''}topk_driver")
+
+
+def _topk_mt_factory(ticks: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+    """The parallel passes of the topk: the blocks cut into ranges.
+
+    The block of a group belongs to that group alone, and the threads work
+    on the groups of a range each - so the ranges need neither a fold nor a
+    lock, and the answer is the one of the sequential path bit for bit.
+    """
+
+    compact = _compact_valid_of(ticks)
+
+    def mt_passes(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        extra: Any,
+        n_threads: int,
+    ) -> npt.NDArray[np.number]:
+        k, largest = extra
+        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_TOPK, n_threads)
+        if setup is None:
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
+        # unpacked before the prange - see the note in _median_mt_factory
+        counts, starts, a_sorted, edges, _ = setup
+        out = np.full((output_size(group_idx, size_arg), k), fill_value, out_dtype)
+        if k == 0:
+            return out
+        for c in nb.prange(edges.size - 1):
+            for g in range(edges[c], edges[c + 1]):
+                # the same step the sequential loop runs, on the block of a
+                # group no other thread has touched
+                if counts[g] > 0:
+                    m = compact(a_sorted, starts[g], counts[g])
+                    if m > 0:
+                        _topk_group(a_sorted, starts[g], m, out, g, k, largest)
+        return out
+
+    return njit_stable(mt_passes, name=f"{'tick_' if ticks else ''}topk_mt_passes", parallel=True)
+
+
+topk = build_custom_kernel(
+    "topk",
+    driver_factory=lambda nans: _topk_driver_factory(False),
+    mt_driver_factory=lambda nans, driver: _topk_mt_factory(False, driver),
+    rule=rule_same,
+    fill_default=nan,
+    nans=False,
+    variant="topk",
+    doc="The k largest, or with largest=False the k smallest, values of every group",
+)
+
+# the topk of the ticks of a temporal input - the same selection on the
+# int64 ticks, where the NaT is the smallest tick of all
+tick_topk = build_custom_kernel(
+    "tick_topk",
+    driver_factory=lambda nans: _topk_driver_factory(True),
+    mt_driver_factory=lambda nans, driver: _topk_mt_factory(True, driver),
+    rule=rule_int64,
+    fill_default=0,
+    nans=False,
+    variant="topk",
+    doc="The k largest, or with largest=False the k smallest, ticks of every group",
 )
 
 

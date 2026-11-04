@@ -47,6 +47,12 @@ numba cannot hold an object array, and a list of arrays it can.  Its
 is the default of the function - ``aggregate()`` is the one that applies a
 custom fill value to the groups that got none.
 
+``topk`` is the other one: it keeps the k largest values of every group, so
+its answer is a matrix with a row per group and k columns.  The places a
+group has no value for are filled with the fill value, and the missing
+values - the nans, the NaT of the temporal ones - are in no selection: they
+are neither the largest nor the smallest value of a group.
+
 Compared to ``aggregate()`` the kernels are restricted to flat 1d input in
 forward order (no dtype, axis, order or out), and the sum overflow guesses for
 narrow integers are approximated by widening to int64 - ``aggregate()`` keeps
@@ -438,6 +444,12 @@ nantrapezoid = specials.trapezoid.nan.stub
 sort = specials.sort.plain.stub
 nunique = specials.nunique.plain.stub
 nannunique = specials.nunique.nan.stub
+# the topk: the k largest (or the k smallest) values of every group - its
+# answer is a matrix with a row per group, not a value per group
+topk = specials.topk.plain.stub
+# the topk of the ticks of a temporal input - the same selection on the
+# int64 ticks, where the NaT is the smallest tick of all
+tick_topk = specials.tick_topk.plain.stub
 
 # the collecting function: its result is a sequence per group, so the kernel
 # hands out a list of the arrays of the groups - numba cannot hold an object
@@ -574,6 +586,7 @@ __all__ = [
     "step_indices",
     "sum",
     "sumofsquares",
+    "topk",
     "trapezoid",
     "unpack",
     "unpack_into",

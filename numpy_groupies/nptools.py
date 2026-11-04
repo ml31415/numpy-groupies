@@ -227,6 +227,9 @@ _forced_same_type = {
     "nanmax",
     "nanfirst",
     "nanlast",
+    # the topk hands out the values of the group themselves, so their dtype
+    # is the dtype of the result
+    "topk",
 }
 
 

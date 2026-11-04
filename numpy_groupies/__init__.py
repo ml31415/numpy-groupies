@@ -286,6 +286,7 @@ if TYPE_CHECKING:
     argmin: EntryPoint
     sort: EntryPoint
     array: EntryPoint
+    topk: EntryPoint
     sumofsquares: EntryPoint
     cumsum: EntryPoint
     cumprod: EntryPoint

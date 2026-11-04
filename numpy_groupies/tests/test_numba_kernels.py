@@ -475,6 +475,9 @@ _TEMPORAL_KERNELS = frozenset(
         "nanmin",
         "nunique",
         "nannunique",
+        # the topk orders the values of a group and leaves the missing ones
+        # out - a NaT is neither the largest nor the smallest value
+        "topk",
     }
 )
 # the durations add up (NaT included, which the addition propagates), so the
