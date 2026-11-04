@@ -184,6 +184,7 @@ def aggregate(
             **kwargs,
         )
     return _aggregate_wrap(
+        _dispatch,
         group_idx,
         a,
         func,
@@ -192,7 +193,6 @@ def aggregate(
         order=order,
         dtype=dtype,
         axis=axis,
-        dispatch=_dispatch,
         len_counts_values=True,
         **kwargs,
     )

@@ -52,6 +52,7 @@ def aggregate(
     if out is not None:
         raise NotImplementedError("out= is only supported by the numba implementation")
     return _aggregate_wrap(
+        _dispatch,
         group_idx,
         a,
         func,
@@ -60,7 +61,6 @@ def aggregate(
         order=order,
         dtype=dtype,
         axis=axis,
-        dispatch=_dispatch,
         **kwargs,
     )
 

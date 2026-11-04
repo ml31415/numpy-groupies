@@ -18,7 +18,7 @@ from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
 )
-from numpy_groupies.nptools import aliasing, check_dtype, iscomplexobj
+from numpy_groupies.nptools import _aggregate_wrap, aliasing, check_dtype, iscomplexobj
 from numpy_groupies.registry import (
     Registry,
     Resolved,
@@ -333,17 +333,17 @@ def aggregate(
             axis=axis,
             **kwargs,
         )
-    return _aggregate_numpy(
+    return _aggregate_wrap(
+        _dispatch,
         group_idx,
         a,
+        func,
         size=size,
         fill_value=fill_value,
         order=order,
         dtype=dtype,
-        func=func,
         axis=axis,
-        _dispatch=_dispatch,
-        _len_counts_values=True,
+        len_counts_values=True,
         **kwargs,
     )
 

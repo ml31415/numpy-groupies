@@ -193,6 +193,7 @@ def aggregate(
     **kwargs: Any,
 ) -> npt.NDArray[np.generic]:
     return _aggregate_wrap(
+        _dispatch,
         group_idx,
         a,
         func,
@@ -201,7 +202,6 @@ def aggregate(
         order=order,
         dtype=dtype,
         axis=axis,
-        dispatch=_dispatch,
         **kwargs,
     )
 
