@@ -314,10 +314,11 @@ class _Policy:
     funcname: str
     base: str
     # the operation of the backend, the one on the int64 ticks of the values
-    # and the one that takes the temporal values as they are
+    # and the one of the flags - the plain any and all the missing-value
+    # flags are
     op: Callable[..., AResult]
     tick_op: Callable[..., AResult] | None
-    native_op: Callable[..., AResult] | None
+    flag_op: Callable[..., AResult]
     # the way the operation of the backend is called
     call: Callable[..., AResult]
     # what numpy refuses for a datetime64 and for a timedelta64
@@ -333,8 +334,6 @@ class _Policy:
     flag: str | None
     # what the NaT does to the answer of the kernel
     patch: str | None
-    # whether the answer comes from the operation on the ticks
-    computes_on_ticks: bool
     # whether the answer is a temporal value, and whether the function fills
     # with the NaT of its unit
     value_result: bool
@@ -384,6 +383,10 @@ def build_temporal_op(
     ``call`` is the way the operations of the backend are called - the two
     backends have two conventions, and each of them knows its own: the
     policy of this module does not have to know which one it is serving.
+
+    ``resolve`` is the way the backend resolves the name of an operation -
+    the missing-value flags are the plain any and all of the NaT mask, and
+    their operation is resolved here, when the operation is built.
 
     The operation that comes out of this builder has the signature of the
     other operations of the backend: the values, the size, the fill value
@@ -441,17 +444,23 @@ def build_temporal_op(
         patch = "running"
     else:
         patch = None
-    # the questions
+    # the questions - the missing-value flags are the plain any and all of
+    # the NaT mask, and their operation is resolved here
     flag = base if base in ("all", "any", "allnan", "anynan") else None
-    # the answer of the mean, the median and the quantiles comes from the
-    # operation on the ticks
-    computes_on_ticks = base in ("mean", "median", "quantile", "percentile")
+    flag_op = _missing_operation(funcname)
+    if flag in ("allnan", "anynan"):
+        if resolve is None:
+            raise missing_impl_error(funcname)
+        resolved_flag_op = resolve("any" if flag == "anynan" else "all")
+        if resolved_flag_op is None:
+            raise missing_impl_error(funcname)
+        flag_op = resolved_flag_op
     policy = _Policy(
         funcname=funcname,
         base=base,
         op=op,
         tick_op=tick_op,
-        native_op=op if is_native else None,
+        flag_op=flag_op,
         call=call,
         rejects_datetime=base in TEMPORAL_DATETIME_REJECTED,
         rejects_timedelta=base in TEMPORAL_TIMEDELTA_REJECTED,
@@ -460,7 +469,6 @@ def build_temporal_op(
         swaps_nat=swaps_nat,
         flag=flag,
         patch=patch,
-        computes_on_ticks=computes_on_ticks,
         value_result=base in TEMPORAL_VALUE_FUNCS,
         fill_is_nat=base in TEMPORAL_NAT_FILL,
         is_array=base == "array",
@@ -476,7 +484,7 @@ def build_temporal_op(
         axis: int | None = None,
         **kwargs: Any,
     ) -> tuple[AResult, AFillValue]:
-        return _temporal_aggregation(policy, group_idx, a, size, fill_value, dtype, kwargs, order, axis, resolve)
+        return _temporal_aggregation(policy, group_idx, a, size, fill_value, dtype, kwargs, order, axis)
 
     temporal_op.__name__ = f"temporal_{funcname}"
     temporal_op.__qualname__ = f"temporal_{funcname}"
@@ -524,7 +532,6 @@ class _Context:
 
     policy: _Policy
     group_idx: npt.NDArray[np.integer]
-    a: AValue
     values: npt.NDArray[Any]
     a_dtype: np.dtype
     size: int
@@ -535,8 +542,6 @@ class _Context:
     axis: int | None
     # the ticks of the values - the int64 the kernels work on
     ticks: npt.NDArray[np.int64] = field(init=False)
-    # the answer of the kernel, before the patches of the NaT
-    result: AResult | None = None
     # the groups that hold nothing but the missing value - the argreductions
     # of the nan variants have no position to name for them
     empty_groups: npt.NDArray[np.bool_] | None = None
@@ -606,9 +611,9 @@ def _swap_nat_rows(ctx: _Context) -> None:
     skips.  A group of nothing but NaT holds no tick of its own after the
     swap, and is left to the fill value like its float counterpart.
     """
-    nat = np.isnat(ctx.a)
+    nat = np.isnat(ctx.values)
     skip = np.iinfo(np.int64).max if ctx.policy.base == "argmin" else NAT_TICK + 1
-    ctx.a = np.where(nat, np.int64(skip), ctx.values.view(np.int64)).view(ctx.a_dtype)
+    ctx.values = np.where(nat, np.int64(skip), ctx.values.view(np.int64)).view(ctx.a_dtype)
     # the groups that hold nothing but NaT have no tick to name - the
     # sentinel above stands in for the NaT of every one of them, and the
     # reduction would name its position.  They keep the fill value, like
@@ -626,17 +631,15 @@ def _drop_nat_rows(ctx: _Context) -> None:
     kernels are public entry points of their own, and one that is handed a
     NaT has to leave it out without the wrapper having prepared anything.
     """
-    nat = np.isnat(ctx.a)
+    nat = np.isnat(ctx.values)
     if not nat.any():
         return
     good = ~nat
-    ctx.a = cast("npt.NDArray[Any]", ctx.a)[good]
+    ctx.values = ctx.values[good]
     ctx.group_idx = ctx.group_idx[good]
 
 
-def _flag_result(
-    ctx: _Context, resolve: Callable[[str], Callable[..., AResult] | None] | None
-) -> tuple[AResult, AFillValue]:
+def _flag_result(ctx: _Context) -> tuple[AResult, AFillValue]:
     """The answer of the functions that ask a question instead of a value.
 
     The truth of a temporal value is its tick being non-zero and the value
@@ -655,14 +658,9 @@ def _flag_result(
         )
         return ret, ctx.fill_value
     # the missing-value flags are the plain any and all of the NaT mask
-    if resolve is None:
-        raise missing_impl_error(policy.funcname)
-    op = resolve("any" if policy.flag == "anynan" else "all")
-    if op is None:
-        raise missing_impl_error(policy.funcname)
     ret = ctx.call(
-        op,
-        np.isnat(ctx.a),
+        policy.flag_op,
+        np.isnat(ctx.values),
         resolve_fill_value("all", ctx.fill_value, np.dtype(np.bool_)),
         **ctx.kwargs,
     )
@@ -822,13 +820,14 @@ def _ticks_result(ctx: _Context) -> tuple[npt.NDArray[Any] | None, bool, bool]:
     temporal value - its ticks have to be viewed back.
     """
     policy = ctx.policy
-    if not policy.computes_on_ticks:
-        return None, False, policy.value_result
     if policy.base == "mean":
         return _mean_result(ctx)
     if policy.base == "median":
         return _median_result(ctx)
-    return _quantile_result(ctx)
+    if policy.base in ("quantile", "percentile"):
+        return _quantile_result(ctx)
+    # every other function is answered by the kernel of its operation
+    return None, False, policy.value_result
 
 
 def _array_result(ctx: _Context) -> tuple[AResult, AFillValue]:
@@ -869,7 +868,7 @@ def _kernel_result(ctx: _Context, computed: npt.NDArray[Any] | None, value_resul
     )
 
 
-def _patch_result(ctx: _Context) -> AResult:
+def _patch_result(ctx: _Context, ret: AResult) -> AResult:
     """The answer of the kernels, repaired by the patches of the NaT.
 
     The accumulation of a group carries a NaT through to its end, the sort
@@ -879,7 +878,6 @@ def _patch_result(ctx: _Context) -> AResult:
     function - they have no position to name.
     """
     patches = ctx.patches
-    ret: AResult = cast("AResult", ctx.result)
     if patches.running_nat is not None:
         ret = np.asarray(ret)
         ret[patches.running_nat] = NAT_TICK
@@ -930,7 +928,6 @@ def _temporal_aggregation(
     kwargs: dict[str, Any],
     order: RavelOrder = "C",
     axis: int | None = None,
-    resolve: Callable[[str], Callable[..., AResult] | None] | None = None,
 ) -> tuple[AResult, AFillValue]:
     """The answer of an aggregation of temporal values, and the fill it used.
 
@@ -948,7 +945,6 @@ def _temporal_aggregation(
     ctx = _Context(
         policy=policy,
         group_idx=group_idx,
-        a=a,
         values=values,
         a_dtype=values.dtype,
         size=size,
@@ -963,17 +959,7 @@ def _temporal_aggregation(
     if not isinstance(a, np.ndarray):
         # a temporal scalar comes through as its tick - sum and len of a
         # scalar timedelta64 answer in int64, like a plain integer scalar
-        ret = policy.call(
-            policy.op,
-            group_idx,
-            cast("AValue", np.int64(values.view(np.int64))),
-            size,
-            fill_value,
-            None,
-            order,
-            axis,
-            **kwargs,
-        )
+        ret = ctx.call(policy.op, cast("AValue", np.int64(values.view(np.int64))), fill_value, **kwargs)
         return ret, fill_value
 
     plain_fill = isinstance(fill_value, (bool, np.bool_, int, np.integer))
@@ -982,29 +968,19 @@ def _temporal_aggregation(
         # of every group, its position and the empty groups on its own, in
         # one pass, and the wrapper has nothing to prepare for it
         fill = _native_fill_value(ctx)
-        ret = policy.call(
-            policy.native_op,
-            group_idx,
-            a,
-            size,
-            fill,
-            None,
-            order,
-            axis,
-            **kwargs,
-        )
+        ret = ctx.call(policy.op, ctx.values, fill, **kwargs)
         return ret, fill_value
 
     if policy.swaps_nat:
         _swap_nat_rows(ctx)
     elif policy.drops_nat:
         _drop_nat_rows(ctx)
-    # the values as they are now - the nan-variants dropped their NaT rows
-    ctx.values = np.asarray(ctx.a)
+    # the ticks of the values as they are now - the nan-variants dropped
+    # their NaT rows
     ctx.ticks = ctx.values.view(np.int64)
 
     if policy.flag is not None:
-        return _flag_result(ctx, resolve)
+        return _flag_result(ctx)
 
     _nan_patches(ctx)
 
@@ -1013,14 +989,14 @@ def _temporal_aggregation(
     if policy.is_array:
         return _array_result(ctx)
 
-    ctx.result = _kernel_result(ctx, computed, value_result)
+    ret = _kernel_result(ctx, computed, value_result)
 
     if computed is not None and computed_final:
         # the float mean is a float and not a tick - it is the final answer
-        return ctx.result, fill_value
+        return ret, fill_value
 
-    ctx.result = _patch_result(ctx)
+    ret = _patch_result(ctx, ret)
 
     if value_result:
-        return _view_result(ctx.result, ctx.a_dtype, ctx.user_dtype), fill_value
-    return ctx.result, fill_value
+        return _view_result(ret, ctx.a_dtype, ctx.user_dtype), fill_value
+    return ret, fill_value
