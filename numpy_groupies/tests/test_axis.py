@@ -142,9 +142,14 @@ _AXIS_FUNCS = (
     "cummin",
 )
 
+# the topk answers a matrix with a row per group, and a group index of more
+# than one dimension has no place in it - the topk refuses the axis, so it is
+# not among the cases of the axis
+_AXIS_FUNCS_NO_TOPK = tuple(fn for fn in func_list if fn != "topk")
+
 _AXIS_CASES = (
-    [pytest.param((12,), 0, func, id=f"{func}-(12,)-ax0") for func in func_list]
-    + [pytest.param((12, 5), 1, func, id=f"{func}-(12,5)-ax1") for func in func_list]
+    [pytest.param((12,), 0, func, id=f"{func}-(12,)-ax0") for func in _AXIS_FUNCS_NO_TOPK]
+    + [pytest.param((12, 5), 1, func, id=f"{func}-(12,5)-ax1") for func in _AXIS_FUNCS_NO_TOPK]
     + [pytest.param((12, 5), 0, func, id=f"{func}-(12,5)-ax0") for func in _AXIS_FUNCS]
 )
 
