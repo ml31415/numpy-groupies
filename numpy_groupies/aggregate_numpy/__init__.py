@@ -53,7 +53,7 @@ def aggregate(
     axis: int | None = None,
     out: AResult | None = None,
     _dispatch: Registry = _dispatch,
-    len_counts_values: bool = False,
+    _len_counts_values: bool = False,
     **kwargs: Any,
 ) -> AResult:
     # the argument the numba implementation honours and this one does not:
@@ -123,7 +123,7 @@ def aggregate(
                 # the cumulative nan variants keep every row, the rest drops
                 # the nan values - a is not needed for len, nanlen
                 good = ~np.isnan(a)
-                if "len" not in funcname or len_counts_values:
+                if "len" not in funcname or _len_counts_values:
                     # a scalar a raised a branch above, only columns remain
                     a = cast("npt.NDArray[np.generic]", a)[good]
                 group_idx = group_idx[good]

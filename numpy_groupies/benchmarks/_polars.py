@@ -343,7 +343,7 @@ def aggregate(
         func=func,
         axis=axis,
         _dispatch=_dispatch,
-        len_counts_values=True,
+        _len_counts_values=True,
         **kwargs,
     )
 
