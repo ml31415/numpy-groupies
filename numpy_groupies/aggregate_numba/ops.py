@@ -48,7 +48,6 @@ from numpy_groupies.registry import (
     FuncName,
     Registry,
     Resolved,
-    build_op_table,
     can_name_a_function,
     custom_callable,
     func_extras,
@@ -986,4 +985,4 @@ _temporal_ops = get_temporal_ops(_op_dict, _tick_ops)
 # of every known function and so one dict lookup on the call path - names this
 # backend has no wrapper for come along holding None, so the lookup answers that
 # question too instead of a second table having to be asked
-_dispatch = Registry(build_op_table(_op_dict, _temporal_ops), aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation, _temporal_ops)

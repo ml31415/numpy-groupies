@@ -66,18 +66,6 @@ funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan", "topk"])
 # work on numbers cannot take in one go
 funcs_collecting = frozenset(["array"])
 
-# the key of an operation in the table of a backend: the name of the
-# function and the kind of the operation.  A function has two operations -
-# the one that answers the numeric values and the one that answers the
-# datetime64 and the timedelta64 values - and they are two entries of one
-# table, so that a backend holds one table of operations and the registry
-# one dict.
-OpKey: TypeAlias = tuple[str, bool]
-
-# the two kinds of operation of a function
-NUMERIC: bool = False
-TEMPORAL: bool = True
-
 # the names the known functions answer to - their canonical names and the
 # string aliases of the alias table.  The literal type names them for the
 # type checker (a typo is a type error) and for the editor.
@@ -209,25 +197,12 @@ def custom_callable(func: Any) -> Callable[..., AScalar]:
     raise ValueError(f"func {func} is neither a valid function string nor a callable object")
 
 
-def build_op_table(
-    numeric: Mapping[str, Callable[..., Any]], temporal: Mapping[str, Callable[..., Any]] | None = None
-) -> dict[OpKey, Callable[..., Any]]:
-    """The table of the operations of a backend.
-
-    A function has two operations - the one that answers the numeric values
-    and the one that answers the datetime64 and the timedelta64 values - and
-    they are two entries of one table, keyed by the name of the function and
-    by the kind of the operation.  One table per backend, and one dict in
-    the registry.
-    """
-    table: dict[OpKey, Callable[..., Any]] = {(name, NUMERIC): op for name, op in numeric.items()}
-    if temporal is not None:
-        table.update({(name, TEMPORAL): op for name, op in temporal.items()})
-    return table
-
-
-def build_dispatch(op_dict: Mapping[OpKey, Callable[..., Any]], aliasing: Mapping[Any, str]) -> dict[Any, Resolved]:
-    """Fuse an aliasing and an implementation table for single-lookup dispatch.
+def build_dispatch(
+    op_dict: Mapping[str, Callable[..., Any]],
+    aliasing: Mapping[Any, str],
+    temporal_op_dict: Mapping[str, Callable[..., Any]] | None = None,
+) -> dict[Any, Resolved]:
+    """Fuse an aliasing and the implementation tables for single-lookup dispatch.
 
     Every alias of every known function is a key, holding the canonical name
     of the function and the two operations of it - the numeric one and the
@@ -236,10 +211,12 @@ def build_dispatch(op_dict: Mapping[OpKey, Callable[..., Any]], aliasing: Mappin
     alias whose name this backend does not implement holds ``(name, None)``,
     which the caller reports with ``missing_impl_error`` - so the table
     answers that question too, without a second lookup.
+
+    The temporal operation is None where the backend has none: the numeric
+    operation of such a function answers the temporal input on its own.
     """
     return {
-        alias: Resolved(name, op_dict.get((name, NUMERIC)), op_dict.get((name, TEMPORAL)))
-        for alias, name in aliasing.items()
+        alias: Resolved(name, op_dict.get(name), (temporal_op_dict or {}).get(name)) for alias, name in aliasing.items()
     }
 
 
@@ -288,11 +265,12 @@ class Registry(dict[str | Callable[..., object], Resolved]):
 
     def __init__(
         self,
-        op_dict: Mapping[OpKey, Callable[..., Any]],
+        op_dict: Mapping[str, Callable[..., Any]],
         aliasing: Mapping[str | Callable[..., object], str],
         custom: Callable[..., Resolved],
+        temporal_op_dict: Mapping[str, Callable[..., Any]] | None = None,
     ) -> None:
-        super().__init__(build_dispatch(op_dict, aliasing))
+        super().__init__(build_dispatch(op_dict, aliasing, temporal_op_dict))
         self._custom_factory = custom
 
     def __missing__(self, key: Any) -> Resolved:

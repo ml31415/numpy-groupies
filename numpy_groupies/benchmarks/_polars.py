@@ -23,7 +23,6 @@ from numpy_groupies.nptools import aliasing, check_dtype, iscomplexobj
 from numpy_groupies.registry import (
     Registry,
     Resolved,
-    build_op_table,
     custom_callable,
     funcs_no_separate_nan,
 )
@@ -307,7 +306,7 @@ def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     return Resolved(callable_, partial(_wrapper, func=callable_))
 
 
-_dispatch = Registry(build_op_table(_op_dict), aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation)
 
 
 def aggregate(

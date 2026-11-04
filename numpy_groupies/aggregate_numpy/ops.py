@@ -49,7 +49,6 @@ from numpy_groupies.nptools import aliasing
 from numpy_groupies.registry import (
     Registry,
     Resolved,
-    build_op_table,
     custom_callable,
     funcs_no_separate_nan,
 )
@@ -116,4 +115,4 @@ def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
 # and put into the registry beside them.
 _temporal_ops = build_temporal_ops(_op_dict)
 
-_dispatch = Registry(build_op_table(_op_dict, _temporal_ops), aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation, _temporal_ops)

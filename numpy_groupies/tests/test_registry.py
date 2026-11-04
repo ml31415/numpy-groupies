@@ -18,7 +18,6 @@ from numpy_groupies.registry import (
     Resolved,
     aliasing_py,
     build_dispatch,
-    build_op_table,
     custom_callable,
     funcs_common,
     function_names,
@@ -49,7 +48,7 @@ def test_build_dispatch_resolves_every_alias():
     op_dict = {"sum": sum, "min": min}
     aliasing = {"sum": "sum", "add": "sum", "min": "min", "amin": "min", "nansum": "nansum"}
 
-    dispatch = build_dispatch(build_op_table(op_dict), aliasing)
+    dispatch = build_dispatch(op_dict, aliasing)
 
     assert set(dispatch) == set(aliasing)
     assert dispatch["add"] == Resolved("sum", sum, None)
@@ -87,7 +86,7 @@ def _registry():
         callable_ = custom_callable(func)
         return Resolved(callable_, callable_)
 
-    return Registry(build_op_table(op_dict), aliasing, custom)
+    return Registry(op_dict, aliasing, custom)
 
 
 def test_the_registry_answers_both_kinds_of_func_with_one_lookup():

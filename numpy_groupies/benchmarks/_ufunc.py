@@ -13,7 +13,6 @@ from numpy_groupies.nptools import aliasing, maxval, minimum_dtype, minimum_dtyp
 from numpy_groupies.registry import (
     Registry,
     Resolved,
-    build_op_table,
     custom_callable,
     missing_impl_error,
 )
@@ -174,7 +173,7 @@ def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     raise NotImplementedError("No such ufunc available") from None
 
 
-_dispatch = Registry(build_op_table(_op_dict), aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation)
 
 
 def aggregate(

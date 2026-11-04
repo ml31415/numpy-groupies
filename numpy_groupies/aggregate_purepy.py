@@ -17,7 +17,6 @@ from numpy_groupies.registry import (
     Registry,
     Resolved,
     bind_functions,
-    build_op_table,
     custom_callable,
     forced_float_types,
     forced_real_float_types,
@@ -361,7 +360,7 @@ def _custom_operation(func: Any) -> Resolved:
     return Resolved(callable_, callable_)
 
 
-_dispatch = Registry(build_op_table(_op_dict), aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation)
 
 
 def _a_dtype(a: Sequence[Any]) -> type:
