@@ -628,7 +628,7 @@ class TickKernel:
 # a driver that carries something named after something else is what the
 # kernels of an earlier version of this module had to write by hand, and what
 # the explicit signatures below make impossible.
-Variant = Literal["none", "ddof", "q", "q_method", "dx", "reverse", "topk"]
+Variant = Literal["none", "ddof", "q_method", "dx", "reverse", "topk"]
 
 # the defaults the kernels carry for the argument an operation has of its own.
 # They are the defaults of the registry (``numpy_groupies.registry.FUNC_EXTRAS``)
@@ -863,6 +863,22 @@ def _typing_prologue(
 # has of its own is part of the contract with the caller.
 
 
+def _round_float16(ret: Any) -> Any:
+    """The result of a kernel that ran on the float32 its float16 input was
+    widened to.
+
+    A float result is rounded back to the dtype of the input - every float16
+    survives the widening exactly, so the values the kernel did not change
+    arithmetically come back as they were.  A result of another kind (the
+    positions of the argreductions, the flags, the counts) is no float16 to
+    begin with and passes through - and so does the list of the collecting
+    function's group arrays, whose entries are rounded one by one.
+    """
+    if isinstance(ret, np.ndarray):
+        return ret.astype(np.float16) if ret.dtype.kind == "f" else ret
+    return [one.astype(np.float16) if one.dtype.kind == "f" else one for one in ret]
+
+
 def _call_kernel_stub(
     driver: Callable[..., Any],
     resolve: _PythonPrologue,
@@ -879,9 +895,19 @@ def _call_kernel_stub(
     argument as its last one: the ``ddof`` of the variance, the quantile ``q``,
     the sample spacing ``dx`` of the trapezoid, the ``reverse`` flag of the
     sort.  An operation without one hands the driver no argument at all.
+
+    A float16 input is widened to float32 ahead of the driver and an inexact
+    result rounded back after it: numba has no float16, and the values
+    survive the widening cast exactly.  From jitted code a float16 never
+    reaches this point - the typing of the overload sees no float16
+    signatures - so the branch costs the python call one dtype comparison.
     """
+    is16 = getattr(a, "dtype", None) == np.float16
+    if is16:
+        a = a.astype(np.float32)
     group_idx, a, out_dtype, aux_dtype, fill = resolve(group_idx, a, size, fill_value)
-    return driver(group_idx, a, size, out_dtype, aux_dtype, fill, *extra_args)
+    ret = driver(group_idx, a, size, out_dtype, aux_dtype, fill, *extra_args)
+    return _round_float16(ret) if is16 else ret
 
 
 def _kernel_none(
@@ -962,66 +988,6 @@ def _kernel_ddof(
             else:
                 _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
                 return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, ddof)
-
-        _kernel_impl.__qualname__ = f"{name}_kernel_impl"
-        return _kernel_impl
-
-    return stub, typing
-
-
-def _kernel_q(
-    name: str,
-    driver: Callable[..., Any],
-    resolve: _PythonPrologue,
-    prepare: _TypingPrologue,
-    tick: Callable[..., Any] | None = None,
-) -> _Kernel:
-    """The kernel of an operation that takes a quantile.
-
-    The default of the argument is the one of the function - the quantile
-    takes a fraction, the percentile takes a percentage - and the registry
-    knows it.
-
-    With a tick kernel, the stub answers the temporal input with it: the
-    values are handed over as their int64 ticks, and the answer of the tick
-    kernel is viewed back into the unit of the input.
-    """
-    default_q = func_argument_default(name, "q")
-
-    def stub(group_idx: Any, a: Any, q: float = default_q, size: int = -1, fill_value: float | None = None) -> Any:
-        if tick is not None and is_temporal_input(a):
-            group_idx, a = _kernel_checks(group_idx, a)
-            ticks = a.view(np.int64)
-            fill = NAT_TICK if fill_value is None else np.int64(fill_value)
-            return tick(group_idx, ticks, q, size, fill).view(a.dtype)
-        return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (q,))
-
-    def typing(group_idx: Any, a: Any, q: float = default_q, size: int = -1, fill_value: float | None = None) -> Any:
-        out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
-            group_idx, a, fill_value
-        )
-        if tick is not None and _is_temporal_type(a):
-
-            def _temporal_impl(
-                group_idx: Any, a: Any, q: float = default_q, size: int = -1, fill_value: float | None = None
-            ) -> Any:
-                _require_inputs(group_idx, a)
-                ticks = a.view(np.int64)
-                fill = NAT_TICK if fill_value is None else np.int64(fill_value)
-                return tick(group_idx, ticks, q, size, fill).view(a.dtype)
-
-            _temporal_impl.__qualname__ = f"{name}_temporal_impl"
-            return _temporal_impl
-
-        def _kernel_impl(
-            group_idx: Any, a: Any, q: float = default_q, size: int = -1, fill_value: float | None = None
-        ) -> Any:
-            _require_inputs(group_idx, a)
-            if fill_value is None:
-                return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, q)
-            else:
-                _require_fittable(fill_value, is_bool, is_exact, low, high, high_exclusive, message)
-                return driver(group_idx, a, size, out_dtype, aux_dtype, fill_value, q)
 
         _kernel_impl.__qualname__ = f"{name}_kernel_impl"
         return _kernel_impl
@@ -1119,28 +1085,61 @@ def _kernel_q_method(
     ``lower``, ``higher``, ``nearest`` or ``midpoint`` - and it reaches the
     driver as the name itself: the driver branches on it once per group, and
     a branch per group costs nothing next to the work of the group itself.
+    All five methods run in the compiled kernel, the numeric one and the one
+    of the ticks alike.
     """
-    if tick is not None:
-        # this operation has no kernel on the ticks
-        raise TypeError("the _kernel_q_method kernel takes no tick kernel")
+    default_q = func_argument_default(name, "q")
+    default_method = func_argument_default(name, "method")
 
     def stub(
-        group_idx: Any, a: Any, q: float = 0.5, method: str = "linear", size: int = -1, fill_value: float | None = None
+        group_idx: Any,
+        a: Any,
+        q: float = default_q,
+        method: str = default_method,
+        size: int = -1,
+        fill_value: float | None = None,
     ) -> Any:
+        if tick is not None and is_temporal_input(a):
+            group_idx, a = _kernel_checks(group_idx, a)
+            ticks = a.view(np.int64)
+            fill = NAT_TICK if fill_value is None else np.int64(fill_value)
+            return tick(group_idx, ticks, q, method, size, fill).view(a.dtype)
         return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (q, method))
 
     def typing(
-        group_idx: Any, a: Any, q: float = 0.5, method: str = "linear", size: int = -1, fill_value: float | None = None
+        group_idx: Any,
+        a: Any,
+        q: float = default_q,
+        method: str = default_method,
+        size: int = -1,
+        fill_value: float | None = None,
     ) -> Any:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
+        if tick is not None and _is_temporal_type(a):
+
+            def _temporal_impl(
+                group_idx: Any,
+                a: Any,
+                q: float = default_q,
+                method: str = default_method,
+                size: int = -1,
+                fill_value: float | None = None,
+            ) -> Any:
+                _require_inputs(group_idx, a)
+                ticks = a.view(np.int64)
+                fill = NAT_TICK if fill_value is None else np.int64(fill_value)
+                return tick(group_idx, ticks, q, method, size, fill).view(a.dtype)
+
+            _temporal_impl.__qualname__ = f"{name}_temporal_impl"
+            return _temporal_impl
 
         def _kernel_impl(
             group_idx: Any,
             a: Any,
-            q: float = 0.5,
-            method: str = "linear",
+            q: float = default_q,
+            method: str = default_method,
             size: int = -1,
             fill_value: float | None = None,
         ) -> Any:
@@ -1213,7 +1212,6 @@ _KERNEL_BUILDERS: dict[
 ] = {
     "none": _kernel_none,
     "ddof": _kernel_ddof,
-    "q": _kernel_q,
     "q_method": _kernel_q_method,
     "dx": _kernel_dx,
     "reverse": _kernel_reverse,
@@ -1443,13 +1441,15 @@ def make_tick_call_q(name: str, handle: KernelHandle, scale: float = 1.0) -> Cal
     """The call of a tick kernel that takes a quantile.
 
     The scale is the factor the quantile is multiplied with before it
-    reaches the kernel: the percentile takes its argument in percent.
+    reaches the kernel: the percentile takes its argument in percent.  The
+    method of the interpolation passes through - the kernel of the ticks
+    holds the five methods of numpy like the numeric one does.
     """
     driver = handle.driver
 
     @njit_stable(name=name)
-    def call(group_idx: Any, ticks: Any, q: float, size: int, fill: int) -> Any:
-        return driver(group_idx, ticks, size, np.dtype(np.int64), np.dtype(np.int64), fill, q * scale, "linear")
+    def call(group_idx: Any, ticks: Any, q: float, method: str, size: int, fill: int) -> Any:
+        return driver(group_idx, ticks, size, np.dtype(np.int64), np.dtype(np.int64), fill, q * scale, method)
 
     return call
 

@@ -830,10 +830,10 @@ def test_bare_kernel_refuses_what_it_cannot_compute(func):
         ("nanmean", (2,), "2011-01-02T00:00:00"),
         ("median", (2,), "2011-01-02T00:00:00"),
         ("nanmedian", (2,), "2011-01-02T00:00:00"),
-        ("quantile", (0.5, 2), "2011-01-02T00:00:00"),
-        ("nanquantile", (0.5, 2), "2011-01-02T00:00:00"),
-        ("percentile", (50.0, 2), "2011-01-02T00:00:00"),
-        ("nanpercentile", (50.0, 2), "2011-01-02T00:00:00"),
+        ("quantile", (0.5, "linear", 2), "2011-01-02T00:00:00"),
+        ("nanquantile", (0.5, "linear", 2), "2011-01-02T00:00:00"),
+        ("percentile", (50.0, "linear", 2), "2011-01-02T00:00:00"),
+        ("nanpercentile", (50.0, "linear", 2), "2011-01-02T00:00:00"),
     ],
 )
 def test_bare_kernel_answers_the_temporal_input_on_the_ticks(func, args, expected):

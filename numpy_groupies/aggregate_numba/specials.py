@@ -380,17 +380,26 @@ _tick_median_group_plain = _median_group(True, False)
 _tick_median_group_nan = _median_group(True, True)
 
 
-def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float) -> Any:
+def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float, method: str) -> Any:
     """the quantile q of the block at ``a_sorted[begin:begin+m]``.
 
     The quantile names a position between two of the values of the group: the
     virtual index q * (m - 1) says how far between the smallest and the largest
     value it lies, and the two values it falls between are interpolated the way
-    numpy interpolates them.
+    numpy interpolates them.  All five methods of numpy run here - the branch
+    on the method happens once per group, and a group costs far more than the
+    branch.
     """
     pos = q * (m - 1)
+    if method == "lower":
+        return _select(a_sorted, begin, begin + m, begin + int(np.floor(pos)))
+    if method == "higher":
+        return _select(a_sorted, begin, begin + m, begin + min(int(np.ceil(pos)), m - 1))
+    if method == "nearest":
+        # numpy rounds the position to the nearest element, halves to even
+        return _select(a_sorted, begin, begin + m, begin + min(int(np.round(pos)), m - 1))
     lower_index = int(np.floor(pos))
-    upper_index = int(np.ceil(pos))
+    upper_index = min(int(np.ceil(pos)), m - 1)
     upper = _select(a_sorted, begin, begin + m, begin + upper_index)
     if lower_index == upper_index:
         # the quantile is one of the values of the group
@@ -401,10 +410,19 @@ def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float)
     for i in range(begin + 1, begin + lower_index + 1):
         if complex_less(lower, a_sorted[i]):
             lower = a_sorted[i]
-    # the 1.0 promotes integral input to float64, just like np.quantile
+    # the two branches of numpy's own ``_lerp``: below a half the answer
+    # grows from the lower value, from a half on it shrinks from the upper
+    # one.  The 1.0 promotes integral input to float64, just like np.quantile
     # promotes before interpolating - the subtraction in its own dtype
     # overflows (int8 100 - (-100)) and bool addition is a logical or
-    return lower * 1.0 + (upper * 1.0 - lower * 1.0) * (pos - lower_index)
+    diff = upper * 1.0 - lower * 1.0
+    if method == "midpoint":
+        gamma = 0.5
+    else:
+        gamma = pos - lower_index
+    if gamma < 0.5:
+        return lower * 1.0 + diff * gamma
+    return upper - diff * (1 - gamma)
 
 
 _quantile_at = njit_stable(_quantile_at, name="quantile_quantile_at")
@@ -469,6 +487,7 @@ def _quantile_group_plain(
     out: npt.NDArray[np.number],
     fill_value: float,
     q: float,
+    method: str,
 ) -> None:
     """the quantile of one group of the placed values
 
@@ -487,7 +506,7 @@ def _quantile_group_plain(
         # has (for a real dtype: the plain nan)
         out[g] = out[g] * np.nan
     else:
-        out[g] = _quantile_at(a_sorted, starts[g], m, q)
+        out[g] = _quantile_at(a_sorted, starts[g], m, q, method)
 
 
 def _quantile_group_nan(
@@ -499,6 +518,7 @@ def _quantile_group_nan(
     out: npt.NDArray[np.number],
     fill_value: float,
     q: float,
+    method: str,
 ) -> None:
     """the quantile of one group, the nan values of the group left out"""
     if counts[g] == 0:
@@ -508,7 +528,7 @@ def _quantile_group_nan(
         # all-nan group: it keeps the fill value
         out[g] = fill_value
     else:
-        out[g] = _quantile_at(buf, 0, m, q)
+        out[g] = _quantile_at(buf, 0, m, q, method)
 
 
 _quantile_group_plain = njit_stable(_quantile_group_plain, name="quantile_group")
@@ -859,6 +879,7 @@ def _quantile_driver_factory(nans: bool, scale: float = 1.0, name: str = "quanti
         aux_dtype: np.dtype,
         fill_value: float,
         q: float,
+        method: str,
     ) -> npt.NDArray[np.number]:
         # the quantile is order-insensitive and takes its quantile
         size = output_size(group_idx, size_arg)
@@ -872,7 +893,7 @@ def _quantile_driver_factory(nans: bool, scale: float = 1.0, name: str = "quanti
         # the percentile takes its argument in percent
         fraction = q * scale
         for g in range(size):
-            group(g, a_sorted, counts, starts, buf, out, fill_value, fraction)
+            group(g, a_sorted, counts, starts, buf, out, fill_value, fraction, method)
         return out
 
     return njit_stable(driver, name=f"{op_name}_driver")
@@ -895,22 +916,23 @@ def _quantile_mt_factory(
         out_dtype: np.dtype,
         aux_dtype: np.dtype,
         fill_value: float,
-        q: float,
+        extra: Any,
         n_threads: int,
     ) -> npt.NDArray[np.number]:
         setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
         if setup is None:
-            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q * scale)
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra[0] * scale, extra[1])
         # unpacked before the prange - see the note in _median_mt_factory
         counts, starts, a_sorted, edges, largest = setup
         out = np.full(counts.size, fill_value, out_dtype)
         bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
         # the percentile takes its argument in percent
-        fraction = q * scale
+        fraction = extra[0] * scale
+        method = extra[1]
         for c in nb.prange(largest.size):
             buf = bufs[c]
             for g in range(edges[c], edges[c + 1]):
-                group(g, a_sorted, counts, starts, buf, out, fill_value, fraction)
+                group(g, a_sorted, counts, starts, buf, out, fill_value, fraction, method)
         return out
 
     return njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
@@ -939,7 +961,7 @@ quantile = build_custom_kernel(
     mt_driver_factory=_quantile_mt_factory,
     rule=rule_float,
     fill_default=np.nan,
-    variant="q",
+    variant="q_method",
     doc="Quantile of the values of every group",
     # the quantile of the temporal input is the quantile of the ticks
     tick=TickKernel(
@@ -954,11 +976,13 @@ percentile = build_custom_kernel(
     # the driver and the parallel passes of the quantile, with the argument
     # scaled down: the percentile is the quantile in percent, and its kernel
     # is a kernel of its own - jitted code calls it like every other one.
+    # The five methods of numpy run in the kernel, the same way they run in
+    # the kernel of the quantile.
     driver_factory=partial(_quantile_driver_factory, scale=0.01, name="percentile"),
     mt_driver_factory=partial(_quantile_mt_factory, scale=0.01, name="percentile"),
     rule=rule_float,
     fill_default=np.nan,
-    variant="q",
+    variant="q_method",
     doc="Percentile of the values of every group - the quantile in percent",
     # the percentile of the temporal input is the percentile of the ticks
     tick=TickKernel(

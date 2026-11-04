@@ -20,8 +20,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
-from numpy_groupies.aggregate_numba.compose import KernelHandle
-from numpy_groupies.aggregate_numba.fallback import FALLBACK
+from numpy_groupies.aggregate_numba.compose import KernelHandle, _round_float16
 from numpy_groupies.aggregate_numba.mt import (
     GROUP_MT_MIN_VALUES,
     group_chunk_count,
@@ -45,7 +44,6 @@ from numpy_groupies.nptools import (
     scalar_dtype,
 )
 from numpy_groupies.registry import (
-    FuncName,
     Registry,
     Resolved,
     can_name_a_function,
@@ -226,27 +224,6 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
 
         return call_nothing
 
-    if handle.variant == "q":
-
-        def call_q(
-            group_idx: npt.NDArray[np.integer],
-            a: npt.NDArray[np.number],
-            size_arg: int,
-            out_dtype: np.dtype,
-            aux_dtype: np.dtype,
-            fill_value: AScalar,
-            ddof: float,
-            q: float,
-            method: str = "linear",
-        ) -> Any:
-            if mt_driver is not None and group_idx.size >= min_values:
-                n_threads = mt_thread_count()
-                if n_threads > 1:
-                    return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
-            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
-
-        return call_q
-
     if handle.variant == "q_method":
         # the quantile and the method of its interpolation: the two arrive
         # in the slots of their own, the method after the quantile
@@ -344,6 +321,17 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         method: str = "linear",
         **kwargs: Any,
     ) -> AResult:
+        # numba has no float16: the values survive the widening cast to float32
+        # exactly, so the kernels run on float32 and an inexact result is
+        # rounded back - once, after the kernel.  The collecting function is
+        # the exception: it hands the values out themselves, and the dtypes it
+        # cannot place go to the fallback above, which keeps them as they are.
+        # a float16 input is always an array - the getattr gate does not narrow the union
+        is16 = not handle.assembles and getattr(a, "dtype", None) == np.float16
+        if is16:
+            a = cast("npt.NDArray[np.number]", a).astype(np.float32)
+        # the dtype the caller asked for - the slow path resolves it in place
+        user_dtype = dtype
         # dtypes the compiled driver cannot handle, handed to the numpy twin
         if (handle.fallback is not None or handle.refusal is not None) and _needs_fallback(handle, a):
             if handle.fallback is not None:
@@ -401,6 +389,8 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
                 else:
                     # only the collecting operation assembles a list
                     ret = cast(AResult, ret)
+                if is16 and dtype is None:
+                    ret = cast(AResult, _round_float16(ret))
                 return ret
 
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func=func)
@@ -477,6 +467,8 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
             # and the shape of a one-out-per-in function does not apply to it.
             # The number of the values travels in the slot of the ddof.
             check_topk_shape(ret, flat_size, int(ddof))
+        if is16 and user_dtype is None:
+            ret = cast(AResult, _round_float16(ret))
         return ret
 
     return aggregate
@@ -657,8 +649,15 @@ def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
         axis: int | None = None,
         **kwargs: Any,
     ) -> AResult:
+        # numba has no float16: the values survive the widening cast to
+        # float32 exactly, so the compiled loop runs on float32, and an
+        # inexact result is rounded back to the dtype of the input
+        is16 = getattr(a, "dtype", None) == np.float16
+        if is16:
+            a = cast("npt.NDArray[np.number]", a).astype(np.float32)
         loop = _get_cached_generic(callable_)
-        return loop(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+        ret = loop(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)
+        return cast("AResult", _round_float16(ret)) if is16 and dtype is None else ret
 
     return Resolved(callable_, op)
 
@@ -786,16 +785,16 @@ def _sort_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
     return sort_op
 
 
-def _quantile_arguments(
-    op: Callable[..., AResult], *, name: FuncName, default: float, limit: float = 1.0
-) -> Callable[..., AResult]:
-    """Expose the quantile of the quantile and of the percentile.
+def _quantile_arguments(op: Callable[..., AResult], *, default: float, limit: float = 1.0) -> Callable[..., AResult]:
+    """Expose the quantile of the quantile and of the percentile - of the
+    numeric values and of the ticks alike.
 
     The kernels take the argument in the unit of their own - the quantile
     takes a fraction, the percentile takes a percentage, and its kernel
-    scales the argument down itself.  The compiled driver interpolates
-    linearly - the way numpy does it by default - while the other methods of
-    numpy are answered by the numpy implementation.
+    scales the argument down itself.  All five methods of numpy run in the
+    compiled kernel, the one of the values and the one of the ticks alike;
+    the range of the quantile and the names of the methods are asked here,
+    once per call.
     """
 
     def quantile_op(
@@ -808,26 +807,13 @@ def _quantile_arguments(
         axis: int | None = None,
         q: float = default,
         method: str = "linear",
+        **kwargs: Any,
     ) -> AResult:
         if not 0.0 <= q <= limit:
             raise ValueError(f"Quantiles must be in the range [0, {round(limit)}]")
-        if method != "linear":
-            # a method other than the linear one is an interpolation that
-            # numpy does in its own way - the compiled kernel holds the
-            # linear one only
-            return FALLBACK.aggregate(
-                group_idx,
-                a,
-                func=name,
-                size=size,
-                fill_value=fill_value,
-                order=order,
-                dtype=dtype,
-                axis=axis,
-                q=q,
-                method=method,
-            )
-        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q, method=method)
+        if method not in QUANTILE_METHODS:
+            raise ValueError(f"unknown interpolation method '{method}' - use one of {sorted(QUANTILE_METHODS)}")
+        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q, method=method, **kwargs)
 
     return quantile_op
 
@@ -837,10 +823,10 @@ _ARGUMENT_WRAPPERS: dict[str, Callable[[Callable[..., AResult]], Callable[..., A
     "trapezoid": _dx_argument,
     "sort": _sort_arguments,
     "topk": _topk_arguments,
-    "quantile": partial(_quantile_arguments, name="quantile", default=0.5),
-    "nanquantile": partial(_quantile_arguments, name="nanquantile", default=0.5),
-    "percentile": partial(_quantile_arguments, name="percentile", default=50.0, limit=100.0),
-    "nanpercentile": partial(_quantile_arguments, name="nanpercentile", default=50.0, limit=100.0),
+    "quantile": partial(_quantile_arguments, default=0.5),
+    "nanquantile": partial(_quantile_arguments, default=0.5),
+    "percentile": partial(_quantile_arguments, default=50.0, limit=100.0),
+    "nanpercentile": partial(_quantile_arguments, default=50.0, limit=100.0),
 }
 
 
@@ -862,42 +848,13 @@ _op_dict = get_ops()
 # the operations of the backend on the int64 ticks of temporal values - the
 # mean, the median and the quantile, whose numeric kernels are not exact on
 # the ticks: the mean of a float64 rounds, the median of an int64 promotes
-# to float64, and the quantile of the backend interpolates linearly only.
-# They are built like every other operation of the backend, out of the
-# compiled kernels of the ticks.
+# to float64, and the quantile of the backend interpolated in float64 only
+# before its kernel held the five methods of numpy.
 _TICK_TABLE = (
     ("mean", averaging.tick_mean),
     ("median", specials.tick_median),
     ("quantile", specials.tick_quantile),
 )
-
-
-def _tick_quantile_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
-    """The quantile of the ticks refuses an unknown method of the
-    interpolation.
-
-    All five methods of numpy run in the kernel: the branch on the method
-    happens once per group, and a group costs far more than the branch.  A
-    method numpy does not know is refused by name.
-    """
-
-    def quantile_op(
-        group_idx: npt.NDArray[np.integer],
-        a: AValue,
-        size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
-        fill_value: AFillValue = DEFAULT_FILL_VALUE,
-        order: RavelOrder = "C",
-        dtype: npt.DTypeLike | None = None,
-        axis: int | None = None,
-        q: float = 0.5,
-        method: str = "linear",
-        **kwargs: Any,
-    ) -> AResult:
-        if method not in QUANTILE_METHODS:
-            raise ValueError(f"unknown interpolation method '{method}' - use one of {sorted(QUANTILE_METHODS)}")
-        return op(group_idx, a, size, fill_value, order, dtype, axis, q=q, method=method, **kwargs)
-
-    return quantile_op
 
 
 def get_tick_ops() -> dict[str, Callable[..., AResult]]:
@@ -906,19 +863,20 @@ def get_tick_ops() -> dict[str, Callable[..., AResult]]:
     One operation per function name, built by the same factory as every
     other operation of the backend - so that they take the same arguments,
     resolve their dtype and their fill value the same way, and run their
-    compiled kernel the same way.
+    compiled kernel the same way.  The wrapper of the quantile is the one
+    of the numeric values: the range of the quantile and the names of the
+    methods are asked of both alike.
     """
     ops: dict[str, Callable[..., AResult]] = {}
     for funcname, pair in _TICK_TABLE:
         ops[funcname] = build_aggregate_op("tick_" + funcname, pair.plain)
         ops["nan" + funcname] = build_aggregate_op("tick_" + funcname, pair.nan)
-    # the quantile of the ticks knows the five methods of numpy and refuses
-    # the others by name
-    for name in ("quantile", "nanquantile"):
-        ops[name] = _tick_quantile_arguments(ops[name])
-    # the percentile is the quantile in percent - the temporal operation
-    # scales the argument of the percentile down before it hands it to the
-    # operation of the ticks
+        wrap = _ARGUMENT_WRAPPERS.get(funcname)
+        if wrap is not None:
+            ops[funcname] = wrap(ops[funcname])
+            ops["nan" + funcname] = wrap(ops["nan" + funcname])
+    # the percentile is the quantile in percent - the kernel scales the
+    # argument down itself, so the wrapper is the one of the quantile
     ops["percentile"] = ops["quantile"]
     ops["nanpercentile"] = ops["nanquantile"]
     return ops

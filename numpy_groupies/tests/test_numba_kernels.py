@@ -339,8 +339,10 @@ def test_the_percentile_is_the_quantile_in_percent(name):
     group_idx = np.array([0, 0, 1, 1])
     values = np.array([1.0, 3.0, 5.0, 7.0])
 
-    percentile = getattr(aggregate_numba, name)(group_idx, values, 50.0, 2, None)
-    quantile = getattr(aggregate_numba, name.replace("percentile", "quantile"))(group_idx, values, 0.5, 2, None)
+    percentile = getattr(aggregate_numba, name)(group_idx, values, 50.0, "linear", 2, None)
+    quantile = getattr(aggregate_numba, name.replace("percentile", "quantile"))(
+        group_idx, values, 0.5, "linear", 2, None
+    )
     np.testing.assert_array_equal(percentile, quantile)
 
 
@@ -729,7 +731,7 @@ def test_quantile_orders_complex_from_njit_like_the_reference():
     # answers like the reference does.
     @nb.njit
     def wrapped(group_idx, a):
-        return aggregate_numba.quantile(group_idx, a, 0.5, 2, None)
+        return aggregate_numba.quantile(group_idx, a, 0.5, "linear", 2, None)
 
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
@@ -741,7 +743,7 @@ def test_quantile_of_a_complex_group_with_a_nan_poisons_it_from_njit():
     # the whole group answers with a nan - the plain quantile is contagious
     @nb.njit
     def wrapped(group_idx, a):
-        return aggregate_numba.quantile(group_idx, a, 0.5, 2, None)
+        return aggregate_numba.quantile(group_idx, a, 0.5, "linear", 2, None)
 
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, complex(np.nan, 4.0), 5 + 6j])
@@ -869,18 +871,21 @@ def test_dtype_rules(kernel_name, values, expected_dtype):
     assert caller(GROUP_IDX, values).dtype == expected_dtype
 
 
-def test_a_float16_input_is_the_one_refusal_the_typing_function_cannot_name():
-    """The dtype no world of a kernel can be asked about.
+def test_a_float16_input_is_widened_from_python_and_refused_from_jit():
+    """The one dtype numba has no world for.
 
-    ``aggregate()`` widens float16 values to float32 on the way to the driver,
-    a kernel has no such step in front of it: the numba type of the values is
-    what the entry point of both of its worlds starts from, and numba answers
-    float16 - the one numeric dtype it has no type for - with a
-    NotImplementedError of its own.
+    The python entry of a kernel widens float16 values to float32 ahead of
+    the driver and rounds an inexact result back - the values survive the
+    widening exactly, and the float32 plan is the one ``aggregate()`` runs
+    them on as well.  From jitted code a float16 never arrives at a kernel,
+    and the typing function says so: numba answers the one numeric dtype it
+    cannot place with a NotImplementedError of its own.
     """
     values = FLOAT_A.astype(np.float16)
-    with pytest.raises(NotImplementedError, match="float16"):
-        aggregate_numba.mean(GROUP_IDX, values)
+    result = aggregate_numba.mean(GROUP_IDX, values)
+    widened = aggregate_numba.mean(GROUP_IDX, values.astype(np.float32))
+    assert result.dtype == np.float16
+    np.testing.assert_array_equal(result, widened.astype(np.float16))
 
     @nb.njit
     def caller(group_idx, a):

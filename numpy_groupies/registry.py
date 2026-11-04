@@ -434,8 +434,8 @@ complex_real_result = (
 FUNC_EXTRAS: dict[str, tuple[tuple[str, str, Any], ...]] = {
     "std": (("ddof", "int", 0),),
     "var": (("ddof", "int", 0),),
-    "quantile": (("q", "float", 0.5),),
-    "percentile": (("q", "float", 50.0),),
+    "quantile": (("q", "float", 0.5), ("method", "str", "linear")),
+    "percentile": (("q", "float", 50.0), ("method", "str", "linear")),
     "trapezoid": (("dx", "float", 1.0),),
     "sort": (("reverse", "bool", False),),
     # the topk: how many values of every group it keeps, and whether it keeps

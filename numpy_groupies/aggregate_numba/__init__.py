@@ -106,7 +106,6 @@ from numpy_groupies.common import (
 from numpy_groupies.nptools import exact_integer_group_mean
 from numpy_groupies.registry import (
     FuncName,
-    funcs_collecting,
     missing_impl_error,
 )
 from numpy_groupies.temporal import is_temporal_input
@@ -166,17 +165,6 @@ def aggregate(
             **kwargs,
         )
 
-    # numba has no float16: the values survive the widening cast to float32
-    # exactly, so the kernels run on float32 and an inexact result is rounded
-    # back - like the numpy twin does, whose bincount accumulates in float64
-    # and rounds once at the end
-    # the collecting functions are the exception: they hand out the values
-    # themselves, so they keep the dtype they came in with
-    is16 = getattr(a, "dtype", None) == np.float16
-    if is16 and funcname not in funcs_collecting:
-        # a float16 input is always an array - the getattr gate does not narrow the union
-        a = cast("npt.NDArray[np.number]", a).astype(np.float32)
-
     if op is None:
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
@@ -223,8 +211,6 @@ def aggregate(
                 "AResult",
                 op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs),
             )
-    if is16 and dtype is None and ret.dtype.kind == "f":
-        ret = ret.astype(np.float16)
     if out is not None:
         if out.shape != ret.shape or out.dtype != ret.dtype:
             raise TypeError(
