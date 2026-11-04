@@ -123,6 +123,19 @@ from numpy_groupies.validation import EMPTY_GROUP_IDX
 FALLBACK.set_implementation(_numpy_aggregate)
 
 
+def _into_out(ret: AResult, out: AResult | None) -> AResult:
+    """The answer of the call, written into the array of the caller where one
+    was given - which is handed back, so calls can be chained."""
+    if out is None:
+        return ret
+    if out.shape != ret.shape or out.dtype != ret.dtype:
+        raise TypeError(
+            f"out must have shape {ret.shape} and dtype {ret.dtype}, got shape {out.shape} and dtype {out.dtype}"
+        )
+    out[...] = ret
+    return out
+
+
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
@@ -143,6 +156,12 @@ def aggregate(
         # caller's own
         funcname, op, temporal_op = _dispatch.custom(func)
 
+    if op is None:
+        # a function that is known but not implemented here - this backend
+        # implements every function of the package, so the guard is the one
+        # of the table's shape
+        raise missing_impl_error(funcname)
+
     # datetime64 and timedelta64 run on their int64 ticks - the temporal
     # operation of the function takes the input apart, refuses what numpy
     # refuses, and answers with a temporal value.  Only the functions of the
@@ -150,11 +169,7 @@ def aggregate(
     # semantics and sees the values as they are.  The numpy functions that
     # mean the same thing are aliases of the functions of the package, so
     # np.mean is the mean of the package and gets its answer.
-    # The temporal operation is the other half of the operation of the
-    # function, and the registry holds it beside the numeric one.
-    temporal = False
     if temporal_op is not None and is_temporal_input(a):
-        temporal = True
         if size is None:
             if not group_idx.size:
                 # the kernels of the operations refuse an empty input as well
@@ -162,7 +177,7 @@ def aggregate(
             # the NaT rows the nan-variants drop would shrink the group count
             # the kernels detect from the labels - pin it before the filter
             size = int(group_idx.max()) + 1
-        ret, fill_value = temporal_op(
+        ret, _ = temporal_op(
             group_idx,
             a,
             cast("int", size),
@@ -172,61 +187,40 @@ def aggregate(
             axis=axis,
             **kwargs,
         )
+        return _into_out(ret, out)
 
-    if op is None:
-        # a function that is known but not implemented here
-        raise missing_impl_error(funcname)
-    if not temporal:
-        # the temporal operation has answered - the mean, the median and the
-        # quantiles of temporal input compute on their own, exact
-        if (
-            isinstance(funcname, str)
-            and funcname in ("mean", "nanmean")
-            and isinstance(a, np.ndarray)
-            and a.dtype.kind in "iu"
-            and a.size
-        ):
-            # The sums of these integers can leave the window float64
-            # represents exactly, and the compiled kernel refuses the mean
-            # then - it knows the bounds of the values from its own
-            # accumulation pass, so the check costs nothing extra.  The exact
-            # answer comes from the limb sums of the values, which the
-            # wrapper computes when the kernel refuses - like the numpy
-            # backend does.
-            try:
-                ret = cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
-            except OverflowError:
-                n = int(group_idx.max()) + 1 if size is None else cast("int", size)
-                out_dtype = np.dtype(dtype) if dtype is not None else np.dtype(np.float64)
-                ret = cast(
-                    AResult,
-                    exact_integer_group_mean(
-                        group_idx,
-                        cast("npt.NDArray[np.integer]", a),
-                        n,
-                        cast("AScalar", fill_value),
-                        out_dtype,
-                    ),
-                )
-        elif isinstance(funcname, str):
+    if not isinstance(funcname, str):
+        # a callable of the caller's own: it has no output array of its own,
+        # and its compiled loop is memoized in the bounded LRU of this backend
+        if out is not None:
+            raise NotImplementedError("out= is only supported for named functions") from None
+        return cast("AResult", op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
+
+    if funcname in ("mean", "nanmean") and isinstance(a, np.ndarray) and a.dtype.kind in "iu" and a.size:
+        # The sums of these integers can leave the window float64
+        # represents exactly, and the compiled kernel refuses the mean
+        # then - it knows the bounds of the values from its own
+        # accumulation pass, so the check costs nothing extra.  The exact
+        # answer comes from the limb sums of the values, which this call
+        # computes when the kernel refuses - like the numpy backend does.
+        try:
             ret = cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs))
-        else:
-            # a callable of the caller's own: it has no output array of its own,
-            # and its compiled loop is memoized in the bounded LRU of this backend
-            if out is not None:
-                raise NotImplementedError("out= is only supported for named functions") from None
+        except OverflowError:
+            n = int(group_idx.max()) + 1 if size is None else cast("int", size)
+            out_dtype = np.dtype(dtype) if dtype is not None else np.dtype(np.float64)
             ret = cast(
-                "AResult",
-                op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs),
+                AResult,
+                exact_integer_group_mean(
+                    group_idx,
+                    cast("npt.NDArray[np.integer]", a),
+                    n,
+                    cast("AScalar", fill_value),
+                    out_dtype,
+                ),
             )
-    if out is not None:
-        if out.shape != ret.shape or out.dtype != ret.dtype:
-            raise TypeError(
-                f"out must have shape {ret.shape} and dtype {ret.dtype}, got shape {out.shape} and dtype {out.dtype}"
-            )
-        out[...] = ret
-        return out
-    return cast("AResult", ret)
+        return _into_out(ret, out)
+
+    return _into_out(cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, **kwargs)), out)
 
 
 aggregate.__doc__ = (
