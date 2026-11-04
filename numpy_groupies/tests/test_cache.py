@@ -60,8 +60,8 @@ def test_purge_cache_removes_the_cache_and_the_leftovers_in_the_source_tree(monk
     bytecode.write_bytes(b"\x00")
     # and one in a subpackage: the leftovers are in the whole tree, not
     # only next to the modules of the top level
-    sub = PACKAGE / "utils" / "__pycache__"
-    sub.mkdir(parents=True, exist_ok=True)
+    sub = PACKAGE / "aggregate_numpy" / "__pycache__"
+    assert sub.is_dir(), "the subpackage of the backends is not imported"
     (sub / "old.nbi").write_text("index")
     try:
         removed = purge_cache()
