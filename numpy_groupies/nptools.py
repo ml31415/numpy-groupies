@@ -473,7 +473,6 @@ def resolve_output_dtype(
     ``a_dtype`` is the dtype of the input data and ``n`` the number of values
     to be aggregated (only needed by the ``sum`` overflow guesses).
     """
-    named = isinstance(func_str, str)
     if dtype is not None:
         # dtype set by the user
         # Careful here: np.bool != np.bool_ !
@@ -481,63 +480,67 @@ def resolve_output_dtype(
             isinstance(func_str, str) and ("all" in func_str or "any" in func_str)
         ):
             raise TypeError(f"function {func_str} requires a more complex datatype than bool")
-        if not np.issubdtype(dtype, np.integer) and named and func_str in ("len", "nanlen", "nunique", "nannunique"):
+        if (
+            not np.issubdtype(dtype, np.integer)
+            and isinstance(func_str, str)
+            and func_str in ("len", "nanlen", "nunique", "nannunique")
+        ):
             raise TypeError(f"function {func_str} requires an integer datatype")
         check_complex_dtype(a_dtype, dtype, func_str)
         # TODO: Maybe have some more checks here
         return np.dtype(dtype)
-    else:
-        try:
-            # a callable of the caller's own names no function - the lookup
-            # misses, like a name the table does not hold
-            return np.dtype(_forced_types[func_str if isinstance(func_str, str) else ""])
-        except KeyError:
-            if func_str in forced_float_types:
-                if np.issubdtype(a_dtype, np.inexact):
-                    # floating input keeps its dtype, complex input stays complex
-                    return a_dtype
-                else:
-                    return np.dtype(np.float64)
-            elif func_str in forced_real_float_types:
-                if np.issubdtype(a_dtype, np.floating):
-                    return a_dtype
-                elif np.issubdtype(a_dtype, np.complexfloating):
-                    # the real counterpart of the complex dtype (complex64 -> float32)
-                    return np.dtype(a_dtype.char.lower())
-                elif func_str in ("sumofsquares", "nansumofsquares"):
-                    # exact squares of integers
-                    return np.dtype(np.int64)
-                else:
-                    return np.dtype(np.float64)
-            else:
-                if func_str == "sum":
-                    if a_dtype.kind in TEMPORAL_KINDS:
-                        # the sum of durations is a duration - numpy answers
-                        # in the unit of the input, and there is no integer
-                        # size to guess for
-                        return a_dtype
-                    # Try to guess the minimally required int size
-                    if a_dtype in (np.dtype(np.int64), np.dtype(np.uint64)):
-                        # It's not getting bigger anymore
-                        # TODO: strictly speaking it might need float
-                        return a_dtype
-                    elif np.issubdtype(a_dtype, np.integer):
-                        # the summing path arrives with a flat count, the one-out
-                        # per-in path never reaches this branch
-                        maxval = np.iinfo(a_dtype).max * cast("int", n)
-                        return minimum_dtype(maxval, a_dtype)
-                    elif np.issubdtype(a_dtype, np.bool_):
-                        return minimum_dtype(n, a_dtype)
-                    else:
-                        # floating, inexact, whatever
-                        return a_dtype
-                elif func_str in _forced_same_type:
-                    return a_dtype
-                else:
-                    if isinstance(a_dtype, np.integer):
-                        return np.dtype(np.int64)
-                    else:
-                        return a_dtype
+
+    try:
+        # a callable of the caller's own names no function - the lookup
+        # misses, like a name the table does not hold
+        return np.dtype(_forced_types[func_str if isinstance(func_str, str) else ""])
+    except KeyError:
+        pass
+
+    if func_str in forced_float_types:
+        if np.issubdtype(a_dtype, np.inexact):
+            # floating input keeps its dtype, complex input stays complex
+            return a_dtype
+        return np.dtype(np.float64)
+
+    if func_str in forced_real_float_types:
+        if np.issubdtype(a_dtype, np.floating):
+            return a_dtype
+        if np.issubdtype(a_dtype, np.complexfloating):
+            # the real counterpart of the complex dtype (complex64 -> float32)
+            return np.dtype(a_dtype.char.lower())
+        if func_str in ("sumofsquares", "nansumofsquares"):
+            # exact squares of integers
+            return np.dtype(np.int64)
+        return np.dtype(np.float64)
+
+    if func_str == "sum":
+        if a_dtype.kind in TEMPORAL_KINDS:
+            # the sum of durations is a duration - numpy answers
+            # in the unit of the input, and there is no integer
+            # size to guess for
+            return a_dtype
+        # Try to guess the minimally required int size
+        if a_dtype in (np.dtype(np.int64), np.dtype(np.uint64)):
+            # It's not getting bigger anymore
+            # TODO: strictly speaking it might need float
+            return a_dtype
+        if np.issubdtype(a_dtype, np.integer):
+            # the summing path arrives with a flat count, the one-out
+            # per-in path never reaches this branch
+            maxval = np.iinfo(a_dtype).max * cast("int", n)
+            return minimum_dtype(maxval, a_dtype)
+        if np.issubdtype(a_dtype, np.bool_):
+            return minimum_dtype(n, a_dtype)
+        # floating, inexact, whatever
+        return a_dtype
+
+    if func_str in _forced_same_type:
+        return a_dtype
+
+    if isinstance(a_dtype, np.integer):
+        return np.dtype(np.int64)
+    return a_dtype
 
 
 def is_duck_array(value: object) -> bool:
