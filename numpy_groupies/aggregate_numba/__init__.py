@@ -57,27 +57,35 @@ Compared to ``aggregate()`` the kernels are restricted to flat 1d input in
 forward order (no dtype, axis, order or out), and the sum overflow guesses for
 narrow integers are approximated by widening to int64 - ``aggregate()`` keeps
 the exact length-dependent dtype rules.  The float16 input is what numba
-cannot do at all: ``aggregate()`` runs it on float32 and rounds the result
-back, a kernel of its own has nothing to run it on.
+cannot place at all: the python entry of a kernel widens it to float32 ahead
+of the driver and rounds an inexact result back to the dtype of the input -
+the values survive the widening cast exactly, and the plan is the one
+``aggregate()`` runs them on as well.  From jitted code a float16 never
+arrives at a kernel, and the typing function says so.
 
 Datetime64 and timedelta64 input is aggregated on its int64 ticks: the
-``aggregate()`` entry hands temporal values to the wrapper of the numpy
-based backends (``temporal``), which carries the policy -
-what numpy refuses, the NaT of the plain reductions and the nan variants,
-the unit of the answer - and turns the tick results back.  The kernels
-themselves take temporal values as they are, as far as their arithmetic
+``aggregate()`` entry hands temporal values to the temporal operation of
+the function - the policy of ``numpy_groupies.temporal`` composed with
+the operations of this backend - which refuses what numpy refuses, carries
+the NaT of the plain reductions and the nan variants, and turns the tick
+results back into the unit of the input.  The kernels themselves take
+temporal values as they are, as far as their arithmetic
 allows: the comparisons of compiled code order datetime64 and timedelta64
 values (NaT is the smallest tick among them, and ``val != val`` detects it
 like a nan), so the selection and the reduction kernels - min, max, first,
-last, their nan variants, the argreductions, len, allnan, anynan, array,
-and the sum and the cumulative sums of the durations - aggregate them
-directly, as a python call and as a
-jitted one.  The kernels that cannot take them (the arithmetic of the
-moments, the partitions and the sorts, the truthiness, and the mean - whose
-rounding numba's division of durations would truncate, where the package
-rounds half to even) say so by name.  The mean of the ticks of a temporal
-input has its own kernels - ``tick_mean`` and ``nantick_mean`` - which
-answer it exactly, half to even, on the int64 ticks the caller hands them.
+last, their nan variants, the argreductions, len, allnan, anynan, nunique,
+array, the topk, the cumulative extrema, and the sum and the cumulative
+sums of the durations -
+aggregate them directly, as a python call and as a
+jitted one.  The kernels whose arithmetic cannot take them (the product
+and the cumulative product, the sum of squares, the dispersion and the
+higher moments, the trapezoid, the truthiness and the sort) say so by
+name.  The mean, the
+median and the quantiles of temporal input answer on the int64 ticks of
+the values: the stub of each of them views the values as their ticks,
+hands them to the kernel of its ticks and views the answer back - the
+mean exact, rounded half to even, where numba's division of durations
+would truncate.
 """
 
 from collections.abc import Callable, Sequence
