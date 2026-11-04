@@ -45,12 +45,6 @@ def aggregate(
     out: AResult | None = None,
     **kwargs: Any,
 ) -> AResult:
-    # the argument the numba implementation honours and this one does not:
-    # there is no compiled loop here to write into an array of the caller -
-    # the argument is taken, so that the signature of every backend is the
-    # same, and it says what it cannot do
-    if out is not None:
-        raise NotImplementedError("out= is only supported by the numba implementation")
     return _aggregate_wrap(
         _dispatch,
         group_idx,
@@ -61,6 +55,7 @@ def aggregate(
         order=order,
         dtype=dtype,
         axis=axis,
+        out=out,
         **kwargs,
     )
 

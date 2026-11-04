@@ -965,11 +965,19 @@ def _aggregate_wrap(
     order: RavelOrder = "C",
     dtype: npt.DTypeLike | None = None,
     axis: int | None = None,
+    out: AResult | None = None,
     len_counts_values: bool = False,
     **kwargs: Any,
 ) -> AResult:
     """The answer of one call of a numpy based backend, and the fill value it
     resolved."""
+    # the argument the numba implementation honours and the numpy based ones
+    # do not: there is no compiled loop here to write into an array of the
+    # caller - the argument is taken, so that the signature of every backend
+    # is the same, and it says what it cannot do
+    if out is not None:
+        raise NotImplementedError("out= is only supported by the numba implementation")
+
     iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
     group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
 
