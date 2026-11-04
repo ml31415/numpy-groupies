@@ -11,20 +11,22 @@ import numpy.typing as npt
 from numpy_groupies.aggregate_numpy.ops import _dispatch
 from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
-    check_topk_input,
-    check_topk_shape,
-    func_argument_default,
     resolve_fill_value,
 )
 from numpy_groupies.nptools import check_dtype, check_fill_value, check_nton_shape, input_validation
 from numpy_groupies.registry import (
     FuncName,
     Registry,
+    func_argument_default,
     missing_impl_error,
 )
 from numpy_groupies.temporal import is_own_function, is_temporal_input
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
-from numpy_groupies.validation import is_scalar_input
+from numpy_groupies.validation import (
+    check_topk_input,
+    check_topk_shape,
+    is_scalar_input,
+)
 
 
 def numpy_fallback(

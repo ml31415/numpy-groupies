@@ -30,8 +30,6 @@ from numpy_groupies.aggregate_numba.mt import (
 )
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
 from numpy_groupies.common import (
-    check_topk_input,
-    check_topk_shape,
     resolve_fill_value,
 )
 from numpy_groupies.nptools import (
@@ -55,7 +53,11 @@ from numpy_groupies.registry import (
     funcs_no_separate_nan,
 )
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
-from numpy_groupies.validation import is_scalar_input
+from numpy_groupies.validation import (
+    check_topk_input,
+    check_topk_shape,
+    is_scalar_input,
+)
 
 # input dtypes for which the 'sum' output dtype depends on the input length
 # (the overflow guesses in resolve_output_dtype)

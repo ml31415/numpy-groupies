@@ -438,6 +438,19 @@ def func_extras(name: str) -> tuple[tuple[str, str, Any], ...]:
     return FUNC_EXTRAS.get(name.removeprefix("nan"), ())
 
 
+def func_argument_default(func: str, argument: str) -> Any:
+    """The default of one argument of a function - the registry holds them.
+
+    The registry is the one place that knows the arguments a function has of
+    its own and their defaults, so a caller that needs one of them asks
+    there instead of writing the number down a second time.
+    """
+    for name, _annotation, default in func_extras(func):
+        if name == argument:
+            return default
+    raise KeyError(f"{func!r} has no argument {argument!r}")
+
+
 class DefaultFillValue:
     """Sentinel for ``fill_value``, asking for the function specific default."""
 

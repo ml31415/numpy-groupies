@@ -14,7 +14,7 @@ the input of a call in ``numpy_groupies.validation``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from numpy_groupies.registry import (
     DEFAULT_FILL_VALUE,
@@ -23,7 +23,6 @@ from numpy_groupies.registry import (
     fill_value_key,
     forced_float_types,
     forced_real_float_types,
-    func_extras,
 )
 from numpy_groupies.validation import (
     check_filling_with_none,
@@ -211,46 +210,3 @@ def resolve_fill_value(
         # and filling with nan+0j would make the backends disagree
         value = nan_of(dtype)
     return list(value) if isinstance(value, list) else value
-
-
-# ---------------------------------------------------------------------------
-# the rules of the topk
-#
-# The topk is the only function of the package that answers a row per group
-# instead of one value per group, and the only one that has no place for a
-# group index of more than one dimension.  The two backends run their own
-# entry points and never each other's, so the rules live here - one place for
-# both of them, and one place to change them in.
-
-TOPK_NEEDS_FLAT_GROUP_IDX = "the topk needs a flat group index and a size that is a number"
-
-
-def func_argument_default(func: str, argument: str) -> Any:
-    """The default of one argument of a function - the registry holds them.
-
-    The registry is the one place that knows the arguments a function has of
-    its own and their defaults, so a caller that needs one of them asks
-    there instead of writing the number down a second time.
-    """
-    for name, _annotation, default in func_extras(func):
-        if name == argument:
-            return default
-    raise KeyError(f"{func!r} has no argument {argument!r}")
-
-
-def check_topk_input(ndim_idx: int, size: Any, axis: int | None) -> None:
-    """The input the topk cannot take: a group index of more than one
-    dimension, an axis to aggregate along, and a size that is a sequence.
-
-    A group index of more than one dimension names its groups in more than one
-    way, and the answer of the topk is a matrix with a row per group - the
-    unravelling of such an index has no place in it.
-    """
-    if ndim_idx > 1 or axis is not None or isinstance(size, tuple):
-        raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX)
-
-
-def check_topk_shape(ret: Any, size: int, k: int) -> None:
-    """The shape the answer of the topk has: a row per group, k columns."""
-    if ret.shape != (size, k):
-        raise ValueError(f"the topk of {size} groups with k={k} has the shape {ret.shape}")
