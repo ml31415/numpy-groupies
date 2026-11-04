@@ -197,7 +197,7 @@ def njit_stable(
             # directory - where it survives the uninstallation and leaves a
             # broken installation behind (numba #9312).
             cache_path = numba_cache_dir()
-            os.makedirs(cache_path, exist_ok=True)
+            cache_path.mkdir(parents=True, exist_ok=True)
             disp._cache._cache_path = cache_path
             disp._cache._cache_file = _ProcessSafeCacheFile(
                 cache_path=cache_path,

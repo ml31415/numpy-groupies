@@ -12,7 +12,6 @@ cached next to their source.
 """
 
 import os
-import pathlib
 import subprocess
 import sys
 
@@ -22,20 +21,20 @@ import numpy_groupies
 from numpy_groupies.cache import numba_cache_dir, package_dir, purge_cache
 from numpy_groupies.tests.test_numba import _walk_dispatchers
 
-PACKAGE = pathlib.Path(package_dir())
+PACKAGE = package_dir()
 
 
 def test_the_cache_directory_is_the_one_of_the_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("NUMBA_CACHE_DIR", str(tmp_path))
-    assert numba_cache_dir() == str(tmp_path / "numpy_groupies")
+    assert numba_cache_dir() == tmp_path / "numpy_groupies"
 
 
 def test_the_cache_directory_is_the_user_wide_one_without_the_environment(monkeypatch):
     monkeypatch.delenv("NUMBA_CACHE_DIR", raising=False)
     path = numba_cache_dir()
     # the directory of the package under the cache directory of the user
-    assert path.endswith(os.path.join("numba", "numpy_groupies"))
-    assert os.path.isabs(path)
+    assert path.parts[-2:] == ("numba", "numpy_groupies")
+    assert path.is_absolute()
 
 
 def test_purge_cache_removes_the_cache_and_the_leftovers_in_the_source_tree(monkeypatch, tmp_path):
@@ -43,7 +42,7 @@ def test_purge_cache_removes_the_cache_and_the_leftovers_in_the_source_tree(monk
     # that do so get in each other's way under xdist
     monkeypatch.setenv("NUMBA_CACHE_DIR", str(tmp_path))
     # the cache of the package
-    cache = pathlib.Path(numba_cache_dir())
+    cache = numba_cache_dir()
     cache.mkdir(parents=True)
     (cache / "a.nbi").write_text("index")
     (cache / "a.1.nbc").write_text("code")
