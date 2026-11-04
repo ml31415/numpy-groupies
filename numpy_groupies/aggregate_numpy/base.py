@@ -20,7 +20,7 @@ from numpy_groupies.registry import (
     func_argument_default,
     missing_impl_error,
 )
-from numpy_groupies.temporal import is_own_function, is_temporal_input
+from numpy_groupies.temporal import is_temporal_input
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import (
     check_topk_input,
@@ -59,7 +59,6 @@ def _aggregate_base(
     axis: int | None = None,
     _dispatch: Registry = _dispatch,
     len_counts_values: bool = False,
-    temporal: Callable[..., tuple[AResult, AFillValue]] | None = None,
     **kwargs: Any,
 ) -> AResult:
     iv = input_validation(group_idx, a, size=size, order=order, axis=axis, func=func)
@@ -78,23 +77,25 @@ def _aggregate_base(
         # as a callable of the caller's own
         funcname, op = _dispatch.custom(func)
     # datetime64 and timedelta64 run on their int64 ticks - the temporal
-    # wrapper takes the input apart, refuses what numpy refuses, and answers
-    # with a temporal value.  Only the functions of the package go through it:
-    # a callable of the caller's own defines its own semantics and sees the
-    # values as they are.  The numpy functions that mean the same thing are
-    # aliases of the functions of the package, so np.mean is the mean of the
-    # package and gets its answer.  The wrapper is put together by the
-    # caller of this module - it needs the answers of the backend, and only
-    # the backend has them.
-    if temporal is not None and is_own_function(funcname) and is_temporal_input(a):
-        ret, fill_value = temporal(
-            cast("str", funcname),
+    # operation of the function takes the input apart, refuses what numpy
+    # refuses, and answers with a temporal value.  Only the functions of the
+    # package go through it: a callable of the caller's own defines its own
+    # semantics and sees the values as they are.  The numpy functions that
+    # mean the same thing are aliases of the functions of the package, so
+    # np.mean is the mean of the package and gets its answer.  The temporal
+    # operation is the other half of the operation of the function, and the
+    # registry holds it beside the numeric one.
+    temporal_op = _dispatch.temporal(funcname) if isinstance(funcname, str) else None
+    if temporal_op is not None and is_temporal_input(a):
+        ret, fill_value = temporal_op(
             group_idx,
             cast("AValue", a),
             flat_size,
             fill_value,
             dtype,
-            kwargs,
+            order=order,
+            axis=axis,
+            **kwargs,
         )
     else:
         if op is None:

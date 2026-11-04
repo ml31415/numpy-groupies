@@ -110,11 +110,7 @@ from numpy_groupies.registry import (
     funcs_collecting,
     missing_impl_error,
 )
-from numpy_groupies.temporal import (
-    _temporal_aggregation,
-    is_own_function,
-    is_temporal_input,
-)
+from numpy_groupies.temporal import is_temporal_input
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import EMPTY_GROUP_IDX, EXACT_FLOAT64_INTEGER_LIMIT
 
@@ -142,14 +138,17 @@ def aggregate(
         funcname, op = _dispatch.custom(func)
 
     # datetime64 and timedelta64 run on their int64 ticks - the temporal
-    # wrapper takes the input apart, refuses what numpy refuses, and answers
-    # with a temporal value.  Only the functions of the package go through it:
-    # a callable of the caller's own defines its own semantics and sees the
-    # values as they are.  The numpy functions that mean the same thing are
-    # aliases of the functions of the package, so np.mean is the mean of the
-    # package and gets its answer.
-    temporal = is_own_function(funcname) and is_temporal_input(a)
-    if temporal:
+    # operation of the function takes the input apart, refuses what numpy
+    # refuses, and answers with a temporal value.  Only the functions of the
+    # package go through it: a callable of the caller's own defines its own
+    # semantics and sees the values as they are.  The numpy functions that
+    # mean the same thing are aliases of the functions of the package, so
+    # np.mean is the mean of the package and gets its answer.
+    # The temporal operation is the other half of the operation of the
+    # function, and the registry holds it beside the numeric one.
+    temporal_op = _dispatch.temporal(funcname) if isinstance(funcname, str) else None
+    temporal = temporal_op is not None and is_temporal_input(a)
+    if temporal_op is not None and temporal:
         if size is None:
             if not group_idx.size:
                 # the kernels of the operations refuse an empty input as well
@@ -157,132 +156,15 @@ def aggregate(
             # the NaT rows the nan-variants drop would shrink the group count
             # the kernels detect from the labels - pin it before the filter
             size = int(group_idx.max()) + 1
-
-        def temporal_op(name: str) -> Callable[..., AResult]:
-            # the compiled operation of a name, behind the signature the
-            # temporal wrapper calls it with
-            _, kernel = _dispatch[name]
-            if kernel is None:
-                raise missing_impl_error(name)
-
-            def call(
-                group_idx: npt.NDArray[np.integer],
-                values: AValue,
-                size_: int,
-                fill_value: AFillValue = None,
-                dtype: npt.DTypeLike | None = None,
-                **kw: Any,
-            ) -> AResult:
-                return cast(AResult, kernel(group_idx, values, size_, fill_value, order, dtype, axis, **kw))
-
-            return call
-
-        def tick_mean(
-            group_idx: npt.NDArray[np.integer],
-            values: AValue,
-            size_: int,
-            fill_value: AFillValue = None,
-            dtype: npt.DTypeLike | None = None,
-            nan: bool = False,
-            **kw: Any,
-        ) -> AResult:
-            """the compiled mean of the ticks - the deviations from the first
-            value of a group, so the sum of the ticks stays exact"""
-            return cast(
-                AResult,
-                _driver_call(averaging.tick_mean.nan if nan else averaging.tick_mean.plain)(
-                    group_idx,
-                    values,
-                    size_,
-                    np.dtype(np.int64),
-                    np.dtype(np.int64),
-                    fill_value,
-                    # the sample spacing and the quantile are no argument of
-                    # the tick mean - the driver of the plain variant takes
-                    # them and leaves them alone
-                    0.0,
-                    0.0,
-                ),
-            )
-
-        def tick_median(
-            group_idx: npt.NDArray[np.integer],
-            values: AValue,
-            size_: int,
-            fill_value: AFillValue = None,
-            dtype: npt.DTypeLike | None = None,
-            nan: bool = False,
-            **kw: Any,
-        ) -> AResult:
-            """the compiled median of the ticks - the exact middle of every
-            group, where the numeric kernel promotes to float64"""
-            return cast(
-                AResult,
-                _driver_call(specials.tick_median.nan if nan else specials.tick_median.plain)(
-                    group_idx,
-                    values,
-                    size_,
-                    np.dtype(np.int64),
-                    np.dtype(np.int64),
-                    fill_value,
-                    # the sample spacing and the quantile are no argument of
-                    # the tick median - the driver of the plain variant takes
-                    # them and leaves them alone
-                    0.0,
-                    0.0,
-                ),
-            )
-
-        def tick_quantile(
-            group_idx: npt.NDArray[np.integer],
-            values: AValue,
-            size_: int,
-            fill_tick: int,
-            fraction: float,
-            method: str = "linear",
-        ) -> AResult:
-            """the compiled quantile of the ticks - numpy's rule of the
-            interpolation, on the ticks of the values
-
-            All five methods of numpy run in the kernel: the branch on the
-            method happens once per group, and a group costs far more than
-            the branch.  The NaT rows are already gone in the nan variants -
-            the wrapper drops them - so the plain kernel is the one to call.
-            """
-            if method not in QUANTILE_METHODS:
-                raise ValueError(f"unknown interpolation method '{method}' - use one of {sorted(QUANTILE_METHODS)}")
-            return cast(
-                AResult,
-                _driver_call(specials.tick_quantile.plain)(
-                    group_idx,
-                    values,
-                    size_,
-                    np.dtype(np.int64),
-                    np.dtype(np.int64),
-                    fill_tick,
-                    # the sample spacing is no argument of the tick quantile -
-                    # the driver of the plain variant takes it and leaves it
-                    # alone
-                    0.0,
-                    fraction,
-                    method,
-                ),
-            )
-
-        ret, fill_value = _temporal_aggregation(
-            temporal_op,
-            tick_mean,
-            tick_median,
-            tick_quantile,
-            cast("str", funcname),
+        ret, fill_value = temporal_op(
             group_idx,
             cast("AValue", a),
             cast("int", size),
             fill_value,
             dtype,
-            kwargs,
-            # the compiled kernels take the temporal values as they are
-            native=True,
+            order=order,
+            axis=axis,
+            **kwargs,
         )
 
     # numba has no float16: the values survive the widening cast to float32
@@ -299,11 +181,9 @@ def aggregate(
     if op is None:
         # a function that is known but not implemented here
         raise missing_impl_error(funcname)
-    if temporal:
-        # the temporal wrapper has answered - the mean, the median and the
+    if not temporal:
+        # the temporal operation has answered - the mean, the median and the
         # quantiles of temporal input compute on their own, exact
-        pass
-    else:
         if (
             isinstance(funcname, str)
             and funcname in ("mean", "nanmean")
@@ -353,7 +233,7 @@ def aggregate(
             )
         out[...] = ret
         return out
-    return ret
+    return cast("AResult", ret)
 
 
 aggregate.__doc__ = (

@@ -11,7 +11,7 @@ registered operation, so that ``aggregate()`` resolves with a single lookup.
 """
 
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import partial
 from typing import Any, TypeAlias, cast
 
@@ -33,6 +33,7 @@ from numpy_groupies.common import (
     resolve_fill_value,
 )
 from numpy_groupies.nptools import (
+    QUANTILE_METHODS,
     aliasing,
     check_dtype,
     check_fill_value,
@@ -51,7 +52,9 @@ from numpy_groupies.registry import (
     custom_callable,
     func_extras,
     funcs_no_separate_nan,
+    function_names,
 )
+from numpy_groupies.temporal import build_temporal_op, call_with_order
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import (
     TOPK_NEEDS_FLAT_GROUP_IDX,
@@ -204,6 +207,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             fill_value: AScalar,
             ddof: float,
             q: float,
+            method: str = "linear",
         ) -> Any:
             if mt_driver is not None and group_idx.size >= min_values:
                 # the number of the threads is asked of every call: a number
@@ -233,6 +237,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             fill_value: AScalar,
             ddof: float,
             q: float,
+            method: str = "linear",
         ) -> Any:
             if mt_driver is not None and group_idx.size >= min_values:
                 n_threads = mt_thread_count()
@@ -279,6 +284,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             fill_value: AScalar,
             ddof: float,
             q: float,
+            method: str = "linear",
         ) -> Any:
             if mt_driver is not None and group_idx.size >= min_values:
                 n_threads = mt_thread_count()
@@ -299,6 +305,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
         fill_value: AScalar,
         ddof: float,
         q: float,
+        method: str = "linear",
     ) -> Any:
         if mt_driver is not None and group_idx.size >= min_values:
             n_threads = mt_thread_count()
@@ -334,6 +341,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         axis: int | None = None,
         ddof: float = 0,
         q: float = 0.5,
+        method: str = "linear",
         **kwargs: Any,
     ) -> AResult:
         # dtypes the compiled driver cannot handle, handed to the numpy twin
@@ -386,6 +394,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
                     _driver_fill(handle, plan_fill),
                     ddof,
                     q,
+                    method,
                 )
                 if handle.post is not None:
                     ret = handle.post(ret, group_idx, plan_fill)
@@ -436,6 +445,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
             _driver_fill(handle, fill_value),
             ddof,
             q,
+            method,
         )
         if handle.post is not None:
             # the driver assembled something else - the post hook makes it the
@@ -849,8 +859,110 @@ def get_ops() -> dict[str, Callable[..., AResult]]:
 
 _op_dict = get_ops()
 
+# the operations of the backend on the int64 ticks of temporal values - the
+# mean, the median and the quantile, whose numeric kernels are not exact on
+# the ticks: the mean of a float64 rounds, the median of an int64 promotes
+# to float64, and the quantile of the backend interpolates linearly only.
+# They are built like every other operation of the backend, out of the
+# compiled kernels of the ticks.
+_TICK_TABLE = (
+    ("mean", averaging.tick_mean),
+    ("median", specials.tick_median),
+    ("quantile", specials.tick_quantile),
+)
+
+
+def _tick_quantile_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
+    """The quantile of the ticks refuses an unknown method of the
+    interpolation.
+
+    All five methods of numpy run in the kernel: the branch on the method
+    happens once per group, and a group costs far more than the branch.  A
+    method numpy does not know is refused by name.
+    """
+
+    def quantile_op(
+        group_idx: npt.NDArray[np.integer],
+        a: AValue,
+        size: int | tuple[int, ...] | npt.NDArray[np.integer] | None = None,
+        fill_value: AFillValue = DEFAULT_FILL_VALUE,
+        order: RavelOrder = "C",
+        dtype: npt.DTypeLike | None = None,
+        axis: int | None = None,
+        q: float = 0.5,
+        method: str = "linear",
+        **kwargs: Any,
+    ) -> AResult:
+        if method not in QUANTILE_METHODS:
+            raise ValueError(f"unknown interpolation method '{method}' - use one of {sorted(QUANTILE_METHODS)}")
+        return cast(AResult, op(group_idx, a, size, fill_value, order, dtype, axis, q=q, method=method, **kwargs))
+
+    return quantile_op
+
+
+def get_tick_ops() -> dict[str, Callable[..., AResult]]:
+    """The operations of the backend on the int64 ticks of temporal values.
+
+    One operation per function name, built by the same factory as every
+    other operation of the backend - so that they take the same arguments,
+    resolve their dtype and their fill value the same way, and run their
+    compiled kernel the same way.
+    """
+    ops: dict[str, Callable[..., AResult]] = {}
+    for funcname, pair in _TICK_TABLE:
+        ops[funcname] = build_aggregate_op("tick_" + funcname, pair.plain)
+        ops["nan" + funcname] = build_aggregate_op("tick_" + funcname, pair.nan)
+    # the quantile of the ticks knows the five methods of numpy and refuses
+    # the others by name
+    for name in ("quantile", "nanquantile"):
+        ops[name] = _tick_quantile_arguments(ops[name])
+    # the percentile is the quantile in percent - the temporal operation
+    # scales the argument of the percentile down before it hands it to the
+    # operation of the ticks
+    ops["percentile"] = ops["quantile"]
+    ops["nanpercentile"] = ops["nanquantile"]
+    return ops
+
+
+_tick_ops = get_tick_ops()
+
+
+def get_temporal_ops(
+    op_dict: Mapping[str, Callable[..., AResult]],
+    tick_ops: Mapping[str, Callable[..., AResult]],
+) -> dict[str, Callable[..., tuple[AResult, AFillValue]]]:
+    """The temporal operation of every function of the backend.
+
+    One operation per function name, built like the numeric ones: the
+    policy of the function and the operations of the backend, composed into
+    the operation that answers the function for the datetime64 and the
+    timedelta64 input.  The compiled kernels of this backend take the
+    temporal values as they are, so they are the native operation of the
+    functions that have one.
+    """
+
+    def resolve(name: str) -> Callable[..., AResult] | None:
+        return op_dict.get(name)
+
+    ops: dict[str, Callable[..., tuple[AResult, AFillValue]]] = {}
+    for name in function_names():
+        ops[name] = build_temporal_op(
+            name,
+            op_dict.get(name),
+            tick_op=tick_ops.get(name),
+            # the compiled kernels of this backend take the temporal values
+            # as they are
+            native=True,
+            call=call_with_order,
+            resolve=resolve,
+        )
+    return ops
+
+
+_temporal_ops = get_temporal_ops(_op_dict, _tick_ops)
+
 # alias (string or callable) -> (canonical name, wrapper function), every alias
 # of every known function and so one dict lookup on the call path - names this
 # backend has no wrapper for come along holding None, so the lookup answers that
 # question too instead of a second table having to be asked
-_dispatch = Registry(_op_dict, aliasing, _custom_operation)
+_dispatch = Registry(_op_dict, aliasing, _custom_operation, _temporal_ops)

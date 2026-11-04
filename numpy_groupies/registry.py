@@ -236,6 +236,12 @@ class Registry(dict[str | Callable[..., object], Resolved]):
     key of a dict at all - an object that defines ``__eq__`` without
     ``__hash__`` - is answered by ``custom``, which the caller reaches when
     the subscript raises.
+
+    The temporal operations of the backend live in the registry as well: the
+    operation of a function for the datetime64 and timedelta64 input, built
+    like the numeric one and put beside it.  They are reached by their name
+    (``temporal``), and they are no aliases of the public functions - they
+    are the other half of the operation of a function.
     """
 
     def __init__(
@@ -243,9 +249,11 @@ class Registry(dict[str | Callable[..., object], Resolved]):
         op_dict: Mapping[str, Callable[..., Any]],
         aliasing: Mapping[str | Callable[..., object], str],
         custom: Callable[..., Resolved],
+        temporal_op_dict: Mapping[str, Callable[..., Any]] | None = None,
     ) -> None:
         super().__init__({alias: Resolved(name, op) for alias, (name, op) in build_dispatch(op_dict, aliasing).items()})
         self._custom_factory = custom
+        self._temporal_ops: dict[str, Callable[..., Any]] = dict(temporal_op_dict or {})
 
     def __missing__(self, key: Any) -> Resolved:
         """The operation of a func that names no known function.
@@ -263,6 +271,15 @@ class Registry(dict[str | Callable[..., object], Resolved]):
         function either, and is answered by the same factory.
         """
         return self._custom_factory(func)
+
+    def temporal(self, name: str) -> Callable[..., Any] | None:
+        """The operation of a function for temporal input.
+
+        It is None where the backend has none - the function is then answered
+        by its numeric operation, which is the right one for a backend whose
+        kernels take the temporal values as they are.
+        """
+        return self._temporal_ops.get(name)
 
 
 default_fill_values: dict[str, AFillValue] = {

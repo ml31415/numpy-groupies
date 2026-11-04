@@ -4,10 +4,16 @@ Everything both numpy based backends need to know about datetime64 and
 timedelta64 input lives here: the functions a dtype refuses (the ones numpy
 refuses itself), the functions whose compiled kernels take the values as
 they are, what a plain reduction does with the NaT of a group and what the
-nan variants leave out, and the fills of the answers.  The backends hand
-their kernels to ``_temporal_aggregation`` - the numpy one its tick mean
-and its exact tick median, the numba one the compiled forms of both - and
-the wrapper answers for them.
+nan variants leave out, and the fills of the answers.
+
+The temporals are built like the other operations of a backend: one
+operation per function name, composed of the policy of this module and of
+the kernels of the backend, and put into the dispatch of the backend beside
+the numeric ones.  ``build_temporal_op`` is the builder - it takes the
+operation of the backend, the operation of the backend on the int64 ticks
+and the kernel of the backend that takes the temporal values as they are,
+resolves the policy of the function name once, and hands out the operation
+that answers the function for temporal input.
 
 The dtype facts stay in ``nptools``: the kinds of the temporal dtypes.
 The order statistics of the numpy backend live in
@@ -17,6 +23,7 @@ a backend, so both of them reach into this module.
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 import numpy as np
@@ -25,7 +32,7 @@ import numpy.typing as npt
 from numpy_groupies.common import resolve_fill_value
 from numpy_groupies.nptools import exact_integer_group_mean
 from numpy_groupies.registry import DEFAULT_FILL_VALUE, missing_impl_error
-from numpy_groupies.typing import AFillValue, AResult, AValue
+from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
 
 # ---------------------------------------------------------------------------
 # datetime64 and timedelta64 support
@@ -160,19 +167,6 @@ def is_temporal_input(a: Any) -> bool:
     return kind is not None and kind in TEMPORAL_KINDS
 
 
-def is_own_function(funcname: str | Callable[..., Any]) -> bool:
-    """Whether the func names one of the functions of the package.
-
-    Every alias of the package resolves to the name of its function - the
-    names themselves, and the numpy functions that mean the same thing
-    (``np.mean`` is the mean of the package, ``np.max`` its maximum, and so
-    on).  A callable of the caller's own does not resolve to a name, and it
-    defines its own semantics: it sees the values as they are, the temporal
-    dtypes included.
-    """
-    return isinstance(funcname, str)
-
-
 def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:
     """The fill value of a temporal result, as the value of its dtype.
 
@@ -273,19 +267,686 @@ def _per_group_running_mask(group_idx: npt.NDArray[np.integer], nat: npt.NDArray
     return cast("npt.NDArray[np.bool_]", ranks >= first_nat[group_idx])
 
 
-def _temporal_aggregation(
-    resolve: Callable[[str], Callable[..., AResult]],
-    tick_mean: Callable[..., AResult],
-    tick_median: Callable[..., AResult],
-    tick_quantile: Callable[..., AResult],
+# ---------------------------------------------------------------------------
+# the operations of a backend, and the way they are called
+#
+# The two backends have two conventions: the numpy one takes the size, the
+# fill value and the dtype behind the values, the numba one takes the order
+# of the flattening and the axis as well.  The builder of a temporal
+# operation is told which convention it is talking to, so that the policy
+# of this module does not have to know which backend it is serving.
+
+
+def call_by_keyword(
+    op: Callable[..., AResult],
+    group_idx: npt.NDArray[np.integer],
+    values: AValue,
+    size: int,
+    fill_value: AFillValue,
+    dtype: npt.DTypeLike | None,
+    order: RavelOrder,
+    axis: int | None,
+    **kwargs: Any,
+) -> AResult:
+    """The call of an operation of the numpy backend."""
+    return op(group_idx, values, size, fill_value=fill_value, dtype=dtype, **kwargs)
+
+
+def call_with_order(
+    op: Callable[..., AResult],
+    group_idx: npt.NDArray[np.integer],
+    values: AValue,
+    size: int,
+    fill_value: AFillValue,
+    dtype: npt.DTypeLike | None,
+    order: RavelOrder,
+    axis: int | None,
+    **kwargs: Any,
+) -> AResult:
+    """The call of an operation of the numba backend: the order of the
+    flattening and the axis come between the fill value and the dtype."""
+    return op(group_idx, values, size, fill_value, order, dtype, axis, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# the policy of one function
+#
+# The decisions the policy makes are the same for every call of a function -
+# what numpy refuses for it, whether its kernel takes the temporal values as
+# they are, what the NaT does to its answer and whether the answer is a
+# temporal value at all.  They are taken when the operation is built, so
+# that the call itself holds no questions about the function it answers.
+
+
+@dataclass(frozen=True)
+class _Policy:
+    """What the policy of one function says about temporal input."""
+
+    # the name of the function and the name of its plain form
+    funcname: str
+    base: str
+    # the operation of the backend, the one on the int64 ticks of the values
+    # and the one that takes the temporal values as they are
+    op: Callable[..., AResult]
+    tick_op: Callable[..., AResult] | None
+    native_op: Callable[..., AResult] | None
+    # the way the operation of the backend is called
+    call: Callable[..., AResult]
+    # what numpy refuses for a datetime64 and for a timedelta64
+    rejects_datetime: bool
+    rejects_timedelta: bool
+    # whether the kernel of the backend takes the temporal values as they are
+    is_native: bool
+    # whether the rows of the NaT are left out, and whether the rows of the
+    # nan-variants of the argreductions stand in for a sentinel
+    drops_nat: bool
+    swaps_nat: bool
+    # the question the function asks, if it asks one
+    flag: str | None
+    # what the NaT does to the answer of the kernel
+    patch: str | None
+    # whether the answer comes from the operation on the ticks
+    computes_on_ticks: bool
+    # whether the answer is a temporal value, and whether the function fills
+    # with the NaT of its unit
+    value_result: bool
+    fill_is_nat: bool
+    # whether the function collects the values of its groups
+    is_array: bool
+
+
+def _missing_operation(funcname: str) -> Callable[..., AResult]:
+    """The operation of a function the backend does not implement.
+
+    The policy of the temporal input refuses some of the functions before
+    they are answered at all - numpy refuses the sum of a datetime64 as
+    well - so the refusal comes first, and only then the complaint that the
+    backend has no operation for the function.
+    """
+
+    def missing(*args: Any, **kwargs: Any) -> AResult:
+        raise missing_impl_error(funcname)
+
+    return missing
+
+
+def build_temporal_op(
     funcname: str,
+    op: Callable[..., AResult] | None,
+    tick_op: Callable[..., AResult] | None = None,
+    native: bool = False,
+    call: Callable[..., AResult] = call_by_keyword,
+    resolve: Callable[[str], Callable[..., AResult] | None] | None = None,
+) -> Callable[..., tuple[AResult, AFillValue]]:
+    """The operation of one function for temporal input.
+
+    ``op`` is the operation of the backend for the function - the operation
+    that answers the numeric values.  ``tick_op`` is the operation of the
+    backend on the int64 ticks of the values: the functions whose numeric
+    kernel is not exact on the ticks (the mean, the median and the
+    quantile) have one of their own, and the others do not - their numeric
+    kernel answers the ticks as they are.
+
+    ``native`` says that the kernel of the backend takes the temporal values
+    as they are - the compiled kernels of the numba backend order them, find
+    their NaT and add the durations on their own, in one pass over the data.
+    A backend without such a kernel (the numpy one works on the ticks) says
+    no, and every function of it is answered on the ticks.
+
+    ``call`` is the way the operations of the backend are called - the two
+    backends have two conventions, and the policy of this module does not
+    have to know which one it is serving.
+
+    The operation that comes out of this builder has the signature of the
+    other operations of the backend: the values, the size, the fill value
+    and the dtype - and the arguments of the function itself behind them.
+    """
+    base = funcname.removeprefix("nan")
+    is_nan = funcname.startswith("nan")
+    if op is None:
+        # the backend does not implement the function - the policy of the
+        # temporal input still refuses what numpy refuses for it
+        op = _missing_operation(funcname)
+    # the kernel of the backend that takes the values as they are - only the
+    # functions of TEMPORAL_NATIVE_FUNCS have one that can
+    is_native = native and base in TEMPORAL_NATIVE_FUNCS
+    # the nan-variants of the argreductions keep every row - the positions
+    # they name are the ones of the input - so the NaT rows stand in as the
+    # extreme tick the reduction skips
+    swaps_nat = is_nan and base in ("argmin", "argmax")
+    # the nan-variants skip NaT like they skip nan - the plain ones
+    # propagate it, and the cumulative ones carry it through their group
+    # like numpy does.  The nan mean does not filter them: the tick mean
+    # leaves the NaT of a group out on its own, and filtering the rows would
+    # cost a copy of the data.  The nan median filters them in its own
+    # backend: the kernel of the numba one leaves the NaT tick out, the
+    # exact one of the numpy one drops its rows.  The topk has no nan
+    # variant, and it leaves the NaT out as well: a NaT is neither the
+    # largest nor the smallest value of a group, and the sort of a group puts
+    # it last.
+    drops_nat = (
+        is_nan and base not in ("cumsum", "mean") and not (base == "median" and tick_op is not None)
+    ) or base == "topk"
+    # what the NaT does to the answer: the plain argmin finds the NaT on its
+    # own - its tick is the smallest one - while the plain argmax never
+    # picks it, and numpy answers the position of the first NaT of the
+    # group.  A single NaT poisons the sum, the maximum and - for the
+    # durations - the middles of its whole group.  The sort puts the NaT to
+    # the end of its group although it compares as the smallest value
+    # everywhere else (numpy/numpy#12629, fixed by PR numpy/numpy#12658),
+    # and the accumulation carries the NaT through to the end of its group,
+    # nancumsum included.
+    if base in ("argmin", "argmax"):
+        patch = "argmax" if base == "argmax" else None
+    elif base in TEMPORAL_NAT_POISON and not is_nan and not (native and base == "mean"):
+        # the mean of the native backend is not among them: its kernel
+        # poisons the group on its own, and the numpy backend poisons
+        # through the patch
+        patch = "poison"
+    elif base == "sort":
+        patch = "sort"
+    elif base in ("cumsum", "cummax", "cummin") and not is_native:
+        # the native backend keeps its rows: its kernels carry the NaT on
+        # their own
+        patch = "running"
+    else:
+        patch = None
+    # the questions
+    flag = base if base in ("all", "any", "allnan", "anynan") else None
+    # the answer of the mean, the median and the quantiles comes from the
+    # operation on the ticks
+    computes_on_ticks = base in ("mean", "median", "quantile", "percentile")
+    policy = _Policy(
+        funcname=funcname,
+        base=base,
+        op=op,
+        tick_op=tick_op,
+        native_op=op if is_native else None,
+        call=call,
+        rejects_datetime=base in TEMPORAL_DATETIME_REJECTED,
+        rejects_timedelta=base in TEMPORAL_TIMEDELTA_REJECTED,
+        is_native=is_native,
+        drops_nat=drops_nat,
+        swaps_nat=swaps_nat,
+        flag=flag,
+        patch=patch,
+        computes_on_ticks=computes_on_ticks,
+        value_result=base in TEMPORAL_VALUE_FUNCS,
+        fill_is_nat=base in TEMPORAL_NAT_FILL,
+        is_array=base == "array",
+    )
+
+    def temporal_op(
+        group_idx: npt.NDArray[np.integer],
+        a: AValue,
+        size: int,
+        fill_value: AFillValue = DEFAULT_FILL_VALUE,
+        dtype: npt.DTypeLike | None = None,
+        order: RavelOrder = "C",
+        axis: int | None = None,
+        **kwargs: Any,
+    ) -> tuple[AResult, AFillValue]:
+        return _temporal_aggregation(policy, group_idx, a, size, fill_value, dtype, kwargs, order, axis, resolve)
+
+    temporal_op.__name__ = f"temporal_{funcname}"
+    temporal_op.__qualname__ = f"temporal_{funcname}"
+    temporal_op.__doc__ = (
+        f"The {funcname} of every group of temporal values - the answer of the ticks, in the unit of the input."
+    )
+    return temporal_op
+
+
+# ---------------------------------------------------------------------------
+# the engine of a temporal aggregation
+#
+# The stages of the call, one per concern: the refusal of what numpy
+# refuses, the scalar, the kernel that takes the values as they are, the
+# rows of the NaT, the questions, the patches of the NaT, the answer of the
+# operation on the ticks, the answer of the kernel, and the view back into
+# the unit of the input.
+
+
+@dataclass
+class _Patches:
+    """The patches the NaT of the values puts on the answer of the kernels.
+
+    A NaT poisons the group it is in, the argreductions name its position,
+    the accumulations carry it through to the end of their group and the
+    sort stands a sentinel in for it.  The patches are gathered here, so
+    that the stage that answers and the stage that repairs the answer stay
+    apart.
+    """
+
+    # the groups a NaT poisons
+    nat_groups: npt.NDArray[np.bool_] | None = None
+    # the position of the first NaT of every group - the argmax names it
+    nat_positions: npt.NDArray[np.integer] | None = None
+    # the positions from the first NaT of their group on
+    running_nat: npt.NDArray[np.bool_] | None = None
+    # whether the largest tick stood in for a NaT while sorting
+    sort_nat_restore: bool = False
+
+
+@dataclass
+class _Context:
+    """The state of one temporal call: the values as they are now, and the
+    answers of the caller."""
+
+    policy: _Policy
+    group_idx: npt.NDArray[np.integer]
+    a: AValue
+    values: npt.NDArray[Any]
+    a_dtype: np.dtype
+    size: int
+    fill_value: AFillValue
+    user_dtype: np.dtype | None
+    kwargs: dict[str, Any]
+    order: RavelOrder
+    axis: int | None
+    # the ticks of the values - the int64 the kernels work on
+    ticks: npt.NDArray[np.int64] = field(init=False)
+    # the answer of the kernel, before the patches of the NaT
+    result: AResult | None = None
+    # the groups that hold nothing but the missing value - the argreductions
+    # of the nan variants have no position to name for them
+    empty_groups: npt.NDArray[np.bool_] | None = None
+    # what the NaT does to the answer of the kernel
+    patches: _Patches = field(default_factory=_Patches)
+
+    def __post_init__(self) -> None:
+        self.ticks = self.values.view(np.int64)
+
+    def call(
+        self,
+        op: Callable[..., AResult],
+        values: AValue,
+        fill_value: AFillValue,
+        dtype: npt.DTypeLike | None = None,
+        **kwargs: Any,
+    ) -> AResult:
+        """The call of an operation of the backend."""
+        return self.policy.call(
+            op,
+            self.group_idx,
+            values,
+            self.size,
+            fill_value,
+            dtype,
+            self.order,
+            self.axis,
+            **kwargs,
+        )
+
+
+def _reject_unsupported(ctx: _Context) -> None:
+    """What numpy refuses for temporal input, we refuse as well."""
+    policy = ctx.policy
+    is_datetime = ctx.a_dtype.kind == "M"
+    if (is_datetime and policy.rejects_datetime) or (not is_datetime and policy.rejects_timedelta):
+        raise TypeError(
+            f"aggregate {policy.funcname!r} is not supported for {ctx.a_dtype.name} input - "
+            f"numpy refuses {policy.base} of {'datetime64' if is_datetime else 'timedelta64'} values as well"
+        )
+
+
+def _native_fill_value(ctx: _Context) -> Any:
+    """The fill value of a kernel that takes the temporal values as they are.
+
+    A position or a count is filled with the number of the function, a flag
+    with a bool, the collected values with an object - and every value of
+    the input with the NaT or the zero of the unit.
+    """
+    policy = ctx.policy
+    base = policy.base
+    if base in ("len", "nanlen", "nunique", "nannunique", "argmin", "argmax", "nanargmin", "nanargmax"):
+        return resolve_fill_value(policy.funcname, ctx.fill_value, np.dtype(np.int64))
+    if base in ("allnan", "anynan"):
+        return resolve_fill_value(policy.funcname, ctx.fill_value, np.dtype(np.bool_))
+    if base == "array":
+        return resolve_fill_value(policy.funcname, ctx.fill_value, np.dtype(object))
+    # a value of the input: the fill is the NaT or the zero of the unit
+    return _temporal_fill_value(ctx.fill_value, ctx.a_dtype, base)
+
+
+def _swap_nat_rows(ctx: _Context) -> None:
+    """The swap of the NaT rows of the nan-variants of the argreductions.
+
+    They keep every row - the positions they name are the ones of the
+    input - so the NaT rows stand in as the extreme tick the reduction
+    skips.  A group of nothing but NaT holds no tick of its own after the
+    swap, and is left to the fill value like its float counterpart.
+    """
+    nat = np.isnat(ctx.a)
+    skip = np.iinfo(np.int64).max if ctx.policy.base == "argmin" else NAT_TICK + 1
+    ctx.a = np.where(nat, np.int64(skip), ctx.values.view(np.int64)).view(ctx.a_dtype)
+    # the groups that hold nothing but NaT have no tick to name - the
+    # sentinel above stands in for the NaT of every one of them, and the
+    # reduction would name its position.  They keep the fill value, like
+    # the groups of a nan group of floats that hold nothing but nans.
+    only_nat = _groups_holding(ctx.group_idx, nat, ctx.size)
+    counts = np.bincount(ctx.group_idx, minlength=ctx.size)
+    only_nat &= counts == np.bincount(ctx.group_idx, weights=nat, minlength=ctx.size)
+    ctx.empty_groups = only_nat
+
+
+def _drop_nat_rows(ctx: _Context) -> None:
+    """The NaT rows the nan-variants and the topk leave out.
+
+    The rows are dropped here and the kernel drops the NaT again: the
+    kernels are public entry points of their own, and one that is handed a
+    NaT has to leave it out without the wrapper having prepared anything.
+    """
+    nat = np.isnat(ctx.a)
+    if not nat.any():
+        return
+    good = ~nat
+    ctx.a = cast("npt.NDArray[Any]", ctx.a)[good]
+    ctx.group_idx = ctx.group_idx[good]
+
+
+def _flag_result(
+    ctx: _Context, resolve: Callable[[str], Callable[..., AResult] | None] | None
+) -> tuple[AResult, AFillValue]:
+    """The answer of the functions that ask a question instead of a value.
+
+    The truth of a temporal value is its tick being non-zero and the value
+    not being NaT - a NaT is no value at all - and the missing-value flags
+    are the plain any and all of the NaT mask.
+    """
+    policy = ctx.policy
+    if policy.flag in ("all", "any"):
+        truth: npt.NDArray[np.bool_] = ctx.values.view(np.int64) != 0
+        truth &= ~np.isnat(ctx.values)
+        ret = ctx.call(
+            policy.op,
+            truth,
+            resolve_fill_value(policy.funcname, ctx.fill_value, np.dtype(np.bool_)),
+            **ctx.kwargs,
+        )
+        return cast("AResult", ret), ctx.fill_value
+    # the missing-value flags are the plain any and all of the NaT mask
+    if resolve is None:
+        raise missing_impl_error(policy.funcname)
+    op = resolve("any" if policy.flag == "anynan" else "all")
+    if op is None:
+        raise missing_impl_error(policy.funcname)
+    ret = ctx.call(
+        op,
+        np.isnat(ctx.a),
+        resolve_fill_value("all", ctx.fill_value, np.dtype(np.bool_)),
+        **ctx.kwargs,
+    )
+    return cast("AResult", ret), ctx.fill_value
+
+
+def _nan_patches(ctx: _Context) -> None:
+    """The patches the NaT of the values puts on the answer of the kernels."""
+    policy = ctx.policy
+    patches = ctx.patches
+    if policy.patch == "argmax":
+        nat = np.isnat(ctx.values)
+        if nat.any():
+            patches.nat_groups, patches.nat_positions = _first_true_position_per_group(ctx.group_idx, nat, ctx.size)
+    elif policy.patch == "poison":
+        nat = np.isnat(ctx.values)
+        if nat.any():
+            patches.nat_groups = _groups_holding(ctx.group_idx, nat, ctx.size)
+    elif policy.patch == "sort":
+        # the largest tick stands in for the NaT on the way through the sort,
+        # and the answer turns it back into NaT
+        nat = np.isnat(ctx.values)
+        if nat.any():
+            ctx.ticks = np.where(nat, np.iinfo(np.int64).max, ctx.ticks)
+            patches.sort_nat_restore = True
+    elif policy.patch == "running":
+        nat = np.isnat(ctx.values)
+        if nat.any():
+            patches.running_nat = _per_group_running_mask(ctx.group_idx, nat)
+
+
+def _mean_result(ctx: _Context) -> tuple[npt.NDArray[Any] | None, bool, bool]:
+    """The mean of the values - as a float, or as a tick.
+
+    The float answer is the exact quotient itself, not the rounded tick:
+    the tick mean of the backend measures the deviations from the first
+    value of the group, so the sum of the ticks stays exact and the answer
+    is a tick again - the plain kernel poisons the group of a NaT on its
+    own, the nan one leaves the NaT out.  A backend without a kernel gets
+    the exact mean of this module, which holds the sum of the ticks in
+    python integers.
+
+    The answer of the float is final: it is a float and not a tick, so it
+    is not viewed back into the dtype of the input.
+    """
+    policy = ctx.policy
+    fill_tick = _temporal_fill_tick(ctx.fill_value, ctx.a_dtype, True)
+    if ctx.user_dtype is not None and ctx.user_dtype.kind == "f":
+        mean_idx, mean_ticks = ctx.group_idx, ctx.ticks
+        nat_groups_for_float = None
+        if policy.funcname.startswith("nan"):
+            # the NaT rows have no tick to average - the nan variant leaves
+            # them out, like its kernel does
+            good = ctx.ticks != NAT_TICK
+            mean_idx, mean_ticks = ctx.group_idx[good], ctx.ticks[good]
+        else:
+            # a single NaT poisons its group - the float answer of a group
+            # without a quotient is nan
+            nat = np.isnat(ctx.values)
+            if nat.any():
+                nat_groups_for_float = _groups_holding(ctx.group_idx, nat, ctx.size)
+        computed = cast(
+            "npt.NDArray[Any]",
+            exact_integer_group_mean(mean_idx, mean_ticks, ctx.size, fill_tick, ctx.user_dtype),
+        )
+        if nat_groups_for_float is not None:
+            computed = cast("npt.NDArray[Any]", np.asarray(computed))
+            computed[nat_groups_for_float] = np.nan
+        return computed, True, False
+
+    if policy.tick_op is None:
+        raise missing_impl_error(policy.funcname)
+    try:
+        computed = cast(
+            "npt.NDArray[Any]",
+            ctx.call(policy.tick_op, ctx.ticks, fill_tick, dtype=np.dtype(np.int64), **ctx.kwargs),
+        )
+    except OverflowError:
+        # The values of a group reach from one end of the int64 range to
+        # the other: their sum of deviations leaves the range, and the
+        # kernel refuses the mean rather than wrapping it around silently.
+        # The limb sums of the ticks hold it exactly.
+        if policy.funcname.startswith("nan"):
+            # the nan kernel never sums the NaT ticks - their rows are no
+            # part of its deviations - so the limb sums take the values it
+            # would have averaged
+            good = ctx.ticks != NAT_TICK
+            computed = cast(
+                "npt.NDArray[Any]",
+                exact_integer_group_mean(ctx.group_idx[good], ctx.ticks[good], ctx.size, fill_tick, np.dtype(np.int64)),
+            )
+        else:
+            # a NaT of the group is what may have broken the span of its
+            # deviations - the poison comes back through the patch
+            nat = np.isnat(ctx.values)
+            if nat.any():
+                ctx.patches.nat_groups = _groups_holding(ctx.group_idx, nat, ctx.size)
+            computed = cast(
+                "npt.NDArray[Any]",
+                exact_integer_group_mean(ctx.group_idx, ctx.ticks, ctx.size, fill_tick, np.dtype(np.int64)),
+            )
+    return computed, False, True
+
+
+def _median_result(ctx: _Context) -> tuple[npt.NDArray[Any] | None, bool, bool]:
+    """The middle of the ticks of every group.
+
+    The kernel of the backend selects it in compiled code, a backend
+    without one gets the exact median of this module - the plain variant
+    answers the groups that hold a NaT through the poison of the patch, the
+    nan one leaves the NaT tick out on its own.
+    """
+    policy = ctx.policy
+    if policy.tick_op is None:
+        raise missing_impl_error(policy.funcname)
+    fill_tick = _temporal_fill_tick(ctx.fill_value, ctx.a_dtype, True)
+    computed = cast(
+        "npt.NDArray[Any]",
+        ctx.call(policy.tick_op, ctx.ticks, fill_tick, dtype=np.dtype(np.int64), **ctx.kwargs),
+    )
+    return computed, False, True
+
+
+def _quantile_result(ctx: _Context) -> tuple[npt.NDArray[Any] | None, bool, bool]:
+    """The quantile of the ticks of every group.
+
+    The method of the interpolation is the one the caller names - numpy
+    knows five of them, and the temporal answer follows the one it is
+    given.
+    """
+    policy = ctx.policy
+    if policy.tick_op is None:
+        raise missing_impl_error(policy.funcname)
+    fill_tick = _temporal_fill_tick(ctx.fill_value, ctx.a_dtype, True)
+    fraction = cast("float", ctx.kwargs.get("q", 50.0 if policy.base == "percentile" else 0.5))
+    if policy.base == "percentile":
+        fraction = fraction / 100.0
+    method = cast("str", ctx.kwargs.get("method", "linear"))
+    computed = ctx.call(
+        policy.tick_op,
+        ctx.ticks,
+        fill_tick,
+        dtype=np.dtype(np.int64),
+        q=fraction,
+        method=method,
+    )
+    return cast("npt.NDArray[Any]", computed), False, True
+
+
+def _ticks_result(ctx: _Context) -> tuple[npt.NDArray[Any] | None, bool, bool]:
+    """The answer the wrapper computes itself - the mean, the median and the
+    quantiles, where the ticks make the arithmetic exact.
+
+    The answer is ``None`` for every other function: those are answered by
+    the kernel of their operation.  The second value says whether the
+    answer is the final one (the float mean is), the third whether it is a
+    temporal value - its ticks have to be viewed back.
+    """
+    policy = ctx.policy
+    if not policy.computes_on_ticks:
+        return None, False, policy.value_result
+    if policy.base == "mean":
+        return _mean_result(ctx)
+    if policy.base == "median":
+        return _median_result(ctx)
+    return _quantile_result(ctx)
+
+
+def _array_result(ctx: _Context) -> tuple[AResult, AFillValue]:
+    """The values of every group, back in the dtype they came in."""
+    policy = ctx.policy
+    empty = resolve_fill_value(policy.funcname, ctx.fill_value, np.dtype(object))
+    ret = ctx.call(policy.op, ctx.ticks, empty, **ctx.kwargs)
+    groups = ret if isinstance(ret, np.ndarray) else np.asarray(ret, dtype=object)
+    return (
+        cast("AResult", np.array([np.asarray(one).view(ctx.a_dtype) for one in groups], dtype=object)),
+        ctx.fill_value,
+    )
+
+
+def _kernel_result(ctx: _Context, computed: npt.NDArray[Any] | None, value_result: bool) -> AResult:
+    """The answer of the kernel of the operation.
+
+    The kernels answer in ticks, and the fill value is a tick, for the
+    functions whose answer is a value of the input; the positions, the
+    counts and the flags are answered in their own dtypes, with the fill
+    value of their function.
+    """
+    policy = ctx.policy
+    if computed is not None:
+        return cast("AResult", computed)
+    if value_result:
+        fill_tick = _temporal_fill_tick(ctx.fill_value, ctx.a_dtype, policy.fill_is_nat)
+        return cast(
+            "AResult",
+            ctx.call(policy.op, ctx.ticks, fill_tick, dtype=np.dtype(np.int64), **ctx.kwargs),
+        )
+    out_dtype = ctx.user_dtype if ctx.user_dtype is not None else np.dtype(np.int64)
+    if policy.flag in ("allnan", "anynan"):
+        out_dtype = np.dtype(np.bool_)
+    return cast(
+        "AResult",
+        ctx.call(
+            policy.op,
+            ctx.ticks,
+            resolve_fill_value(policy.funcname, ctx.fill_value, out_dtype),
+            dtype=ctx.user_dtype,
+            **ctx.kwargs,
+        ),
+    )
+
+
+def _patch_result(ctx: _Context) -> AResult:
+    """The answer of the kernels, repaired by the patches of the NaT.
+
+    The accumulation of a group carries a NaT through to its end, the sort
+    turns its sentinel back into a NaT, the poisoned groups answer NaT, the
+    argmax names the position of the first NaT of its group, and the groups
+    that hold nothing but the missing value keep the fill value of their
+    function - they have no position to name.
+    """
+    patches = ctx.patches
+    ret: AResult = cast("AResult", ctx.result)
+    if patches.running_nat is not None:
+        ret = np.asarray(ret)
+        ret[patches.running_nat] = NAT_TICK
+    if patches.sort_nat_restore:
+        # the largest tick stood in for NaT while sorting - hand it back
+        ret = np.asarray(ret)
+        ret[ret == np.iinfo(np.int64).max] = NAT_TICK
+    if patches.nat_groups is not None:
+        ret = np.asarray(ret)
+        if patches.nat_positions is not None:
+            ret[patches.nat_groups] = patches.nat_positions[patches.nat_groups]
+        else:
+            ret[patches.nat_groups] = NAT_TICK
+    if ctx.empty_groups is not None:
+        # the groups that hold nothing but the missing value have no
+        # position to name - they keep the fill value of their function
+        ret = np.asarray(ret)
+        empty_fill = resolve_fill_value(ctx.policy.funcname, ctx.fill_value, np.dtype(np.int64))
+        ret[ctx.empty_groups] = cast("int", empty_fill if empty_fill is not None else -1)
+    return cast("AResult", ret)
+
+
+def _view_result(ret: AResult, a_dtype: np.dtype, user_dtype: np.dtype | None) -> AResult:
+    """The answer of the kernels, turned back into a temporal one.
+
+    The unit of the input is the unit of the answer - unless the caller
+    asks for another one, in which case the ticks are rescaled into it, or
+    for the ticks themselves.
+    """
+    ret = np.asarray(ret)
+    if user_dtype is not None:
+        if user_dtype == np.dtype(np.int64):
+            return cast("AResult", ret)  # the ticks the caller asked for
+        if user_dtype.kind in TEMPORAL_KINDS:
+            # rescale from the unit of the input to the one asked for
+            return cast("AResult", ret.view(a_dtype).astype(user_dtype))
+        return cast("AResult", ret.view(np.int64).astype(user_dtype))
+    return cast("AResult", ret.view(a_dtype))
+
+
+def _temporal_aggregation(
+    policy: _Policy,
     group_idx: npt.NDArray[np.integer],
     a: AValue,
     size: int,
     fill_value: AFillValue,
     dtype: npt.DTypeLike | None,
     kwargs: dict[str, Any],
-    native: bool = False,
+    order: RavelOrder = "C",
+    axis: int | None = None,
+    resolve: Callable[[str], Callable[..., AResult] | None] | None = None,
 ) -> tuple[AResult, AFillValue]:
     """The answer of an aggregation of temporal values, and the fill it used.
 
@@ -295,400 +956,87 @@ def _temporal_aggregation(
     on the int64 ticks of the values, where the arithmetic is exact; and the
     answer is a temporal one, in the unit of the input.
 
-    The operation of the function is resolved through ``resolve``, so that
-    the caller does not have to know whether the wrapper computed the answer
-    itself or the kernel of the operation did.
-
-    ``native`` says that the kernel of the backend takes the temporal values
-    as they are: the compiled kernels of the numba backend order them, find
-    their NaT, and add and accumulate the durations on their own, in one
-    pass over the data, and the wrapper has nothing to prepare for them.
-    The numpy backend works on the ticks, so it leaves the flag alone.
-
-    The mean, the median and the quantile of the ticks are the three answers
-    that no kernel of the package computes on its own - a backend hands them
-    in as ``tick_mean``, ``tick_median`` and ``tick_quantile``: the numba
-    backend has compiled kernels for the first two, whose deviations from
-    the first value of a group and selection of the middle of a block run in
-    one pass, and its quantile goes to the exact path of the numpy backend -
-    whose python integers hold the sum of the ticks of a group and the
-    interpolation of the quantile exactly, where the sum leaves the window
-    float64 represents and no int64 arithmetic holds the product of a tick
-    difference and a fraction.  The kernels take the ``nan`` flag, because
-    the nan variant leaves the NaT of a group out on its own instead of
-    having the rows filtered out before it.
+    The stages of the call are the functions of this module, and the policy
+    of the function - what it refuses, what its kernel takes, what the NaT
+    does to its answer - is resolved when the operation is built.
     """
-
-    def operation(name: str) -> Callable[..., AResult]:
-        """The operation of a name, and the complaint if there is none."""
-        op = resolve(name)
-        if op is None:
-            raise missing_impl_error(name)
-        return op
-
-    base = funcname.removeprefix("nan")
     values = np.asarray(a)
-    a_dtype = values.dtype
-    is_datetime = a_dtype.kind == "M"
-    rejected = TEMPORAL_DATETIME_REJECTED if is_datetime else TEMPORAL_TIMEDELTA_REJECTED
-    if base in rejected:
-        raise TypeError(
-            f"aggregate {funcname!r} is not supported for {a_dtype.name} input - "
-            f"numpy refuses {base} of {'datetime64' if is_datetime else 'timedelta64'} values as well"
-        )
-    user_dtype = np.dtype(dtype) if dtype is not None else None
-
-    # what the NaT of the values does to the answer: the groups it poisons,
-    # the positions it holds, and the running mask of the accumulations
-    nat: npt.NDArray[np.bool_] | None = None
-    nat_groups: npt.NDArray[np.bool_] | None = None
-    nat_positions: npt.NDArray[np.integer] | None = None
-    running_nat: npt.NDArray[np.bool_] | None = None
-    sort_nat_restore = False
-    # the answer the wrapper computes itself (the mean, the median and the
-    # quantiles), and whether it is the final one
-    computed: npt.NDArray[Any] | None = None
-    computed_final = False
-    # whether the answer is a temporal value - the ticks of it have to be
-    # viewed back
-    value_result = False
+    ctx = _Context(
+        policy=policy,
+        group_idx=group_idx,
+        a=a,
+        values=values,
+        a_dtype=values.dtype,
+        size=size,
+        fill_value=fill_value,
+        user_dtype=np.dtype(dtype) if dtype is not None else None,
+        kwargs=kwargs,
+        order=order,
+        axis=axis,
+    )
+    _reject_unsupported(ctx)
 
     if not isinstance(a, np.ndarray):
         # a temporal scalar comes through as its tick - sum and len of a
         # scalar timedelta64 answer in int64, like a plain integer scalar
-        op = operation(funcname)
-        ret = op(
+        ret = policy.call(
+            policy.op,
             group_idx,
             cast("AValue", np.int64(values.view(np.int64))),
             size,
-            fill_value=fill_value,
-            dtype=None,
+            fill_value,
+            None,
+            order,
+            axis,
             **kwargs,
         )
         return cast("AResult", ret), fill_value
 
-    # the groups that hold nothing but the missing value - the argreductions
-    # of the nan variants have no position to name for them
-    empty_groups: npt.NDArray[np.bool_] | None = None
-    # a fill value that is a plain number is a tick, and a dtype the caller
-    # asks for may be the ticks or another unit - both are the business of
-    # the tick path below
     plain_fill = isinstance(fill_value, (bool, np.bool_, int, np.integer))
-    if native and base in TEMPORAL_NATIVE_FUNCS and dtype is None and not plain_fill:
+    if policy.is_native and ctx.user_dtype is None and not plain_fill:
         # the kernel takes the temporal values as they are - it finds the NaT
         # of every group, its position and the empty groups on its own, in
         # one pass, and the wrapper has nothing to prepare for it
-        op = operation(funcname)
-        if base in ("len", "nanlen", "nunique", "nannunique", "argmin", "argmax", "nanargmin", "nanargmax"):
-            # a position or a count: the fill is the number the function uses
-            fill = resolve_fill_value(funcname, fill_value, np.dtype(np.int64))
-        elif base in ("allnan", "anynan"):
-            fill = resolve_fill_value(funcname, fill_value, np.dtype(np.bool_))
-        elif base == "array":
-            fill = resolve_fill_value(funcname, fill_value, np.dtype(object))
-        else:
-            # a value of the input: the fill is the NaT or the zero of the unit
-            fill = _temporal_fill_value(fill_value, a_dtype, base)
-        ret = op(group_idx, a, size, fill_value=fill, dtype=None, **kwargs)
+        fill = _native_fill_value(ctx)
+        ret = policy.call(
+            cast("Callable[..., AResult]", policy.native_op),
+            group_idx,
+            a,
+            size,
+            fill,
+            None,
+            order,
+            axis,
+            **kwargs,
+        )
         return cast("AResult", ret), fill_value
 
-    if funcname.startswith("nan") and base in ("argmin", "argmax"):
-        # the nan-variants of the argreductions keep every row - the
-        # positions they name are the ones of the input - so the NaT rows
-        # stand in as the extreme tick the reduction skips.  A group of
-        # nothing but NaT holds no tick of its own after the swap, and is
-        # left to the fill value like its float counterpart
-        nat = np.isnat(a)
-        skip = np.iinfo(np.int64).max if base == "argmin" else NAT_TICK + 1
-        a = np.where(nat, np.int64(skip), values.view(np.int64)).view(a.dtype)
-        # the groups that hold nothing but NaT have no tick to name - the
-        # sentinel above stands in for the NaT of every one of them, and the
-        # reduction would name its position.  They keep the fill value, like
-        # the groups of a nan group of floats that hold nothing but nans.
-        only_nat = _groups_holding(group_idx, nat, size)
-        counts = np.bincount(group_idx, minlength=size)
-        only_nat &= counts == np.bincount(group_idx, weights=nat, minlength=size)
-        nat = None
-        # the groups that hold nothing but NaT are answered the fill value
-        # below - the mask of the groups that hold a NaT is not theirs, for
-        # the plain forms the NaT is the value they name
-        empty_groups = only_nat
-    elif (
-        funcname.startswith("nan")
-        and base not in ("cumsum", "mean")
-        and not (base == "median" and tick_median is not None)
-    ) or base == "topk":
-        # the nan-variants skip NaT like they skip nan - the plain ones
-        # propagate it, and the cumulative ones carry it through their group
-        # like numpy does.  Deliberately unlike numpy for the argreductions:
-        # np.nanargmin and np.nanargmax do not skip a NaT of datetime64,
-        # they answer its position like the plain forms, while np.nanmin
-        # and np.nanmax do skip it (numpy/numpy#5222 - closed as fixed in
-        # 2020, while its own closing output still shows the nanarg forms of
-        # datetime64 answering the NaT position where the float nanarg
-        # skips, unaddressed; reported upstream as numpy/numpy#33207) - the
-        # contract of the nan forms says skip, and we keep it for every
-        # dtype.  The nan mean does not filter them
-        # either: the tick mean leaves the NaT of a group out on its own,
-        # and filtering the rows would cost a copy of the data.  The nan
-        # median filters them in its own backend: the kernel of the numba
-        # one leaves the NaT tick out, the exact one of the numpy one drops
-        # its rows.  The nan count of the distinct values does not filter
-        # them either: the hash table of the kernel skips a NaT like it
-        # skips a nan, and it takes the values as they are.
-        # The topk has no nan variant, and it leaves the NaT out as well: a
-        # NaT is neither the largest nor the smallest value of a group, and
-        # the sort of a group puts it last.  The rows are dropped here and
-        # the kernel drops the NaT again: the kernels are public entry points
-        # of their own, and one that is handed a NaT has to leave it out
-        # without the wrapper having prepared anything.
-        nat = np.isnat(a)
-        if nat.any():
-            good = ~nat
-            a = a[good]
-            group_idx = group_idx[good]
-            nat = None
+    if policy.swaps_nat:
+        _swap_nat_rows(ctx)
+    elif policy.drops_nat:
+        _drop_nat_rows(ctx)
     # the values as they are now - the nan-variants dropped their NaT rows
-    values = np.asarray(a)
+    ctx.values = np.asarray(ctx.a)
+    ctx.ticks = ctx.values.view(np.int64)
 
-    if base in ("all", "any"):
-        # the truth of a temporal value is its tick being non-zero and the
-        # value not being NaT - a NaT is no value at all
-        truth: npt.NDArray[np.bool_] = values.view(np.int64) != 0
-        truth &= ~np.isnat(values)
-        op = operation(funcname)
-        ret = op(
-            group_idx,
-            truth,
-            size,
-            fill_value=resolve_fill_value(funcname, fill_value, np.dtype(np.bool_)),
-            dtype=None,
-            **kwargs,
-        )
-        return cast("AResult", ret), fill_value
-    if base in ("allnan", "anynan"):
-        # the missing-value flags are the plain any/all of the NaT mask
-        op = operation("any" if base == "anynan" else "all")
-        ret = op(
-            group_idx,
-            np.isnat(a),
-            size,
-            fill_value=resolve_fill_value("all", fill_value, np.dtype(np.bool_)),
-            dtype=None,
-            **kwargs,
-        )
-        return cast("AResult", ret), fill_value
+    if policy.flag is not None:
+        return _flag_result(ctx, resolve)
 
-    ticks = values.view(np.int64)
-    # the NaT of the values, where the ticks of the kernels alone do not
-    # know it - every branch of the chain below is the one of its operation,
-    # so no call computes the mask more than once
-    if base in ("argmin", "argmax"):
-        # the plain argmin finds the NaT on its own - its tick is the
-        # smallest one - while the plain argmax never picks it, and numpy
-        # answers the position of the first NaT of the group
-        if base == "argmax":
-            nat = np.isnat(values)
-            if nat.any():
-                nat_groups, nat_positions = _first_true_position_per_group(group_idx, nat, size)
-    elif base in TEMPORAL_NAT_POISON and not funcname.startswith("nan") and not (native and base == "mean"):
-        # a single NaT poisons the sum, the maximum and - for the durations
-        # - the middles of its whole group.  The mean of the native backend
-        # is not among them: its kernel poisons the group on its own, and
-        # the numpy backend poisons through the patch further down.
-        nat = np.isnat(values)
-        if nat.any():
-            nat_groups = _groups_holding(group_idx, nat, size)
-    elif base == "sort":
-        # numpy sorts NaT to the end of its group although it compares as the
-        # smallest value everywhere else (numpy/numpy#12629, fixed by PR
-        # numpy/numpy#12658) - the largest tick stands in for it on the way
-        # through the sort, and the answer turns it back into NaT
-        nat = np.isnat(values)
-        if nat.any():
-            ticks = np.where(nat, np.iinfo(np.int64).max, ticks)
-            sort_nat_restore = True
-    elif base in ("cumsum", "cummax", "cummin") and not native:
-        # the accumulation carries the NaT through to the end of its group,
-        # nancumsum included - numpy propagates it for temporal input, and
-        # the groups are poisoned one by one.  The native backend keeps its
-        # rows: its kernels carry the NaT on their own.
-        nat = np.isnat(values)
-        if nat.any():
-            running_nat = _per_group_running_mask(group_idx, nat)
+    _nan_patches(ctx)
 
-    if base == "mean":
-        fill_tick = _temporal_fill_tick(fill_value, a_dtype, True)
-        if user_dtype is not None and user_dtype.kind == "f":
-            # a float answer is the exact quotient itself, not the rounded tick
-            mean_idx, mean_ticks = group_idx, ticks
-            nat_groups_for_float = None
-            if funcname.startswith("nan"):
-                # the NaT rows have no tick to average - the nan variant
-                # leaves them out, like its kernel does
-                good = ticks != NAT_TICK
-                mean_idx, mean_ticks = group_idx[good], ticks[good]
-            else:
-                # a single NaT poisons its group - the float answer of a
-                # group without a quotient is nan
-                nat = np.isnat(values)
-                if nat.any():
-                    nat_groups_for_float = _groups_holding(group_idx, nat, size)
-            computed = cast(
-                "npt.NDArray[Any]",
-                exact_integer_group_mean(mean_idx, mean_ticks, size, fill_tick, user_dtype),
-            )
-            if nat_groups_for_float is not None:
-                computed = cast("npt.NDArray[Any]", np.asarray(computed))
-                computed[nat_groups_for_float] = np.nan
-            computed_final = True
-        else:
-            # the tick mean: the kernel of the backend measures the
-            # deviations from the first value of the group, so the sum of
-            # the ticks stays exact and the answer is a tick again - the
-            # plain kernel poisons the group of a NaT on its own, the nan one
-            # leaves the NaT out.  A backend without a kernel gets the exact
-            # mean of this module, which holds the sum of the ticks in
-            # python integers.
-            try:
-                computed = cast(
-                    "npt.NDArray[Any]",
-                    tick_mean(
-                        group_idx,
-                        ticks,
-                        size,
-                        fill_value=fill_tick,
-                        dtype=np.dtype(np.int64),
-                        nan=funcname.startswith("nan"),
-                        **kwargs,
-                    ),
-                )
-            except OverflowError:
-                # The values of a group reach from one end of the int64 range
-                # to the other: their sum of deviations leaves the range, and
-                # the kernel refuses the mean rather than wrapping it around
-                # silently.  The limb sums of the ticks hold it exactly.
-                if funcname.startswith("nan"):
-                    # the nan kernel never sums the NaT ticks - their rows
-                    # are no part of its deviations - so the limb sums take
-                    # the values it would have averaged
-                    good = ticks != NAT_TICK
-                    computed = cast(
-                        "npt.NDArray[Any]",
-                        exact_integer_group_mean(group_idx[good], ticks[good], size, fill_tick, np.dtype(np.int64)),
-                    )
-                else:
-                    # a NaT of the group is what may have broken the span of
-                    # its deviations - the poison comes back through the
-                    # patch further down
-                    nat = np.isnat(values)
-                    if nat.any():
-                        nat_groups = _groups_holding(group_idx, nat, size)
-                    computed = cast(
-                        "npt.NDArray[Any]",
-                        exact_integer_group_mean(group_idx, ticks, size, fill_tick, np.dtype(np.int64)),
-                    )
-            value_result = True
-    elif base in ("median", "quantile", "percentile"):
-        # only timedelta64 reaches this point - datetime64 has no middles
-        fill_tick = _temporal_fill_tick(fill_value, a_dtype, True)
-        if base == "median":
-            # the middle of the ticks of every group: the kernel of the
-            # backend selects it in compiled code, a backend without one
-            # gets the exact median of this module - the plain variant
-            # answers the groups that hold a NaT through the poison below,
-            # the nan one leaves the NaT tick out on its own
-            computed = cast(
-                "npt.NDArray[Any]",
-                tick_median(
-                    group_idx,
-                    ticks,
-                    size,
-                    fill_value=fill_tick,
-                    dtype=np.dtype(np.int64),
-                    nan=funcname.startswith("nan"),
-                    **kwargs,
-                ),
-            )
-        else:
-            fraction = cast("float", kwargs.get("q", 50.0 if base == "percentile" else 0.5))
-            if base == "percentile":
-                fraction = fraction / 100.0
-            # the method of the interpolation - numpy knows five of them, and
-            # the temporal answer follows the one the caller names
-            method = cast("str", kwargs.get("method", "linear"))
-            computed = tick_quantile(group_idx, ticks, size, fill_tick, fraction, method)
-        value_result = True
-    elif base in TEMPORAL_VALUE_FUNCS:
-        value_result = True
+    computed, computed_final, value_result = _ticks_result(ctx)
 
-    if base == "array":
-        # the values of every group, back in the dtype they came in
-        op = operation(funcname)
-        empty = resolve_fill_value(funcname, fill_value, np.dtype(object))
-        ret = op(group_idx, ticks, size, fill_value=empty, dtype=None, **kwargs)
-        groups = ret if isinstance(ret, np.ndarray) else np.asarray(ret, dtype=object)
-        return (
-            cast("AResult", np.array([np.asarray(one).view(a_dtype) for one in groups], dtype=object)),
-            fill_value,
-        )
+    if policy.is_array:
+        return _array_result(ctx)
 
-    if computed is not None:
-        # the wrapper has computed the answer itself - the mean, the median
-        # and the quantiles, where the ticks make the arithmetic exact
-        ret = computed
-    elif value_result:
-        # the kernels answer in ticks, the fill is a tick, and the dtype they
-        # are asked for is int64
-        fill_tick = _temporal_fill_tick(fill_value, a_dtype, base in TEMPORAL_NAT_FILL)
-        op = operation(funcname)
-        ret = op(group_idx, ticks, size, fill_value=fill_tick, dtype=np.dtype(np.int64), **kwargs)
-    else:
-        # positions, counts and flags: the kernels answer in their own dtypes
-        # and their fill value is the one of their function
-        out_dtype = user_dtype if user_dtype is not None else np.dtype(np.int64)
-        if base in ("allnan", "anynan"):
-            out_dtype = np.dtype(np.bool_)
-        op = operation(funcname)
-        ret = op(
-            group_idx,
-            ticks,
-            size,
-            fill_value=resolve_fill_value(funcname, fill_value, out_dtype),
-            dtype=user_dtype,
-            **kwargs,
-        )
+    ctx.result = _kernel_result(ctx, computed, value_result)
 
-    # the answer of the kernels, turned back into a temporal one
     if computed is not None and computed_final:
-        return cast("AResult", ret), fill_value
-    if running_nat is not None:
-        ret = np.asarray(ret)
-        ret[running_nat] = NAT_TICK
-    if sort_nat_restore:
-        # the largest tick stood in for NaT while sorting - hand it back
-        ret = np.asarray(ret)
-        ret[ret == np.iinfo(np.int64).max] = NAT_TICK
-    if nat_groups is not None:
-        ret = np.asarray(ret)
-        if nat_positions is not None:
-            ret[nat_groups] = nat_positions[nat_groups]
-        else:
-            ret[nat_groups] = NAT_TICK
-    if empty_groups is not None:
-        # the groups that hold nothing but the missing value have no
-        # position to name - they keep the fill value of their function
-        ret = np.asarray(ret)
-        empty_fill = resolve_fill_value(funcname, fill_value, np.dtype(np.int64))
-        ret[empty_groups] = cast("int", empty_fill if empty_fill is not None else -1)
+        # the float mean is a float and not a tick - it is the final answer
+        return cast("AResult", ctx.result), fill_value
+
+    ctx.result = _patch_result(ctx)
+
     if value_result:
-        ret = np.asarray(ret)
-        if user_dtype is not None:
-            if user_dtype == np.dtype(np.int64):
-                return cast("AResult", ret), fill_value  # the ticks the caller asked for
-            if user_dtype.kind in TEMPORAL_KINDS:
-                # rescale from the unit of the input to the one asked for
-                return cast("AResult", ret.view(a_dtype).astype(user_dtype)), fill_value
-            return cast("AResult", ret.view(np.int64).astype(user_dtype)), fill_value
-        return cast("AResult", ret.view(a_dtype)), fill_value
-    return cast("AResult", ret), fill_value
+        return _view_result(ctx.result, ctx.a_dtype, ctx.user_dtype), fill_value
+    return cast("AResult", ctx.result), fill_value
