@@ -297,9 +297,6 @@ _NUMERIC_VALUES = "the kernels take numeric values"
 _TEMPORAL_KERNEL_REFUSED = frozenset(
     {
         "sort",
-        "median",
-        "quantile",
-        "percentile",
         "all",
         "any",
         "prod",
@@ -310,7 +307,6 @@ _TEMPORAL_KERNEL_REFUSED = frozenset(
         "kurt",
         "trapezoid",
         "sumofsquares",
-        "mean",
     }
 )
 # the sum of a datetime64 has no unit to accumulate either - numpy refuses it
@@ -322,12 +318,6 @@ _TEMPORAL_DATETIME_REFUSED = frozenset({"sum", "cumsum"})
 def _temporal_refusal(stub_name: str, a_dtype: np.dtype) -> str:
     """The complaint of a kernel that does not take temporal values."""
     base = stub_name.removeprefix("nan")
-    if base == "mean":
-        return (
-            f"the {stub_name} kernel takes no {a_dtype.name} values - the mean of the ticks is the "
-            f"business of tick_mean and nantick_mean, and aggregate() rounds the mean of the values "
-            f"half to even, where the division of durations of numba truncates"
-        )
     if a_dtype.kind == "M" and base in _TEMPORAL_DATETIME_REFUSED:
         return (
             f"the {stub_name} kernel takes no {a_dtype.name} values - numpy refuses {base} "
