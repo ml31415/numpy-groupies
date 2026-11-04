@@ -61,20 +61,23 @@ def test_a_backend_that_carries_the_nat_policy_hands_the_rows_over():
         seen.append(np.asarray(a))
         return np.zeros(size, dtype=np.int64)
 
+    def call(op, group_idx, values, size, fill_value, dtype, order, axis, **kwargs):
+        return op(group_idx, values, size, fill_value=fill_value, dtype=dtype, **kwargs)
+
     a = np.array([1, "NaT", 3], dtype="m8[s]")
     group_idx = np.array([0, 0, 1])
     kwargs = {"q": 0.5, "method": "linear"}
 
     # the kernel carries the policy: every row reaches it
     seen = []
-    carries = build_temporal_op("nanquantile", op, tick_op=op, tick_handles_nat=True)
+    carries = build_temporal_op("nanquantile", op, call, tick_op=op, tick_handles_nat=True)
     carries(group_idx, a, 2, None, **kwargs)
     assert len(seen[0]) == 3
     np.testing.assert_array_equal(seen[0], a.view(np.int64))
 
     # the engine carries the policy: the NaT rows are dropped on the way
     seen = []
-    drops = build_temporal_op("nanquantile", op, tick_op=op)
+    drops = build_temporal_op("nanquantile", op, call, tick_op=op)
     drops(group_idx, a, 2, None, **kwargs)
     np.testing.assert_array_equal(seen[0], np.array([1, 3], dtype=np.int64))
 
@@ -105,7 +108,10 @@ def test_the_temporal_operation_of_a_function_is_built_from_its_own(impl):
     def op(group_idx, a, size, fill_value=None, dtype=None, **kwargs):
         return np.zeros(size, dtype=np.int64)
 
-    temporal_op = build_temporal_op("mean", op)
+    def call(op, group_idx, values, size, fill_value, dtype, order, axis, **kwargs):
+        return op(group_idx, values, size, fill_value=fill_value, dtype=dtype, **kwargs)
+
+    temporal_op = build_temporal_op("mean", op, call)
     assert temporal_op.__name__ == "temporal_mean"
     # the mean of the ticks needs an operation on the ticks - without one the
     # operation says so instead of answering something else

@@ -267,23 +267,9 @@ def _per_group_running_mask(group_idx: npt.NDArray[np.integer], nat: npt.NDArray
 #
 #     call(op, group_idx, values, size, fill_value, dtype, order, axis, **kwargs)
 #
-# and the builder hands the arguments of the call to it.
-
-
-def _call_by_keyword(
-    op: Callable[..., AResult],
-    group_idx: npt.NDArray[np.integer],
-    values: AValue,
-    size: int,
-    fill_value: AFillValue,
-    dtype: npt.DTypeLike | None,
-    order: RavelOrder,
-    axis: int | None,
-    **kwargs: Any,
-) -> AResult:
-    """The call of an operation whose arguments behind the values are keyword
-    arguments - the default of the builder."""
-    return op(group_idx, values, size, fill_value=fill_value, dtype=dtype, **kwargs)
+# and the builder hands the arguments of the call to it.  There is no
+# default: a backend that does not say how it calls its operations does not
+# get any - the conventions live in the backends.
 
 
 # ---------------------------------------------------------------------------
@@ -353,9 +339,9 @@ def _missing_operation(funcname: str) -> Callable[..., AResult]:
 def build_temporal_op(
     funcname: str,
     op: Callable[..., AResult] | None,
+    call: Callable[..., AResult],
     tick_op: Callable[..., AResult] | None = None,
     native: bool = False,
-    call: Callable[..., AResult] | None = None,
     resolve: Callable[[str], Callable[..., AResult] | None] | None = None,
     tick_handles_nat: bool = False,
 ) -> Callable[..., tuple[AResult, AFillValue]]:
@@ -377,6 +363,7 @@ def build_temporal_op(
     ``call`` is the way the operations of the backend are called - the two
     backends have two conventions, and each of them knows its own: the
     policy of this module does not have to know which one it is serving.
+    Every backend states its own.
 
     ``resolve`` is the way the backend resolves the name of an operation -
     the missing-value flags are the plain any and all of the NaT mask, and
@@ -394,8 +381,6 @@ def build_temporal_op(
     """
     base = funcname.removeprefix("nan")
     is_nan = funcname.startswith("nan")
-    if call is None:
-        call = _call_by_keyword
     if op is None:
         # the backend does not implement the function - the policy of the
         # temporal input still refuses what numpy refuses for it

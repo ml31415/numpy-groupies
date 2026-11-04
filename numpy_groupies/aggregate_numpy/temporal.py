@@ -27,7 +27,23 @@ from numpy_groupies.aggregate_numpy.specials import _temporal_median, _temporal_
 from numpy_groupies.groups import exact_integer_group_mean
 from numpy_groupies.registry import function_names
 from numpy_groupies.temporal import NAT_TICK, build_temporal_op
-from numpy_groupies.typing import AResult
+from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
+
+
+def _call_by_keyword(
+    op: Callable[..., AResult],
+    group_idx: npt.NDArray[np.integer],
+    values: AValue,
+    size: int,
+    fill_value: AFillValue,
+    dtype: npt.DTypeLike | None,
+    order: RavelOrder,
+    axis: int | None,
+    **kwargs: Any,
+) -> AResult:
+    """The call of an operation of this backend: the arguments behind the
+    values are keyword arguments."""
+    return op(group_idx, values, size, fill_value=fill_value, dtype=dtype, **kwargs)
 
 
 def _tick_mean(
@@ -153,6 +169,7 @@ def build_temporal_ops(op_dict: Mapping[str, Callable[..., AResult]]) -> dict[st
             name,
             op_dict.get(name),
             tick_op=_TICK_OPS.get(name),
+            call=_call_by_keyword,
             resolve=_resolve,
         )
     return ops
