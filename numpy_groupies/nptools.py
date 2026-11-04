@@ -112,12 +112,16 @@ if hasattr(np, "trapezoid"):
 aliasing = get_aliasing(_alias_numpy)
 
 _next_int_dtype = {
+    # the sign of the input stays: a sum of unsigned values does not become
+    # negative, and one of signed values may - numpy keeps it as well (it
+    # sums into int64 or uint64), and the 16 bit types are no steps of the
+    # ladder
     "bool": np.int8,
-    "uint8": np.int16,
-    "int8": np.int16,
-    "uint16": np.int32,
+    "uint8": np.uint32,
+    "int8": np.int32,
+    "uint16": np.uint32,
     "int16": np.int32,
-    "uint32": np.int64,
+    "uint32": np.uint64,
     "int32": np.int64,
 }
 
@@ -139,10 +143,12 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
         try:
             with np.errstate(invalid="ignore"):
                 converted = np.array(x).astype(dtype)
+                # the comparison of a numpy scalar with a python integer that
+                # does not fit into it raises (numpy 2) - such a value does
+                # not fit into the dtype either, and that is what we say
+                return bool(converted == x) or (np.ndim(cast(np.generic, x)) == 0 and np.isnan(cast(np.generic, x)))
         except (ValueError, OverflowError):
             return False
-        # False if some overflow has happened
-        return bool(converted == x) or (np.ndim(cast(np.generic, x)) == 0 and np.isnan(cast(np.generic, x)))
 
     def type_loop(
         x: AFillValue, dtype: np.dtype, dtype_dict: Mapping[str, type], default: type | None = None
@@ -164,7 +170,11 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
     if np.issubdtype(dtype, np.inexact):
         return type_loop(x, dtype, _next_float_dtype)
     else:
-        return type_loop(x, dtype, _next_int_dtype, default=np.float32)
+        # the last step of the ladder: the value does not fit into any of the
+        # integer types - float64, and never float32, whose mantissa of 24
+        # bits is too coarse for the sums it would carry (numpy has no float
+        # here at all: it sums into int64 or uint64 and wraps)
+        return type_loop(x, dtype, _next_int_dtype, default=np.float64)
 
 
 def minimum_dtype_scalar(x: AFillValue, dtype: npt.DTypeLike | None, a: AValue) -> np.dtype:

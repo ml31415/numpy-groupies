@@ -16,8 +16,8 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
-from numpy_groupies.nptools import minimum_dtype
-from numpy_groupies.tests.helpers import impl_name
+from numpy_groupies.nptools import minimum_dtype, resolve_output_dtype
+from numpy_groupies.tests.helpers import impl_name, is_purepy
 
 float_funcs = [np.std, np.var, np.mean, np.median, np.nanmedian]
 if hasattr(np, "trapezoid"):
@@ -56,8 +56,11 @@ def test_sum_dtype_guess_survives_single_group(impl, dtype):
     res = impl.aggregate(group_idx, a, func="sum")
     np.testing.assert_array_equal(res, [2 * maximum])
     # an explicitly larger output size with fill values must not change this
-    res = impl.aggregate(group_idx, a, func="sum", size=3, fill_value=-1)
-    np.testing.assert_array_equal(res, [2 * maximum, -1, -1])
+    # the fill value has to fit into the dtype of the answer, which keeps the
+    # sign of the input: an unsigned input answers with an unsigned dtype
+    fill = -1 if np.dtype(dtype).kind == "i" else 2**31
+    res = impl.aggregate(group_idx, a, func="sum", size=3, fill_value=fill)
+    np.testing.assert_array_equal(res, [2 * maximum, fill, fill])
     if not isinstance(res, list):
         assert res.dtype == minimum_dtype(2 * maximum, np.dtype(dtype))
 
@@ -364,3 +367,51 @@ def test_bool_min_max_and_arg_reductions(impl, func):
     a = np.array([True, False, False, True])
     expected = {"min": [False, False], "max": [True, True], "argmin": [1, 2], "argmax": [0, 3]}[func]
     np.testing.assert_array_equal(impl.aggregate(group_idx, a, func=func, size=2), expected)
+
+
+INTEGER_DTYPES = ["bool", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+@pytest.mark.parametrize("n", [1, 2, 8, 1000, 10**6])
+def test_the_sum_of_integers_answers_with_an_integer(dtype, n):
+    """The sum of integers answers with an integer, whatever the count.
+
+    The ladder of the output dtype climbs with the number of the values
+    (bool -> int8 -> int32 -> int64, uint8 -> uint32 -> uint64) and keeps
+    the sign of the input: a signed input never lands in an unsigned dtype,
+    where a negative sum would read as a huge positive one, and an unsigned
+    one does not become signed.  numpy keeps the sign as well (it sums into
+    int64 or uint64), but it has no ladder at all - the sum overflows there.
+    """
+    out = resolve_output_dtype(None, "sum", np.dtype(dtype), n)
+    assert out.kind in "iub", f"{dtype} at n={n} answers {out}"
+    if dtype.startswith("u"):
+        assert out.kind in "ub", f"{dtype} at n={n} answers {out}"
+    else:
+        assert out.kind in "ib", f"{dtype} at n={n} answers {out}"
+
+
+@pytest.mark.parametrize("dtype", ["bool", "int8", "int16", "int32", "uint8", "uint16", "uint32"])
+def test_the_ladder_ends_in_float64_and_never_in_float32(dtype):
+    """A value that fits into no integer dtype answers with float64.
+
+    The mantissa of float32 is 24 bits - too coarse for the sum it would
+    carry - and the ladder has no float before it.  The int64 and the uint64
+    are not part of the ladder: they keep their dtype and wrap, like numpy.
+    """
+    out = resolve_output_dtype(None, "sum", np.dtype(dtype), 10**30)
+    assert out == np.dtype(np.float64)
+
+
+def test_the_sum_of_small_integers_answers_with_the_ladder_dtype(impl):
+    """The dtype of the answer is the one of the ladder, in every backend.
+
+    The pure python implementation has no dtype of its own - it answers with
+    the python integers it accumulates.
+    """
+    if is_purepy(impl):
+        pytest.skip("the pure python implementation carries no dtype")
+    a = np.array([100, 100, 100], dtype=np.uint8)
+    actual = impl.aggregate(np.array([0, 0, 0]), a, func="sum", size=1)
+    assert np.asarray(actual).dtype == np.dtype(np.uint32)
