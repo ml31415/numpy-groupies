@@ -17,7 +17,7 @@ from typing import Any, TypeVar, overload
 import numba as nb
 from numba.core import caching
 
-from numpy_groupies.utils_cache import numba_cache_dir
+from numpy_groupies.cache import numba_cache_dir
 
 # the decorated function is a dispatcher that keeps the signature of its
 # python function - the overloads below hand that signature through
@@ -197,7 +197,7 @@ def njit_stable(
             # directory - where it survives the uninstallation and leaves a
             # broken installation behind (numba #9312).
             cache_path = numba_cache_dir()
-            os.makedirs(cache_path, exist_ok=True)
+            cache_path.mkdir(parents=True, exist_ok=True)
             disp._cache._cache_path = cache_path
             disp._cache._cache_file = _ProcessSafeCacheFile(
                 cache_path=cache_path,

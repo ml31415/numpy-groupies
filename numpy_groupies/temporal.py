@@ -9,7 +9,7 @@ their kernels to ``_temporal_aggregation`` - the numpy one its tick mean
 and its exact tick median, the numba one the compiled forms of both - and
 the wrapper answers for them.
 
-The dtype facts stay in ``utils_np``: the kinds of the temporal dtypes.
+The dtype facts stay in ``nptools``: the kinds of the temporal dtypes.
 The order statistics of the numpy backend live in
 ``aggregate_numpy.specials`` - the exact median of the ticks - and the
 numba kernels in ``aggregate_numba``: nothing in this module reaches into
@@ -23,13 +23,9 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.common import resolve_fill_value
+from numpy_groupies.nptools import exact_integer_group_mean
 from numpy_groupies.registry import DEFAULT_FILL_VALUE, missing_impl_error
-from numpy_groupies.utils_np import (
-    AFillValue,
-    AResult,
-    AValue,
-    exact_integer_group_mean,
-)
+from numpy_groupies.typing import AFillValue, AResult, AValue
 
 # ---------------------------------------------------------------------------
 # datetime64 and timedelta64 support

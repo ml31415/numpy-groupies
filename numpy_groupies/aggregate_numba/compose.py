@@ -83,12 +83,9 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.mt import GROUP_MT_MIN_VALUES, MT_MIN_VALUES, chunk_count, should_use_mt
-from numpy_groupies.utils_np import (
-    AResult,
-    AScalar,
-    check_fill_value_for_dtype,
-)
-from numpy_groupies.utils_temporal import NAT_TICK, TEMPORAL_KINDS
+from numpy_groupies.nptools import check_fill_value_for_dtype
+from numpy_groupies.temporal import NAT_TICK, TEMPORAL_KINDS
+from numpy_groupies.typing import AResult, AScalar
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
     FILL_NOT_BOOLEAN,
@@ -271,7 +268,7 @@ def _resolve_default_fill(fill_default: AScalar, out_dtype: np.dtype) -> AScalar
 # those entry points as well (see ``_make_stub``).  ``aggregate()`` is the entry
 # point that knows an axis, an indexed ``group_idx`` and a single value
 # repeated over every label, and it validates all of that in
-# ``utils_np.input_validation`` before a driver sees anything - no call of a
+# ``nptools.input_validation`` before a driver sees anything - no call of a
 # driver ever validates twice.
 #
 # The words of the complaints live in ``numpy_groupies.validation``: the

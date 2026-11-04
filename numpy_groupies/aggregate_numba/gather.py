@@ -8,7 +8,7 @@ import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba import mt
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.utils_np import AResult
+from numpy_groupies.typing import AResult
 
 
 # the annotations of the jitted functions below are documentation only - numba

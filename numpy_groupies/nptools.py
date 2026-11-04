@@ -2,17 +2,23 @@
 
 import platform
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, Literal, SupportsFloat, TypeAlias, cast
+from typing import Any, SupportsFloat, cast
 
 import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.registry import (
-    DefaultFillValue,
     forced_float_types,
     forced_real_float_types,
     get_aliasing,
     resolve_name,
+)
+from numpy_groupies.typing import (
+    AFillValue,
+    AScalar,
+    AValue,
+    RavelOrder,
+    ValidatedInput,
 )
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
@@ -27,40 +33,6 @@ from numpy_groupies.validation import (
     is_integer_dtype,
     is_scalar_input,
 )
-
-# the values as the dispatchers carry them on: an array of any dtype, or
-# the one python scalar that stands for that value repeated over every label
-AValue: TypeAlias = npt.NDArray[np.generic] | int | float | complex | np.bool_
-
-# the result of an aggregation: numbers for most functions, bools for
-# 'all' and 'any', objects for 'array' - np.generic covers all three
-AResult: TypeAlias = npt.NDArray[np.generic]
-
-# the numbers and flags that can land in an array - a bool is an int, a
-# np.bool_ is neither an int nor an np.number
-AScalar: TypeAlias = float | int | complex | np.number | np.bool_
-
-# what a fill value can be: a number, the sentinel that asks for the
-# default of the function, a None or - for the object result - a sequence
-AFillValue: TypeAlias = AScalar | None | Sequence[AScalar] | DefaultFillValue
-
-# the memory layout the output is written in, as every signature of this
-# package spells it: the docstring offers 'F' for fortran-style and the code
-# only ever ravels and reshapes with these two
-RavelOrder: TypeAlias = Literal["C", "F"]
-
-# what input_validation hands back: (raveled integer indices, the values -
-# possibly still a python scalar -, the flat output size, the input index
-# dimensionality, the (possibly shaped) output size and the shape an arg
-# reduction has to unravel its positions with, in that order
-ValidatedInput: TypeAlias = tuple[
-    npt.NDArray[np.integer],
-    AValue,
-    int,
-    int,
-    int | tuple[int, ...] | npt.NDArray[np.integer],
-    tuple[int, ...] | None,
-]
 
 
 def check_nton_shape(
@@ -335,7 +307,7 @@ def resolve_output_dtype(
                     return np.dtype(np.float64)
             else:
                 if func_str == "sum":
-                    if a_dtype.kind in "Mm":  # the kinds utils_temporal holds as TEMPORAL_KINDS
+                    if a_dtype.kind in "Mm":  # the kinds temporal holds as TEMPORAL_KINDS
                         # the sum of durations is a duration - numpy answers
                         # in the unit of the input, and there is no integer
                         # size to guess for

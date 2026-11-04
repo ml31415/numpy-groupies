@@ -56,7 +56,7 @@ back, a kernel of its own has nothing to run it on.
 
 Datetime64 and timedelta64 input is aggregated on its int64 ticks: the
 ``aggregate()`` entry hands temporal values to the wrapper of the numpy
-based backends (``utils_temporal``), which carries the policy -
+based backends (``temporal``), which carries the policy -
 what numpy refuses, the NaT of the plain reductions and the nan variants,
 the unit of the answer - and turns the tick results back.  The kernels
 themselves take temporal values as they are, as far as their arithmetic
@@ -98,25 +98,18 @@ from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
 )
+from numpy_groupies.nptools import QUANTILE_METHODS, exact_integer_group_mean
 from numpy_groupies.registry import (
     FuncName,
     funcs_collecting,
     missing_impl_error,
 )
-from numpy_groupies.utils_np import (
-    QUANTILE_METHODS,
-    AFillValue,
-    AResult,
-    AScalar,
-    AValue,
-    RavelOrder,
-    exact_integer_group_mean,
-)
-from numpy_groupies.utils_temporal import (
+from numpy_groupies.temporal import (
     _temporal_aggregation,
     is_own_function,
     is_temporal_input,
 )
+from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import EMPTY_GROUP_IDX, EXACT_FLOAT64_INTEGER_LIMIT
 
 FALLBACK.set_implementation(_numpy_aggregate)

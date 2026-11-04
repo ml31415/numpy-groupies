@@ -3,7 +3,7 @@
 Every path into a computation checks its input and says the same words about
 what is wrong with it: the python-level ``aggregate()``, the pure python one
 and the compiled kernels of the numba backend share the messages below and the
-checks that go with them.  The checks that need numpy live in ``utils_np``,
+checks that go with them.  The checks that need numpy live in ``nptools``,
 the ones that have to run inside compiled code are written where they are
 compiled - but they speak the words of this module.
 
@@ -21,7 +21,7 @@ from numpy_groupies.registry import complex_real_result, fill_value_key, fixed_r
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from numpy_groupies.utils_np import AFillValue, AScalar
+    from numpy_groupies.typing import AFillValue, AScalar
 
 # ---------------------------------------------------------------------------
 # the words of the complaints - one spelling for every path of the package
@@ -187,7 +187,7 @@ def check_filling_with_none(key: str) -> None:
 def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
     """Refuse a ``fill_value`` that the result type of a function cannot hold.
 
-    This is the rule ``utils_np.check_fill_value`` tells against a numpy
+    This is the rule ``nptools.check_fill_value`` tells against a numpy
     dtype, told without one: a boolean answer is filled with 0 or 1 - a nan
     would pass for ``bool``, which is why the two values are asked for
     themselves - and a count or a position with whatever turns into an integer,

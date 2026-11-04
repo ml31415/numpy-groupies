@@ -1,7 +1,7 @@
 """The datetime64 and timedelta64 support of the numpy and numba backends.
 
 Temporal input never reaches the kernels as datetime values: the wrapper of
-``utils_temporal`` takes it apart into its int64 ticks and turns the results back.
+``temporal`` takes it apart into its int64 ticks and turns the results back.
 The tests pin the semantics that emerge - the NaT propagation of the plain
 reductions, the skipping of the nan variants, the exact means on ticks that
 float64 cannot represent, the unit of the answer, and the refusals numpy
@@ -860,7 +860,9 @@ def test_the_sort_of_numba_makes_no_move_when_a_nat_is_in_the_values(unit):
     def nb_lt(a, b):
         return a < b
 
-    nat = np.dtype(unit).type("NaT")
+    # the NaT of the unit of the values: the constructor of the dtype would
+    # build a NaT without a unit, and that is deprecated in numpy
+    nat = np.array("NaT", dtype=unit)[()]
     a = np.array([30, 10, 20], dtype=np.int64).view(unit)
     a[1] = nat
     # the comparison of numba: the NaT is incomparable, both ways False

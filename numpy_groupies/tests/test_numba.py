@@ -22,7 +22,7 @@ from numpy_groupies.aggregate_numba import aggregate, ops
 from numpy_groupies.aggregate_numba.gather import _gather_1d
 from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile, njit_stable
 from numpy_groupies.aggregate_numba.ops import _dispatch
-from numpy_groupies.utils_np import resolve_output_dtype
+from numpy_groupies.nptools import resolve_output_dtype
 
 
 @pytest.fixture(

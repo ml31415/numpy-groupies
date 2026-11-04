@@ -41,8 +41,8 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any, cast
 
 from numpy_groupies import aggregate_purepy
+from numpy_groupies.cache import purge_cache
 from numpy_groupies.registry import bind_functions, function_names
-from numpy_groupies.utils_cache import purge_cache
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
     from numpy_groupies.registry import FuncName
-    from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
+    from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 
     class Aggregate(Protocol):
         """The canonical signature of the public ``aggregate``.
@@ -180,7 +180,7 @@ else:
     aggregate_np = aggregate
 
     from numpy_groupies.common import default_fill_value
-    from numpy_groupies.utils_np import (
+    from numpy_groupies.nptools import (
         label_contiguous_1d,
         multi_arange,
         relabel_groups_masked,
@@ -321,7 +321,7 @@ if TYPE_CHECKING:
 
 # ``purge_cache()`` removes the cached compiles of the package - it is the tool for
 # the cache of the numba backend, which lives in a directory of its own (see
-# ``numpy_groupies.utils_cache.numba_cache_dir``) and which numba never cleans
+# ``numpy_groupies.cache.numba_cache_dir``) and which numba never cleans
 # up.
 
 

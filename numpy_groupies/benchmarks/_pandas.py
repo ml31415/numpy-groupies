@@ -12,23 +12,14 @@ from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     aggregate_common_doc,
 )
+from numpy_groupies.nptools import aliasing, allnan, anynan, check_dtype, iscomplexobj
 from numpy_groupies.registry import (
     Registry,
     Resolved,
     custom_callable,
     funcs_no_separate_nan,
 )
-from numpy_groupies.utils_np import (
-    AFillValue,
-    AResult,
-    AScalar,
-    RavelOrder,
-    aliasing,
-    allnan,
-    anynan,
-    check_dtype,
-    iscomplexobj,
-)
+from numpy_groupies.typing import AFillValue, AResult, AScalar, RavelOrder
 
 
 def _wrapper(

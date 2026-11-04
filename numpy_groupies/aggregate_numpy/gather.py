@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.utils_np import AResult
+from numpy_groupies.typing import AResult
 
 
 def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> AResult:

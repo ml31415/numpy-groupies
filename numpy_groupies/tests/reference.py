@@ -26,7 +26,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.common import DEFAULT_FILL_VALUE, default_fill_value
-from numpy_groupies.utils_np import check_fill_value
+from numpy_groupies.nptools import check_fill_value
 
 
 def trapezoid_ref(*args: Any, **kwargs: Any) -> Any:

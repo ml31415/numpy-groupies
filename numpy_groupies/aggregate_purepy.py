@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
 
-    from numpy_groupies.utils_np import AFillValue, AResult, AScalar, AValue, RavelOrder
+    from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 
 
 def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> list[Any]:

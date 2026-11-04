@@ -389,7 +389,7 @@ def test_pure_python_call_refuses_a_fill_value_as_jitted_code_does():
 # and through the python-level aggregate() that shares the driver with them.
 # The input checks run once per call in each of them - at the entry point of the
 # kernel for the first two (the body of the stub and the implementation of its
-# overload), in utils_np.input_validation for the third - and no call ever runs
+# overload), in nptools.input_validation for the third - and no call ever runs
 # them twice, which is what the fast path of the wrapper exists to avoid.  Each
 # style is a function of the kernel it is asked of: a kernel is an overload, and
 # an overload cannot be passed into jitted code as an argument.
@@ -565,7 +565,7 @@ def test_every_kernel_says_whether_it_takes_temporal_values(kernel_name, style):
 
 
 # the fill value of a call has to fit the output it fills - the same rule the
-# python-level call applies (utils_np.check_fill_value), in the same words:
+# python-level call applies (nptools.check_fill_value), in the same words:
 # a nan does not fit an integer output, a boolean output takes the two
 # booleans, and a value that is no number at all fits nothing.
 _FILL_CASES = [

@@ -11,6 +11,7 @@ from typing import get_args
 import numpy as np
 import pytest
 
+from numpy_groupies.nptools import aliasing
 from numpy_groupies.registry import (
     FuncName,
     Registry,
@@ -22,7 +23,6 @@ from numpy_groupies.registry import (
     function_names,
     resolve_name,
 )
-from numpy_groupies.utils_np import aliasing
 
 
 def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():

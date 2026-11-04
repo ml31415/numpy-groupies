@@ -21,9 +21,10 @@ the cache of the numba backend must be reachable from there.
 import os
 import shutil
 import sys
+from pathlib import Path
 
 
-def numba_cache_dir() -> str:
+def numba_cache_dir() -> Path:
     """The directory the cached compiles of this package live in.
 
     ``NUMBA_CACHE_DIR`` if the environment names one, the user-wide cache
@@ -36,10 +37,10 @@ def numba_cache_dir() -> str:
     the variable has to be set before that.
     """
     root = os.environ.get("NUMBA_CACHE_DIR") or _user_cache_dir()
-    return os.path.join(root, "numpy_groupies")
+    return Path(root) / "numpy_groupies"
 
 
-def _user_cache_dir() -> str:
+def _user_cache_dir() -> Path:
     """The user-wide cache directory, the way numba and pip place it.
 
     ``$XDG_CACHE_HOME`` (or ``~/.cache``) on Linux, ``~/Library/Caches`` on
@@ -47,17 +48,30 @@ def _user_cache_dir() -> str:
     the way the cache locator of numba places its own.
     """
     if sys.platform == "darwin":
-        base = os.path.expanduser("~/Library/Caches")
-    elif os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/AppData/Local")
+        base = Path.home() / "Library" / "Caches"
+    elif sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
     else:
-        base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
-    return os.path.join(base, "numba")
+        base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    return base / "numba"
 
 
-def _count_files(directory: str) -> int:
+def _count_files(directory: Path) -> int:
     """The number of the files below a directory."""
-    return sum(len(files) for _root, _dirs, files in os.walk(directory))
+    return sum(1 for path in directory.rglob("*") if path.is_file())
+
+
+def package_dir() -> Path:
+    """The directory of the package - its source tree with the caches in it.
+
+    The leftovers of the versions that cached next to their source are in the
+    ``__pycache__`` directories of the whole package, and the caller of
+    ``purge_cache()`` has to know where the package sits.
+
+    The modules of the package live next to each other, so the directory of
+    this file is the directory of the package.
+    """
+    return Path(__file__).parent
 
 
 def purge_cache() -> int:
@@ -76,19 +90,18 @@ def purge_cache() -> int:
     """
     removed = 0
     cache = numba_cache_dir()
-    if os.path.isdir(cache):
+    if cache.is_dir():
         before = _count_files(cache)
         shutil.rmtree(cache, ignore_errors=True)
         # the files the removal did not reach are not counted: the counter is
         # the number of the files that are really gone
         removed += before - _count_files(cache)
-    package = os.path.dirname(os.path.abspath(__file__))
-    for root, _dirs, files in os.walk(package):
-        for name in files:
-            if name.endswith((".nbi", ".nbc", ".nbi.lock")):
-                try:
-                    os.remove(os.path.join(root, name))
-                except OSError:  # pragma: no cover - the file is gone
-                    continue
-                removed += 1
+    for path in package_dir().rglob("*"):
+        if not path.name.endswith((".nbi", ".nbc", ".nbi.lock")):
+            continue
+        try:
+            path.unlink()
+        except OSError:  # pragma: no cover - the file is gone
+            continue
+        removed += 1
     return removed

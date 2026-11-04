@@ -13,23 +13,14 @@ from numpy_groupies.common import (
     DEFAULT_FILL_VALUE,
     resolve_fill_value,
 )
+from numpy_groupies.nptools import check_dtype, check_fill_value, check_nton_shape, input_validation
 from numpy_groupies.registry import (
     FuncName,
     Registry,
     missing_impl_error,
 )
-from numpy_groupies.utils_np import (
-    AFillValue,
-    AResult,
-    AScalar,
-    AValue,
-    RavelOrder,
-    check_dtype,
-    check_fill_value,
-    check_nton_shape,
-    input_validation,
-)
-from numpy_groupies.utils_temporal import is_own_function, is_temporal_input
+from numpy_groupies.temporal import is_own_function, is_temporal_input
+from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import is_scalar_input
 
 
