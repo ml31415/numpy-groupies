@@ -148,8 +148,6 @@ _forced_same_type = {
     "topk",
 }
 
-QUANTILE_METHODS = frozenset({"linear", "lower", "higher", "midpoint", "nearest"})
-
 
 def check_dtype(
     dtype: npt.DTypeLike | None,

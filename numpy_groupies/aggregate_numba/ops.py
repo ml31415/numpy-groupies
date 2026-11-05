@@ -36,7 +36,7 @@ from numpy_groupies.dtypes import (
 )
 from numpy_groupies.fills import (
     DEFAULT_FILL_VALUE,
-    DefaultFillValue,
+    DefaultFillMarker,
     resolve_fill_value,
 )
 from numpy_groupies.functions import QUANTILE_METHODS, func_extras
@@ -72,7 +72,7 @@ _N_DEPENDENT_ADTYPES = frozenset(
 # the dtypes and fill values that can be a key of the dtype plan cache:
 # the hashable ones - a list is not, and the cache raises a TypeError for it
 _KeyedDType: TypeAlias = str | type | np.dtype | None
-_HashableFillValue: TypeAlias = AScalar | None | tuple[AScalar, ...] | DefaultFillValue
+_HashableFillValue: TypeAlias = AScalar | None | tuple[AScalar, ...] | DefaultFillMarker
 
 
 # The cost of a value of a callable of the caller's own is not known: the

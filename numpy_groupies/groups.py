@@ -8,6 +8,7 @@ from typing import Any, SupportsFloat, cast
 import numpy as np
 import numpy.typing as npt
 
+from numpy_groupies.fills import DefaultFillMarker
 from numpy_groupies.typing import AScalar
 from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
 
@@ -207,8 +208,8 @@ def exact_integer_group_mean(
         fill = None  # a nan asks for the default
     elif isinstance(fill_value, (bool, np.bool_, int, np.integer)):
         fill = int(fill_value)
-    elif fill_value is None or fill_value.__class__.__name__ == "DefaultFillValue":
-        fill = None  # the sentinel of the call asks for the default
+    elif fill_value is None or isinstance(fill_value, DefaultFillMarker):
+        fill = None  # the marker of the call asks for the default
     else:
         fill = float(cast("SupportsFloat", fill_value))
     if np.issubdtype(dtype, np.integer):

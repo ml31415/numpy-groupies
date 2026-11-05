@@ -4,7 +4,9 @@ a function, the defaults themselves and the resolution of a fill value.
 The value an absent group gets depends on the function and on the dtype of
 the answer, and a call asks for it with the sentinel
 ``DEFAULT_FILL_VALUE`` - the way of asking, next to the resolution of what
-the answer is.
+the answer is.  The type of the marker is named by the types of the
+package (``numpy_groupies.typing``), the class and its one instance live
+here.
 
 This module must not import numpy: the pure python implementation is loaded
 before numpy is known to be available, and has to work without it.
@@ -36,20 +38,20 @@ if TYPE_CHECKING:
     from numpy_groupies.typing import AFillValue, AScalar
 
 
-class DefaultFillValue:
-    """Sentinel for ``fill_value``, asking for the function specific default.
+class DefaultFillMarker:
+    """The type of the marker that asks for the default of a fill value.
 
-    The registry knows the default of every function of the package, and the
-    sentinel is the way of asking for it: a call that carries it is answered
-    with the default of its function, resolved against the dtype of its
-    answer (see ``resolve_fill_value``).
+    The registry knows the default of every function of the package, and
+    the marker of this type is the way of asking for it: a call that carries
+    it is answered with the default of its function, resolved against the
+    dtype of its answer (see ``resolve_fill_value``).
     """
 
     def __repr__(self) -> str:
         return "DEFAULT_FILL_VALUE"
 
 
-DEFAULT_FILL_VALUE = DefaultFillValue()
+DEFAULT_FILL_VALUE = DefaultFillMarker()
 
 
 def nan_of(dtype: npt.DTypeLike | None) -> AScalar:
