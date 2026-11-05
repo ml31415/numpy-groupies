@@ -1,6 +1,7 @@
 """The vocabulary of the package: the names, the aliases and the registry.
 
-``registry`` holds what every implementation shares - and it must not import
+``registry`` holds the names of the functions and the dispatch of a backend -
+and it must not import
 numpy, because the pure python implementation is loaded before numpy is
 known to be available.
 """
@@ -11,7 +12,7 @@ from typing import get_args
 import numpy as np
 import pytest
 
-from numpy_groupies.nptools import aliasing
+from numpy_groupies.driver import aliasing
 from numpy_groupies.registry import (
     FuncName,
     Registry,
@@ -51,9 +52,9 @@ def test_build_dispatch_resolves_every_alias():
     dispatch = build_dispatch(op_dict, aliasing)
 
     assert set(dispatch) == set(aliasing)
-    assert dispatch["add"] == ("sum", sum)
-    assert dispatch["amin"] == ("min", min)
-    assert dispatch["nansum"] == ("nansum", None)
+    assert dispatch["add"] == Resolved("sum", sum, None)
+    assert dispatch["amin"] == Resolved("min", min, None)
+    assert dispatch["nansum"] == Resolved("nansum", None, None)
 
 
 def test_a_name_is_resolved_without_asking_its_func_for_a_hash():
@@ -98,18 +99,20 @@ def test_the_registry_answers_both_kinds_of_func_with_one_lookup():
     """
     registry = _registry()
 
-    funcname, impl = registry["add"]
+    funcname, impl, temporal_op = registry["add"]
     assert (funcname, impl) == ("sum", sum)
+    assert temporal_op is None
     # a function the backend does not implement is a key of the table too
-    assert registry["nansum"] == ("nansum", None)
+    assert registry["nansum"] == Resolved("nansum", None, None)
 
     # a callable of the caller's own: the factory makes it the operation
     def my_func(values):
         return sum(values)
 
-    funcname, impl = registry[my_func]
+    funcname, impl, temporal_op = registry[my_func]
     assert funcname is my_func
     assert impl is my_func
+    assert temporal_op is None
 
 
 def test_the_registry_answers_a_func_that_cannot_be_a_key():
@@ -129,9 +132,10 @@ def test_the_registry_answers_a_func_that_cannot_be_a_key():
     func = Callable()
     with pytest.raises(TypeError):
         registry[func]
-    funcname, impl = registry.custom(func)
+    funcname, impl, temporal_op = registry.custom(func)
     assert funcname is func
     assert impl is func
+    assert temporal_op is None
 
 
 def test_a_func_that_named_nothing_is_said_so_by_the_factory():
@@ -149,10 +153,10 @@ def test_the_functions_that_hold_a_none_match_the_registry():
     fill values knows every function of the package.  The two have to agree,
     or a function would be filled with a None its result cannot hold.
     """
-    from numpy_groupies import common, validation
+    from numpy_groupies import functions, validation
 
     assert validation.NONE_RESULT_FUNCTIONS == frozenset({"array"})
-    assert frozenset(common.default_fill_values) - validation.NONE_RESULT_FUNCTIONS
+    assert frozenset(functions.default_fill_values) - validation.NONE_RESULT_FUNCTIONS
 
 
 def test_every_function_of_the_package_has_an_entry_point_on_every_backend():

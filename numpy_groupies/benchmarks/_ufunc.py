@@ -4,17 +4,22 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
-from numpy_groupies.common import (
-    DEFAULT_FILL_VALUE,
-    aggregate_common_doc,
+from numpy_groupies.driver import (
+    _aggregate_wrap,
+    aliasing,
 )
-from numpy_groupies.nptools import aliasing, maxval, minimum_dtype, minimum_dtype_scalar, minval
+from numpy_groupies.dtypes import (
+    maxval,
+    minimum_dtype,
+    minimum_dtype_scalar,
+    minval,
+)
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.functions import aggregate_common_doc
 from numpy_groupies.registry import (
     Registry,
     Resolved,
     custom_callable,
-    missing_impl_error,
 )
 from numpy_groupies.typing import AFillValue, AScalar, RavelOrder
 from numpy_groupies.validation import check_boolean
@@ -187,25 +192,16 @@ def aggregate(
     axis: int | None = None,
     **kwargs: Any,
 ) -> npt.NDArray[np.generic]:
-    try:
-        funcname, op = _dispatch[func]
-    except TypeError:
-        # a func that cannot be a key of the table at all: the registry answers
-        # it as a callable of the caller's own, which a ufunc dispatch cannot do
-        funcname, op = _dispatch.custom(func)
-    if op is None:
-        # a name that is known elsewhere says which one is missing here
-        raise missing_impl_error(funcname)
-    return _aggregate_base(
+    return _aggregate_wrap(
+        _dispatch,
         group_idx,
         a,
+        func,
         size=size,
         fill_value=fill_value,
         order=order,
         dtype=dtype,
-        func=funcname,
         axis=axis,
-        _dispatch=_dispatch,
         **kwargs,
     )
 

@@ -14,6 +14,7 @@ spacing ``dx`` as the argument of its own.
 import functools
 import math
 from collections.abc import Callable
+from functools import partial
 from typing import Any, NamedTuple
 
 import numba as nb
@@ -21,10 +22,13 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numba.compose import (
+    TickKernel,
     _fill_differs,
     build_custom_kernel,
     build_kernel,
     complex_less,
+    make_tick_call,
+    make_tick_call_q,
     output_size,
     rule_float,
     rule_int64,
@@ -33,7 +37,7 @@ from numpy_groupies.aggregate_numba.compose import (
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.mt import group_chunk_count, should_use_group_mt
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
-from numpy_groupies.registry import nan
+from numpy_groupies.functions import nan
 from numpy_groupies.temporal import NAT_TICK
 
 
@@ -199,8 +203,24 @@ def _select_kth(
 # the same helpers serve the median and the quantile - the same source, the same
 # signature, the same specializations: one compiled artifact serves both
 _valid_plain = njit_stable(_group_valid_plain)
+
+
 # the nan scan of the numbers - the temporal one is the same scan with the
 # NaT tick as the missing value (see ``_valid_nan_scan``)
+@njit_stable(name="tick_holds_nat")
+def _holds_nat_tick(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> bool:
+    """Whether the block of the ticks holds the NaT tick.
+
+    The NaT tick is the smallest of them all, so it is the first one of the
+    block - but the block is not ordered, and the scan is the price of the
+    answer.
+    """
+    for i in range(begin, begin + m):
+        if a_sorted[i] == NAT_TICK:
+            return True
+    return False
+
+
 _valid_nan = _valid_nan_scan(False)
 # the selection: the same block for every operation that selects, so one
 # compiled artifact serves the median and the quantile and both of their variants
@@ -330,12 +350,13 @@ def _median_group(ticks: bool, nans: bool) -> Callable[..., None]:
             else:
                 out[g] = middle(buf, 0, m)
         elif ticks:
-            # the plain variant of the ticks: a NaT tick is a value like any
-            # other here - the smallest of them all - and the group that
-            # holds one is answered NaT by the caller: the mask of the groups
-            # that hold a NaT is already in the hands of the temporal wrapper,
-            # and no scan of the block buys it
-            out[g] = middle(a_sorted, starts[g], counts[g])
+            # the plain variant of the ticks: a NaT tick takes the group
+            # over, the way a nan takes the group of the numbers over - the
+            # answer of such a group is the NaT of the unit
+            if _holds_nat_tick(a_sorted, starts[g], counts[g]):
+                out[g] = NAT_TICK
+            else:
+                out[g] = middle(a_sorted, starts[g], counts[g])
         else:
             # the plain variant of the numbers: a nan poisons the group (where
             # any nan is contagious) - the poison is shaped like the output,
@@ -359,17 +380,26 @@ _tick_median_group_plain = _median_group(True, False)
 _tick_median_group_nan = _median_group(True, True)
 
 
-def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float) -> Any:
+def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float, method: str) -> Any:
     """the quantile q of the block at ``a_sorted[begin:begin+m]``.
 
     The quantile names a position between two of the values of the group: the
     virtual index q * (m - 1) says how far between the smallest and the largest
     value it lies, and the two values it falls between are interpolated the way
-    numpy interpolates them.
+    numpy interpolates them.  All five methods of numpy run here - the branch
+    on the method happens once per group, and a group costs far more than the
+    branch.
     """
     pos = q * (m - 1)
+    if method == "lower":
+        return _select(a_sorted, begin, begin + m, begin + int(np.floor(pos)))
+    if method == "higher":
+        return _select(a_sorted, begin, begin + m, begin + min(int(np.ceil(pos)), m - 1))
+    if method == "nearest":
+        # numpy rounds the position to the nearest element, halves to even
+        return _select(a_sorted, begin, begin + m, begin + min(int(np.round(pos)), m - 1))
     lower_index = int(np.floor(pos))
-    upper_index = int(np.ceil(pos))
+    upper_index = min(int(np.ceil(pos)), m - 1)
     upper = _select(a_sorted, begin, begin + m, begin + upper_index)
     if lower_index == upper_index:
         # the quantile is one of the values of the group
@@ -380,10 +410,19 @@ def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float)
     for i in range(begin + 1, begin + lower_index + 1):
         if complex_less(lower, a_sorted[i]):
             lower = a_sorted[i]
-    # the 1.0 promotes integral input to float64, just like np.quantile
+    # the two branches of numpy's own ``_lerp``: below a half the answer
+    # grows from the lower value, from a half on it shrinks from the upper
+    # one.  The 1.0 promotes integral input to float64, just like np.quantile
     # promotes before interpolating - the subtraction in its own dtype
     # overflows (int8 100 - (-100)) and bool addition is a logical or
-    return lower * 1.0 + (upper * 1.0 - lower * 1.0) * (pos - lower_index)
+    diff = upper * 1.0 - lower * 1.0
+    if method == "midpoint":
+        gamma = 0.5
+    else:
+        gamma = pos - lower_index
+    if gamma < 0.5:
+        return lower * 1.0 + diff * gamma
+    return upper - diff * (1 - gamma)
 
 
 _quantile_at = njit_stable(_quantile_at, name="quantile_quantile_at")
@@ -448,6 +487,7 @@ def _quantile_group_plain(
     out: npt.NDArray[np.number],
     fill_value: float,
     q: float,
+    method: str,
 ) -> None:
     """the quantile of one group of the placed values
 
@@ -466,7 +506,7 @@ def _quantile_group_plain(
         # has (for a real dtype: the plain nan)
         out[g] = out[g] * np.nan
     else:
-        out[g] = _quantile_at(a_sorted, starts[g], m, q)
+        out[g] = _quantile_at(a_sorted, starts[g], m, q, method)
 
 
 def _quantile_group_nan(
@@ -478,6 +518,7 @@ def _quantile_group_nan(
     out: npt.NDArray[np.number],
     fill_value: float,
     q: float,
+    method: str,
 ) -> None:
     """the quantile of one group, the nan values of the group left out"""
     if counts[g] == 0:
@@ -487,7 +528,7 @@ def _quantile_group_nan(
         # all-nan group: it keeps the fill value
         out[g] = fill_value
     else:
-        out[g] = _quantile_at(buf, 0, m, q)
+        out[g] = _quantile_at(buf, 0, m, q, method)
 
 
 _quantile_group_plain = njit_stable(_quantile_group_plain, name="quantile_group")
@@ -497,11 +538,10 @@ _quantile_group_nan = njit_stable(_quantile_group_nan, name="nanquantile_group")
 def _tick_quantile_group(nans: bool) -> Callable[..., None]:
     """The quantile of one group of the ticks, the way numpy computes it.
 
-    The plain variant takes the NaT tick as a value like any other - it is the
-    smallest of them all, and the group that holds one is answered NaT by the
-    caller: the mask of the groups that hold a NaT is already in the hands of
-    the temporal wrapper, and no scan of the block buys it.  The nan variant
-    leaves the NaT tick out, as every nan variant leaves the nan out.
+    The plain variant takes the group over, the way the plain variant of the
+    numbers takes the group of a nan over: the answer of a group that holds
+    a NaT is the NaT of the unit.  The nan variant leaves the NaT tick out,
+    as every nan variant leaves the nan out.
     """
     valid_nan = _valid_nan_scan(True)
 
@@ -526,7 +566,13 @@ def _tick_quantile_group(nans: bool) -> Callable[..., None]:
             else:
                 out[g] = _quantile_at_ticks(buf, 0, m, q, method)
         else:
-            out[g] = _quantile_at_ticks(a_sorted, starts[g], counts[g], q, method)
+            # the plain variant of the ticks: a NaT tick takes the group
+            # over, the way a nan takes the group of the numbers over - the
+            # answer of such a group is the NaT of the unit
+            if _holds_nat_tick(a_sorted, starts[g], counts[g]):
+                out[g] = NAT_TICK
+            else:
+                out[g] = _quantile_at_ticks(a_sorted, starts[g], counts[g], q, method)
 
     return group
 
@@ -782,96 +828,6 @@ def _tick_quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.i
     return njit_stable(mt_passes, name=f"{'nan' if nans else ''}tick_quantile_mt_passes", parallel=True)
 
 
-median = build_custom_kernel(
-    "median",
-    driver_factory=_median_driver_factory,
-    mt_driver_factory=_median_mt_factory,
-    rule=rule_float,
-    fill_default=np.nan,
-    doc="Median of the values of every group",
-)
-
-
-def _quantile_driver_factory(nans: bool) -> Any:
-    """The driver of the quantile - the median is the quantile 0.5.
-
-    The quantile is an order statistic, so it groups the data the same way the
-    median does: a counting sort places the values of every group in a
-    contiguous block, and the wanted quantile is then selected out of the block
-    (O(n) on average) instead of sorting it.
-    """
-    op_name = "nanquantile" if nans else "quantile"
-    group = _quantile_group_nan if nans else _quantile_group_plain
-
-    def driver(
-        group_idx: npt.NDArray[np.integer],
-        a: npt.NDArray[np.number],
-        size_arg: int,
-        out_dtype: np.dtype,
-        aux_dtype: np.dtype,
-        fill_value: float,
-        q: float,
-    ) -> npt.NDArray[np.number]:
-        # the quantile is order-insensitive and takes its quantile
-        size = output_size(group_idx, size_arg)
-        out = np.full(size, fill_value, out_dtype)
-        # counting-sort placement into contiguous group-blocks (the order
-        # within a block is arbitrary, which the quantile ignores)
-        counts, starts, a_sorted = _place_values(group_idx, a, size)
-        # the nan variant filters the nans out into a buffer of its own, the
-        # plain one leaves the values where they are and needs none
-        buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
-        for g in range(size):
-            group(g, a_sorted, counts, starts, buf, out, fill_value, q)
-        return out
-
-    return njit_stable(driver, name=f"{op_name}_driver")
-
-
-def _quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
-    """The parallel passes of the quantile, the groups cut into ranges.
-
-    The same shape as ``_median_mt_factory``, for the same reasons.
-    """
-    group = _quantile_group_nan if nans else _quantile_group_plain
-
-    def mt_passes(
-        group_idx: npt.NDArray[np.integer],
-        a: npt.NDArray[np.number],
-        size_arg: int,
-        out_dtype: np.dtype,
-        aux_dtype: np.dtype,
-        fill_value: float,
-        q: float,
-        n_threads: int,
-    ) -> npt.NDArray[np.number]:
-        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
-        if setup is None:
-            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q)
-        # unpacked before the prange - see the note in _median_mt_factory
-        counts, starts, a_sorted, edges, largest = setup
-        out = np.full(counts.size, fill_value, out_dtype)
-        bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
-        for c in nb.prange(largest.size):
-            buf = bufs[c]
-            for g in range(edges[c], edges[c + 1]):
-                group(g, a_sorted, counts, starts, buf, out, fill_value, q)
-        return out
-
-    return njit_stable(mt_passes, name=f"{'nan' if nans else ''}quantile_mt_passes", parallel=True)
-
-
-quantile = build_custom_kernel(
-    "quantile",
-    driver_factory=_quantile_driver_factory,
-    mt_driver_factory=_quantile_mt_factory,
-    rule=rule_float,
-    fill_default=np.nan,
-    variant="q",
-    doc="Quantile of the values of every group",
-)
-
-
 tick_median = build_custom_kernel(
     "tick_median",
     # the same driver and the same parallel passes as the numeric median,
@@ -884,6 +840,102 @@ tick_median = build_custom_kernel(
     fill_default=0,
     doc="Median of the ticks of every group, the exact middle of the ticks - the tick of a NaT poisons its group, and the nan form leaves it out",
 )
+
+
+median = build_custom_kernel(
+    "median",
+    driver_factory=_median_driver_factory,
+    mt_driver_factory=_median_mt_factory,
+    rule=rule_float,
+    fill_default=np.nan,
+    doc="Median of the values of every group",
+    # the median of the temporal input is the median of the ticks
+    tick=TickKernel(
+        plain=make_tick_call("tick_median_call", tick_median.plain),
+        nan=make_tick_call("nantick_median_call", tick_median.nan),
+    ),
+)
+
+
+def _quantile_driver_factory(nans: bool, scale: float = 1.0, name: str = "quantile") -> Any:
+    """The driver of the quantile - the median is the quantile 0.5.
+
+    The quantile is an order statistic, so it groups the data the same way the
+    median does: a counting sort places the values of every group in a
+    contiguous block, and the wanted quantile is then selected out of the block
+    (O(n) on average) instead of sorting it.
+
+    The percentile is the quantile in percent: its driver is the one of the
+    quantile with the argument scaled down before it reaches the selection.
+    """
+    op_name = ("nan" if nans else "") + name
+    group = _quantile_group_nan if nans else _quantile_group_plain
+
+    def driver(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        q: float,
+        method: str,
+    ) -> npt.NDArray[np.number]:
+        # the quantile is order-insensitive and takes its quantile
+        size = output_size(group_idx, size_arg)
+        out = np.full(size, fill_value, out_dtype)
+        # counting-sort placement into contiguous group-blocks (the order
+        # within a block is arbitrary, which the quantile ignores)
+        counts, starts, a_sorted = _place_values(group_idx, a, size)
+        # the nan variant filters the nans out into a buffer of its own, the
+        # plain one leaves the values where they are and needs none
+        buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
+        # the percentile takes its argument in percent
+        fraction = q * scale
+        for g in range(size):
+            group(g, a_sorted, counts, starts, buf, out, fill_value, fraction, method)
+        return out
+
+    return njit_stable(driver, name=f"{op_name}_driver")
+
+
+def _quantile_mt_factory(
+    nans: bool, driver: Callable[..., npt.NDArray[np.number]], scale: float = 1.0, name: str = "quantile"
+) -> Any:
+    """The parallel passes of the quantile, the groups cut into ranges.
+
+    The same shape as ``_median_mt_factory``, for the same reasons.
+    """
+    op_name = ("nan" if nans else "") + name
+    group = _quantile_group_nan if nans else _quantile_group_plain
+
+    def mt_passes(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        extra: Any,
+        n_threads: int,
+    ) -> npt.NDArray[np.number]:
+        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
+        if setup is None:
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra[0] * scale, extra[1])
+        # unpacked before the prange - see the note in _median_mt_factory
+        counts, starts, a_sorted, edges, largest = setup
+        out = np.full(counts.size, fill_value, out_dtype)
+        bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
+        # the percentile takes its argument in percent
+        fraction = extra[0] * scale
+        method = extra[1]
+        for c in nb.prange(largest.size):
+            buf = bufs[c]
+            for g in range(edges[c], edges[c + 1]):
+                group(g, a_sorted, counts, starts, buf, out, fill_value, fraction, method)
+        return out
+
+    return njit_stable(mt_passes, name=f"{op_name}_mt_passes", parallel=True)
 
 
 tick_quantile = build_custom_kernel(
@@ -900,6 +952,42 @@ tick_quantile = build_custom_kernel(
     fill_default=0,
     variant="q_method",
     doc="Quantile of the ticks of every group, the way numpy computes it - the tick of a NaT poisons its group, and the nan form leaves it out",
+)
+
+
+quantile = build_custom_kernel(
+    "quantile",
+    driver_factory=_quantile_driver_factory,
+    mt_driver_factory=_quantile_mt_factory,
+    rule=rule_float,
+    fill_default=np.nan,
+    variant="q_method",
+    doc="Quantile of the values of every group",
+    # the quantile of the temporal input is the quantile of the ticks
+    tick=TickKernel(
+        plain=make_tick_call_q("tick_quantile_call", tick_quantile.plain),
+        nan=make_tick_call_q("nantick_quantile_call", tick_quantile.nan),
+    ),
+)
+
+
+percentile = build_custom_kernel(
+    "percentile",
+    # the driver and the parallel passes of the quantile, with the argument
+    # scaled down: the percentile is the quantile in percent.  The five
+    # methods of numpy run in the kernel, the same way they run in the
+    # kernel of the quantile.
+    driver_factory=partial(_quantile_driver_factory, scale=0.01, name="percentile"),
+    mt_driver_factory=partial(_quantile_mt_factory, scale=0.01, name="percentile"),
+    rule=rule_float,
+    fill_default=np.nan,
+    variant="q_method",
+    doc="Percentile of the values of every group - the quantile in percent",
+    # the percentile of the temporal input is the percentile of the ticks
+    tick=TickKernel(
+        plain=make_tick_call_q("tick_percentile_call", tick_quantile.plain, scale=0.01),
+        nan=make_tick_call_q("nantick_percentile_call", tick_quantile.nan, scale=0.01),
+    ),
 )
 
 

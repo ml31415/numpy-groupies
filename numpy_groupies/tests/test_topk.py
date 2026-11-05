@@ -147,7 +147,7 @@ def test_the_topk_of_the_ticks_answers_the_ticks():
     ticks = np.array([5, -9223372036854775808, 9, 3], dtype=np.int64)
     group_idx = np.array([0, 0, 1, 1])
     np.testing.assert_array_equal(
-        npgb.tick_topk(group_idx, ticks, 2),
+        npgb.specials.tick_topk.plain.stub(group_idx, ticks, 2),
         np.array([[5, 0], [9, 3]], dtype=np.int64),
     )
 

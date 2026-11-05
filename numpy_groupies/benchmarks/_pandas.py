@@ -7,12 +7,16 @@ import numpy.typing as npt
 import pandas as pd
 
 from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
-from numpy_groupies.common import (
-    DEFAULT_FILL_VALUE,
-    aggregate_common_doc,
+from numpy_groupies.driver import (
+    _aggregate_wrap,
+    aliasing,
 )
-from numpy_groupies.nptools import aliasing, allnan, anynan, check_dtype, iscomplexobj
+from numpy_groupies.dtypes import (
+    check_dtype,
+    iscomplexobj,
+)
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.functions import aggregate_common_doc
 from numpy_groupies.registry import (
     Registry,
     Resolved,
@@ -20,6 +24,16 @@ from numpy_groupies.registry import (
     funcs_no_separate_nan,
 )
 from numpy_groupies.typing import AFillValue, AResult, AScalar, RavelOrder
+
+
+def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:
+    """True where every value of the group is a nan - the kernel of allnan."""
+    return np.all(np.isnan(x))
+
+
+def anynan(x: npt.NDArray[np.inexact]) -> np.bool_:
+    """True where any value of the group is a nan - the kernel of anynan."""
+    return np.any(np.isnan(x))
 
 
 def _wrapper(
@@ -55,7 +69,7 @@ def _wrapper(
     if funcname in ("var", "std"):
         kwargs["ddof"] = ddof
     # kwargs starting with "_" are internal flags (e.g. _nansqueeze injected by
-    # _aggregate_base) that pandas does not understand - the rest is forwarded.
+    # aggregate) that pandas does not understand - the rest is forwarded.
     kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
     # grouping a Series over the raw arrays skips per-call DataFrame
     # construction (~2ms) and direct method calls skip the generic
@@ -177,16 +191,16 @@ def aggregate(
             axis=axis,
             **kwargs,
         )
-    return _aggregate_base(
+    return _aggregate_wrap(
+        _dispatch,
         group_idx,
         a,
+        func,
         size=size,
         fill_value=fill_value,
         order=order,
         dtype=dtype,
-        func=func,
         axis=axis,
-        _dispatch=_dispatch,
         len_counts_values=True,
         **kwargs,
     )

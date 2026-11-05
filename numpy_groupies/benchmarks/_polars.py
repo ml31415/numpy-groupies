@@ -14,12 +14,16 @@ import numpy.typing as npt
 import polars as pl
 
 from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
-from numpy_groupies.aggregate_numpy.base import _aggregate_base
-from numpy_groupies.common import (
-    DEFAULT_FILL_VALUE,
-    aggregate_common_doc,
+from numpy_groupies.driver import (
+    _aggregate_wrap,
+    aliasing,
 )
-from numpy_groupies.nptools import aliasing, check_dtype, iscomplexobj
+from numpy_groupies.dtypes import (
+    check_dtype,
+    iscomplexobj,
+)
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.functions import aggregate_common_doc
 from numpy_groupies.registry import (
     Registry,
     Resolved,
@@ -176,7 +180,7 @@ def _wrapper(
         func = "cumsum"
         funcname = "cumsum"
     # the nan-version of a function is the plain one over the values without
-    # their nans - the filter of _aggregate_base takes care of that, except
+    # their nans - the filter of the aggregate takes care of that, except
     # for the arg-reductions, which mask the nans instead of dropping them
     is_nan_version = funcname.startswith("nan")
     plain = funcname[3:] if is_nan_version else funcname
@@ -292,7 +296,7 @@ _op_dict.update(
     ("nan" + fn, partial(_wrapper, func="nan" + fn)) for fn in _supported_funcs if fn not in funcs_no_separate_nan
 )
 # the nan-versions of the extremes are the plain ones over the values without
-# their nans - the filter of _aggregate_base takes care of that
+# their nans - the filter of the aggregate takes care of that
 _op_dict["nancumsum"] = partial(_wrapper, func="nancumsum")
 
 
@@ -334,16 +338,16 @@ def aggregate(
             axis=axis,
             **kwargs,
         )
-    return _aggregate_base(
+    return _aggregate_wrap(
+        _dispatch,
         group_idx,
         a,
+        func,
         size=size,
         fill_value=fill_value,
         order=order,
         dtype=dtype,
-        func=func,
         axis=axis,
-        _dispatch=_dispatch,
         len_counts_values=True,
         **kwargs,
     )

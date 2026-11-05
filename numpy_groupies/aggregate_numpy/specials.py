@@ -11,8 +11,8 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.aggregate_numpy.steps import group_order, sort_key
-from numpy_groupies.common import nan_of
-from numpy_groupies.nptools import QUANTILE_METHODS
+from numpy_groupies.fills import nan_of
+from numpy_groupies.functions import QUANTILE_METHODS
 from numpy_groupies.temporal import NAT_TICK
 from numpy_groupies.typing import AResult, AScalar
 

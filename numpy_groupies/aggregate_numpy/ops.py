@@ -44,7 +44,8 @@ from numpy_groupies.aggregate_numpy.specials import (
     _sort,
     _topk,
 )
-from numpy_groupies.nptools import aliasing
+from numpy_groupies.aggregate_numpy.temporal import build_temporal_ops
+from numpy_groupies.driver import aliasing
 from numpy_groupies.registry import (
     Registry,
     Resolved,
@@ -109,4 +110,9 @@ def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     return Resolved(callable_, op)
 
 
-_dispatch = Registry(_op_dict, aliasing, _custom_operation)
+# the temporal operations of the backend: the operation of every function
+# for the datetime64 and the timedelta64 input, built like the numeric ones
+# and put into the registry beside them.
+_temporal_ops = build_temporal_ops(_op_dict)
+
+_dispatch = Registry(_op_dict, aliasing, _custom_operation, _temporal_ops)

@@ -17,8 +17,8 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate, aggregate_numba, aggregate_numpy
-from numpy_groupies.aggregate_numba import compose
-from numpy_groupies.registry import (
+from numpy_groupies.aggregate_numba import averaging, compose, specials
+from numpy_groupies.functions import (
     func_extras,
 )
 from numpy_groupies.tests.reference import aggregate_ref
@@ -56,8 +56,7 @@ def test_uint64_sum_kernel_keeps_integer_precision(name, large):
 # the kernels of ``make_stub``, which is where the input checks are written - as
 # many of the tests below ask them all.  ``step_count`` and ``step_indices`` are
 # jitted functions with a signature of their own, ``unpack`` and ``unpack_into``
-# gather a result back onto the input, the percentile is the quantile in percent
-# and so an entry point of the backend, and ``aggregate`` is the python-level
+# gather a result back onto the input, and ``aggregate`` is the python-level
 # dispatcher of the module: none of them is such an entry point
 _ALL_KERNELS = [
     name
@@ -69,8 +68,6 @@ _ALL_KERNELS = [
         "step_indices",
         "unpack",
         "unpack_into",
-        "percentile",
-        "nanpercentile",
     )
 ]
 
@@ -126,11 +123,15 @@ _FLOAT_OPS = [
     ("nanmedian", {}),
     ("quantile", {}),
     ("nanquantile", {}),
+    ("percentile", {}),
+    ("nanpercentile", {}),
     ("topk", {}),
     ("topk", {"k": 3}),
     ("topk", {"k": 3, "largest": False}),
     ("quantile", {"q": 0.9}),
     ("nanquantile", {"q": 0.9}),
+    ("percentile", {"q": 90.0}),
+    ("nanpercentile", {"q": 90.0}),
     ("trapezoid", {"dx": 1.0}),
     ("nantrapezoid", {"dx": 1.0}),
     ("sumofsquares", {}),
@@ -212,7 +213,17 @@ def _kernel_arguments(name, kwargs):
 # own.  An operation without such an argument has no extra argument at all.
 def test_the_python_and_the_jitted_signature_of_a_kernel_are_one():
     for name, typing_function in compose._TYPING_FUNCTIONS.items():
-        stub = getattr(aggregate_numba, name)
+        stub = getattr(aggregate_numba, name, None)
+        if stub is None:
+            # the kernel of the ticks: no name of the package shadows it, and
+            # its stub lives on the pair of its module
+            base = name.removeprefix("nan")
+            for module in (averaging, specials):
+                pair = getattr(module, base, None)
+                if pair is not None:
+                    stub = pair.nan.stub if name.startswith("nan") else pair.plain.stub
+                    break
+        assert stub is not None, name
         assert signature(stub) == signature(typing_function), name
 
 
@@ -328,6 +339,23 @@ def test_float_ops_match_layer2(name, kwargs):
     np.testing.assert_allclose(_python_kernel_result(name, FLOAT_A, **kwargs), expected, equal_nan=True)
 
 
+@pytest.mark.parametrize("name", ["percentile", "nanpercentile"])
+def test_the_percentile_is_the_quantile_in_percent(name):
+    """The percentile is the quantile in percent - and it is a kernel of its own.
+
+    The kernel of the percentile scales its argument down before it reaches
+    the selection, so that jitted code can call it like every other kernel.
+    """
+    group_idx = np.array([0, 0, 1, 1])
+    values = np.array([1.0, 3.0, 5.0, 7.0])
+
+    percentile = getattr(aggregate_numba, name)(group_idx, values, 50.0, "linear", 2, None)
+    quantile = getattr(aggregate_numba, name.replace("percentile", "quantile"))(
+        group_idx, values, 0.5, "linear", 2, None
+    )
+    np.testing.assert_array_equal(percentile, quantile)
+
+
 @pytest.mark.parametrize("name,kwargs", _INT_OPS)
 def test_int_ops_match_layer2(name, kwargs):
     expected = _layer2_result(name, INT_A, **kwargs)
@@ -403,7 +431,7 @@ def test_pure_python_call_refuses_a_fill_value_as_jitted_code_does():
 # and through the python-level aggregate() that shares the driver with them.
 # The input checks run once per call in each of them - at the entry point of the
 # kernel for the first two (the body of the stub and the implementation of its
-# overload), in nptools.input_validation for the third - and no call ever runs
+# overload), in numpy_groupies.inputs.input_validation for the third - and no call ever runs
 # them twice, which is what the fast path of the wrapper exists to avoid.  Each
 # style is a function of the kernel it is asked of: a kernel is an overload, and
 # an overload cannot be passed into jitted code as an argument.
@@ -489,6 +517,17 @@ _TEMPORAL_KERNELS = frozenset(
         "nanmin",
         "nunique",
         "nannunique",
+        # the mean, the median and the quantile are computed on the int64
+        # ticks of the values - the arithmetic of the ticks is exact, where
+        # the arithmetic of the values would be in float64
+        "mean",
+        "nanmean",
+        "median",
+        "nanmedian",
+        "quantile",
+        "nanquantile",
+        "percentile",
+        "nanpercentile",
         # the topk orders the values of a group and leaves the missing ones
         # out - a NaT is neither the largest nor the smallest value
         "topk",
@@ -582,7 +621,7 @@ def test_every_kernel_says_whether_it_takes_temporal_values(kernel_name, style):
 
 
 # the fill value of a call has to fit the output it fills - the same rule the
-# python-level call applies (nptools.check_fill_value), in the same words:
+# python-level call applies (numpy_groupies.dtypes.check_fill_value), in the same words:
 # a nan does not fit an integer output, a boolean output takes the two
 # booleans, and a value that is no number at all fits nothing.
 _FILL_CASES = [
@@ -702,7 +741,7 @@ def test_quantile_orders_complex_from_njit_like_the_reference():
     # answers like the reference does.
     @nb.njit
     def wrapped(group_idx, a):
-        return aggregate_numba.quantile(group_idx, a, 0.5, 2, None)
+        return aggregate_numba.quantile(group_idx, a, 0.5, "linear", 2, None)
 
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
@@ -714,7 +753,7 @@ def test_quantile_of_a_complex_group_with_a_nan_poisons_it_from_njit():
     # the whole group answers with a nan - the plain quantile is contagious
     @nb.njit
     def wrapped(group_idx, a):
-        return aggregate_numba.quantile(group_idx, a, 0.5, 2, None)
+        return aggregate_numba.quantile(group_idx, a, 0.5, "linear", 2, None)
 
     group_idx = np.array([0, 0, 1])
     a = np.array([1 + 2j, complex(np.nan, 4.0), 5 + 6j])
@@ -842,18 +881,21 @@ def test_dtype_rules(kernel_name, values, expected_dtype):
     assert caller(GROUP_IDX, values).dtype == expected_dtype
 
 
-def test_a_float16_input_is_the_one_refusal_the_typing_function_cannot_name():
-    """The dtype no world of a kernel can be asked about.
+def test_a_float16_input_is_widened_from_python_and_refused_from_jit():
+    """The one dtype numba has no world for.
 
-    ``aggregate()`` widens float16 values to float32 on the way to the driver,
-    a kernel has no such step in front of it: the numba type of the values is
-    what the entry point of both of its worlds starts from, and numba answers
-    float16 - the one numeric dtype it has no type for - with a
-    NotImplementedError of its own.
+    The python entry of a kernel widens float16 values to float32 ahead of
+    the driver and rounds an inexact result back - the values survive the
+    widening exactly, and the float32 plan is the one ``aggregate()`` runs
+    them on as well.  From jitted code a float16 never arrives at a kernel,
+    and the typing function says so: numba answers the one numeric dtype it
+    cannot place with a NotImplementedError of its own.
     """
     values = FLOAT_A.astype(np.float16)
-    with pytest.raises(NotImplementedError, match="float16"):
-        aggregate_numba.mean(GROUP_IDX, values)
+    result = aggregate_numba.mean(GROUP_IDX, values)
+    widened = aggregate_numba.mean(GROUP_IDX, values.astype(np.float32))
+    assert result.dtype == np.float16
+    np.testing.assert_array_equal(result, widened.astype(np.float16))
 
     @nb.njit
     def caller(group_idx, a):

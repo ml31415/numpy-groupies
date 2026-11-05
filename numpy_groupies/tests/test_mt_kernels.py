@@ -32,7 +32,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies.aggregate_numba import aggregate, mt
-from numpy_groupies.registry import DEFAULT_FILL_VALUE
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
 
 # the operations that can be reduced in chunks - the others need the values
 # of a group together (the order statistics) or one output per value (the

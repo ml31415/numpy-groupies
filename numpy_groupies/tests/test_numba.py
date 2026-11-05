@@ -22,7 +22,7 @@ from numpy_groupies.aggregate_numba import aggregate, ops
 from numpy_groupies.aggregate_numba.gather import _gather_1d
 from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile, njit_stable
 from numpy_groupies.aggregate_numba.ops import _dispatch
-from numpy_groupies.nptools import resolve_output_dtype
+from numpy_groupies.dtypes import resolve_output_dtype
 
 
 @pytest.fixture(
@@ -275,7 +275,7 @@ def test_every_known_function_is_implemented():
     collecting function included, which has no compiled kernel but a python
     implementation of its own.
     """
-    missing = sorted({name for name, impl in _dispatch.values() if impl is None})
+    missing = sorted({resolved.funcname for resolved in _dispatch.values() if resolved.op is None})
     assert missing == []
 
 

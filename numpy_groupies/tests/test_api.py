@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from numpy_groupies.common import default_fill_value
+from numpy_groupies.fills import default_fill_value
 from numpy_groupies.tests.helpers import (
     assert_same_result,
     func_list,

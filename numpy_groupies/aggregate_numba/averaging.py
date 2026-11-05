@@ -17,11 +17,17 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_float, rule_int64, rule_real_float
+from numpy_groupies.aggregate_numba.compose import (
+    TickKernel,
+    build_kernel,
+    complex_less,
+    make_tick_call,
+    rule_float,
+    rule_int64,
+    rule_real_float,
+)
 from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.registry import FuncName
 from numpy_groupies.temporal import NAT_TICK
-from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
     INT64_DEVIATION_LIMIT,
@@ -436,6 +442,12 @@ mean = build_kernel(
     fill_default=np.nan,
     rule=rule_float,
     doc="Arithmetic mean of the values of every group",
+    # the mean of the temporal input is the mean of the ticks: the stub
+    # hands the ticks to the tick kernel and views the answer back
+    tick=TickKernel(
+        plain=make_tick_call("tick_mean_call", tick_mean.plain),
+        nan=make_tick_call("nantick_mean_call", tick_mean.nan),
+    ),
 )
 
 
@@ -622,28 +634,6 @@ def _moment_combine(acc: MomentState, other: MomentState, fill_value: float, ext
                 acc.high[0] = other.high[0]
 
 
-def _complex_moments_refusal(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
-    func: FuncName,
-    size: int | tuple[int, ...] | npt.NDArray[np.integer] | None,
-    fill_value: AFillValue,
-    order: RavelOrder,
-    dtype: npt.DTypeLike | None,
-    axis: int | None,
-) -> AResult:
-    """The refusal for the input the compiled moments cannot take.
-
-    The skewness and the kurtosis are not defined for the complex values,
-    and the compiled kernel says so with a ``TypeError`` from inside its
-    accumulation loop - a loop that runs inside the parallel region of the
-    parallel path, where an exception cannot leave.  The refusal therefore
-    stands here, ahead of the kernel, with the complaint the numpy backend
-    raises for the very same input.
-    """
-    raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
-
-
 def _skew_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
     n = st.count[g]
     if n == 0:
@@ -695,7 +685,11 @@ skew = build_kernel(
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,
-    fallback=_complex_moments_refusal,
+    # the skewness is not defined for the complex values, and the compiled
+    # kernel would say so from inside its accumulation loop - a loop that
+    # runs inside the parallel region of the parallel path, where an
+    # exception cannot leave.  The refusal stands ahead of the kernel.
+    refusal=MOMENTS_NOT_FOR_COMPLEX,
     doc="Skewness of the values of every group",
 )
 
@@ -723,7 +717,9 @@ kurt = build_kernel(
     forced_fill=0,
     fill_default=np.nan,
     rule=rule_float,
-    fallback=_complex_moments_refusal,
+    # the kurtosis is not defined for the complex values - the refusal
+    # stands ahead of the kernel, like the one of the skewness
+    refusal=MOMENTS_NOT_FOR_COMPLEX,
     doc="Excess kurtosis of the values of every group",
 )
 

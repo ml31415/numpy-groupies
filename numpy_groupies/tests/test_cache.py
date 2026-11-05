@@ -9,6 +9,10 @@ survives the uninstallation and leaves a broken installation behind
 
 ``purge_cache()`` removes both that directory and the leftovers of the versions that
 cached next to their source.
+
+The module of the cache imports nothing but the standard library, and the root
+imports it on the module level: the sweep also answers where the backend whose
+files it cleans up after is gone - which is when it is asked for most.
 """
 
 import os
@@ -20,6 +24,7 @@ from numba.core.caching import NullCache
 import numpy_groupies
 from numpy_groupies.cache import numba_cache_dir, package_dir, purge_cache
 from numpy_groupies.tests.test_numba import _walk_dispatchers
+from numpy_groupies.tests.test_purepy import _BLOCKER
 
 PACKAGE = package_dir()
 
@@ -80,6 +85,36 @@ def test_purge_cache_removes_the_cache_and_the_leftovers_in_the_source_tree(monk
 
 def test_the_package_hands_out_the_purge_cache():
     assert numpy_groupies.purge_cache is purge_cache
+
+
+def test_the_sweep_also_answers_where_the_backend_is_gone(tmp_path):
+    """The sweep works without the backend whose files it sweeps.
+
+    A caller may just have uninstalled numba - its cache and the leftovers of
+    the versions that cached next to their source are still there.  The
+    module of the cache needs nothing but the standard library, so the sweep
+    runs and removes them even then: blocked numpy brings no numba with it,
+    and the backend of the package is gone - the cache is not.
+    """
+    (tmp_path / "sitecustomize.py").write_text(_BLOCKER)
+    cache = tmp_path / "caches" / "numpy_groupies"
+    cache.mkdir(parents=True)
+    (cache / "a.nbi").write_text("index")
+    script = (
+        "import numpy_groupies as npg\n"
+        "assert npg.aggregate_numba is None, 'the backend should not be there'\n"
+        "assert npg.purge_cache() == 1\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(PACKAGE.parent),
+        env={**os.environ, "PYTHONPATH": str(tmp_path), "NUMBA_CACHE_DIR": str(tmp_path / "caches")},
+    )
+    assert result.returncode == 0, result.stderr
+    assert not cache.exists(), "the cache is not removed"
 
 
 def test_every_dispatcher_caches_in_the_directory_of_the_package():

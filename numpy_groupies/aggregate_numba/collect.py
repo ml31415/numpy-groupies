@@ -20,7 +20,7 @@ from numpy_groupies.aggregate_numba.compose import build_custom_kernel, output_s
 from numpy_groupies.aggregate_numba.fallback import FALLBACK
 from numpy_groupies.aggregate_numba.jit import njit_stable
 from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_starts
-from numpy_groupies.nptools import blocks_to_object_array
+from numpy_groupies.groups import blocks_to_object_array
 
 # the dtypes the compiled driver can place - the numeric ones the drivers of
 # the other operations take as well.  The list is no duplication of what numba
