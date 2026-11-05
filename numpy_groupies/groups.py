@@ -13,14 +13,6 @@ from numpy_groupies.typing import AScalar
 from numpy_groupies.validation import EXACT_FLOAT64_INTEGER_LIMIT
 
 
-def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:
-    return np.all(np.isnan(x))
-
-
-def anynan(x: npt.NDArray[np.inexact]) -> np.bool_:
-    return np.any(np.isnan(x))
-
-
 def multi_arange(n: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
     """By example:
 

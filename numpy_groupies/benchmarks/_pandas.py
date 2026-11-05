@@ -17,10 +17,6 @@ from numpy_groupies.dtypes import (
 )
 from numpy_groupies.fills import DEFAULT_FILL_VALUE
 from numpy_groupies.functions import aggregate_common_doc
-from numpy_groupies.groups import (
-    allnan,
-    anynan,
-)
 from numpy_groupies.registry import (
     Registry,
     Resolved,
@@ -28,6 +24,16 @@ from numpy_groupies.registry import (
     funcs_no_separate_nan,
 )
 from numpy_groupies.typing import AFillValue, AResult, AScalar, RavelOrder
+
+
+def allnan(x: npt.NDArray[np.inexact]) -> np.bool_:
+    """True where every value of the group is a nan - the kernel of allnan."""
+    return np.all(np.isnan(x))
+
+
+def anynan(x: npt.NDArray[np.inexact]) -> np.bool_:
+    """True where any value of the group is a nan - the kernel of anynan."""
+    return np.any(np.isnan(x))
 
 
 def _wrapper(
