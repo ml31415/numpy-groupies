@@ -119,7 +119,7 @@ One value per group.
 | `percentile`   | Percentile of the items; the quantile in percent (`q` from 0 to 100, 50 by default). |
 | `skew`         | Skewness of the items — the third central moment over the second one to the three-halves power, corrected for the size of the group the way pandas corrects it. A group of fewer than three items has no skewness, and a group whose items are all the same has none either (the answer is then 0). |
 | `kurt`         | Excess kurtosis of the items — the fourth central moment over the square of the second one, minus the three of a normal distribution, corrected for the size of the group the way pandas corrects it. A group of fewer than four items has no kurtosis. (alias: `kurtosis`) |
-| `var`          | Variance; the divisor is `N - ddof` (`ddof=0` by default). |
+| `var`          | Variance; the divisor is `N - ddof` (`ddof=0` by default). A group with fewer items than the `ddof` asks for has no degrees of freedom, and therefore no variance: it answers `fill_value` (`nan`), like a group whose values cannot be compared. |
 | `std`          | Standard deviation; `ddof` as for `var`. |
 | `min`, `max`   | Minimum / maximum. (aliases: `amin`, `minimum`; `amax`, `maximum`) |
 | `first`, `last` | First / last item of the group, in the order of appearance in `a`. |

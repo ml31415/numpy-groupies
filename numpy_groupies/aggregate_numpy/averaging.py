@@ -151,20 +151,26 @@ def _central_moments(
     """The counts and the sums of the squared, cubed and fourth powers of the
     deviations of the values of every group from their mean.
 
-    The mean comes first and the deviations from it second, as in the
-    variance: the moments of the raw values would cancel each other out.
+    The group is centered on its first value first - the same centering the
+    variance of the integers uses: the deviations of a group whose values are
+    all the same are then exactly zero, and the spread of such a group is
+    zero - and the mean of those deviations is taken off as well, which is
+    the mean of the group.  The moments of the raw values would cancel each
+    other out.
     """
     counts = np.bincount(group_idx, minlength=size)
+    origins = _first(group_idx, a, size, 0, dtype=a.dtype)
+    devs = a - origins[group_idx]
     with np.errstate(divide="ignore", invalid="ignore"):
         means = (
             np.bincount(
                 group_idx,
-                weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating] | npt.NDArray[np.bool_]", a),
+                weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating] | npt.NDArray[np.bool_]", devs),
                 minlength=size,
             )
             / counts
         )
-    devs = a - means[group_idx]
+    devs = devs - means[group_idx]
     # bincount takes the weights as floats - the signature says generic.  The
     # casts say so as well: numpy 2.4 types the result of a bincount with
     # weights as an integer array, numpy 2.5 as a float one - the array holds
@@ -307,9 +313,12 @@ def _var(
             weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating] | npt.NDArray[np.bool_]", a),
             minlength=size,
         )
+    # a group without degrees of freedom has no answer: it takes the fill
+    # value, like a group that the nan of one of its values poisoned
+    answerable = (counts > 0) & (counts > ddof)
     with np.errstate(divide="ignore", invalid="ignore"):
         means = sums / counts
-        counts = np.where(counts > ddof, counts - ddof, 0)
+        counts = np.where(answerable, counts - ddof, 0)
         devs = a - means[group_idx]
         if iscomplexobj(a):
             # the magnitude squared of the complex deviation is real, so
@@ -322,8 +331,11 @@ def _var(
         ret = np.bincount(group_idx, devs_sq, minlength=size) / counts
     if sqrt:
         ret = np.sqrt(ret)  # this is now std not var
-    if not np.isnan(fill_value):
-        ret[counts == 0] = fill_value
+    # the groups without degrees of freedom take the fill value - the
+    # division above leaves an infinity or a nan behind, and neither of them
+    # is an answer the package gives; the fill is set after the square root,
+    # which would turn a negative one into a nan
+    ret[~answerable] = fill_value
     return ret.astype(dtype, copy=False)
 
 

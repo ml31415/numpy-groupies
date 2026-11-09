@@ -161,6 +161,25 @@ def _sum_of_squares(values: npt.NDArray[np.floating], pos: npt.NDArray[np.intege
     return np.sum(np.abs(values) ** 2)
 
 
+def _var_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer], ddof: int = 0) -> Any:
+    """the variance of one group.
+
+    A group without degrees of freedom - fewer values than the ``ddof``
+    asks for - has no answer, and takes the fill value: the doctrine of the
+    package for a group it cannot compute.
+    """
+    if len(values) - ddof <= 0:
+        return None
+    return np.var(values, ddof=ddof)
+
+
+def _std_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer], ddof: int = 0) -> Any:
+    """the standard deviation of one group - no answer without degrees of freedom."""
+    if len(values) - ddof <= 0:
+        return None
+    return np.std(values, ddof=ddof)
+
+
 def _nunique_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> int:
     """the number of distinct values of one group.
 
@@ -183,6 +202,19 @@ def _nunique_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -
     return distinct
 
 
+def _deviations(values: npt.NDArray[np.number]) -> npt.NDArray[np.floating]:
+    """the deviations of the values of a group from their mean.
+
+    The group is centered on its first value first - the same centering the
+    package does for the variance of integers: the deviations of a group
+    whose values are all the same are then exactly zero, and the spread of
+    such a group is zero - and the mean of those deviations is taken off as
+    well, which is the mean of the group.
+    """
+    devs = values - values[0]
+    return devs - devs.mean()
+
+
 def _skew_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> float:
     """the skewness of the values of one group.
 
@@ -196,7 +228,7 @@ def _skew_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> f
     n = len(values)
     if n < 3:
         return float("nan")
-    devs = values - values.mean()
+    devs = _deviations(values)
     s2 = float((devs**2).sum())
     if s2 == 0:
         return 0.0
@@ -215,7 +247,7 @@ def _kurt_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> f
     n = len(values)
     if n < 4:
         return float("nan")
-    devs = values - values.mean()
+    devs = _deviations(values)
     s2 = float((devs**2).sum())
     if s2 == 0:
         return 0.0
@@ -295,8 +327,8 @@ _REF_ONE_PER_GROUP: dict[str, Callable[..., Any]] = {
     "median": _of(np.median),
     "quantile": lambda v, pos, q=0.5, method="linear": _quantile_ref(v, q, method),
     "percentile": lambda v, pos, q=50.0, method="linear": _quantile_ref(v, q / 100.0, method),
-    "std": lambda v, pos, ddof=0: np.std(v, ddof=ddof),
-    "var": lambda v, pos, ddof=0: np.var(v, ddof=ddof),
+    "std": _std_ref,
+    "var": _var_ref,
     "trapezoid": _trapezoid_of,
     "sumofsquares": _sum_of_squares,
     "len": lambda v, pos: len(v),
@@ -319,8 +351,8 @@ _REF_ONE_PER_GROUP: dict[str, Callable[..., Any]] = {
     "nanmedian": _skip_nans(_of(np.median)),
     "nanquantile": _skip_nans(lambda v, pos, q=0.5, method="linear": _quantile_ref(v, q, method)),
     "nanpercentile": _skip_nans(lambda v, pos, q=50.0, method="linear": _quantile_ref(v, q / 100.0, method)),
-    "nanstd": _skip_nans(lambda v, pos, ddof=0: np.std(v, ddof=ddof)),
-    "nanvar": _skip_nans(lambda v, pos, ddof=0: np.var(v, ddof=ddof)),
+    "nanstd": _skip_nans(_std_ref),
+    "nanvar": _skip_nans(_var_ref),
     "nantrapezoid": _skip_nans(_trapezoid_of),
     "nansumofsquares": _skip_nans(_sum_of_squares),
     "nanlen": _skip_nans(lambda v, pos: len(v)),

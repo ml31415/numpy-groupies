@@ -193,6 +193,10 @@ def _var(x: Sequence[Any], ddof: int = 0) -> Any:
     # integer input is centered on its first value first - python ints keep
     # the deviations exact, so a large common offset cannot erase the small
     # deviations of a group after the conversion to float
+    if len(x) - ddof <= 0:
+        # a group without degrees of freedom has no answer - it takes the
+        # fill value, like a group that a nan poisoned
+        return None
     if all(isinstance(val, numbers.Integral) for val in x):
         origin = int(x[0])
         devs = [int(val) - origin for val in x]
@@ -202,8 +206,11 @@ def _var(x: Sequence[Any], ddof: int = 0) -> Any:
     return sum(abs(xx - mean) ** 2 for xx in x) / (len(x) - ddof)
 
 
-def _std(x: Sequence[Any], ddof: int = 0) -> float:
-    return math.sqrt(_var(x, ddof=ddof))
+def _std(x: Sequence[Any], ddof: int = 0) -> Any:
+    var = _var(x, ddof=ddof)
+    if var is None:
+        return None
+    return math.sqrt(var)
 
 
 def _prod(x: Sequence[Any]) -> Any:
