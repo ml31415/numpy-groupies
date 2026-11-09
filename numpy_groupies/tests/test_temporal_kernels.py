@@ -13,6 +13,8 @@ import numba as nb
 import numpy as np
 import pytest
 
+from numpy_groupies.aggregate_numba.jit import njit_stable
+
 # ---------------------------------------------------------------------------
 # the bare numba kernels
 #
@@ -177,7 +179,7 @@ def test_the_jitted_kernel_answers_the_temporal_input():
     values - the ticks are the int64 the kernel works on."""
     from numpy_groupies import aggregate_numba
 
-    @nb.njit
+    @njit_stable
     def jitted_mean(group_idx, values):
         return aggregate_numba.mean(group_idx, values)
 
@@ -203,15 +205,15 @@ def test_the_sort_of_numba_makes_no_move_when_a_nat_is_in_the_values(unit):
     # take the values then.
     from numpy_groupies import aggregate_numba
 
-    @nb.njit
+    @njit_stable
     def nb_sort(x):
         return np.sort(x)
 
-    @nb.njit
+    @njit_stable
     def nb_argsort(x):
         return np.argsort(x)
 
-    @nb.njit
+    @njit_stable
     def nb_lt(a, b):
         return a < b
 

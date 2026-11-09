@@ -132,6 +132,37 @@ def register_overload(func: Any) -> Callable[[Any], Any]:
     return register
 
 
+def _stable_content(content: Any) -> str:
+    """A description of a closure cell that is the same in every process.
+
+    The fingerprint of a dispatcher covers the contents of its closure, and
+    the fingerprint decides the name of the on-disk cache file.  ``repr`` of a
+    python function carries its memory address, which differs in every
+    process: the fingerprint would differ, the cache file would get a new
+    name in every run and the cache would never hit - the dispatcher would
+    be compiled again and again, in every process, at the cost of the time
+    and the memory of a compilation.
+
+    A dispatcher contributes its pinned uuid, a python function its module,
+    its qualified name and the hash of its source (a change of the body must
+    invalidate the cache), and everything else its repr.
+    """
+
+    uuid = getattr(content, "_uuid", None)
+    if isinstance(uuid, str):
+        return uuid
+    module = getattr(content, "__module__", None)
+    qualname = getattr(content, "__qualname__", None)
+    if isinstance(module, str) and isinstance(qualname, str):
+        try:
+            source = inspect.getsource(content)
+        except (OSError, TypeError):  # pragma: no cover - a source that cannot be read
+            source = ""
+        digest = hashlib.sha256(source.encode()).hexdigest()[:16]
+        return f"{module}.{qualname}:{digest}"
+    return repr(content)
+
+
 def _overload_sources(func: Callable[..., Any]) -> list[str]:
     """The sources of the overload implementations the function may reach.
 
@@ -237,7 +268,7 @@ def njit_stable(
                         content = "<empty cell>"
                     # dispatchers were wrapped earlier and already carry
                     # their pinned uuid, closures are created in order
-                    cells.append(getattr(content, "_uuid", repr(content)))
+                    cells.append(_stable_content(content))
             fingerprint = "\n".join(
                 [
                     func.__module__,
