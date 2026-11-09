@@ -6,7 +6,14 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from numpy_groupies.tests.helpers import _BackendProxy, _implementations, impl_name, is_supported
+from numpy_groupies.tests.helpers import (
+    SWEEP_SIZES,
+    _BackendProxy,
+    _implementations,
+    impl_name,
+    is_purepy,
+    is_supported,
+)
 
 
 class Block(typing.NamedTuple):
@@ -126,6 +133,39 @@ def block(request):
     return block
 
 
+@pytest.fixture(params=SWEEP_SIZES.values(), ids=list(SWEEP_SIZES), scope="module")
+def n_values(request):
+    """The number of values the data of the generic sweep holds.
+
+    The two sizes are the ones of :data:`.helpers.SWEEP_SIZES`: the small
+    one is below the floor of the parallel path of the numba backend, the
+    big one above it - so the sweep of the suite measures the sequential path
+    and the parallel one with the very same test.
+    """
+    return request.param
+
+
+@pytest.fixture(scope="module")
+def scaled_block(block, n_values):
+    """The block of the suite, at the size the sweep asks for.
+
+    The values are repeated until the data is as big as the scale asks for:
+    the groups keep their uneven sizes, and the nans and the complex values
+    with them - so the awkward groups are in the data of the parallel path
+    as well, and the group loop has the very same cases to measure.
+
+    The scope is the module, not the test: the data of a scale is the same
+    for every test that asks for it, and the big one is a few hundred
+    megabytes of arrays - built once per module, not once per test.
+    """
+    repeats = -(-n_values // block.group_idx.size)
+    group_idx = np.tile(block.group_idx, repeats)[:n_values]
+    a, a_nans, a_complex = (np.tile(values, repeats)[:n_values] for values in (block.a, block.a_nans, block.a_complex))
+    for array in (group_idx, a, a_nans, a_complex):
+        array.setflags(write=False)
+    return Block(group_idx=group_idx, size=block.size, a=a, a_nans=a_nans, a_complex=a_complex)
+
+
 def pytest_collection_modifyitems(config, items):
     """Deselect the combos that cannot run at all.
 
@@ -136,6 +176,11 @@ def pytest_collection_modifyitems(config, items):
     runtime, and a backend that deviates without raising is measured against the
     group loop like any other and called out where it differs.
 
+    The data of the generic sweep comes in two sizes, and the pure python
+    implementation walks the data in a python loop: the big one is no data
+    it can answer in the time a suite can spend on it - and it has no
+    threads anyway, so the big size would measure the very same path twice.
+
     The tests that ask for the same function are put into one group, so that
     the workers of a parallel run share the compiled kernel of that function
     (see :func:`_group_of`).
@@ -145,6 +190,14 @@ def pytest_collection_modifyitems(config, items):
         callspec = getattr(item, "callspec", None)
         params = callspec.params if callspec is not None else {}
         if "impl" in params and "func" in params and not is_supported(params["impl"], params["func"]):
+            removed.append(item)
+            continue
+        if (
+            "impl" in params
+            and "n_values" in params
+            and is_purepy(params["impl"])
+            and params["n_values"] > SWEEP_SIZES["small"]
+        ):
             removed.append(item)
             continue
         group = _group_of(item, params)
