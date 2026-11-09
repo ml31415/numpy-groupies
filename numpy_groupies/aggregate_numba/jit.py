@@ -171,6 +171,13 @@ def _overload_sources(func: Callable[..., Any]) -> list[str]:
     what numba compiles into it.  The closure is walked one level down into
     the python function of a dispatcher, since that is where the name of the
     overloaded function is looked up.
+
+    An implementation of its own may reach an overloaded function as well -
+    numba inlines that one into the very same machine code, so the walk
+    follows the implementations it finds (the accumulate of the dispersion
+    tracks the extrema of the group through an overload of its own).  The
+    walk stops at every function it has already seen, so a cycle cannot
+    spin it forever.
     """
     found: dict[str, str] = {}
     pending = [func]
@@ -180,7 +187,27 @@ def _overload_sources(func: Callable[..., Any]) -> list[str]:
         if id(current) in seen:
             continue
         seen.add(id(current))
-        names = set(current.__code__.co_names)
+        # The names the one at hand calls through its globals - and the ones
+        # the functions inside it call: the branches of an overload template,
+        # the bodies an implementation picks between, sit in the constants of
+        # the enclosing function, one code object per def.  A name is looked
+        # up in the globals of the enclosing one, which is where numba looks
+        # when it compiles the body.
+        names: set[str] = set()
+        pending_codes = [current.__code__]
+        seen_codes: set[int] = set()
+        while pending_codes:
+            code = pending_codes.pop()
+            if id(code) in seen_codes:
+                continue
+            seen_codes.add(id(code))
+            names.update(code.co_names)
+            for const in code.co_consts:
+                inner = getattr(const, "__code__", None)
+                if inner is None and isinstance(const, type(code)):
+                    inner = const
+                if inner is not None:
+                    pending_codes.append(inner)
         for cell in current.__closure__ or ():
             try:
                 content = cell.cell_contents
@@ -200,7 +227,13 @@ def _overload_sources(func: Callable[..., Any]) -> list[str]:
             stub = globals_.get(name)
             implementation = _OVERLOADS.get(stub) if stub is not None else None
             if implementation is not None:
-                found[name] = inspect.getsource(implementation)
+                try:
+                    found[name] = inspect.getsource(implementation)
+                except (OSError, TypeError):  # pragma: no cover - a source that cannot be read
+                    found[name] = ""
+                # the body of the implementation may reach an overload of its
+                # own - numba inlines it, so it belongs to the identity too
+                pending.append(implementation)
     return [found[name] for name in sorted(found)]
 
 

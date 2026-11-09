@@ -627,8 +627,35 @@ def test_the_identity_of_a_dispatcher_covers_the_overload_it_reaches(monkeypatch
     def changed(func):
         source = original(func)
         if func is averaging._fold_std_overload:
-            return source + "\n# eine Änderung des Rumpfes\n"
+            return source + "\n# a change of the body\n"
         return source
 
     monkeypatch.setattr(inspect, "getsource", changed)
     assert njit_stable(averaging._std_combine)._uuid != plain
+
+
+def test_the_identity_of_a_dispatcher_covers_a_nested_overload(monkeypatch):
+    """The body of an overload behind an overload is part of the identity.
+
+    The accumulate of the dispersion reaches the extrema through the
+    overload of ``_accumulate_std`` - and numba inlines that implementation
+    into the caller, with the body of ``_track_extrema`` in it.  The update
+    itself says nothing of either body in its own source, so the walk of the
+    identity has to follow the implementations it finds.
+    """
+    import inspect
+
+    from numpy_groupies.aggregate_numba import averaging
+    from numpy_groupies.aggregate_numba.jit import njit_stable
+
+    plain = njit_stable(averaging._std_update)._uuid
+    original = inspect.getsource
+
+    def changed(func):
+        source = original(func)
+        if func is averaging._track_extrema_overload:
+            return source + "\n# a change of the body\n"
+        return source
+
+    monkeypatch.setattr(inspect, "getsource", changed)
+    assert njit_stable(averaging._std_update)._uuid != plain
