@@ -277,7 +277,7 @@ def _nan_cum_extreme(kind: str) -> Callable[..., Any]:
             out[index] = running
         return out
 
-    one_group.__name__ = f"nan_cum{kind}"
+    one_group.__name__ = f"nancum{kind}"
     return one_group
 
 

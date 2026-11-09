@@ -18,13 +18,8 @@ from numpy_groupies.aggregate_numba.jit import njit_stable
 # ---------------------------------------------------------------------------
 # the bare numba kernels
 #
-# The kernels are the low-level entry of the numba backend: they take flat
-# one-dimensional input and answer in compiled code.  The temporal dtypes
-# reach them as they are - the comparisons of compiled code order datetime64
-# and timedelta64 values, and ``val != val`` detects NaT like a nan - so the
-# selection and the reduction kernels aggregate them directly.  The ones that
-# cannot (the arithmetic of the moments, the partitions, the truthiness) say
-# so by name.
+# The kernels are called here and not through ``aggregate``: the tests are
+# about what the kernel answers, not about the dispatch that reaches it.
 
 
 @pytest.mark.parametrize(

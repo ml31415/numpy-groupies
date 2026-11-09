@@ -65,7 +65,12 @@ def test_relabel_groups_masked_removes_the_groups_of_the_mask():
 
 
 def test_relabel_groups_masked_keeps_the_first_group():
-    """The first group cannot be removed - it is the one the mask leaves out."""
+    """The first group cannot be removed - the mask drops it, the function keeps it.
+
+    The mask of the caller asks for the group 0 to be gone, and the answer
+    keeps it: the group 0 is the one every other group is counted from, so
+    it stays - and the labels that name it stay the same.
+    """
     group_idx = np.array([0, 3, 3, 3, 0, 2, 5, 2, 0, 1, 1, 0, 3, 5, 5])
     keep_group = np.array([0, 0, 0, 1, 1, 1], dtype=bool)
     np.testing.assert_array_equal(

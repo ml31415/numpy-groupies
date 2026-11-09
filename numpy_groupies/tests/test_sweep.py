@@ -66,7 +66,7 @@ def test_matches_the_group_loop(impl, func, scaled_block, n_values, values):
     )
 
 
-def test_the_big_data_reaches_the_parallel_path():
+def test_the_big_data_reaches_the_parallel_path(scaled_block):
     """The big data of the sweep is the data of the parallel path.
 
     The cost model is the one the drivers ask before they take the parallel
@@ -80,7 +80,7 @@ def test_the_big_data_reaches_the_parallel_path():
     if threads < 4:
         pytest.skip("the machine has fewer than four threads to compare against")
     n_values = SWEEP_SIZES["large"]
-    groups = 14  # the groups of the block, the two of them empty
+    groups = scaled_block.size  # the groups of the block, the two of them empty
     # the chunked path: the operations that reduce the values in chunks, the
     # state of the cheapest and of the dearest one of them
     for state_size in (1, 3):

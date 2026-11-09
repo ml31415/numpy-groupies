@@ -352,13 +352,13 @@ def test_the_parallel_path_of_the_quantile_answers_the_same(impl):
     ticks = rng.integers(-(2**62), 2**62, size, dtype=np.int64)
     a = ticks.view("m8[ns]")
     a[::5] = np.datetime64("NaT", "ns")
-    for func, plain in (("quantile", "quantile"), ("nanquantile", "quantile")):
+    for func in ("quantile", "nanquantile"):
         res = impl.aggregate(group_idx, a, func=func, q=0.5, size=groups)
         # the nan variant answers the same as the plain one over the values
         # that are left - and the plain one answers NaT for the groups that
         # hold a NaT
         good = ~np.isnat(a)
-        ref = impl.aggregate(group_idx[good], a[good], func=plain, q=0.5, size=groups)
+        ref = impl.aggregate(group_idx[good], a[good], func="quantile", q=0.5, size=groups)
         nat_groups = np.zeros(groups, dtype=bool)
         np.maximum.at(nat_groups, group_idx[~good], True)
         got = np.asarray(res).view(np.int64)
