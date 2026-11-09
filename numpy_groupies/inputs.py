@@ -54,17 +54,6 @@ def _size_tuple(size: int | tuple[int, ...] | npt.NDArray[np.integer]) -> tuple[
     return tuple(int(s) for s in size)
 
 
-def check_group_idx(
-    group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number] | None = None, check_min: bool = True
-) -> None:
-    if a is not None and group_idx.size != a.size:
-        raise ValueError("The size of group_idx must be the same as a.size")
-    if not is_integer_dtype(group_idx.dtype):
-        raise TypeError(NON_INTEGER_GROUP_IDX)
-    if check_min and np.min(group_idx) < 0:
-        raise ValueError(NEGATIVE_INDICES)
-
-
 def _ravel_group_idx(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],

@@ -216,20 +216,6 @@ def sum_mt(group_idx, a, partials, n_groups):
     return partials
 
 
-@njit_stable
-def gather_seq(ret, group_idx, out):
-    for i in range(group_idx.size):
-        out[i] = ret[group_idx[i]]
-    return out
-
-
-@njit_stable(parallel=True)
-def gather_mt(ret, group_idx, out):
-    for i in nb.prange(group_idx.size):
-        out[i] = ret[group_idx[i]]
-    return out
-
-
 @njit_stable(parallel=True)
 def empty_parallel(group_idx):
     """An empty parallel loop - it measures the fixed cost of the parallel path."""
@@ -1036,21 +1022,6 @@ def fit_group(observations, overhead_us_by_threads: dict) -> tuple[GroupModel, f
             best = (value, bounded(params))
     value, params = best
     return GroupModel(*params), value
-
-
-def call_overhead(rows: list) -> float:
-    """The fixed cost per call that the package carries and the reference
-    kernel does not: the difference of the two sequential kernels."""
-    differences = []
-    for row in rows:
-        if row.get("npg_us", float("inf")) == float("inf"):
-            continue
-        differences.append(row["npg_us"] - row["seq_us"])
-    if not differences:
-        return 0.0
-    # the smallest difference is the least contaminated one - where the kernel
-    # itself takes the longest, the fixed cost matters least
-    return max(0.0, min(differences))
 
 
 # ---------------------------------------------------------------------------
