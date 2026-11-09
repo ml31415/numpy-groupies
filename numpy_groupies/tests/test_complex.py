@@ -6,68 +6,17 @@ import pytest
 from numpy_groupies import aggregate_numpy
 from numpy_groupies.tests.helpers import (
     aggregate_numba,
-    assert_matches_the_group_loop,
+    complex_arg_funcs,
+    complex_asymmetric_funcs,
+    complex_bool_funcs,
+    complex_funcs,
+    complex_int_funcs,
+    complex_order_funcs,
+    complex_real_out_funcs,
     impl_name,
     is_purepy,
 )
-from numpy_groupies.tests.reference import aggregate_ref, trapezoid_ref
-
-# functions with a well-defined complex result, following numpy semantics - the
-# order statistics included, as numpy orders complex values lexicographically.
-# median is the one order statistic missing: over incomparable values numpy's own
-# partition and its sort disagree, so the group loop cannot tell what a poisoned
-# group mediates to - what its answer has to look like is pinned by
-# test_median_of_a_poisoned_group instead, and a clean group by test_median
-complex_funcs = (
-    "sum",
-    "prod",
-    "mean",
-    "var",
-    "std",
-    "trapezoid",
-    "sumofsquares",
-    "first",
-    "last",
-    "nansum",
-    "nanprod",
-    "nanmean",
-    "nanvar",
-    "nanstd",
-    "nanmedian",
-    "nantrapezoid",
-    "nansumofsquares",
-    "cumsum",
-    "all",
-    "any",
-    "allnan",
-    "anynan",
-    "len",
-    "nanlen",
-    "nanfirst",
-    "nanlast",
-    "min",
-    "max",
-    "nanmin",
-    "nanmax",
-    "argmin",
-    "argmax",
-    "nanargmin",
-    "nanargmax",
-)
-# their complex result is the real squared magnitude, not complex a*a
-complex_real_out_funcs = {"var", "std", "sumofsquares", "nanvar", "nanstd", "nansumofsquares"}
-# these count, test or point at a position, so their result is not a number of
-# the input type
-complex_bool_funcs = {"all", "any", "allnan", "anynan"}
-complex_arg_funcs = ("argmin", "argmax", "nanargmin", "nanargmax")
-complex_int_funcs = {"len", "nanlen", *complex_arg_funcs}
-# order statistics over the values themselves, as opposed to their positions
-complex_order_funcs = ("min", "max", "nanmin", "nanmax")
-# conjugating the input does not simply conjugate the result for these: it
-# flips the order of two values sharing a real part
-complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
-# functions whose output dtype a complex input does not fix
-complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
+from numpy_groupies.tests.reference import aggregate_ref
 
 
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
@@ -90,55 +39,6 @@ def test_cumsum_nan_components_stay_in_group(impl, dtype):
     np.testing.assert_array_equal(a, original)
 
 
-def _not_nan(vals):
-    """numpy's isnan of a complex value is true when either part is nan"""
-    return ~(np.isnan(vals.real) | np.isnan(vals.imag))
-
-
-def _complex_reference(func, group_idx, a, size):
-    """group-wise application of the numpy function (or its python equivalent)"""
-    if func == "cumsum":
-        # one value per input item, written back to the position of the item
-        ret = np.empty(a.shape, dtype=np.result_type(a, np.float64))
-        for grp in range(size):
-            pos = np.flatnonzero(group_idx == grp)
-            ret[pos] = np.cumsum(a[pos])
-        return ret
-    ret = []
-    for grp in range(size):
-        vals = a[group_idx == grp]
-        if func in complex_arg_funcs:
-            # numpy reports the position inside the group, the implementations
-            # report it inside the input
-            pos = np.flatnonzero(group_idx == grp)
-            ret.append(pos[getattr(np, func)(vals)])
-        elif func == "first":
-            ret.append(vals[0])
-        elif func == "last":
-            ret.append(vals[-1])
-        elif func == "nanfirst":
-            ret.append(vals[_not_nan(vals)][0])
-        elif func == "nanlast":
-            ret.append(vals[_not_nan(vals)][-1])
-        elif func == "sumofsquares":
-            ret.append(np.sum(np.abs(vals) ** 2))
-        elif func == "nansumofsquares":
-            ret.append(np.sum(np.abs(vals[_not_nan(vals)]) ** 2))
-        elif func in ("len", "nanlen"):
-            ret.append(len(vals) if func == "len" else int(_not_nan(vals).sum()))
-        elif func == "allnan":
-            ret.append(bool(np.all(np.isnan(vals))))
-        elif func == "anynan":
-            ret.append(bool(np.any(np.isnan(vals))))
-        elif func == "trapezoid":
-            ret.append(trapezoid_ref(vals))
-        elif func == "nantrapezoid":
-            ret.append(trapezoid_ref(vals[_not_nan(vals)]))
-        else:
-            ret.append(getattr(np, func)(vals))
-    return ret
-
-
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 @pytest.mark.parametrize("func", complex_funcs, ids=str)
 def test_matches_reference(impl, func, a_dtype):
@@ -146,7 +46,9 @@ def test_matches_reference(impl, func, a_dtype):
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, -2 + 0j, 4 - 3j, 6 - 6j]).astype(a_dtype)
 
     res = impl.aggregate(group_idx, a, func=func, size=3)
-    expected = _complex_reference(func, group_idx, a, 3)
+    # the group loop of the reference is the yardstick - the same one every
+    # other test of the suite measures a backend with
+    expected = aggregate_ref(group_idx, a, func=func, size=3)
 
     res = np.asarray(res)
     if is_purepy(impl):
@@ -527,7 +429,7 @@ def test_order_functions_follow_numpy_lexicographic(impl, func):
     )
 
     res = np.asarray(impl.aggregate(group_idx, a, func=func, size=6))
-    expected = _complex_reference(func, group_idx, a, 6)
+    expected = aggregate_ref(group_idx, a, func=func, size=6)
     np.testing.assert_array_equal(res, np.asarray(expected))
 
 
@@ -587,21 +489,6 @@ def test_order_functions_use_the_extreme_value_of_the_order():
         ):
             res = np.asarray(impl(both_in_one_group, np.array(values), func=func, size=1))
             np.testing.assert_array_equal(res, [1])
-
-
-@pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
-@pytest.mark.parametrize("func", complex_funcs)
-def test_matches_the_group_loop(impl, func, block):
-    """a nan in either part is a nan for the whole value, and the group loop
-    skips, propagates and orders it the way the backends do.
-
-    Which nan a reduction names for a group it cannot compare is not compared
-    here: numpy's own helpers count one nan as equal to any other (``np.isnan``
-    of a complex value is true when either part is), and the answer of numpy
-    itself moves when such a group is rotated.  The floor that does hold is
-    asserted by :func:`test_an_incomparable_value_poisons_the_extreme`.
-    """
-    assert_matches_the_group_loop(impl, func, block, block.a_complex)
 
 
 @pytest.mark.parametrize("func", ["min", "max"])

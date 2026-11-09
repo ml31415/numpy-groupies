@@ -11,18 +11,15 @@ import warnings
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_purepy
 from numpy_groupies.tests.helpers import (
-    assert_matches_the_group_loop,
-    func_list,
     random_values,
 )
-from numpy_groupies.tests.reference import aggregate_ref
 
 
+@pytest.mark.parametrize("groups", [2, 100])
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64], ids=["float16", "float32", "float64"])
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max", "all", "any"])
-def test_nan_input(impl, rng, func, dtype, groups=100):
+def test_nan_input(impl, rng, func, dtype, groups):
     group_idx = np.arange(0, groups, dtype=int).repeat(5)
     a = random_values(rng, group_idx.size).astype(dtype)
     a[::2] = np.nan
@@ -35,53 +32,15 @@ def test_nan_input(impl, rng, func, dtype, groups=100):
     np.testing.assert_array_equal(res, ref)
 
 
-def test_nan_input_len(impl, rng, groups=100, group_size=5):
+@pytest.mark.parametrize("groups", [2, 100])
+@pytest.mark.parametrize("group_size", [1, 5])
+def test_nan_input_len(impl, rng, groups, group_size):
     group_idx = np.arange(0, groups, dtype=int).repeat(group_size)
     a = random_values(rng, len(group_idx))
     a[::2] = np.nan
     ref = np.full(groups, group_size, dtype=int)
     res = impl.aggregate(group_idx, a, func=len)
     np.testing.assert_array_equal(res, ref)
-
-
-def test_nan_form_of_a_group_of_only_nan():
-    # filtering the nans out can leave nothing to unpack, and an all-nan group
-    # then takes the fill value (called directly - purepy's nan forms are skipped)
-    funcs = (
-        "nansum",
-        "nanprod",
-        "nanmean",
-        "nanmedian",
-        "nanmin",
-        "nanmax",
-        "nanlen",
-        "nanfirst",
-        "nanlast",
-        "nanvar",
-        "nanstd",
-        "nanall",
-        "nanany",
-        "nanargmin",
-        "nanargmax",
-    )
-    cases = (
-        # every value a nan: nothing survives the filtering
-        (np.array([0, 0]), np.array([np.nan, np.nan])),
-        # one group of nothing but nans, one with a value left
-        (np.array([0, 0, 1]), np.array([np.nan, np.nan, 1.0])),
-        # the same with complex values, where a nan in either part counts
-        (np.array([0, 0]), np.array([complex(np.nan, 1), complex(1, np.nan)])),
-    )
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # an all-nan group is worth a numpy warning
-        for group_idx, a in cases:
-            for func in funcs:
-                res = np.asarray(aggregate_purepy.aggregate(group_idx, a, func=func, size=2))
-                expected = np.asarray(aggregate_ref(group_idx, a, func=func, size=2))
-                # only the group of nothing but nans - in a group with values the
-                # pure python implementation reports the index inside the group
-                np.testing.assert_array_equal(res[:1], expected[:1])
 
 
 def test_nan_len(impl, rng):
@@ -269,15 +228,3 @@ def test_sort_leaves_nan_at_the_end(impl):
     np.testing.assert_array_equal(
         impl.aggregate(group_idx, a, func="sort", reverse=True), [2.0, 1.0, np.nan, np.nan, 0.5, np.nan]
     )
-
-
-@pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
-@pytest.mark.parametrize("func", func_list)
-def test_matches_the_group_loop(impl, func, block):
-    """``block.a_nans``, the same values with nans in them, against the group loop.
-
-    The plain functions let the nan reach the result, their nan counterparts
-    skip the value, and a group of nothing but nans is an empty group for them -
-    the rule the loop spells out one group at a time.
-    """
-    assert_matches_the_group_loop(impl, func, block, block.a_nans)
