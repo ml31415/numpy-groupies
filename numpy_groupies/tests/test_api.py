@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
+from numpy_groupies import aggregate_purepy
 from numpy_groupies.fills import default_fill_value
 from numpy_groupies.functions import default_fill_values, fill_value_key
 from numpy_groupies.registry import function_names
@@ -462,6 +463,22 @@ _VALIDATION_CASES = [
         "must be of integer type",
     ),
     (
+        "labels that are whole floats in a list",
+        [0.0, 1.0],
+        [1.0, 2.0],
+        {},
+        TypeError,
+        "must be of integer type",
+    ),
+    (
+        "labels that are flags in a list",
+        [True, False],
+        [1.0, 2.0],
+        {},
+        TypeError,
+        "must be of integer type",
+    ),
+    (
         "labels beyond the size",
         np.array([0, 5]),
         np.array([1.0, 2.0]),
@@ -486,6 +503,24 @@ def test_a_refused_input_is_refused_in_the_words_of_the_package(impl, name, grou
     """
     with pytest.raises(error, match=message):
         impl.aggregate(group_idx, a, func="sum", **kwargs)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [{"0": 1, "1": 2}, {1, 2}, frozenset({1, 2}), iter([1, 2]), (x for x in (1, 2))],
+    ids=["dict", "set", "frozenset", "iterator", "generator"],
+)
+def test_the_pure_python_path_refuses_what_is_no_sequence_of_values(values):
+    """The values of a call are a sequence of values.
+
+    A mapping and a set are no such sequence: iterating over them yields
+    their keys, and the answer would be the one of the keys instead of the
+    one of the values - silently.  A generator is spent by the first look at
+    it.  The pure python path reads the values as a python sequence, so it
+    is the path that has to say so.
+    """
+    with pytest.raises(ValueError, match="must be scalar or 1 dimensional"):
+        aggregate_purepy.aggregate(np.array([0, 1]), values, func="sum", size=2)
 
 
 def test_the_out_argument_is_the_one_of_the_numba_backend(impl):

@@ -417,10 +417,21 @@ def _is_flat(values: Sequence[Any]) -> bool:
     The labels of a call address the values one by one - a column of the
     caller's own has no such addressing, and is refused like every other path
     refuses it.
+
+    A mapping and a set are no sequence of values either: iterating over a
+    mapping yields its keys, and the answer would be the one of the keys
+    instead of the one of the values - silently, and with no complaint.  A
+    generator is not a sequence at all: it is spent by the first look at it.
     """
     if getattr(values, "ndim", 0) > 1:
         return False
-    if len(values) == 0:
+    if isinstance(values, (dict, set, frozenset)):
+        return False
+    try:
+        length = len(values)
+    except TypeError:
+        return False
+    if length == 0:
         return True
     first = values[0]
     return not isinstance(first, (list, tuple)) and getattr(first, "ndim", 0) == 0
@@ -487,9 +498,11 @@ def aggregate(
                 else:
                     raise NotImplementedError("pure python implementation doesn't accept ndim indexed input.")
         else:
-            if isinstance(value, bool) or i != value:
+            if isinstance(value, bool) or not isinstance(value, numbers.Integral):
                 # a bool is no index, and a label that is not a whole number
-                # names no group - it is not rounded to the one beside it
+                # names no group - it is not rounded to the one beside it.
+                # a whole float is refused as well, like the float array of
+                # the other backends
                 raise TypeError(NON_INTEGER_GROUP_IDX)
             if i < 0:
                 raise ValueError(NEGATIVE_INDICES)
