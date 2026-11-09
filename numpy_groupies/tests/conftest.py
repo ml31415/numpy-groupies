@@ -221,13 +221,14 @@ def _group_of(item, params):
     another worker is compiling right now waits for it - or compiles it
     itself, which is the same waste with more CPU.
 
-    A group is therefore a module and a function: the workers get different
-    corners of the suite, and the tests of one function inside one module are
-    given to one worker, which compiles the kernel of that function once.
+    A group is therefore the function a test asks for, over all the modules
+    that ask for it: the kernel of a function is compiled once in the whole
+    suite and not once per worker.  A test that asks for no function at all
+    is grouped by its module.
     """
     module = item.module.__name__.rsplit(".", 1)[-1]
     for name in _FUNCTION_PARAMS:
         value = params.get(name)
         if isinstance(value, str):
-            return f"{module}-{value}"
+            return f"fn-{value}"
     return module
