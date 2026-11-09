@@ -33,9 +33,13 @@ from numpy_groupies.registry import (
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
     LENGTH_MISMATCH,
+    NEGATIVE_INDICES,
+    NON_INTEGER_GROUP_IDX,
+    TOO_LARGE_FOR_SIZE,
     check_complex_dtype,
     check_fixed_fill_value,
     check_integer_variance_span_overflow,
+    is_integer_dtype,
     is_scalar_input,
 )
 
@@ -400,6 +404,21 @@ def _check_integer_precision(a: Sequence[Any], func: Callable[..., AScalar]) -> 
         check_integer_variance_span_overflow(low, high)
 
 
+def _is_flat(values: Sequence[Any]) -> bool:
+    """whether the values are a flat sequence.
+
+    The labels of a call address the values one by one - a column of the
+    caller's own has no such addressing, and is refused like every other path
+    refuses it.
+    """
+    if getattr(values, "ndim", 0) > 1:
+        return False
+    if len(values) == 0:
+        return True
+    first = values[0]
+    return not isinstance(first, (list, tuple)) and getattr(first, "ndim", 0) == 0
+
+
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
@@ -424,6 +443,8 @@ def aggregate(
         raise NotImplementedError("out= is only supported by the numba implementation")
     if len(idx) == 0:
         raise ValueError(EMPTY_GROUP_IDX)
+    if not is_scalar_input(vals) and not _is_flat(vals):
+        raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten. Alternatively specify axis.")
 
     # Check for 2d group_idx
     if size is None:
@@ -439,22 +460,34 @@ def aggregate(
         # a size is a number of groups - anything that counts is one
         size = operator.index(size)
 
-    for i in idx:
+    # the labels of a call index the groups - a label that is no index is
+    # refused in the words of the package, like every other path refuses it
+    labels_dtype = getattr(idx, "dtype", None)
+    if labels_dtype is not None and not is_integer_dtype(labels_dtype):
+        raise TypeError(NON_INTEGER_GROUP_IDX)
+
+    for value in idx:
         try:
-            i = int(i)
+            i = int(value)
         except (TypeError, ValueError):
-            if isinstance(i, (list, tuple)):
+            if isinstance(value, (list, tuple)):
                 raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
             else:
                 try:
-                    len(i)
+                    len(value)
                 except TypeError:
-                    raise ValueError(f"invalid value found in group_idx: {i}")
+                    raise ValueError(f"invalid value found in group_idx: {value}")
                 else:
                     raise NotImplementedError("pure python implementation doesn't accept ndim indexed input.")
         else:
+            if isinstance(value, bool) or i != value:
+                # a bool is no index, and a label that is not a whole number
+                # names no group - it is not rounded to the one beside it
+                raise TypeError(NON_INTEGER_GROUP_IDX)
             if i < 0:
-                raise ValueError("group_idx contains negative value")
+                raise ValueError(NEGATIVE_INDICES)
+            if i >= size:
+                raise ValueError(TOO_LARGE_FOR_SIZE.format(size=size))
 
     try:
         funcname, op, _temporal_op = _dispatch[func]
@@ -536,7 +569,11 @@ def aggregate(
     if not getattr(op, "x_and_idx", False):
         data = sorted(zip(idx, vals), key=operator.itemgetter(0))
         for ix, values_of_group in itertools.groupby(data, key=operator.itemgetter(0)):
-            ret[ix] = op([val for _, val in values_of_group], **kwargs)
+            value = op([val for _, val in values_of_group], **kwargs)
+            if value is not None:
+                # an operation that has no answer for this group leaves it at
+                # the fill value - like the group a nan poisoned below
+                ret[ix] = value
     else:
         # a group holding a nan has no extreme to point at, and so no position to
         # name either: the vectorised kernels leave such a group to the fill
