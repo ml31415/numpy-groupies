@@ -255,6 +255,51 @@ def _kurt_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> f
     return n * (n + 1) * (n - 1) * s4 / ((n - 2) * (n - 3) * s2**2) - 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
 
 
+def _nan_cum_extreme(kind: str) -> Callable[..., Any]:
+    """the running extreme of a group, the nans left out.
+
+    A nan neither wins nor clears the pending flag: the places before the
+    first value of the group hold the fill value, the ones after it hold the
+    running extreme - and the first value of a group always wins.
+    """
+
+    def one_group(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer], fill_value: Any = 0) -> Any:
+        out = np.empty(values.size, dtype=values.dtype)
+        running = values.dtype.type(fill_value)
+        seen = False
+        for index, value in enumerate(values):
+            if value != value:  # a nan - in either part of a complex value
+                out[index] = running
+                continue
+            if not seen or (value > running if kind == "max" else value < running):
+                running = value
+            seen = True
+            out[index] = running
+        return out
+
+    one_group.__name__ = f"nan_cum{kind}"
+    return one_group
+
+
+def _nan_cumprod(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> Any:
+    """the running product of a group, the nans left out.
+
+    A nan is in no product: the places it sits at hold the product of the
+    values before it, and the ones before the first value hold the identity.
+    """
+    out = np.empty(values.size, dtype=values.dtype)
+    running = values.dtype.type(1)
+    seen = False
+    for index, value in enumerate(values):
+        if value != value:  # a nan - in either part of a complex value
+            out[index] = running
+            continue
+        running = value if not seen else running * value
+        seen = True
+        out[index] = running
+    return out
+
+
 def _sort_ref(values: npt.NDArray[np.number], reverse: bool = False) -> npt.NDArray[np.integer]:
     """one group, ordered the way numpy orders it."""
     ordered = np.sort(values)
@@ -373,8 +418,15 @@ _REF_ONE_PER_ITEM: dict[str, Callable[..., Any]] = {
     "cumprod": lambda v, pos: np.cumprod(v),
     "cummin": lambda v, pos: np.minimum.accumulate(v),
     "cummax": lambda v, pos: np.maximum.accumulate(v),
+    "nancumprod": _nan_cumprod,
+    "nancummin": _nan_cum_extreme("min"),
+    "nancummax": _nan_cum_extreme("max"),
     "sort": lambda v, pos, reverse=False: _sort_ref(v, reverse=reverse),
 }
+
+# the functions whose answer depends on the fill value: the running extreme
+# starts at it, so the places before the first value of a group hold it
+_REF_SEEDED_BY_FILL = frozenset({"nancummin", "nancummax"})
 
 # the functions that keep k values of every group: their result is a matrix
 # with a row per group
@@ -459,6 +511,11 @@ def aggregate_ref(
             continue
         if name in _REF_TOPK:
             value = call(a[pos], pos, fill_value=fill_value, **kwargs)
+        elif name in _REF_SEEDED_BY_FILL:
+            # the running extreme starts at the fill value - the places before
+            # the first value of a group hold it
+            fill = default_fill_value(name, a.dtype) if fill_value is DEFAULT_FILL_VALUE else fill_value
+            value = call(a[pos], pos, fill_value=fill, **kwargs)
         else:
             value = call(a[pos], pos, **kwargs)
         if value is None:
@@ -525,3 +582,40 @@ def aggregate_ref(
     for group, value in results.items():
         ret.flat[group] = value
     return ret
+
+
+def aggregate_ref_along_axis(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
+    *,
+    func: str | Callable[..., Any],
+    axis: int,
+    size: int | None = None,
+    **kwargs: Any,
+) -> npt.NDArray[np.number]:
+    """``aggregate`` along an axis, computed one slice at a time.
+
+    The labels address the entries of the axis; every slice beside the axis
+    is a group of its own, and the values of the slice are grouped by the
+    labels of the axis - so the answer of a slice is the one the group loop
+    gives for the labels of the axis.
+
+    The shape of the answer follows the shape of the input: the dimension of
+    the axis holds the groups, the other ones the slices beside it.  The
+    functions that answer one value per input item keep the dimension of the
+    axis as it is - they have no group to fill.
+    """
+    labels = np.asarray(group_idx).ravel()
+    a = np.asarray(a)
+    axis = axis % a.ndim
+    moved = np.moveaxis(a, axis, -1)
+    n_groups = int(labels.max()) + 1 if size is None else int(size)
+    results = [
+        aggregate_ref(labels, moved[index], func=func, size=n_groups, **kwargs)
+        for index in np.ndindex(*moved.shape[:-1])
+    ]
+    first = results[0]
+    ret = np.empty(moved.shape[:-1] + first.shape, dtype=first.dtype)
+    for index, values in zip(np.ndindex(*moved.shape[:-1]), results):
+        ret[index] = values
+    return np.moveaxis(ret, -1, axis)
