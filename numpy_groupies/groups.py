@@ -29,6 +29,9 @@ def multi_arange(n: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
     """
     if n.ndim != 1:
         raise ValueError("n is supposed to be 1d array.")
+    if n.size == 0:
+        # no group, no value
+        return np.zeros(0, dtype=np.intp)
 
     n_mask = n.astype(bool)
     n_cumsum = np.cumsum(n)
