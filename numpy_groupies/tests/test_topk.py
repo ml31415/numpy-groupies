@@ -182,27 +182,27 @@ def test_the_topk_of_the_numba_backend_of_float16_runs_on_float32():
     np.testing.assert_array_equal(answer, np.array([[9.0], [4.0]], dtype=np.float16))
 
 
-def test_the_values_at_the_border_are_the_ones_the_group_holds(impl):
+@pytest.mark.parametrize(
+    ("largest", "k", "expected"),
+    [
+        (True, 3, [[7.0, 7.0, 7.0], [9.0, 5.0, 5.0]]),
+        (False, 2, [[1.0, 7.0], [5.0, 5.0]]),
+    ],
+    ids=["largest", "smallest"],
+)
+def test_the_values_at_the_border_are_the_ones_the_group_holds(impl, largest, k, expected):
     """The k-th value of the group is the border of the selection.
 
     A group whose values are equal at the border has as many of them as the
     selection needs - the kernel fills the places the better values leave
-    with the border itself, and it has to be a value the group holds.
+    with the border itself, and it has to be a value the group holds.  The
+    border of the selection of the smallest values is the k-th one of them.
     """
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1])
     a = np.array([7.0, 7.0, 7.0, 1.0, 5.0, 5.0, 9.0])
-    answer = _rows(impl.aggregate(group_idx, a, func="topk", k=3))
-    np.testing.assert_array_equal(answer[0], [7.0, 7.0, 7.0])
-    np.testing.assert_array_equal(answer[1], [9.0, 5.0, 5.0])
-
-
-def test_the_values_at_the_border_are_the_ones_the_group_holds_for_the_smallest(impl):
-    """The border of the selection of the smallest values is the k-th one."""
-    group_idx = np.array([0, 0, 0, 0, 1, 1, 1])
-    a = np.array([7.0, 7.0, 7.0, 1.0, 5.0, 5.0, 9.0])
-    answer = _rows(impl.aggregate(group_idx, a, func="topk", k=2, largest=False))
-    np.testing.assert_array_equal(answer[0], [1.0, 7.0])
-    np.testing.assert_array_equal(answer[1], [5.0, 5.0])
+    answer = _rows(impl.aggregate(group_idx, a, func="topk", k=k, largest=largest))
+    for group, row in enumerate(expected):
+        np.testing.assert_array_equal(answer[group], row)
 
 
 def test_a_group_index_of_more_than_one_dimension_is_refused(impl):

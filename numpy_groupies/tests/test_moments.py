@@ -14,14 +14,13 @@ the moments one group at a time.
 import numpy as np
 import pytest
 
+from numpy_groupies.tests.helpers import assert_matches_the_group_loop_values
 from numpy_groupies.tests.reference import aggregate_ref
 
 
 def _compare(impl, group_idx, a, func, size=None):
     """The result of the backend against the reference, group by group."""
-    got = impl.aggregate(group_idx, a, func=func, size=size)
-    want = aggregate_ref(group_idx, a, func=func, size=size)
-    np.testing.assert_allclose(got, want, rtol=10**-10, equal_nan=True)
+    assert_matches_the_group_loop_values(impl, group_idx, a, func, size)
 
 
 @pytest.mark.parametrize("func", ["skew", "kurt", "nanskew", "nankurt"])

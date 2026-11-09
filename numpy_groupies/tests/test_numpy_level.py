@@ -1,7 +1,9 @@
-"""The numpy level: the dtype policy, the shape check and the tools.
+"""The numpy level: the dtype policy and the shape check.
 
-The modules of the package that hold what the numpy-based implementations
-share: the dtypes, the fills, the groups, the inputs and the driver.
+The two helpers of the numpy level that the tests of the package reach for
+directly: ``dtypes.check_dtype``, which guesses the dtype of an answer, and
+``inputs.check_nton_shape``, which refuses the shape of an answer a function
+that gives one value per input item cannot fill.
 """
 
 import re

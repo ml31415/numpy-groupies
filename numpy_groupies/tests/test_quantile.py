@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies.aggregate_purepy import aggregate as aggregate_purepy
+from numpy_groupies.tests.helpers import assert_matches_the_group_loop_values
 from numpy_groupies.tests.reference import aggregate_ref
 
 _QUANTILES = (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)
@@ -19,9 +20,7 @@ _METHODS = ("linear", "lower", "higher", "midpoint", "nearest")
 
 def _compare(impl, block, func, **kwargs):
     """The result of the backend against the reference, group by group."""
-    got = impl.aggregate(block.group_idx, block.a, func=func, size=block.size, **kwargs)
-    want = aggregate_ref(block.group_idx, block.a, func=func, size=block.size, **kwargs)
-    np.testing.assert_allclose(got, want, rtol=1e-12, equal_nan=True)
+    assert_matches_the_group_loop_values(impl, block.group_idx, block.a, func, block.size, rtol=1e-12)
 
 
 @pytest.mark.parametrize("q", _QUANTILES)
