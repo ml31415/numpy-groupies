@@ -214,7 +214,7 @@ _FUNCTION_PARAMS = ("func", "kernel_name", "name")
 
 
 def _group_of(item, params):
-    """The group a test belongs to: its module and the function it asks for.
+    """The group a test belongs to: the function it asks for.
 
     The workers of a parallel run share one cache of the compiled kernels on
     the disk, and they wait for each other: a worker that needs a kernel
