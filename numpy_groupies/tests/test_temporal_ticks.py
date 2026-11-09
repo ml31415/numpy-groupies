@@ -20,11 +20,7 @@ import pytest
 
 from numpy_groupies.tests.helpers import impl_name
 
-
-@pytest.fixture(autouse=True)
-def _skip_purepy(impl):
-    if impl_name(impl) == "purepy":
-        pytest.skip("the pure python backend knows no datetime64 or timedelta64 values")
+pytestmark = pytest.mark.usefixtures("skip_purepy")
 
 
 # ---------------------------------------------------------------------------

@@ -44,6 +44,20 @@ def impl(request):
     return _BackendProxy(request.param)
 
 
+@pytest.fixture
+def skip_purepy(impl):
+    """The pure python backend knows no datetime64 or timedelta64 values.
+
+    It answers some of them - the order reductions compare the values - and
+    it cannot answer the others, so the temporal tests leave it out.  The
+    fixture is not autouse: it would ask for the backend of every test of
+    the suite, and the tests that ask for no backend at all would run three
+    times over for nothing.
+    """
+    if impl_name(impl) == "purepy":
+        pytest.skip("the pure python backend knows no datetime64 or timedelta64 values")
+
+
 @pytest.fixture(scope="module")
 def rng(request):
     """Module-wide seeded random number generator.
