@@ -133,6 +133,28 @@ def _median(x: Sequence[Any]) -> Any:
     return (lo + hi) / 2
 
 
+def _deviations(values: list[float]) -> list[float]:
+    """The deviations of the values of one group from their mean.
+
+    The group is centered on its first value first - the same centering the
+    variance of the integers uses: the deviations of a group whose values are
+    all the same are then exactly zero, and the spread of such a group is
+    zero.  The mean of those deviations is taken off as well, which is the
+    mean of the group.
+
+    The mean of the raw values would cancel the small deviations of a group
+    with a large common offset, and the sum of python floats is only exact
+    since python 3.12, where it compensates the rounding of every step: on
+    an older python the mean of a group of equal values is off by an ulp,
+    and the moments of a group without spread are the noise of that ulp
+    instead of zero.
+    """
+    origin = values[0]
+    devs = [val - origin for val in values]
+    mean = sum(devs) / len(devs)
+    return [dev - mean for dev in devs]
+
+
 def _skew(x: Sequence[Any]) -> Any:
     """The skewness of the values of one group.
 
@@ -146,9 +168,7 @@ def _skew(x: Sequence[Any]) -> Any:
     n = len(x)
     if n < 3:
         return float("nan")
-    values = [float(val) for val in x]
-    mean = sum(values) / n
-    devs = [val - mean for val in values]
+    devs = _deviations([float(val) for val in x])
     s2 = sum(dev * dev for dev in devs)
     if s2 == 0:
         return 0.0
@@ -169,9 +189,7 @@ def _kurt(x: Sequence[Any]) -> Any:
     n = len(x)
     if n < 4:
         return float("nan")
-    values = [float(val) for val in x]
-    mean = sum(values) / n
-    devs = [val - mean for val in values]
+    devs = _deviations([float(val) for val in x])
     s2 = sum(dev * dev for dev in devs)
     if s2 == 0:
         return 0.0
@@ -202,6 +220,8 @@ def _var(x: Sequence[Any], ddof: int = 0) -> Any:
         devs = [int(val) - origin for val in x]
         mean = sum(devs) / len(devs)
         return sum(abs(dev - mean) ** 2 for dev in devs) / (len(x) - ddof)
+    # the same two passes as the numpy backend: the mean of the values, then
+    # the squared deviations from it
     mean = _mean(x)
     return sum(abs(xx - mean) ** 2 for xx in x) / (len(x) - ddof)
 

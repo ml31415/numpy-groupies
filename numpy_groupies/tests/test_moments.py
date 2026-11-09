@@ -71,6 +71,26 @@ def test_a_group_without_spread_has_no_moment(impl):
     assert got[0] == 0.0
 
 
+def test_a_group_of_equal_values_has_no_moment_either(impl):
+    """The value 0.1 is the one whose sum is inexact.
+
+    The sum of python floats is only exact since python 3.12, where it
+    compensates the rounding of every step: on an older python the mean of
+    a group of equal values is off by an ulp - and the moments of a group
+    without spread are the noise of that ulp instead of zero.  The group is
+    centered on its first value, so its deviations are exactly zero, and the
+    mean of those deviations is taken off as well.
+    """
+    group_idx = np.array([0, 0, 0])
+    a = np.array([0.1, 0.1, 0.1])
+    got = impl.aggregate(group_idx, a, func="skew")
+    assert got[0] == 0.0
+    group_idx = np.array([0, 0, 0, 0, 0, 0])
+    a = np.array([1.1] * 6)
+    got = impl.aggregate(group_idx, a, func="kurt")
+    assert got[0] == 0.0
+
+
 def test_an_absent_group_takes_the_fill_value(impl):
     """A group without values takes the fill value, like every other function."""
     group_idx = np.array([0, 0, 0, 2, 2, 2])
