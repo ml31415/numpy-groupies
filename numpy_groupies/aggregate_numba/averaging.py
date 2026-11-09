@@ -26,7 +26,7 @@ from numpy_groupies.aggregate_numba.compose import (
     rule_int64,
     rule_real_float,
 )
-from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.aggregate_numba.jit import njit_stable, register_overload
 from numpy_groupies.temporal import NAT_TICK
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
@@ -54,7 +54,7 @@ def _track_extrema(val: float, low: float, high: float) -> None:
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_track_extrema)
+@register_overload(_track_extrema)
 def _track_extrema_overload(val: float, low: float, high: float) -> Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
@@ -112,7 +112,7 @@ def _mean_limit_check(low: float, high: float, count: int) -> None:
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_mean_limit_check)
+@register_overload(_mean_limit_check)
 def _mean_limit_check_overload(low: float, high: float, count: int) -> Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
@@ -152,7 +152,7 @@ def _span_limit_check(low: float, high: float, count: int) -> None:
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_span_limit_check)
+@register_overload(_span_limit_check)
 def _span_limit_check_overload(low: float, high: float, count: int) -> Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
@@ -749,7 +749,7 @@ def _accumulate_std(val: float, st: StdState, ri: int) -> None:
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_accumulate_std)
+@register_overload(_accumulate_std)
 def _accumulate_std_overload(val: float, st: StdState, ri: int) -> Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
@@ -769,10 +769,18 @@ def _accumulate_std_overload(val: float, st: StdState, ri: int) -> Callable[...,
         return _impl
 
     def _impl(val: float, st: StdState, ri: int) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
-        st.dev[ri] += val
+        # the inexact input is centered on the first value of its group as
+        # well: the plain sums of the raw values cancel each other out - the
+        # square of the mean is of the size of the values themselves, and the
+        # spread of a group whose values are all the same is lost in the
+        # rounding of that difference
+        if st.count[ri] == 1:
+            st.first[ri] = val
+        dev = val - st.first[ri]
+        st.dev[ri] += dev
         # the squared magnitude of the complex deviation is real, so out stays
         # real for complex input - matching np.var
-        st.out[ri] += val.real * val.real + val.imag * val.imag
+        st.out[ri] += dev.real * dev.real + dev.imag * dev.imag
 
     return _impl
 
@@ -837,14 +845,16 @@ def _fold_std(acc: StdState, other: StdState, fill_value: float, extra: Any) -> 
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_fold_std)
+@register_overload(_fold_std)
 def _fold_std_overload(acc: StdState, other: StdState, fill_value: float, extra: Any) -> Callable[..., None]:
-    # the dtype of the anchor field tells the two cases apart: the integer
-    # input is centered on the first value of its group, the inexact one on
-    # zero.  The fields of a named tuple are reached through their types in
-    # the typing of the overload - the anchor is the fourth field.  The
-    # annotation of the arguments has to be the one of the implementation:
-    # numba checks the two signatures against each other (strict=True).
+    # the dtype of the anchor field tells the cases apart: the integer input
+    # is centered on the first value of its group in exact int64 arithmetic,
+    # the inexact one in floating point - and the complex one needs the
+    # conjugate of the difference of the anchors.  The fields of a named tuple
+    # are reached through their types in the typing of the overload - the
+    # anchor is the fourth field.  The annotation of the arguments has to be
+    # the one of the implementation: numba checks the two signatures against
+    # each other (strict=True).
     if isinstance(acc.types[3].dtype, nb.types.Integer):  # type: ignore[attr-defined]  # the types of the fields are a property of the numba type
 
         def _impl(acc: StdState, other: StdState, fill_value: float, extra: Any) -> None:
@@ -876,14 +886,57 @@ def _fold_std_overload(acc: StdState, other: StdState, fill_value: float, extra:
 
         return _impl
 
+    if isinstance(acc.types[3].dtype, nb.types.Complex):  # type: ignore[attr-defined]  # the types of the fields are a property of the numba type
+
+        def _impl(acc: StdState, other: StdState, fill_value: float, extra: Any) -> None:
+            # the complex input is centered on the first value of its group
+            # as well, and the squared magnitudes are corrected with the
+            # conjugate of the difference of the anchors:
+            #   sum(v - a)    = sum(v - b) + (b - a) * n
+            #   sum|v - a|^2 = sum|v - b|^2 + 2 Re(sum(v - b) conj(b - a)) + |b - a|^2 n
+            count: np.ndarray = acc.count
+            out: np.ndarray = acc.out
+            dev: np.ndarray = acc.dev
+            for g in range(count.size):
+                n_other = other.count[g]
+                if n_other == 0:
+                    continue
+                if count[g] == 0:
+                    acc.first[g] = other.first[g]
+                else:
+                    delta = other.first[g] - acc.first[g]
+                    out[g] += 2 * (other.dev[g] * np.conj(delta)).real + (delta.real**2 + delta.imag**2) * n_other
+                    dev[g] += delta * n_other
+                out[g] += other.out[g]
+                dev[g] += other.dev[g]
+                count[g] += n_other
+            _std_combine_extrema(acc, other)
+
+        return _impl
+
     def _impl(acc: StdState, other: StdState, fill_value: float, extra: Any) -> None:  # type: ignore[no-redef]  # the overload hands numba one of the two same-named alternatives
-        # the inexact input is centered on zero: the sums add up as they are
+        # the floating point input is centered on the first value of its group
+        # as well - and every chunk has its own first value, so the
+        # deviations and the squares of the second chunk are relative to a
+        # different anchor and have to be corrected:
+        #   sum(v - a)     = sum(v - b) + (b - a) * n
+        #   sum((v - a)^2) = sum((v - b)^2) + 2 (b - a) sum(v - b) + (b - a)^2 n
         count: np.ndarray = acc.count
-        count += other.count
-        dev: np.ndarray = acc.dev
-        dev += other.dev
         out: np.ndarray = acc.out
-        out += other.out
+        dev: np.ndarray = acc.dev
+        for g in range(count.size):
+            n_other = other.count[g]
+            if n_other == 0:
+                continue
+            if count[g] == 0:
+                acc.first[g] = other.first[g]
+            else:
+                delta = other.first[g] - acc.first[g]
+                out[g] += 2 * delta * other.dev[g] + delta * delta * n_other
+                dev[g] += delta * n_other
+            out[g] += other.out[g]
+            dev[g] += other.dev[g]
+            count[g] += n_other
         _std_combine_extrema(acc, other)
 
     return _impl
@@ -907,7 +960,7 @@ def _std_finish(st: StdState, g: int, fill_value: float, ddof: int) -> Any:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
-        return np.sqrt((st.out[g] - mean2 / st.count[g]) / (st.count[g] - ddof))
+        return np.sqrt(_variance_of(st, g, mean2, ddof))
     return fill_value
 
 
@@ -930,11 +983,28 @@ std = build_kernel(
 )
 
 
+@njit_stable
+def _variance_of(st: StdState, g: int, mean2: float, ddof: int) -> float:
+    """the variance of a group from the sums the kernel accumulated.
+
+    The one-pass formula - the sum of the squares over the count, less the
+    square of the mean - cancels: a group whose values are all the same
+    leaves a tiny number behind, and it is negative half of the time.  A
+    variance is never negative, and the spread of such a group is zero - so
+    the number is clamped at zero.  A group a nan poisoned keeps its nan:
+    ``nan < 0`` is false.
+    """
+    variance = float((st.out[g] - mean2 / st.count[g]) / (st.count[g] - ddof))
+    if variance < 0:
+        return 0.0
+    return variance
+
+
 def _var_finish(st: StdState, g: int, fill_value: float, ddof: int) -> Any:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
-        return (st.out[g] - mean2 / st.count[g]) / (st.count[g] - ddof)
+        return _variance_of(st, g, mean2, ddof)
     return fill_value
 
 

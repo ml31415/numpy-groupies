@@ -8,6 +8,8 @@ import importlib
 import os
 import pkgutil
 import re
+import subprocess
+import sys
 from threading import Thread
 from types import ModuleType
 
@@ -536,3 +538,124 @@ def test_a_dispatcher_without_the_pin_would_be_caught():
     assert not _pinned.match(str(inner._uuid))
     assert _uuid4.search(dumps(_cell_contents(outer))) is not None
     assert outer._uuid != str(inner._uuid)
+
+
+def test_the_identity_of_a_dispatcher_is_the_same_in_every_process(tmp_path):
+    """The identity of a dispatcher decides the name of its cache file.
+
+    The identity covers the contents of the closure of the dispatcher, and
+    the description of a cell has to be the same in every process: a python
+    function carries its memory address, which differs from process to
+    process.  The cache file would get a new name in every run, the cache
+    would never hit, and every process would compile every kernel again -
+    at the cost of the memory and the time of a compilation.
+
+    The dispatcher is built from a file, in this process and in another
+    one: the fingerprint covers the source of the function as well, and the
+    source of a function given on the command line cannot be read.
+    """
+    script = tmp_path / "probe_identity.py"
+    script.write_text(
+        "from numpy_groupies.aggregate_numba.jit import njit_stable\n"
+        "\n"
+        "def build():\n"
+        "    def helper(x):\n"
+        "        return x + 1\n"
+        "\n"
+        "    def caller(x):\n"
+        "        return helper(x)\n"
+        "\n"
+        "    return njit_stable(caller, name='probe_stable')\n"
+    )
+    sys.path.insert(0, str(tmp_path))
+    try:
+        module = importlib.import_module("probe_identity")
+        here = str(module.build()._uuid)
+    finally:
+        sys.path.remove(str(tmp_path))
+        sys.modules.pop("probe_identity", None)
+    # the module is imported in the other process as well: the name of the
+    # module is part of the identity, and a script run as __main__ carries
+    # that name instead
+    there = subprocess.run(
+        [sys.executable, "-c", "import probe_identity; print(probe_identity.build()._uuid)"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(tmp_path),
+    ).stdout.strip()
+    assert here == there
+
+
+# The identity of a dispatcher - and with it the key of its on-disk cache -
+# has to cover the body of the overload implementation it reaches.  Numba
+# compiles the implementation into the caller, and the source of the caller
+# says nothing about it: a change of the implementation alone would leave the
+# key untouched, and the stale artifact would be served - a correctly typed,
+# silently wrong kernel.
+
+
+def test_the_overload_implementations_are_registered():
+    """Every overload of the backend is remembered by the package.
+
+    The registry is what lets the identity of a dispatcher cover the body of
+    the implementation it reaches.
+    """
+    from numpy_groupies.aggregate_numba import averaging
+    from numpy_groupies.aggregate_numba.jit import _OVERLOADS
+
+    for stub in (averaging._track_extrema, averaging._mean_limit_check, averaging._span_limit_check):
+        assert stub in _OVERLOADS, stub
+    assert averaging._fold_std in _OVERLOADS
+
+
+def test_the_identity_of_a_dispatcher_covers_the_overload_it_reaches(monkeypatch):
+    """The body of an overload implementation is part of the identity.
+
+    The fold of the dispersion is reached by the dispatcher of its caller -
+    and the caller says nothing of the body of the implementation in its own
+    source, so the identity has to cover it separately.
+    """
+    import inspect
+
+    from numpy_groupies.aggregate_numba import averaging
+    from numpy_groupies.aggregate_numba.jit import njit_stable
+
+    plain = njit_stable(averaging._std_combine)._uuid
+    original = inspect.getsource
+
+    def changed(func):
+        source = original(func)
+        if func is averaging._fold_std_overload:
+            return source + "\n# a change of the body\n"
+        return source
+
+    monkeypatch.setattr(inspect, "getsource", changed)
+    assert njit_stable(averaging._std_combine)._uuid != plain
+
+
+def test_the_identity_of_a_dispatcher_covers_a_nested_overload(monkeypatch):
+    """The body of an overload behind an overload is part of the identity.
+
+    The accumulate of the dispersion reaches the extrema through the
+    overload of ``_accumulate_std`` - and numba inlines that implementation
+    into the caller, with the body of ``_track_extrema`` in it.  The update
+    itself says nothing of either body in its own source, so the walk of the
+    identity has to follow the implementations it finds.
+    """
+    import inspect
+
+    from numpy_groupies.aggregate_numba import averaging
+    from numpy_groupies.aggregate_numba.jit import njit_stable
+
+    plain = njit_stable(averaging._std_update)._uuid
+    original = inspect.getsource
+
+    def changed(func):
+        source = original(func)
+        if func is averaging._track_extrema_overload:
+            return source + "\n# a change of the body\n"
+        return source
+
+    monkeypatch.setattr(inspect, "getsource", changed)
+    assert njit_stable(averaging._std_update)._uuid != plain

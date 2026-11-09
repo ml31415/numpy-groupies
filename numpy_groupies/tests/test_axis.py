@@ -2,40 +2,26 @@
 
 ``group_idx`` may label the entries of one axis of ``a`` instead of its first
 dimension, and it may hold several rows of labels, which then address a group
-by coordinate.  Both are checked against the numpy reference over every axis,
-memory order and number of dimensions.
+by coordinate.  Both are checked against the group loop of the reference,
+which is applied to the slices of the axis - over every axis, memory order
+and number of dimensions.
 """
 
 import itertools
-import warnings
-from collections.abc import Callable
-from typing import Any
 
 import numpy as np
-import numpy.typing as npt
 import pytest
 
-from numpy_groupies.registry import (
-    funcs_collecting,
-)
 from numpy_groupies.tests.helpers import (
     assert_same_result,
     func_list,
     random_group_idx,
     random_values,
 )
-from numpy_groupies.tests.reference import _kurt_ref, _skew_ref, _skip_nans, aggregate_ref, trapezoid_ref
-
-
-def _quiet_reference(func: Callable[..., Any], a: npt.NDArray[Any], *args: Any, **kwargs: Any) -> Any:
-    """The numpy reference, without its warning about the all-nan slices.
-
-    Numpy warns when it averages or quantiles a slice that holds nothing but
-    nans - the reference is asked for exactly that here.
-    """
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        return func(a, *args, **kwargs)
+from numpy_groupies.tests.reference import (
+    aggregate_ref,
+    aggregate_ref_along_axis,
+)
 
 
 @pytest.mark.parametrize(
@@ -81,66 +67,15 @@ def test_arg_alias_axis_coordinates(impl, rng, func, axis, order):
     np.testing.assert_array_equal(actual, expected)
 
 
-def _other_shape(size, axis):
-    """The shape of the positions beside the aggregated axis."""
-    return tuple(s for i, s in enumerate(size) if i != axis)
-
-
-def _collecting_shape(size, axis):
-    """The shape of the result of a collecting function along an axis.
-
-    The axis dimension holds the groups, the other ones the positions beside
-    it - one group per label, so the dimension is of the groups alone.
-    """
-    shape = list(size)
-    shape[axis] = 1
-    return tuple(shape)
-
-
-def _distinct_of(values, count_nans):
-    """the number of the distinct values of a slice of an axis.
-
-    The nans are one value among themselves, and the nan variant of the
-    function leaves them out.
-    """
-    nans = np.isnan(values)
-    distinct = len(np.unique(values[~nans]))
-    return distinct + (1 if count_nans and nans.any() else 0)
-
-
 # The axis of the aggregation is what the case is about, not the function: the
 # labels of a one-dimensional array and the labels of the last axis of a
 # two-dimensional one are asked for every function, the labels of the first
 # axis of a two-dimensional one for a representative set of them.
-_AXIS_FUNCS = (
-    "sum",
-    "prod",
-    "mean",
-    "median",
-    "quantile",
-    "var",
-    "std",
-    "min",
-    "max",
-    "len",
-    "nanlen",
-    "nunique",
-    "cumsum",
-    "sort",
-    "nanmean",
-    "array",
-    # the functions whose expectation the test writes itself - the first and
-    # the last value of a group, the truth of the values that are left and the
-    # running extreme of a slice
-    "first",
-    "last",
-    "nanfirst",
-    "nanlast",
-    "nanall",
-    "nanany",
-    "cummax",
-    "cummin",
-)
+#
+# The expected answer comes from the group loop of the reference, applied to
+# the slices of the axis - so every function of the package is asked for, and
+# not a hand-written list of the answers of the ones that were thought of.
+_AXIS_FUNCS = tuple(fn for fn in func_list if fn not in ("topk",))
 
 # the topk answers a matrix with a row per group, and a group index of more
 # than one dimension has no place in it - the topk refuses the axis, so it is
@@ -156,6 +91,12 @@ _AXIS_CASES = (
 
 @pytest.mark.parametrize(("size", "axis", "func"), _AXIS_CASES)
 def test_along_axis(impl, rng, func, size, axis):
+    """The labels of the axis address the groups of every slice beside it.
+
+    The expected answer comes from the group loop of the reference, applied to
+    the slices of the axis - so the answer of a slice is the one the group
+    loop gives for the labels of the axis, for every function of the package.
+    """
     group_idx = np.zeros(size[axis], dtype=int)
     a = random_values(rng, size)
 
@@ -164,92 +105,15 @@ def test_along_axis(impl, rng, func, size, axis):
         a[[1, 4, 5], ...] = np.nan
     elif "nanarg" in func and a.ndim > 1:
         a[[1, 4, 5], 1] = np.nan
-    nans = np.isnan(a)
-    if func in ["any", "all", "nanany", "nanall"]:
+    if func in ("any", "all", "nanany", "nanall"):
         a = a > 0.5
-
-    # construct expected values for all cases
-    if func == "len":
-        expected = np.array(size[axis])
-    elif func == "nanlen":
-        expected = np.array((~np.isnan(a)).sum(axis=axis))
-    elif func == "anynan":
-        expected = np.isnan(a).any(axis=axis)
-    elif func == "allnan":
-        expected = np.isnan(a).all(axis=axis)
-    elif func in ("nanall", "nanany"):
-        # the truth of the values that are left - the nans are no value of
-        # their own and are left out
-        truth = np.where(nans, False, a)
-        expected = np.all(truth, axis=axis) if func == "nanall" else np.any(truth, axis=axis)
-    elif func in ("first", "last", "nanfirst", "nanlast"):
-        # the first or the last value of the slice, the nan variants leaving
-        # the nans out
-        if func == "first":
-            expected = np.take(a, 0, axis=axis)
-        elif func == "last":
-            expected = np.take(a, -1, axis=axis)
-        else:
-            take = 0 if func == "nanfirst" else -1
-
-            def first_of(v):
-                values = v[~np.isnan(v)]
-                # a slice of nothing but nans is an empty group: it takes the
-                # fill value of the function
-                return values[take] if values.size else np.nan
-
-            expected = np.apply_along_axis(first_of, axis, a)
-    elif func in ("cummax", "cummin"):
-        # the running extreme of the slice, as numpy accumulates it
-        operation = np.maximum if func == "cummax" else np.minimum
-        expected = operation.accumulate(a, axis=axis)
-    elif func == "sumofsquares":
-        expected = np.sum(a * a, axis=axis)
-    elif func == "nansumofsquares":
-        expected = np.nansum(a * a, axis=axis)
-    elif func == "trapezoid":
-        expected = trapezoid_ref(a, axis=axis)
-    elif func == "nantrapezoid":
-        # numpy has no nan-aware trapezoid - nantrapezoid integrates the
-        # samples that are left, bridging over the gaps the nans leave
-        expected = np.apply_along_axis(lambda v: trapezoid_ref(v[~np.isnan(v)]), axis, a)
-    elif func == "quantile":
-        expected = _quiet_reference(np.quantile, a, 0.5, axis=axis)
-    elif func == "nanquantile":
-        expected = _quiet_reference(np.nanquantile, a, 0.5, axis=axis)
-    elif func == "percentile":
-        expected = _quiet_reference(np.percentile, a, 50.0, axis=axis)
-    elif func == "nanpercentile":
-        expected = _quiet_reference(np.nanpercentile, a, 50.0, axis=axis)
-    elif func in ("skew", "kurt", "nanskew", "nankurt"):
-        # numpy has no skewness of its own - the reference of the package
-        # computes it, and the nan variants leave the nans out
-        ref = _skew_ref if "skew" in func else _kurt_ref
-        if func.startswith("nan"):
-            ref = _skip_nans(ref)
-        expected = np.apply_along_axis(lambda v: ref(v, np.zeros(v.size, dtype=np.intp)), axis, a)
-    elif func in ("nunique", "nannunique"):
-        # numpy has no count of the distinct values along an axis, so the
-        # slices are counted one by one - the nans are one value among
-        # themselves, and the nan variant leaves them out
-        expected = np.apply_along_axis(lambda v: _distinct_of(v, func == "nunique"), axis, a)
-    elif func in funcs_collecting:
-        # the values of every group, along the axis: the labels are all zero,
-        # so the one group holds the values of one position along the axis
-        expected = np.empty(_collecting_shape(size, axis), dtype=object)
-        for index in np.ndindex(*_other_shape(size, axis)):
-            where = index[:axis] + (slice(None),) + index[axis:]
-            expected[index[:axis] + (0,) + index[axis:]] = a[where]
-    else:
-        expected = _quiet_reference(getattr(np, func), a, axis=axis)
 
     # no fill_value needed - the function specific defaults match numpy
     actual = impl.aggregate(group_idx, a, axis=axis, func=func)
     assert actual.ndim == a.ndim
 
-    # argmin, argmax don't support keepdims, so we can't use that to construct expected
-    # instead we squeeze out the extra dims in actual.
-    assert_same_result(actual.squeeze(), expected.squeeze(), func)
+    expected = aggregate_ref_along_axis(group_idx, a, func=func, axis=axis)
+    assert_same_result(actual, expected, func)
 
 
 def test_not_last_axis_reduction(impl):

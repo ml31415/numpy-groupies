@@ -18,6 +18,23 @@ from numpy_groupies.tests.helpers import assert_same_result, is_purepy
 from numpy_groupies.tests.reference import aggregate_ref
 
 
+@pytest.mark.parametrize("func", ["array", list])
+@pytest.mark.parametrize("order", ["normal", "reverse"])
+def test_the_values_of_a_group_keep_the_order_of_the_input(impl, func, order):
+    """The values of a group are handed out in the order they appear.
+
+    The order is the one of the input, not the one the backend groups them
+    in - the numba one counts them into blocks, the numpy ones sort them.
+    """
+    group_idx = np.repeat(np.arange(5), 4)
+    a = np.arange(group_idx.size)
+    if order == "reverse":
+        a = a[::-1]
+
+    res = impl.aggregate(group_idx, a, func=func)
+    np.testing.assert_array_equal(np.array(res[0]), a[:4])
+
+
 def test_collecting_gives_the_values_of_every_group(impl):
     group_idx = np.array([3, 1, 3, 0, 1, 3])
     a = np.arange(6.0)

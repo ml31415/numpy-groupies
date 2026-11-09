@@ -14,14 +14,13 @@ import numpy as np
 import pytest
 
 from numpy_groupies.tests.helpers import (
-    assert_matches_the_group_loop,
-    func_list,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
 
 
-def test_len(impl, group_size=5):
+@pytest.mark.parametrize("group_size", [1, 5, 7])
+def test_len(impl, group_size):
     group_idx = np.arange(0, 100, 2, dtype=int).repeat(group_size)
     a = np.arange(group_idx.size)
     res = impl.aggregate(group_idx, a, func="len")
@@ -51,10 +50,11 @@ def test_first_last(impl, first_last):
     np.testing.assert_array_equal(res, ref)
 
 
+@pytest.mark.parametrize("size", [3, 20])
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64], ids=["float16", "float32", "float64"])
 @pytest.mark.parametrize(["func", "ddof"], list(itertools.product(["var", "std"], [0, 1, 2])))
-def test_ddof(impl, rng, func, ddof, dtype, size=20):
-    group_idx = np.zeros(20, dtype=int)
+def test_ddof(impl, rng, func, ddof, dtype, size):
+    group_idx = np.zeros(size, dtype=int)
     a = random_values(rng, group_idx.size).astype(dtype)
     res = impl.aggregate(group_idx, a, func, ddof=ddof)
     ref_func = {"std": np.std, "var": np.var}.get(func)
@@ -65,6 +65,34 @@ def test_ddof(impl, rng, func, ddof, dtype, size=20):
     # off the exact value; float32 keeps seven
     tol = {np.float16: 1e-2, np.float32: 1e-6, np.float64: 1e-10}[dtype]
     assert abs(res[0] - ref) < tol
+
+
+@pytest.mark.parametrize("func", ["var", "std", "nanvar", "nanstd"])
+@pytest.mark.parametrize("ddof", [1, 2, 3])
+@pytest.mark.parametrize("fill_value", [None, -1.0], ids=["default", "explicit"])
+def test_a_group_without_degrees_of_freedom_takes_the_fill_value(impl, func, ddof, fill_value):
+    """A group with fewer values than the ``ddof`` asks for has no variance.
+
+    The three backends disagreed here: the pure python one raised a
+    ``ZeroDivisionError`` on integer values, the numpy one answered an
+    infinity and the numba one the fill value.  The doctrine of the package
+    wins: a group that cannot be computed takes the fill value, like a group
+    that the nan of one of its values poisoned.
+    """
+    group_idx = np.array([0, 0, 1, 1, 1])
+    a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    kwargs = {} if fill_value is None else {"fill_value": fill_value}
+    res = np.asarray(impl.aggregate(group_idx, a, func=func, ddof=ddof, **kwargs))
+    want = np.asarray(aggregate_ref(group_idx, a, func=func, ddof=ddof, **kwargs))
+    np.testing.assert_allclose(res, want, equal_nan=True)
+    # the group of two values has no degrees of freedom from a ddof of two on,
+    # the group of three from a ddof of three on
+    for group, count in ((0, 2), (1, 3)):
+        if count - ddof <= 0:
+            if fill_value is None:
+                assert np.isnan(res[group])
+            else:
+                assert res[group] == fill_value
 
 
 def test_mean(impl):
@@ -156,18 +184,6 @@ def test_trapezoid(impl):
 
 
 @pytest.mark.parametrize("order", ["normal", "reverse"])
-def test_list_ordering(impl, order):
-    group_idx = np.repeat(np.arange(5), 4)
-    a = np.arange(group_idx.size)
-    if order == "reverse":
-        a = a[::-1]
-    ref = a[:4]
-
-    res = impl.aggregate(group_idx, a, func=list)
-    np.testing.assert_array_equal(np.array(res[0]), ref)
-
-
-@pytest.mark.parametrize("order", ["normal", "reverse"])
 def test_sort(impl, order):
     group_idx = np.array([3, 3, 3, 2, 2, 2, 1, 1, 1])
     a = np.array([3, 2, 1, 3, 4, 5, 5, 10, 1])
@@ -227,15 +243,3 @@ def test_sort_of_a_small_group_matches_the_reference(impl, rng, size, dtype):
         res = impl.aggregate(group_idx, a, func="sort", reverse=reverse)
         ref = aggregate_ref(group_idx, a, func="sort", reverse=reverse)
         np.testing.assert_array_equal(res, ref)
-
-
-@pytest.mark.filterwarnings("ignore:numpy.ufunc size changed")
-@pytest.mark.parametrize("func", func_list)
-def test_matches_the_group_loop(impl, func, block):
-    """every function over ``block.a``, which holds no nan, against the group loop
-    of :mod:`.reference`.
-
-    The backend and the loop share no code: no bincount, no ufunc trick, no
-    compiled kernel, one computation per group.
-    """
-    assert_matches_the_group_loop(impl, func, block, block.a)

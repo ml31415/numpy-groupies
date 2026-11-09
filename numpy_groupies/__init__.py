@@ -119,18 +119,6 @@ if TYPE_CHECKING:
     default_fill_value: Callable[..., AFillValue] | None
 
 
-def dummy_no_impl(*args: Any, **kwargs: Any) -> Any:
-    """The stand-in for an implementation that is not there.
-
-    The package hands out ``None`` for the names of the implementations it
-    does not have; this is the callable that says what is missing when it is
-    called, for the caller who wants one.
-    """
-    raise NotImplementedError(
-        "You may need to install another package (numpy or numba) to access a working implementation."
-    )
-
-
 # ---------------------------------------------------------------------------
 # the backends
 #

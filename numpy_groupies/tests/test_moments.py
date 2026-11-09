@@ -14,14 +14,13 @@ the moments one group at a time.
 import numpy as np
 import pytest
 
+from numpy_groupies.tests.helpers import assert_matches_the_group_loop_values
 from numpy_groupies.tests.reference import aggregate_ref
 
 
 def _compare(impl, group_idx, a, func, size=None):
     """The result of the backend against the reference, group by group."""
-    got = impl.aggregate(group_idx, a, func=func, size=size)
-    want = aggregate_ref(group_idx, a, func=func, size=size)
-    np.testing.assert_allclose(got, want, rtol=10**-10, equal_nan=True)
+    assert_matches_the_group_loop_values(impl, group_idx, a, func, size)
 
 
 @pytest.mark.parametrize("func", ["skew", "kurt", "nanskew", "nankurt"])
@@ -68,6 +67,26 @@ def test_a_group_without_spread_has_no_moment(impl):
     a = np.array([2.0, 2.0, 2.0, 2.0, 1.0, 2.0, 3.0, 4.0])
     got = impl.aggregate(group_idx, a, func="skew")
     assert got[0] == 0.0
+    got = impl.aggregate(group_idx, a, func="kurt")
+    assert got[0] == 0.0
+
+
+def test_a_group_of_equal_values_has_no_moment_either(impl):
+    """The value 0.1 is the one whose sum is inexact.
+
+    The sum of python floats is only exact since python 3.12, where it
+    compensates the rounding of every step: on an older python the mean of
+    a group of equal values is off by an ulp - and the moments of a group
+    without spread are the noise of that ulp instead of zero.  The group is
+    centered on its first value, so its deviations are exactly zero, and the
+    mean of those deviations is taken off as well.
+    """
+    group_idx = np.array([0, 0, 0])
+    a = np.array([0.1, 0.1, 0.1])
+    got = impl.aggregate(group_idx, a, func="skew")
+    assert got[0] == 0.0
+    group_idx = np.array([0, 0, 0, 0, 0, 0])
+    a = np.array([1.1] * 6)
     got = impl.aggregate(group_idx, a, func="kurt")
     assert got[0] == 0.0
 

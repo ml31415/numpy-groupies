@@ -14,14 +14,12 @@ the distinct values one group at a time.
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.reference import aggregate_ref
+from numpy_groupies.tests.helpers import assert_matches_the_group_loop_values
 
 
 def _compare(impl, group_idx, a, func, size=None):
     """The result of the backend against the reference, group by group."""
-    got = impl.aggregate(group_idx, a, func=func, size=size)
-    want = aggregate_ref(group_idx, a, func=func, size=size)
-    np.testing.assert_array_equal(got, want)
+    assert_matches_the_group_loop_values(impl, group_idx, a, func, size)
 
 
 def test_the_distinct_values_of_every_group(impl, block):

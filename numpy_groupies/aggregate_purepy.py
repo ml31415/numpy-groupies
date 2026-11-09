@@ -33,9 +33,13 @@ from numpy_groupies.registry import (
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
     LENGTH_MISMATCH,
+    NEGATIVE_INDICES,
+    NON_INTEGER_GROUP_IDX,
+    TOO_LARGE_FOR_SIZE,
     check_complex_dtype,
     check_fixed_fill_value,
     check_integer_variance_span_overflow,
+    is_integer_dtype,
     is_scalar_input,
 )
 
@@ -129,6 +133,28 @@ def _median(x: Sequence[Any]) -> Any:
     return (lo + hi) / 2
 
 
+def _deviations(values: list[float]) -> list[float]:
+    """The deviations of the values of one group from their mean.
+
+    The group is centered on its first value first - the same centering the
+    variance of the integers uses: the deviations of a group whose values are
+    all the same are then exactly zero, and the spread of such a group is
+    zero.  The mean of those deviations is taken off as well, which is the
+    mean of the group.
+
+    The mean of the raw values would cancel the small deviations of a group
+    with a large common offset, and the sum of python floats is only exact
+    since python 3.12, where it compensates the rounding of every step: on
+    an older python the mean of a group of equal values is off by an ulp,
+    and the moments of a group without spread are the noise of that ulp
+    instead of zero.
+    """
+    origin = values[0]
+    devs = [val - origin for val in values]
+    mean = sum(devs) / len(devs)
+    return [dev - mean for dev in devs]
+
+
 def _skew(x: Sequence[Any]) -> Any:
     """The skewness of the values of one group.
 
@@ -142,9 +168,7 @@ def _skew(x: Sequence[Any]) -> Any:
     n = len(x)
     if n < 3:
         return float("nan")
-    values = [float(val) for val in x]
-    mean = sum(values) / n
-    devs = [val - mean for val in values]
+    devs = _deviations([float(val) for val in x])
     s2 = sum(dev * dev for dev in devs)
     if s2 == 0:
         return 0.0
@@ -165,9 +189,7 @@ def _kurt(x: Sequence[Any]) -> Any:
     n = len(x)
     if n < 4:
         return float("nan")
-    values = [float(val) for val in x]
-    mean = sum(values) / n
-    devs = [val - mean for val in values]
+    devs = _deviations([float(val) for val in x])
     s2 = sum(dev * dev for dev in devs)
     if s2 == 0:
         return 0.0
@@ -189,17 +211,26 @@ def _var(x: Sequence[Any], ddof: int = 0) -> Any:
     # integer input is centered on its first value first - python ints keep
     # the deviations exact, so a large common offset cannot erase the small
     # deviations of a group after the conversion to float
+    if len(x) - ddof <= 0:
+        # a group without degrees of freedom has no answer - it takes the
+        # fill value, like a group that a nan poisoned
+        return None
     if all(isinstance(val, numbers.Integral) for val in x):
         origin = int(x[0])
         devs = [int(val) - origin for val in x]
         mean = sum(devs) / len(devs)
         return sum(abs(dev - mean) ** 2 for dev in devs) / (len(x) - ddof)
+    # the same two passes as the numpy backend: the mean of the values, then
+    # the squared deviations from it
     mean = _mean(x)
     return sum(abs(xx - mean) ** 2 for xx in x) / (len(x) - ddof)
 
 
-def _std(x: Sequence[Any], ddof: int = 0) -> float:
-    return math.sqrt(_var(x, ddof=ddof))
+def _std(x: Sequence[Any], ddof: int = 0) -> Any:
+    var = _var(x, ddof=ddof)
+    if var is None:
+        return None
+    return math.sqrt(var)
 
 
 def _prod(x: Sequence[Any]) -> Any:
@@ -400,6 +431,32 @@ def _check_integer_precision(a: Sequence[Any], func: Callable[..., AScalar]) -> 
         check_integer_variance_span_overflow(low, high)
 
 
+def _is_flat(values: Sequence[Any]) -> bool:
+    """whether the values are a flat sequence.
+
+    The labels of a call address the values one by one - a column of the
+    caller's own has no such addressing, and is refused like every other path
+    refuses it.
+
+    A mapping and a set are no sequence of values either: iterating over a
+    mapping yields its keys, and the answer would be the one of the keys
+    instead of the one of the values - silently, and with no complaint.  A
+    generator is not a sequence at all: it is spent by the first look at it.
+    """
+    if getattr(values, "ndim", 0) > 1:
+        return False
+    if isinstance(values, (dict, set, frozenset)):
+        return False
+    try:
+        length = len(values)
+    except TypeError:
+        return False
+    if length == 0:
+        return True
+    first = values[0]
+    return not isinstance(first, (list, tuple)) and getattr(first, "ndim", 0) == 0
+
+
 def aggregate(
     group_idx: npt.NDArray[np.integer],
     a: AValue,
@@ -424,6 +481,8 @@ def aggregate(
         raise NotImplementedError("out= is only supported by the numba implementation")
     if len(idx) == 0:
         raise ValueError(EMPTY_GROUP_IDX)
+    if not is_scalar_input(vals) and not _is_flat(vals):
+        raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten. Alternatively specify axis.")
 
     # Check for 2d group_idx
     if size is None:
@@ -439,22 +498,36 @@ def aggregate(
         # a size is a number of groups - anything that counts is one
         size = operator.index(size)
 
-    for i in idx:
+    # the labels of a call index the groups - a label that is no index is
+    # refused in the words of the package, like every other path refuses it
+    labels_dtype = getattr(idx, "dtype", None)
+    if labels_dtype is not None and not is_integer_dtype(labels_dtype):
+        raise TypeError(NON_INTEGER_GROUP_IDX)
+
+    for value in idx:
         try:
-            i = int(i)
+            i = int(value)
         except (TypeError, ValueError):
-            if isinstance(i, (list, tuple)):
+            if isinstance(value, (list, tuple)):
                 raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
             else:
                 try:
-                    len(i)
+                    len(value)
                 except TypeError:
-                    raise ValueError(f"invalid value found in group_idx: {i}")
+                    raise ValueError(f"invalid value found in group_idx: {value}")
                 else:
                     raise NotImplementedError("pure python implementation doesn't accept ndim indexed input.")
         else:
+            if isinstance(value, bool) or not isinstance(value, numbers.Integral):
+                # a bool is no index, and a label that is not a whole number
+                # names no group - it is not rounded to the one beside it.
+                # a whole float is refused as well, like the float array of
+                # the other backends
+                raise TypeError(NON_INTEGER_GROUP_IDX)
             if i < 0:
-                raise ValueError("group_idx contains negative value")
+                raise ValueError(NEGATIVE_INDICES)
+            if i >= size:
+                raise ValueError(TOO_LARGE_FOR_SIZE.format(size=size))
 
     try:
         funcname, op, _temporal_op = _dispatch[func]
@@ -536,7 +609,11 @@ def aggregate(
     if not getattr(op, "x_and_idx", False):
         data = sorted(zip(idx, vals), key=operator.itemgetter(0))
         for ix, values_of_group in itertools.groupby(data, key=operator.itemgetter(0)):
-            ret[ix] = op([val for _, val in values_of_group], **kwargs)
+            value = op([val for _, val in values_of_group], **kwargs)
+            if value is not None:
+                # an operation that has no answer for this group leaves it at
+                # the fill value - like the group a nan poisoned below
+                ret[ix] = value
     else:
         # a group holding a nan has no extreme to point at, and so no position to
         # name either: the vectorised kernels leave such a group to the fill

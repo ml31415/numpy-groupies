@@ -2,25 +2,46 @@
 
 import numba as nb
 import numpy as np
+import pytest
 
 from numpy_groupies.aggregate_numba import mt
 
-
-def test_one_thread_means_no_parallel_path():
-    assert not mt.should_use_mt(1000, 1, 10**9)
-
-
-def test_too_few_values_mean_no_parallel_path():
-    assert not mt.should_use_mt(1000, 4, mt.MT_MIN_VALUES - 1)
-
-
-def test_many_values_with_few_groups_use_the_parallel_path():
-    assert mt.should_use_mt(1000, 4, 10**7)
-
-
-def test_many_groups_mean_no_parallel_path():
+# the decision of the chunked path: the values, the groups and the threads
+# against the answer the gate gives
+_CHUNKED_CASES = [
+    # one thread: nothing is shared, and the region costs more than the work
+    pytest.param(1000, 1, 10**9, False, id="one-thread"),
+    # too few values: the region costs more than the work it does
+    pytest.param(1000, 4, mt.MT_MIN_VALUES - 1, False, id="too-few-values"),
+    # many values and few groups: the work pays for the region
+    pytest.param(1000, 4, 10**7, True, id="many-values-few-groups"),
     # as many groups as values: the partial matrix costs more than the data
-    assert not mt.should_use_mt(10**7, 4, 10**7)
+    pytest.param(10**7, 4, 10**7, False, id="many-groups"),
+]
+
+
+@pytest.mark.parametrize(("n_values", "n_groups", "n_threads", "expected"), _CHUNKED_CASES)
+def test_the_chunked_path_is_decided_by_the_model(n_values, n_groups, n_threads, expected):
+    assert mt.should_use_mt(n_values, n_groups, n_threads) is expected
+
+
+# the decision of the path that cuts the groups into ranges: the same model,
+# with the cost of a value of its own
+_GROUP_CASES = [
+    pytest.param(1000, 1, 10**9, False, id="one-thread"),
+    pytest.param(1000, 4, mt.GROUP_MT_MIN_VALUES - 1, False, id="too-few-values"),
+    pytest.param(1000, 4, mt.GROUP_MT_MIN_VALUES, True, id="from-the-floor-on"),
+    # a third of these kernels stays single threaded, so two threads leave
+    # less than the margin of the model: the call would run the parallel
+    # region, pay for it and still be near the sequential time
+    pytest.param(1000, 2, 10**6, False, id="two-threads"),
+    pytest.param(1000, 6, 10**6, True, id="six-threads"),
+]
+
+
+@pytest.mark.parametrize(("n_values", "n_groups", "n_threads", "expected"), _GROUP_CASES)
+def test_the_group_path_is_decided_by_the_model(n_values, n_groups, n_threads, expected):
+    assert mt.should_use_group_mt(n_values, n_groups, n_threads, 18.0) is expected
 
 
 def test_the_decision_does_not_depend_on_the_machine():
@@ -61,8 +82,6 @@ def test_the_core_counts_are_sane():
 
 
 def test_the_thread_count_is_within_the_pool():
-    import numba as nb
-
     assert 1 <= mt.mt_thread_count() <= nb.get_num_threads()
 
 
@@ -81,22 +100,6 @@ def test_one_thread_means_no_group_parallel_path():
 
 def test_too_few_values_mean_no_group_parallel_path():
     assert not mt.should_use_group_mt(1000, 4, mt.GROUP_MT_MIN_VALUES - 1, 18.0)
-
-
-def test_the_group_path_is_used_from_the_floor_of_values_on():
-    # the estimate of these operations is nearly flat in the number of the
-    # values (the fixed cost of the parallel region is a few microseconds
-    # against the milliseconds they take), so the floor is what decides
-    assert not mt.should_use_group_mt(1000, 4, mt.GROUP_MT_MIN_VALUES - 1, 18.0)
-    assert mt.should_use_group_mt(1000, 4, mt.GROUP_MT_MIN_VALUES, 18.0)
-
-
-def test_two_threads_are_not_enough_for_the_group_path():
-    # a third of these kernels stays single threaded, so two threads leave
-    # less than the margin of the model: the call would run the parallel
-    # region, pay for it and still be near the sequential time
-    assert not mt.should_use_group_mt(1000, 2, 10**6, 18.0)
-    assert mt.should_use_group_mt(1000, 6, 10**6, 18.0)
 
 
 def test_the_group_ratio_gets_better_with_more_threads():

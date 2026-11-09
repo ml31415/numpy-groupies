@@ -19,6 +19,16 @@ from numba.core import caching
 
 from numpy_groupies.cache import numba_cache_dir
 
+# The overload implementations of the package, keyed by the function they
+# overload.  Numba compiles the implementation into the caller - the body of
+# the implementation is what ends up in the machine code - and the source of
+# the caller says nothing about it.  The identity of a dispatcher (and with it
+# the key of its on-disk cache) would therefore not change when only the
+# implementation changes, and the stale artifact would be served: a
+# correctly typed, silently wrong kernel.  The registry lets the fingerprint
+# of a dispatcher cover the implementations it may reach.
+_OVERLOADS: dict[Any, Any] = {}
+
 # the decorated function is a dispatcher that keeps the signature of its
 # python function - the overloads below hand that signature through
 # ``njit_stable`` for the type checker, the way ``nb.njit`` does
@@ -103,6 +113,130 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
             return super().flush()  # type: ignore[no-any-return]  # numba leaves caching.py unannotated
 
 
+def register_overload(func: Any) -> Callable[[Any], Any]:
+    """``nb.extending.overload``, with the implementation remembered.
+
+    The registration itself is numba's - the decorator returns the
+    implementation, and numba binds the overloaded function to a template
+    that carries it.  The package remembers the implementation as well, so
+    that the identity of the dispatchers that may reach it covers its body:
+    without that, a change of the implementation alone leaves the on-disk
+    cache key of every dispatcher that uses it untouched, and the stale
+    artifact is served (see :data:`_OVERLOADS`).
+    """
+
+    def register(implementation: Any) -> Any:
+        _OVERLOADS[func] = implementation
+        return nb.extending.overload(func)(implementation)
+
+    return register
+
+
+def _stable_content(content: Any) -> str:
+    """A description of a closure cell that is the same in every process.
+
+    The fingerprint of a dispatcher covers the contents of its closure, and
+    the fingerprint decides the name of the on-disk cache file.  ``repr`` of a
+    python function carries its memory address, which differs in every
+    process: the fingerprint would differ, the cache file would get a new
+    name in every run and the cache would never hit - the dispatcher would
+    be compiled again and again, in every process, at the cost of the time
+    and the memory of a compilation.
+
+    A dispatcher contributes its pinned uuid, a python function its module,
+    its qualified name and the hash of its source (a change of the body must
+    invalidate the cache), and everything else its repr.
+    """
+
+    uuid = getattr(content, "_uuid", None)
+    if isinstance(uuid, str):
+        return uuid
+    module = getattr(content, "__module__", None)
+    qualname = getattr(content, "__qualname__", None)
+    if isinstance(module, str) and isinstance(qualname, str):
+        try:
+            source = inspect.getsource(content)
+        except (OSError, TypeError):  # pragma: no cover - a source that cannot be read
+            source = ""
+        digest = hashlib.sha256(source.encode()).hexdigest()[:16]
+        return f"{module}.{qualname}:{digest}"
+    return repr(content)
+
+
+def _overload_sources(func: Callable[..., Any]) -> list[str]:
+    """The sources of the overload implementations the function may reach.
+
+    A jitted function reaches an overloaded function through its global name
+    or through a closure cell - and the implementation of the overload is
+    what numba compiles into it.  The closure is walked one level down into
+    the python function of a dispatcher, since that is where the name of the
+    overloaded function is looked up.
+
+    An implementation of its own may reach an overloaded function as well -
+    numba inlines that one into the very same machine code, so the walk
+    follows the implementations it finds (the accumulate of the dispersion
+    tracks the extrema of the group through an overload of its own).  The
+    walk stops at every function it has already seen, so a cycle cannot
+    spin it forever.
+    """
+    found: dict[str, str] = {}
+    pending = [func]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        # The names the one at hand calls through its globals - and the ones
+        # the functions inside it call: the branches of an overload template,
+        # the bodies an implementation picks between, sit in the constants of
+        # the enclosing function, one code object per def.  A name is looked
+        # up in the globals of the enclosing one, which is where numba looks
+        # when it compiles the body.
+        names: set[str] = set()
+        pending_codes = [current.__code__]
+        seen_codes: set[int] = set()
+        while pending_codes:
+            code = pending_codes.pop()
+            if id(code) in seen_codes:
+                continue
+            seen_codes.add(id(code))
+            names.update(code.co_names)
+            for const in code.co_consts:
+                inner = getattr(const, "__code__", None)
+                if inner is None and isinstance(const, type(code)):
+                    inner = const
+                if inner is not None:
+                    pending_codes.append(inner)
+        for cell in current.__closure__ or ():
+            try:
+                content = cell.cell_contents
+            except ValueError:  # pragma: no cover - empty cell
+                continue
+            # a dispatcher in the closure contributes the name of its python
+            # function - the overload it reaches is looked up in the globals
+            # of that function
+            py_func = getattr(content, "py_func", None)
+            if py_func is not None:
+                pending.append(py_func)
+            name = getattr(content, "__name__", None)
+            if isinstance(name, str):
+                names.add(name)
+        globals_ = getattr(current, "__globals__", {})
+        for name in names:
+            stub = globals_.get(name)
+            implementation = _OVERLOADS.get(stub) if stub is not None else None
+            if implementation is not None:
+                try:
+                    found[name] = inspect.getsource(implementation)
+                except (OSError, TypeError):  # pragma: no cover - a source that cannot be read
+                    found[name] = ""
+                # the body of the implementation may reach an overload of its
+                # own - numba inlines it, so it belongs to the identity too
+                pending.append(implementation)
+    return [found[name] for name in sorted(found)]
+
+
 @overload
 def njit_stable(py_func: _FuncT, cache: bool = True, name: str | None = None, **options: Any) -> _FuncT: ...
 @overload
@@ -167,7 +301,7 @@ def njit_stable(
                         content = "<empty cell>"
                     # dispatchers were wrapped earlier and already carry
                     # their pinned uuid, closures are created in order
-                    cells.append(getattr(content, "_uuid", repr(content)))
+                    cells.append(_stable_content(content))
             fingerprint = "\n".join(
                 [
                     func.__module__,
@@ -175,6 +309,7 @@ def njit_stable(
                     inspect.getsource(func),
                     repr(sorted(options.items())),
                     repr(cells),
+                    *_overload_sources(func),
                 ]
             )
             uuid = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]

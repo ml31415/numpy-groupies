@@ -6,7 +6,14 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from numpy_groupies.tests.helpers import _BackendProxy, _implementations, impl_name, is_supported
+from numpy_groupies.tests.helpers import (
+    SWEEP_SIZES,
+    _BackendProxy,
+    _implementations,
+    impl_name,
+    is_purepy,
+    is_supported,
+)
 
 
 class Block(typing.NamedTuple):
@@ -35,6 +42,20 @@ def impl(request):
     name ("purepy", "numpy", ...).
     """
     return _BackendProxy(request.param)
+
+
+@pytest.fixture
+def skip_purepy(impl):
+    """The pure python backend knows no datetime64 or timedelta64 values.
+
+    It answers some of them - the order reductions compare the values - and
+    it cannot answer the others, so the temporal tests leave it out.  The
+    fixture is not autouse: it would ask for the backend of every test of
+    the suite, and the tests that ask for no backend at all would run three
+    times over for nothing.
+    """
+    if impl_name(impl) == "purepy":
+        pytest.skip("the pure python backend knows no datetime64 or timedelta64 values")
 
 
 @pytest.fixture(scope="module")
@@ -126,6 +147,39 @@ def block(request):
     return block
 
 
+@pytest.fixture(params=SWEEP_SIZES.values(), ids=list(SWEEP_SIZES), scope="module")
+def n_values(request):
+    """The number of values the data of the generic sweep holds.
+
+    The two sizes are the ones of :data:`.helpers.SWEEP_SIZES`: the small
+    one is below the floor of the parallel path of the numba backend, the
+    big one above it - so the sweep of the suite measures the sequential path
+    and the parallel one with the very same test.
+    """
+    return request.param
+
+
+@pytest.fixture(scope="module")
+def scaled_block(block, n_values):
+    """The block of the suite, at the size the sweep asks for.
+
+    The values are repeated until the data is as big as the scale asks for:
+    the groups keep their uneven sizes, and the nans and the complex values
+    with them - so the awkward groups are in the data of the parallel path
+    as well, and the group loop has the very same cases to measure.
+
+    The scope is the module, not the test: the data of a scale is the same
+    for every test that asks for it, and the big one is a few hundred
+    megabytes of arrays - built once per module, not once per test.
+    """
+    repeats = -(-n_values // block.group_idx.size)
+    group_idx = np.tile(block.group_idx, repeats)[:n_values]
+    a, a_nans, a_complex = (np.tile(values, repeats)[:n_values] for values in (block.a, block.a_nans, block.a_complex))
+    for array in (group_idx, a, a_nans, a_complex):
+        array.setflags(write=False)
+    return Block(group_idx=group_idx, size=block.size, a=a, a_nans=a_nans, a_complex=a_complex)
+
+
 def pytest_collection_modifyitems(config, items):
     """Deselect the combos that cannot run at all.
 
@@ -136,6 +190,11 @@ def pytest_collection_modifyitems(config, items):
     runtime, and a backend that deviates without raising is measured against the
     group loop like any other and called out where it differs.
 
+    The data of the generic sweep comes in two sizes, and the pure python
+    implementation walks the data in a python loop: the big one is no data
+    it can answer in the time a suite can spend on it - and it has no
+    threads anyway, so the big size would measure the very same path twice.
+
     The tests that ask for the same function are put into one group, so that
     the workers of a parallel run share the compiled kernel of that function
     (see :func:`_group_of`).
@@ -145,6 +204,14 @@ def pytest_collection_modifyitems(config, items):
         callspec = getattr(item, "callspec", None)
         params = callspec.params if callspec is not None else {}
         if "impl" in params and "func" in params and not is_supported(params["impl"], params["func"]):
+            removed.append(item)
+            continue
+        if (
+            "impl" in params
+            and "n_values" in params
+            and is_purepy(params["impl"])
+            and params["n_values"] > SWEEP_SIZES["small"]
+        ):
             removed.append(item)
             continue
         group = _group_of(item, params)
@@ -161,20 +228,21 @@ _FUNCTION_PARAMS = ("func", "kernel_name", "name")
 
 
 def _group_of(item, params):
-    """The group a test belongs to: its module and the function it asks for.
+    """The group a test belongs to: the function it asks for.
 
     The workers of a parallel run share one cache of the compiled kernels on
     the disk, and they wait for each other: a worker that needs a kernel
     another worker is compiling right now waits for it - or compiles it
     itself, which is the same waste with more CPU.
 
-    A group is therefore a module and a function: the workers get different
-    corners of the suite, and the tests of one function inside one module are
-    given to one worker, which compiles the kernel of that function once.
+    A group is therefore the function a test asks for, over all the modules
+    that ask for it: the kernel of a function is compiled once in the whole
+    suite and not once per worker.  A test that asks for no function at all
+    is grouped by its module.
     """
     module = item.module.__name__.rsplit(".", 1)[-1]
     for name in _FUNCTION_PARAMS:
         value = params.get(name)
         if isinstance(value, str):
-            return f"{module}-{value}"
+            return f"fn-{value}"
     return module

@@ -17,7 +17,9 @@ import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
+from numpy_groupies.driver import aliasing
 from numpy_groupies.registry import (
+    aliasing_py,
     funcs_collecting,
     function_names,
 )
@@ -165,20 +167,25 @@ class _BackendProxy:
 func_list = tuple(name for name in function_names() if name in set(reference_names()))
 
 
-def assert_same_result(got, want, func, rtol=10**-10):
+def assert_same_result(got, want, func, rtol=10**-10, atol=0.0):
     """Compare the results of two backends, whatever the function returns.
 
     The collecting functions hand out a sequence per group, the others one
     number - the comparison looks at the one it is given, so that the tests
     over ``func_list`` need no exception for the shape of the result.
+
+    ``atol`` is the absolute tolerance of the answers that are zero: the
+    variance of a group whose values are all the same is zero, and the two
+    ways of computing it leave a rounding residue behind - one of them the
+    size of the sum of the values, the other one of its square.
     """
     if func in funcs_collecting:
         _assert_same_groups(got, want)
     else:
-        np.testing.assert_allclose(got, want, rtol=rtol)
+        np.testing.assert_allclose(got, want, rtol=rtol, atol=atol)
 
 
-def assert_matches_the_group_loop(impl, func, block, values):
+def assert_matches_the_group_loop(impl, func, block, values, rtol=10**-10, atol=0.0):
     """Compare the result of a backend against the group loop.
 
     The yardstick of the suite: a backend is measured against the group loop
@@ -188,7 +195,7 @@ def assert_matches_the_group_loop(impl, func, block, values):
     """
     got = impl.aggregate(block.group_idx, values, func=func, size=block.size)
     want = aggregate_ref(block.group_idx, values, func=func, size=block.size)
-    assert_same_result(got, want, func)
+    assert_same_result(got, want, func, rtol=rtol, atol=atol)
 
 
 def _assert_same_groups(got, want):
@@ -219,3 +226,95 @@ def is_numba(impl):
     implementation, where the other two only call what they are handed.
     """
     return impl_name(impl) == "numba"
+
+
+# The functions with a well-defined complex result, following numpy semantics -
+# the order statistics included, as numpy orders complex values lexicographically.
+# median is the one order statistic missing: over incomparable values numpy's own
+# partition and its sort disagree, so the group loop cannot tell what a poisoned
+# group mediates to - what its answer has to look like is pinned by
+# test_median_of_a_poisoned_group instead, and a clean group by test_median
+complex_funcs = (
+    "sum",
+    "prod",
+    "mean",
+    "var",
+    "std",
+    "trapezoid",
+    "sumofsquares",
+    "first",
+    "last",
+    "nansum",
+    "nanprod",
+    "nanmean",
+    "nanvar",
+    "nanstd",
+    "nanmedian",
+    "nantrapezoid",
+    "nansumofsquares",
+    "cumsum",
+    "all",
+    "any",
+    "allnan",
+    "anynan",
+    "nanall",
+    "nanany",
+    "len",
+    "nanlen",
+    "nanfirst",
+    "nanlast",
+    "min",
+    "max",
+    "nanmin",
+    "nanmax",
+    "argmin",
+    "argmax",
+    "nanargmin",
+    "nanargmax",
+)
+# their complex result is the real squared magnitude, not complex a*a
+complex_real_out_funcs = {"var", "std", "sumofsquares", "nanvar", "nanstd", "nansumofsquares"}
+# these count, test or point at a position, so their result is not a number of
+# the input type
+complex_bool_funcs = {"all", "any", "allnan", "anynan", "nanall", "nanany"}
+complex_arg_funcs = ("argmin", "argmax", "nanargmin", "nanargmax")
+complex_int_funcs = {"len", "nanlen", *complex_arg_funcs}
+# order statistics over the values themselves, as opposed to their positions
+complex_order_funcs = ("min", "max", "nanmin", "nanmax")
+# conjugating the input does not simply conjugate the result for these: it
+# flips the order of two values sharing a real part
+complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
+# functions whose output dtype a complex input does not fix
+complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
+
+
+def aliasing_of(impl):
+    """The alias table of the backend under test.
+
+    The pure python backend knows fewer aliases than the numpy based ones -
+    it has no numpy to take them from - so the table belongs to the backend
+    and not to the package.
+    """
+    if impl_name(impl) == "purepy":
+        return aliasing_py
+    return aliasing
+
+
+def assert_matches_the_group_loop_values(impl, group_idx, a, func, size=None, rtol=10**-10):
+    """The result of a backend against the group loop, for the values of the
+    caller.
+
+    The counts compare exactly - an integer count has no tolerance - and the
+    moments and the quantiles with the tolerance of their own.
+    """
+    got = impl.aggregate(group_idx, a, func=func, size=size)
+    want = aggregate_ref(group_idx, a, func=func, size=size)
+    np.testing.assert_allclose(got, want, rtol=rtol, equal_nan=True)
+
+
+# The sizes of the data the generic sweep runs over: the small one is below
+# the floor of the parallel path of the numba backend (``MT_MIN_VALUES`` is
+# 100_000), the big one above it.  The sweep measures the sequential path and
+# the parallel one with the very same test - the backends that have no
+# threads answer the same at both sizes.
+SWEEP_SIZES = {"small": 1_000, "large": 200_000}

@@ -24,6 +24,7 @@ from numpy_groupies.registry import (
     function_names,
     resolve_name,
 )
+from numpy_groupies.tests.helpers import aliasing_of, assert_same_result
 
 
 def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():
@@ -232,3 +233,84 @@ def test_every_function_of_the_package_is_declared_for_the_type_checker():
     }
 
     assert declared == set(function_names())
+
+
+def test_the_package_carries_every_function_of_the_registry():
+    """Every function of the registry is a name of the package itself.
+
+    The nan variants are functions of the package, too - they are named by the
+    function they skip the nans of, and the entry points are built out of the
+    names of the registry.
+    """
+    import numpy_groupies as npg
+    from numpy_groupies import aggregate_numpy, aggregate_purepy
+
+    for name in function_names():
+        assert hasattr(npg, name), f"the package has no {name}"
+        assert hasattr(aggregate_numpy, name), f"the numpy backend has no {name}"
+        assert hasattr(aggregate_purepy, name), f"the pure python backend has no {name}"
+
+
+@pytest.mark.parametrize("name", sorted(function_names()))
+def test_the_entry_point_of_the_package_answers_as_its_function(name):
+    """``npg.mean(group_idx, a)`` is ``npg.aggregate(group_idx, a, func="mean")``.
+
+    The entry points are built at runtime, out of the table of the entry
+    points of the backend - so the name in the package and the function of the
+    aggregation have to be one and the same.
+    """
+    import numpy_groupies as npg
+
+    group_idx = np.array([0, 0, 1, 1, 1])
+    a = np.array([1.0, 3.0, 5.0, 7.0, 9.0])
+    got = getattr(npg, name)(group_idx, a, size=2)
+    want = npg.aggregate(group_idx, a, func=name, size=2)
+    assert_same_result(got, want, name)
+
+
+# the arguments a function has of its own - they have to reach the function
+# through the entry point of the package
+_ENTRY_POINT_ARGUMENTS = [
+    ("var", {"ddof": 1}),
+    ("std", {"ddof": 1}),
+    ("quantile", {"q": 0.25, "method": "lower"}),
+    ("percentile", {"q": 25.0}),
+    ("trapezoid", {"dx": 2.0}),
+    ("sort", {"reverse": True}),
+    ("topk", {"k": 2, "largest": False}),
+]
+
+
+@pytest.mark.parametrize(("name", "kwargs"), _ENTRY_POINT_ARGUMENTS)
+def test_the_entry_point_passes_the_arguments_of_its_function(name, kwargs):
+    """The arguments of the function reach it through the entry point.
+
+    The entry point of the package takes the arguments of its function - the
+    ``ddof`` of the variance, the ``q`` of the quantile - and hands them on.
+    """
+    import numpy_groupies as npg
+
+    group_idx = np.array([0, 0, 1, 1, 1])
+    a = np.array([1.0, 3.0, 5.0, 7.0, 9.0])
+    got = getattr(npg, name)(group_idx, a, size=2, **kwargs)
+    want = npg.aggregate(group_idx, a, func=name, size=2, **kwargs)
+    assert_same_result(got, want, name)
+
+
+@pytest.mark.parametrize("alias", sorted(alias for alias in aliasing if isinstance(alias, str)))
+def test_every_alias_answers_like_the_function_it_names(impl, alias):
+    """Every alias of the package is another name of the function it names.
+
+    The aliases are the names numpy knows - ``add`` for the sum, ``amin``
+    for the minimum, ``count`` for the length - and a caller who writes one
+    of them expects the answer of the function behind it.
+    """
+    table = aliasing_of(impl)
+    if alias not in table:
+        pytest.skip("the backend does not know the alias")
+    canonical = table[alias]
+    group_idx = np.array([0, 0, 1, 1, 1])
+    a = np.array([1.0, 3.0, 5.0, 7.0, 9.0])
+    got = impl.aggregate(group_idx, a, func=alias, size=2)
+    want = impl.aggregate(group_idx, a, func=canonical, size=2)
+    assert_same_result(got, want, canonical)

@@ -11,7 +11,10 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
+from numpy_groupies import aggregate_purepy
 from numpy_groupies.fills import default_fill_value
+from numpy_groupies.functions import default_fill_values, fill_value_key
+from numpy_groupies.registry import function_names
 from numpy_groupies.tests.helpers import (
     assert_same_result,
     func_list,
@@ -104,26 +107,111 @@ def test_default_fill_value(impl, func, a_dtype):
 @pytest.mark.parametrize(
     ["func", "dtype", "expected"],
     [
+        # the counts and the flags
+        ("len", "int64", 0),
+        ("nunique", "int64", 0),
+        ("all", "bool", False),
+        ("any", "bool", False),
+        ("allnan", "bool", False),
+        ("anynan", "bool", False),
+        # the sums and the products
         ("sum", "int64", 0),
         ("prod", "int64", 1),
+        ("sumofsquares", "int64", 0),
+        ("trapezoid", "float64", 0),
+        # the positions
+        ("argmax", "int64", -1),
+        ("argmin", "int64", -1),
+        # the sequences
+        ("array", "object", []),
+        ("sort", "object", []),
+        # the running values
+        ("cumsum", "float64", 0),
+        ("cumprod", "float64", 1),
+        ("cummax", "float64", 0),
+        ("cummin", "float64", 0),
+        # the averages and the order statistics: a nan, where the answer can
+        # hold one
         ("mean", "float64", np.nan),
         ("median", "float64", np.nan),
+        ("quantile", "float64", np.nan),
+        ("percentile", "float64", np.nan),
         ("var", "float64", np.nan),
-        ("trapezoid", "float64", 0),
-        ("argmax", "int64", -1),
-        ("nanargmin", "int64", -1),
+        ("std", "float64", np.nan),
+        ("skew", "float64", np.nan),
+        ("kurt", "float64", np.nan),
+        ("min", "float64", np.nan),
+        ("max", "float64", np.nan),
         ("first", "float64", np.nan),
-        # integer output cannot hold nan, so those keep the conservative 0
-        ("first", "int64", 0),
+        ("last", "float64", np.nan),
+        ("topk", "float64", np.nan),
+        # an integer output cannot hold a nan, so those keep the
+        # conservative 0
+        ("mean", "int64", 0),
+        ("median", "int64", 0),
+        ("var", "int64", 0),
+        ("std", "int64", 0),
+        ("skew", "int64", 0),
+        ("kurt", "int64", 0),
+        ("min", "int64", 0),
         ("max", "int64", 0),
-        ("all", "bool", False),
-        ("array", "object", []),
+        ("first", "int64", 0),
+        ("last", "int64", 0),
+        ("topk", "int64", 0),
+        # the nan variants inherit the default of the function they skip the
+        # nans of
+        ("nanmean", "float64", np.nan),
+        ("nanmedian", "float64", np.nan),
+        ("nanquantile", "float64", np.nan),
+        ("nanpercentile", "float64", np.nan),
+        ("nanvar", "float64", np.nan),
+        ("nanstd", "float64", np.nan),
+        ("nanskew", "float64", np.nan),
+        ("nankurt", "float64", np.nan),
+        ("nanmin", "float64", np.nan),
+        ("nanmax", "float64", np.nan),
+        ("nanfirst", "float64", np.nan),
+        ("nanlast", "float64", np.nan),
+        ("nansum", "int64", 0),
+        ("nanprod", "int64", 1),
+        ("nansumofsquares", "int64", 0),
+        ("nantrapezoid", "float64", 0),
+        ("nanlen", "int64", 0),
+        ("nannunique", "int64", 0),
+        ("nanargmin", "int64", -1),
+        ("nanargmax", "int64", -1),
+        ("nanall", "bool", False),
+        ("nanany", "bool", False),
+        ("nancumsum", "float64", 0),
+        ("nancumprod", "float64", 1),
+        ("nancummax", "float64", 0),
+        ("nancummin", "float64", 0),
     ],
 )
 def test_default_fill_value_table(func, dtype, expected):
+    """The default of every function of the package, written out.
+
+    The table is the policy of the package: a nan where the answer can hold
+    one, a zero where it cannot, and the value that makes the operation
+    neutral - the zero of a sum, the one of a product, the false of a flag.
+    Every function of the registry has an entry here, so a function that is
+    added without a default is a hole in the table.
+    """
     # comparing by repr because neither nan nor the empty sequence compare
     # equal to themselves
     assert repr(default_fill_value(func, dtype)) == repr(expected)
+
+
+def test_every_function_of_the_registry_has_a_default():
+    """Every function of the package resolves to a default of its own.
+
+    The table above names them all - a function that is added to the registry
+    without a default would be answered with the nan of the generic rule,
+    which is no policy at all.  The nan variants share the default of the
+    function they skip the nans of.
+    """
+    for name in function_names():
+        assert fill_value_key(name) in default_fill_values, name
 
 
 @pytest.mark.parametrize(["func", "fill_value"], [(np.array, None), (np.sum, -1)], ids=["array", "sum"])
@@ -316,6 +404,141 @@ def test_parameter_missing(impl):
 def test_shape_mismatch(impl):
     with pytest.raises(ValueError):
         impl.aggregate(np.array((1, 2, 3)), np.array((1, 2)))
+
+
+# the input the validation of the package refuses - the words are the ones of
+# ``numpy_groupies.validation``, and every path into a computation says the
+# same ones.  The pure python implementation knows no axis and no sequence of
+# sizes, so it refuses those with a ``NotImplementedError`` of its own - the
+# proxy of the ``impl`` fixture turns that into a skip.
+_VALIDATION_CASES = [
+    # (name, group_idx, a, kwargs, error, message)
+    ("axis too large", np.array([0, 1]), np.zeros((2, 2)), {"axis": 5}, ValueError, "axis arg too large"),
+    (
+        "a of two dimensions without an axis",
+        np.array([0, 1]),
+        np.zeros((2, 2)),
+        {},
+        ValueError,
+        "must be scalar or 1 dimensional",
+    ),
+    (
+        "labels of another shape than the values",
+        np.zeros((2, 3), dtype=int),
+        np.zeros((2, 2)),
+        {"axis": 0},
+        ValueError,
+        "cannot be broadcast",
+    ),
+    (
+        "a sequence of sizes with flat labels",
+        np.array([0, 1]),
+        np.array([1.0, 2.0]),
+        {"size": (2,)},
+        ValueError,
+        "output size must be scalar",
+    ),
+    (
+        "a sequence of sizes of another length",
+        np.zeros((2, 2), dtype=int),
+        np.array([1.0, 2.0]),
+        {"size": (2, 2, 2)},
+        ValueError,
+        "output dimensions specified",
+    ),
+    (
+        "labels that are no numbers",
+        np.array([0.5, 1.0]),
+        np.array([1.0, 2.0]),
+        {},
+        TypeError,
+        "must be of integer type",
+    ),
+    (
+        "labels that are flags",
+        np.array([True, False]),
+        np.array([1.0, 2.0]),
+        {},
+        TypeError,
+        "must be of integer type",
+    ),
+    (
+        "labels that are whole floats in a list",
+        [0.0, 1.0],
+        [1.0, 2.0],
+        {},
+        TypeError,
+        "must be of integer type",
+    ),
+    (
+        "labels that are flags in a list",
+        [True, False],
+        [1.0, 2.0],
+        {},
+        TypeError,
+        "must be of integer type",
+    ),
+    (
+        "labels beyond the size",
+        np.array([0, 5]),
+        np.array([1.0, 2.0]),
+        {"size": 2},
+        ValueError,
+        "too large",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("name", "group_idx", "a", "kwargs", "error", "message"),
+    _VALIDATION_CASES,
+    ids=[case[0] for case in _VALIDATION_CASES],
+)
+def test_a_refused_input_is_refused_in_the_words_of_the_package(impl, name, group_idx, a, kwargs, error, message):
+    """The validation of the input says the same thing in every path.
+
+    The words are the ones of ``numpy_groupies.validation`` - the negative
+    indices, the labels that are no numbers, the labels beyond the size - so
+    that a caller of any of the backends reads one complaint and not three.
+    """
+    with pytest.raises(error, match=message):
+        impl.aggregate(group_idx, a, func="sum", **kwargs)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [{"0": 1, "1": 2}, {1, 2}, frozenset({1, 2}), iter([1, 2]), (x for x in (1, 2))],
+    ids=["dict", "set", "frozenset", "iterator", "generator"],
+)
+def test_the_pure_python_path_refuses_what_is_no_sequence_of_values(values):
+    """The values of a call are a sequence of values.
+
+    A mapping and a set are no such sequence: iterating over them yields
+    their keys, and the answer would be the one of the keys instead of the
+    one of the values - silently.  A generator is spent by the first look at
+    it.  The pure python path reads the values as a python sequence, so it
+    is the path that has to say so.
+    """
+    with pytest.raises(ValueError, match="must be scalar or 1 dimensional"):
+        aggregate_purepy.aggregate(np.array([0, 1]), values, func="sum", size=2)
+
+
+def test_the_out_argument_is_the_one_of_the_numba_backend(impl):
+    """``out=`` is the numba business, and the others say so.
+
+    The protocol of the public ``aggregate`` promises it: only the numba
+    implementation honours the argument, the others raise it.
+    """
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1.0, 2.0, 3.0])
+    out = np.empty(2)
+    if is_numba(impl):
+        ret = impl.aggregate(group_idx, a, func="sum", out=out)
+        assert ret is out
+        np.testing.assert_array_equal(out, [3.0, 3.0])
+    else:
+        with pytest.raises(NotImplementedError, match="out="):
+            impl.aggregate(group_idx, a, func="sum", out=out)
 
 
 @pytest.mark.parametrize("fill_value", [0, np.nan])
