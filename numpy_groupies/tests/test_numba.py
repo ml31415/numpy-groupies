@@ -536,3 +536,50 @@ def test_a_dispatcher_without_the_pin_would_be_caught():
     assert not _pinned.match(str(inner._uuid))
     assert _uuid4.search(dumps(_cell_contents(outer))) is not None
     assert outer._uuid != str(inner._uuid)
+
+
+# The identity of a dispatcher - and with it the key of its on-disk cache -
+# has to cover the body of the overload implementation it reaches.  Numba
+# compiles the implementation into the caller, and the source of the caller
+# says nothing about it: a change of the implementation alone would leave the
+# key untouched, and the stale artifact would be served - a correctly typed,
+# silently wrong kernel.
+
+
+def test_the_overload_implementations_are_registered():
+    """Every overload of the backend is remembered by the package.
+
+    The registry is what lets the identity of a dispatcher cover the body of
+    the implementation it reaches.
+    """
+    from numpy_groupies.aggregate_numba import averaging
+    from numpy_groupies.aggregate_numba.jit import _OVERLOADS
+
+    for stub in (averaging._track_extrema, averaging._mean_limit_check, averaging._span_limit_check):
+        assert stub in _OVERLOADS, stub
+    assert averaging._fold_std in _OVERLOADS
+
+
+def test_the_identity_of_a_dispatcher_covers_the_overload_it_reaches(monkeypatch):
+    """The body of an overload implementation is part of the identity.
+
+    The fold of the dispersion is reached by the dispatcher of its caller -
+    and the caller says nothing of the body of the implementation in its own
+    source, so the identity has to cover it separately.
+    """
+    import inspect
+
+    from numpy_groupies.aggregate_numba import averaging
+    from numpy_groupies.aggregate_numba.jit import njit_stable
+
+    plain = njit_stable(averaging._std_combine)._uuid
+    original = inspect.getsource
+
+    def changed(func):
+        source = original(func)
+        if func is averaging._fold_std_overload:
+            return source + "\n# eine Änderung des Rumpfes\n"
+        return source
+
+    monkeypatch.setattr(inspect, "getsource", changed)
+    assert njit_stable(averaging._std_combine)._uuid != plain

@@ -19,6 +19,16 @@ from numba.core import caching
 
 from numpy_groupies.cache import numba_cache_dir
 
+# The overload implementations of the package, keyed by the function they
+# overload.  Numba compiles the implementation into the caller - the body of
+# the implementation is what ends up in the machine code - and the source of
+# the caller says nothing about it.  The identity of a dispatcher (and with it
+# the key of its on-disk cache) would therefore not change when only the
+# implementation changes, and the stale artifact would be served: a
+# correctly typed, silently wrong kernel.  The registry lets the fingerprint
+# of a dispatcher cover the implementations it may reach.
+_OVERLOADS: dict[Any, Any] = {}
+
 # the decorated function is a dispatcher that keeps the signature of its
 # python function - the overloads below hand that signature through
 # ``njit_stable`` for the type checker, the way ``nb.njit`` does
@@ -103,6 +113,66 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
             return super().flush()  # type: ignore[no-any-return]  # numba leaves caching.py unannotated
 
 
+def register_overload(func: Any) -> Callable[[Any], Any]:
+    """``nb.extending.overload``, with the implementation remembered.
+
+    The registration itself is numba's - the decorator returns the
+    implementation, and numba binds the overloaded function to a template
+    that carries it.  The package remembers the implementation as well, so
+    that the identity of the dispatchers that may reach it covers its body:
+    without that, a change of the implementation alone leaves the on-disk
+    cache key of every dispatcher that uses it untouched, and the stale
+    artifact is served (see :data:`_OVERLOADS`).
+    """
+
+    def register(implementation: Any) -> Any:
+        _OVERLOADS[func] = implementation
+        return nb.extending.overload(func)(implementation)
+
+    return register
+
+
+def _overload_sources(func: Callable[..., Any]) -> list[str]:
+    """The sources of the overload implementations the function may reach.
+
+    A jitted function reaches an overloaded function through its global name
+    or through a closure cell - and the implementation of the overload is
+    what numba compiles into it.  The closure is walked one level down into
+    the python function of a dispatcher, since that is where the name of the
+    overloaded function is looked up.
+    """
+    found: dict[str, str] = {}
+    pending = [func]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        names = set(current.__code__.co_names)
+        for cell in current.__closure__ or ():
+            try:
+                content = cell.cell_contents
+            except ValueError:  # pragma: no cover - empty cell
+                continue
+            # a dispatcher in the closure contributes the name of its python
+            # function - the overload it reaches is looked up in the globals
+            # of that function
+            py_func = getattr(content, "py_func", None)
+            if py_func is not None:
+                pending.append(py_func)
+            name = getattr(content, "__name__", None)
+            if isinstance(name, str):
+                names.add(name)
+        globals_ = getattr(current, "__globals__", {})
+        for name in names:
+            stub = globals_.get(name)
+            implementation = _OVERLOADS.get(stub) if stub is not None else None
+            if implementation is not None:
+                found[name] = inspect.getsource(implementation)
+    return [found[name] for name in sorted(found)]
+
+
 @overload
 def njit_stable(py_func: _FuncT, cache: bool = True, name: str | None = None, **options: Any) -> _FuncT: ...
 @overload
@@ -175,6 +245,7 @@ def njit_stable(
                     inspect.getsource(func),
                     repr(sorted(options.items())),
                     repr(cells),
+                    *_overload_sources(func),
                 ]
             )
             uuid = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]

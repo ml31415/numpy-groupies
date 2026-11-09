@@ -81,7 +81,7 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.aggregate_numba.jit import njit_stable, register_overload
 from numpy_groupies.aggregate_numba.mt import (
     GROUP_MT_MIN_VALUES,
     MT_MIN_VALUES,
@@ -465,7 +465,7 @@ def _fill_fits(fill_value: Any, low: Any, high: Any, high_exclusive: Any) -> boo
     raise NotImplementedError("the overload of _fill_fits provides the implementation")
 
 
-@nb.extending.overload(_fill_fits)
+@register_overload(_fill_fits)
 def _fill_fits_overload(fill_value: Any, low: Any, high: Any, high_exclusive: Any) -> Any:
     if isinstance(fill_value, nb.types.Integer) and getattr(fill_value, "signed", True):
         # a signed integer is compared with the integer bounds of the output -
@@ -1292,7 +1292,7 @@ def _make_stub(
     # own types at compile time, and the function returns the implementation
     # it compiles - the two have to carry the same signature, which is why
     # the builders above write both of them down
-    nb.extending.overload(stub)(typing)
+    register_overload(stub)(typing)
 
     return stub
 

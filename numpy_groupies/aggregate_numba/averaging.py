@@ -26,7 +26,7 @@ from numpy_groupies.aggregate_numba.compose import (
     rule_int64,
     rule_real_float,
 )
-from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.aggregate_numba.jit import njit_stable, register_overload
 from numpy_groupies.temporal import NAT_TICK
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,
@@ -54,7 +54,7 @@ def _track_extrema(val: float, low: float, high: float) -> None:
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_track_extrema)
+@register_overload(_track_extrema)
 def _track_extrema_overload(val: float, low: float, high: float) -> Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
@@ -112,7 +112,7 @@ def _mean_limit_check(low: float, high: float, count: int) -> None:
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_mean_limit_check)
+@register_overload(_mean_limit_check)
 def _mean_limit_check_overload(low: float, high: float, count: int) -> Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
@@ -152,7 +152,7 @@ def _span_limit_check(low: float, high: float, count: int) -> None:
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_span_limit_check)
+@register_overload(_span_limit_check)
 def _span_limit_check_overload(low: float, high: float, count: int) -> Callable[..., None]:
     if not isinstance(low, nb.types.Integer):
 
@@ -749,7 +749,7 @@ def _accumulate_std(val: float, st: StdState, ri: int) -> None:
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_accumulate_std)
+@register_overload(_accumulate_std)
 def _accumulate_std_overload(val: float, st: StdState, ri: int) -> Callable[..., None]:
     if isinstance(val, nb.types.Integer):
 
@@ -837,7 +837,7 @@ def _fold_std(acc: StdState, other: StdState, fill_value: float, extra: Any) -> 
     raise NotImplementedError  # replaced by the overload below
 
 
-@nb.extending.overload(_fold_std)
+@register_overload(_fold_std)
 def _fold_std_overload(acc: StdState, other: StdState, fill_value: float, extra: Any) -> Callable[..., None]:
     # the dtype of the anchor field tells the two cases apart: the integer
     # input is centered on the first value of its group, the inexact one on
