@@ -88,28 +88,43 @@ def arbitrary(iterator):
 
 
 func_list = (
+    # the sums and the products
     np.sum,
     np.prod,
+    # the extremes
     np.min,
     np.max,
+    # the counts
     len,
     "nunique",
+    # the flags
     np.all,
     np.any,
     "anynan",
     "allnan",
+    # the means
     np.mean,
+    # the order statistics
     np.median,
     "quantile",
+    "mode",
+    # the dispersion and the moments
     np.trapezoid,
     np.std,
     np.var,
     "skew",
     "kurt",
+    # the positions
     "first",
     "last",
     "argmax",
     "argmin",
+    # the values of the group
+    "sort",
+    "topk",
+    "array",
+    # the nan-variants - a block, in the order of the functions they are
+    # the variant of
     np.nansum,
     np.nanprod,
     np.nanmin,
@@ -130,15 +145,13 @@ func_list = (
     "nanlast",
     "nanargmin",
     "nanargmax",
+    # the cumulations - a block
     "cumsum",
     "cumprod",
     "cummax",
     "cummin",
+    # the caller brings a function of its own
     arbitrary,
-    "sort",
-    "array",
-    "topk",
-    "mode",
 )
 
 # the functions that take datetime64 and timedelta64 values, and the ones that
@@ -149,10 +162,12 @@ func_list = (
 # The names are the ones the table shows, and ``nan`` in the name is what
 # sends a function to the NaT data.
 temporal_datetime_funcs = (
+    # the extremes
     np.min,
     np.max,
     np.nanmin,
     np.nanmax,
+    # the positions
     "first",
     "last",
     "nanfirst",
@@ -161,22 +176,26 @@ temporal_datetime_funcs = (
     "argmax",
     "nanargmin",
     "nanargmax",
+    # the counts
     len,
     "nanlen",
     "nunique",
     "nannunique",
+    # the flags
     np.all,
     np.any,
     "allnan",
     "anynan",
+    # the means and the order statistics
     np.mean,
-    np.nanmean,
+    "nanmean",
     "quantile",
     "nanquantile",
+    "mode",
+    # the values of the group
     "sort",
     "array",
     "topk",
-    "mode",
 )
 temporal_timedelta_funcs = temporal_datetime_funcs + (
     np.sum,

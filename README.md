@@ -266,26 +266,27 @@ All implementations share the calling syntax and produce the same results up to 
 
 ## Performance
 
-Best of three passes, every cell measured in one block of five runs, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
+Best of ten passes, every cell measured in one block of five runs, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
 
 | function        | numpy  |  numba  | numbagg | polars | pandas |
 | --------------- | -----: | ------: | ------: | -----: | ------: |
-| `sum`           |  0.941 |  0.248 |  0.486 |  2.932 |  6.798 |
-| `mean`          |  1.520 |  0.282 |  0.539 |  2.219 |  7.306 |
-| `max`           |  1.705 |  0.331 |  0.890 |  3.553 |  6.840 |
-| `std`           |  3.147 |  0.359 |  0.689 |  2.841 |  7.556 |
-| `nansum`        |  4.101 |  0.263 |  1.780 |  6.058 |  8.417 |
-| `median`        | 12.599 |  2.775 |   ---- |  4.145 | 15.699 |
-| `skew`          |  5.578 |  1.015 |   ---- |  3.160 |  9.080 |
-| `kurt`          |  5.655 |  0.989 |   ---- |  4.096 | 10.263 |
-| `quantile`      | 15.341 |  2.756 |   ---- |  3.669 | 22.869 |
-| `nunique`       | 15.380 |  2.628 |   ---- | 12.481 | 56.930 |
-| `sort`          | 71.208 |  6.277 |   ---- |   ---- |   ---- |
-| `topk`          | 13.866 |  2.890 |   ---- |   ---- |   ---- |
-| `mode`          | 26.473 |  2.973 |   ---- |   ---- |   ---- |
-| `cumsum`        | 15.739 |  0.583 |   ---- |  9.976 |  7.241 |
-| `array`         |  7.562 |  1.952 |   ---- |   ---- |   ---- |
-| custom callable | 112.480 |  2.842 |   ---- | 81.065 | 98.810 |
+| `sum`           |  0.936 |   0.248 |   0.468 |  2.545 |  6.692 |
+| `min`           |  1.716 |   0.277 |   0.854 |  3.114 |  6.566 |
+| `max`           |  1.703 |   0.294 |   0.879 |  3.401 |  6.495 |
+| `nunique`       | 15.488 |   3.085 |    ---- | 12.259 | 56.783 |
+| `mean`          |  1.521 |   0.255 |   0.537 |  2.849 |  7.385 |
+| `median`        | 13.088 |   2.876 |    ---- |  3.983 | 16.008 |
+| `quantile`      | 14.847 |   3.038 |    ---- |  4.236 | 23.247 |
+| `mode`          | 26.215 |   3.181 |    ---- |   ---- |   ---- |
+| `std`           |  3.165 |   0.470 |   0.683 |  2.926 |  7.647 |
+| `skew`          |  8.020 |   1.165 |    ---- |  3.563 |  9.460 |
+| `kurt`          |  8.140 |   0.942 |    ---- |  4.009 | 10.532 |
+| `sort`          | 71.753 |   6.952 |    ---- |   ---- |   ---- |
+| `topk`          | 14.541 |   2.876 |    ---- |   ---- |   ---- |
+| `array`         |  7.183 |   1.973 |    ---- |   ---- |   ---- |
+| `nansum`        |  4.161 |   0.263 |   1.788 |  6.229 |  8.444 |
+| `cumsum`        | 15.876 |   0.565 |    ---- |  9.164 |  7.290 |
+| custom callable | 111.997 |   2.355 |    ---- | 80.605 | 93.727 |
 
 The `numba` column is the backend of this package, optimized as far as we could get it: it uses the threads of the machine where that pays for itself. The operations that can be reduced in chunks - the sums, the products, the counts, the extremes, the mean, the moments (the skewness and the kurtosis), the first and the last value of a group and the index of its best value (the argmax and the argmin) - split their data into chunks that are reduced separately and folded afterwards. The operations that cannot - the order statistics (the median, the quantile, the sort, the topk, the mode, the number of the distinct values) and the callables of the caller - cut their *groups* into ranges instead and let the threads work on the ranges one after another; every group belongs to one range, so nothing is folded afterwards and the result is the one of the sequential kernel bit for bit. The chunks and the ranges are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the pieces that are left. The operations that give an output per value (the cumulatives) stay single-threaded.
 
