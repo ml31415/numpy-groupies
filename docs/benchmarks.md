@@ -49,8 +49,8 @@ The result of a run on the machine of the numeric table (same conditions, `--run
 | nanargmax datetime64    |        6.587 |        0.666 |
 | len datetime64          |        0.838 |        0.300 |
 | nanlen datetime64       |        4.309 |        0.321 |
-| nunique datetime64      |       15.422 |        3.544 |
-| nannunique datetime64   |       16.790 |        3.002 |
+| nunique datetime64      |       15.162 |        3.158 |
+| nannunique datetime64   |       16.266 |        3.254 |
 | all datetime64          |        1.939 |        0.904 |
 | any datetime64          |        2.961 |        0.848 |
 | allnan datetime64       |        2.234 |        0.397 |
@@ -77,8 +77,8 @@ The result of a run on the machine of the numeric table (same conditions, `--run
 | nanargmax timedelta64   |        6.298 |        0.686 |
 | len timedelta64         |        0.794 |        0.306 |
 | nanlen timedelta64      |        4.248 |        0.359 |
-| nunique timedelta64     |       15.111 |        3.155 |
-| nannunique timedelta64  |       16.480 |        2.772 |
+| nunique timedelta64     |       14.902 |        2.953 |
+| nannunique timedelta64  |       16.480 |        2.602 |
 | all timedelta64         |        1.900 |        0.805 |
 | any timedelta64         |        2.841 |        0.801 |
 | allnan timedelta64      |        2.261 |        0.387 |
@@ -148,7 +148,7 @@ python -m numpy_groupies.benchmarks.mt --scaling
 | min         |      1.724 |      0.284 |      0.839 |      3.370 |      6.580 |      1.741 |
 | max         |      1.705 |      0.331 |      0.890 |      3.553 |      6.840 |      1.741 |
 | len         |      0.801 |      0.196 |      0.475 |      2.728 |      5.309 |      0.927 |
-| nunique     |     15.567 |      2.952 |       ---- |     12.481 |     56.930 |       ---- |
+| nunique     |     15.380 |      2.628 |       ---- |     12.481 |     56.930 |       ---- |
 | all         |      1.803 |      0.309 |      1.604 |      2.838 |      6.775 |     32.673 |
 | any         |      2.557 |      0.250 |      1.597 |      2.767 |      6.849 |     30.749 |
 | anynan      |      0.911 |      0.255 |      2.670 |      2.806 |      6.720 |      5.224 |
@@ -170,7 +170,7 @@ python -m numpy_groupies.benchmarks.mt --scaling
 | nanmin      |      4.895 |      0.338 |      1.965 |      6.411 |      7.899 |       ---- |
 | nanmax      |      4.961 |      0.405 |      2.043 |      6.321 |      7.855 |       ---- |
 | nanlen      |      2.487 |      0.212 |      1.715 |      6.102 |      6.855 |       ---- |
-| nannunique  |     16.678 |      2.673 |       ---- |     13.634 |     29.845 |       ---- |
+| nannunique  |     16.665 |      2.861 |       ---- |     13.634 |     29.845 |       ---- |
 | nanall      |      5.042 |      0.291 |      3.302 |      6.379 |      8.003 |       ---- |
 | nanany      |      5.689 |      0.215 |      2.673 |      6.496 |      8.132 |       ---- |
 | nanmean     |      4.713 |      0.415 |      1.787 |      6.392 |      8.392 |       ---- |
