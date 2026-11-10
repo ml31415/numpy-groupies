@@ -252,14 +252,13 @@ def _argmax(x_and_idx: Sequence[tuple[Any, Any]]) -> Any:
     return max(x_and_idx, key=operator.itemgetter(1))[0]
 
 
-_argmax.x_and_idx = True  # type: ignore[attr-defined]  # tell aggregate what to use as first arg
-
-
 def _argmin(x_and_idx: Sequence[tuple[Any, Any]]) -> Any:
     return min(x_and_idx, key=operator.itemgetter(1))[0]
 
 
-_argmin.x_and_idx = True  # type: ignore[attr-defined]  # tell aggregate what to use as first arg
+# the two that name a position take the index of the value as their first
+# argument - the aggregate asks for it
+_TAKES_INDEX_FIRST = (_argmax, _argmin)
 
 
 def _sort(group_idx: Sequence[int], a: Sequence[Any], reverse: bool = False) -> list[Any]:
@@ -630,7 +629,7 @@ def aggregate(
 
     # sort data and evaluate function on groups
     ret = [fill_value] * size
-    if not getattr(op, "x_and_idx", False):
+    if op not in _TAKES_INDEX_FIRST:
         data = sorted(zip(idx, vals), key=operator.itemgetter(0))
         for ix, values_of_group in itertools.groupby(data, key=operator.itemgetter(0)):
             value = op([val for _, val in values_of_group], **kwargs)

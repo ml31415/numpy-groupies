@@ -102,7 +102,10 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
         # directory that is not there any more.
         os.makedirs(self._cache_path, exist_ok=True)
         with _advisory_lock(self._lock_path(), shared=False):
-            return super().save(key, data)  # type: ignore[no-any-return]  # numba leaves caching.py unannotated
+            # the caching of numba is not annotated, so the checker knows no
+            # type of the answer of the superclass - it saves and returns
+            # nothing, and the call is made for its effect
+            super().save(key, data)
 
     def load(self, key: Any) -> Any:
         with _advisory_lock(self._lock_path(), shared=True):
@@ -110,7 +113,8 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
 
     def flush(self) -> None:
         with _advisory_lock(self._lock_path(), shared=False):
-            return super().flush()  # type: ignore[no-any-return]  # numba leaves caching.py unannotated
+            # the caching of numba is not annotated - see the save above
+            super().flush()
 
 
 def register_overload(func: Any) -> Callable[[Any], Any]:

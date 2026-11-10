@@ -1357,7 +1357,7 @@ def build_driver(
     """
     if multi_threading:
 
-        def driver(
+        def driver_mt(
             n_threads: int,
             group_idx: npt.NDArray[np.integer],
             a: npt.NDArray[np.number],
@@ -1372,19 +1372,19 @@ def build_driver(
             )
             return result
 
-    else:
+        return njit_stable(driver_mt, name=f"{name}{suffix}")
 
-        def driver(  # type: ignore[misc]  # the two branches are one builder with two signatures
-            group_idx: npt.NDArray[np.integer],
-            a: npt.NDArray[np.number],
-            size_arg: int,
-            out_dtype: np.dtype,
-            aux_dtype: np.dtype,
-            fill_value: float,
-            extra: Any = 0,
-        ) -> AResult | list[AResult]:
-            result: AResult | list[AResult] = passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
-            return result
+    def driver(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        extra: Any = 0,
+    ) -> AResult | list[AResult]:
+        result: AResult | list[AResult] = passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
+        return result
 
     return njit_stable(driver, name=f"{name}{suffix}")
 

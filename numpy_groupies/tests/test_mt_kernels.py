@@ -655,14 +655,14 @@ def test_the_fold_of_the_moments_takes_over_the_extrema_of_an_empty_chunk():
     averaging._moment_combine(acc, state(5, 7, -7), 0.0, 0)
     assert acc.low[0] == 7
     assert acc.high[0] == -7
-    assert acc.count[0] == 5
+    assert acc.counts[0] == 5
 
     # the other chunk has no values: its extrema are left out of the fold
     acc = state(5, 7, -7)
     averaging._moment_combine(acc, state(0, 999, -999), 0.0, 0)
     assert acc.low[0] == 7
     assert acc.high[0] == -7
-    assert acc.count[0] == 5
+    assert acc.counts[0] == 5
 
 
 @pytest.mark.parametrize("func", MOMENTS)
