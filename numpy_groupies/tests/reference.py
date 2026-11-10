@@ -344,6 +344,29 @@ def _topk_ref(
     return ordered[:k]
 
 
+def _mode_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> Any:
+    """one group, its most frequent value - the smallest of them on a tie.
+
+    The values that are missing are in no selection: a nan is never the most
+    frequent value of a group, and a group of nothing but them has no mode at
+    all - the None that leaves the group at the fill value.
+    """
+    if values.dtype.kind in "fc":
+        usable = values[~np.isnan(values)]
+    elif values.dtype.kind in "mM":
+        usable = values[~np.isnat(values)]
+    else:
+        usable = values
+    if usable.size == 0:
+        return None
+    ordered = np.sort(usable)
+    # the runs of equal values are neighbours now; the first run of the
+    # maximal length is the smallest of the values that share the count
+    bounds = np.flatnonzero(np.concatenate(([True], ordered[1:] != ordered[:-1])))
+    lengths = np.diff(np.append(bounds, ordered.size))
+    return ordered[bounds[int(np.argmax(lengths))]]
+
+
 def _result_dtype(call: Callable[..., Any], in_dtype: np.dtype) -> np.dtype:
     """the dtype the operation yields for values of ``in_dtype``, asked of numpy.
 
@@ -378,6 +401,7 @@ _REF_ONE_PER_GROUP: dict[str, Callable[..., Any]] = {
     "sumofsquares": _sum_of_squares,
     "len": lambda v, pos: len(v),
     "nunique": _nunique_ref,
+    "mode": _mode_ref,
     "skew": _skew_ref,
     "kurt": _kurt_ref,
     "first": lambda v, pos: v[0],

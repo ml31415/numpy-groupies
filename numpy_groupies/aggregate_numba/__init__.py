@@ -296,6 +296,7 @@ sort = specials.sort.plain.stub
 nunique = specials.nunique.plain.stub
 nannunique = specials.nunique.nan.stub
 topk = specials.topk.plain.stub
+mode = specials.mode.plain.stub
 
 # the collecting function: its result is a sequence per group, so the kernel
 # hands out a list of the arrays of the groups - numba cannot hold an object
@@ -338,6 +339,7 @@ __all__ = [
     "mean",
     "median",
     "min",
+    "mode",
     "nanall",
     "nanany",
     "nanargmax",

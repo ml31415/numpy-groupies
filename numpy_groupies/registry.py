@@ -55,6 +55,7 @@ funcs_common = [
     "sort",
     "array",
     "topk",
+    "mode",
     "sumofsquares",
     "cumsum",
     "cumprod",
@@ -63,7 +64,7 @@ funcs_common = [
 ]
 
 
-funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan", "topk"])
+funcs_no_separate_nan = frozenset(["sort", "array", "allnan", "anynan", "topk", "mode"])
 
 
 funcs_collecting = frozenset(["array"])
@@ -99,6 +100,7 @@ FuncName: TypeAlias = Literal[
     "median",
     "min",
     "minimum",
+    "mode",
     "multiply",
     "nanall",
     "nanany",

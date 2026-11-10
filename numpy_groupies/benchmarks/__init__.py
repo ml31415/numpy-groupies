@@ -138,6 +138,7 @@ func_list = (
     "sort",
     "array",
     "topk",
+    "mode",
 )
 
 # the functions that take datetime64 and timedelta64 values, and the ones that
@@ -175,6 +176,7 @@ temporal_datetime_funcs = (
     "sort",
     "array",
     "topk",
+    "mode",
 )
 temporal_timedelta_funcs = temporal_datetime_funcs + (
     np.sum,

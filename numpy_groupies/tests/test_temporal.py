@@ -68,6 +68,27 @@ def test_nan_order_reductions_skip_nat(impl, unit, func):
 
 
 @pytest.mark.parametrize("unit", ["s", "ns"])
+def test_mode_skips_nat(impl, unit):
+    """The mode has no nan variant, and the NaT is in no selection: it is
+    never the most frequent value of a group, and a group of nothing but NaT
+    has no mode at all - it keeps the fill value, which is the NaT of the
+    unit for a value function like this one."""
+    group_idx = np.array([0, 0, 0, 0, 1, 1])
+    a = np.array(["2011-01-01", "NaT", "2011-01-01", "2011-01-03", "NaT", "NaT"], dtype=f"M8[{unit}]")
+    res = impl.aggregate(group_idx, a, func="mode", size=2)
+    assert res.dtype == a.dtype
+    np.testing.assert_array_equal(res, np.array(["2011-01-01", "NaT"], dtype=a.dtype))
+
+
+def test_mode_of_a_temporal_input_can_be_asked_for_in_ticks(impl):
+    """The ticks the caller asked for are the ticks the mode counted."""
+    group_idx = np.array([0, 0, 0, 1])
+    a = np.array(["2011-01-01", "2011-01-01", "2011-01-03", "2011-01-05"], dtype="M8[s]")
+    ticks = impl.aggregate(group_idx, a, func="mode", size=2, dtype=np.int64)
+    np.testing.assert_array_equal(ticks, np.array([1293840000, 1294185600], dtype=np.int64))
+
+
+@pytest.mark.parametrize("unit", ["s", "ns"])
 def test_argmin_and_argmax_name_the_nat_position(impl, unit):
     # numpy answers the position of the first NaT of a group for both
     # argreductions - as the smallest tick for argmin, and through the plan

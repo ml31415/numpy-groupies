@@ -109,7 +109,7 @@ python -m numpy_groupies.benchmarks.mt
 
 The tool measures the parallel kernels against the sequential ones over a
 grid of sizes, group counts and thread counts - the chunked path (the sum),
-the group path (the median, the quantile, the sort, the topk and the number
+the group path (the median, the quantile, the sort, the topk, the mode and the number
 of the distinct values) and the gather - fits the constants of the model to the
 measurements and prints them together with the crossovers, the sizes from
 which the parallel path is faster. It writes no file: its output is the

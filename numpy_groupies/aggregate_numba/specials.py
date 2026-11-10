@@ -680,6 +680,9 @@ _NS_PER_VALUE_SORT = 68.0
 # the selection of the topk, with the gathering of the values that are
 # better than the border - the work of the median and a sweep over the block
 _NS_PER_VALUE_TOPK = 24.0
+# the mode: the hash table of the distinct count, the counts kept and the
+# best value tracked besides
+_NS_PER_VALUE_MODE = 24.0
 
 
 def _median_driver_factory(nans: bool, ticks: bool = False) -> Any:
@@ -1648,6 +1651,179 @@ nunique = build_custom_kernel(
     rule=rule_int64,
     fill_default=0,
     doc="Number of distinct values of every group",
+)
+
+
+# ---------------------------------------------------------------------------
+# the most frequent value of every group
+#
+# The values of a group are counted, not ordered: a hash table with open
+# addressing holds one slot per distinct value of the group, and the counts
+# are read off the slots - the same table the distinct count runs, with the
+# counts kept and the best value tracked besides.  A tie hands the answer to
+# the smallest of the values that share the highest count, the way
+# ``scipy.stats.mode`` breaks one: the value is taken over only when its
+# count is strictly higher, or it compares smaller than the one that is held.
+#
+# The values that are missing are in no selection, like the ones of the
+# topk: a nan is never the most frequent value of a group - the check of the
+# hash table would refuse it anyway, a nan being not equal to itself - and a
+# group that holds nothing but them has no mode at all, so it keeps the fill
+# value.  A temporal value reaches the kernel as it is, the NaT tick included:
+# ``val != val`` detects it like a nan, and the temporal input is what the
+# kernel was given, so the answer is a value of the input.
+# ---------------------------------------------------------------------------
+
+
+@njit_stable
+def _mode_group(
+    g: int,
+    a_sorted: npt.NDArray[np.number],
+    counts: npt.NDArray[np.int64],
+    starts: npt.NDArray[np.int64],
+    out: npt.NDArray[np.number],
+    slots: npt.NDArray[np.number],
+    gens: npt.NDArray[np.int32],
+    slot_counts: npt.NDArray[np.int64],
+) -> None:
+    """The most frequent value of one group of the placed values, into row ``g``.
+
+    ``slots``, ``gens`` and ``slot_counts`` are the hash table of the caller -
+    the table of the range of the parallel driver, of which one thread writes
+    into its own and none of another.  The generation of a group is its index,
+    so a table needs no clearing between the groups of its range: the slots
+    whose generation is behind hold counts of a group that is gone, and the
+    first touch of a value in this generation overwrites them.
+    """
+    n = counts[g]
+    if n == 0:
+        return  # untouched group, keeps the fill value
+    # the table of this group holds only as many slots as the group needs -
+    # the slots of the other groups are not touched
+    mask = 1
+    while mask < 2 * n:
+        mask *= 2
+    mask -= 1
+    best_count = 0
+    best_value = a_sorted[starts[g]]
+    for i in range(starts[g], starts[g] + n):
+        v = a_sorted[i]
+        if v != v:
+            # the missing value of the numbers - in either part of a complex
+            # value - and the NaT of the temporal ones: in no selection
+            continue
+        # the index is an int64: numba would widen a uint64 against the
+        # int64 of the mask to a float, which is no index
+        h = np.int64(_hash_value(v) & np.uint64(mask))
+        while True:
+            if gens[h] != g:
+                # a free slot: the value is a new one
+                gens[h] = g
+                slots[h] = v
+                slot_counts[h] = 1
+                seen = 1
+                break
+            if slots[h] == v:
+                slot_counts[h] += 1
+                seen = slot_counts[h]
+                break
+            h = (h + 1) & mask
+        # a tie keeps the value that is held: only a strictly higher count
+        # takes the answer over, and so does a count that is even with a
+        # smaller value - the smallest of the most frequent ones wins
+        if seen > best_count or (seen == best_count and complex_less(v, best_value)):
+            best_count = seen
+            best_value = v
+    if best_count > 0:
+        out[g] = best_value
+
+
+def _mode_driver_factory(nans: bool) -> Any:
+    """The driver of the mode: the values are placed group by group with the
+    counting sort, and the most frequent value of every block is counted in a
+    hash table - which needs no ordering of the values and so is linear in
+    their number, like the distinct count is."""
+    capacity_of = _table_capacity
+
+    def driver(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+    ) -> npt.NDArray[np.number]:
+        # the mode takes nothing of its own
+        size = output_size(group_idx, size_arg)
+        out = np.full(size, fill_value, out_dtype)
+        # counting-sort placement into contiguous group-blocks
+        counts, starts, a_sorted = _place_values(group_idx, a, size)
+        max_count = 0
+        for g in range(size):
+            max_count = max(max_count, counts[g])
+        capacity = capacity_of(max_count)
+        slots = np.empty(capacity, a.dtype)
+        gens = np.full(capacity, -1, np.int32)
+        slot_counts = np.empty(capacity, np.int64)
+        for g in range(size):
+            _mode_group(g, a_sorted, counts, starts, out, slots, gens, slot_counts)
+        return out
+
+    return njit_stable(driver, name="mode_driver")
+
+
+def _mode_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+    """The parallel passes of the mode: the groups cut into ranges.
+
+    The one thing the shape needs that the median does not is a hash table of
+    its own per range - the table is scratch that every group of the range
+    clears by its generation, which two ranges cannot do in one table.  Sized
+    after the largest block of the range and not after the largest group of
+    the whole call, like the table of the distinct count is.
+    """
+    capacity_of = _table_capacity
+
+    def mt_passes(
+        group_idx: npt.NDArray[np.integer],
+        a: npt.NDArray[np.number],
+        size_arg: int,
+        out_dtype: np.dtype,
+        aux_dtype: np.dtype,
+        fill_value: float,
+        extra: Any,
+        n_threads: int,
+    ) -> npt.NDArray[np.number]:
+        setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_MODE, n_threads)
+        if setup is None:
+            return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
+        # unpacked before the prange - see the note in _median_mt_factory
+        counts, starts, a_sorted, edges, largest = setup
+        out = np.full(counts.size, fill_value, out_dtype)
+        tables = [
+            (
+                np.empty(capacity_of(k), a.dtype),
+                np.full(capacity_of(k), -1, np.int32),
+                np.empty(capacity_of(k), np.int64),
+            )
+            for k in largest
+        ]
+        for c in nb.prange(largest.size):
+            slots, gens, slot_counts = tables[c]
+            for g in range(edges[c], edges[c + 1]):
+                _mode_group(g, a_sorted, counts, starts, out, slots, gens, slot_counts)
+        return out
+
+    return njit_stable(mt_passes, name="mode_mt_passes", parallel=True)
+
+
+mode = build_custom_kernel(
+    "mode",
+    driver_factory=_mode_driver_factory,
+    mt_driver_factory=_mode_mt_factory,
+    rule=rule_same,
+    fill_default=nan,
+    nans=False,
+    doc="The most frequent value of every group - the smallest of the values that share the highest count",
 )
 
 

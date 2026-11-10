@@ -146,6 +146,8 @@ _forced_same_type = {
     # the topk hands out the values of the group themselves, so their dtype
     # is the dtype of the result
     "topk",
+    # the mode answers one of the values of the group as well
+    "mode",
 }
 
 

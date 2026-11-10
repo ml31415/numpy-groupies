@@ -319,6 +319,29 @@ def _topk(x: Sequence[Any], k: int, largest: bool, fill_value: Any) -> list[Any]
     return ordered[:k]
 
 
+def _mode(x: Sequence[Any]) -> Any:
+    """The most frequent value of the group - the smallest of them on a tie.
+
+    The values that are missing are in no selection, like the ones of the
+    topk: a nan is never the most frequent value of a group, and a group of
+    nothing but them has no mode at all - the None that leaves the group at
+    the fill value.
+    """
+    counts: dict[Any, int] = {}
+    for val in x:
+        if val != val:  # val != val - np.isnan does not cover ints and objects
+            continue
+        counts[val] = counts.get(val, 0) + 1
+    best_value = None
+    best_count = 0
+    for value, count in counts.items():
+        # a tie keeps the value that is held: the smallest of the values that
+        # share the highest count wins
+        if count > best_count or (count == best_count and value < best_value):
+            best_value, best_count = value, count
+    return best_value
+
+
 def _propagate_nan(reduction: Callable[[Sequence[Any]], Any]) -> Callable[[Sequence[Any]], Any]:
     """Let a nan of the group win over its other values, like np.min and np.max do.
 
@@ -379,6 +402,7 @@ _op_dict: dict[str, Callable[..., Any]] = {
     "argmin": _argmin,
     "len": len,
     "nunique": _nunique,
+    "mode": _mode,
 }
 _op_dict.update(("nan" + k, v) for k, v in list(_op_dict.items()) if k not in funcs_no_separate_nan)
 

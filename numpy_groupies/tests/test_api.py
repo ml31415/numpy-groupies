@@ -145,6 +145,7 @@ def test_default_fill_value(impl, func, a_dtype):
         ("first", "float64", np.nan),
         ("last", "float64", np.nan),
         ("topk", "float64", np.nan),
+        ("mode", "float64", np.nan),
         # an integer output cannot hold a nan, so those keep the
         # conservative 0
         ("mean", "int64", 0),
@@ -158,6 +159,7 @@ def test_default_fill_value(impl, func, a_dtype):
         ("first", "int64", 0),
         ("last", "int64", 0),
         ("topk", "int64", 0),
+        ("mode", "int64", 0),
         # the nan variants inherit the default of the function they skip the
         # nans of
         ("nanmean", "float64", np.nan),

@@ -38,6 +38,7 @@ from numpy_groupies.aggregate_numpy.reductions import (
 )
 from numpy_groupies.aggregate_numpy.specials import (
     _median,
+    _mode,
     _nunique,
     _percentile,
     _quantile,
@@ -80,6 +81,7 @@ _op_dict: dict[str, Callable[..., AResult]] = {
     "argmin": _argmin,
     "len": _len,
     "nunique": _nunique,
+    "mode": _mode,
     "cumsum": _cumsum,
     "sumofsquares": _sum_of_squres,
     "trapezoid": _trapezoid,

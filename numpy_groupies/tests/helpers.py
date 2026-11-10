@@ -267,6 +267,7 @@ complex_funcs = (
     "max",
     "nanmin",
     "nanmax",
+    "mode",
     "argmin",
     "argmax",
     "nanargmin",
@@ -280,7 +281,7 @@ complex_bool_funcs = {"all", "any", "allnan", "anynan", "nanall", "nanany"}
 complex_arg_funcs = ("argmin", "argmax", "nanargmin", "nanargmax")
 complex_int_funcs = {"len", "nanlen", *complex_arg_funcs}
 # order statistics over the values themselves, as opposed to their positions
-complex_order_funcs = ("min", "max", "nanmin", "nanmax")
+complex_order_funcs = ("min", "max", "nanmin", "nanmax", "mode")
 # conjugating the input does not simply conjugate the result for these: it
 # flips the order of two values sharing a real part
 complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
