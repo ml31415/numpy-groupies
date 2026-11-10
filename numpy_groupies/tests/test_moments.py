@@ -43,6 +43,22 @@ def test_the_moments_of_integers(impl, func):
     _compare(impl, group_idx, a, func)
 
 
+@pytest.mark.parametrize("func", ["skew", "kurt", "nanskew", "nankurt"])
+def test_the_moments_of_narrow_integers_do_not_wrap_their_deviations(impl, func):
+    """The deviations of the moments are carried in float64, not in the
+    dtype of the values.
+
+    A subtraction in the dtype of narrow signed values wraps - a 0 against an
+    origin of 100 would be a -156 there, and the moments of the wrapped
+    deviations are the moments of different values entirely.  The values
+    below span more than the int8 around their group's first value, so a
+    deviation computed in the input dtype is a wrap for sure.
+    """
+    group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+    a = np.array([100, -100, 0, 50, -128, 127, -1, 0], dtype=np.int8)
+    _compare(impl, group_idx, a, func)
+
+
 def test_a_group_of_two_values_has_no_skewness(impl):
     """Two values have no skewness - the estimator needs three of them."""
     group_idx = np.array([0, 0, 1, 1, 1])

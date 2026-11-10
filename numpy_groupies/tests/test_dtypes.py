@@ -12,10 +12,19 @@ could leave the +/-2**53 window that float64 represents exactly, so a result
 never depends on which backend computed it.
 """
 
+from typing import Any
+
 import numpy as np
 import pytest
 
 from numpy_groupies import aggregate_numpy, aggregate_purepy
+
+aggregate_numba: Any
+
+try:
+    from numpy_groupies import aggregate_numba
+except ImportError:
+    aggregate_numba = None
 from numpy_groupies.dtypes import (
     minimum_dtype,
     resolve_output_dtype,
@@ -33,10 +42,24 @@ def test_numpy_integer_sumofsquares(func, dtype):
     maximum = min(int(np.iinfo(dtype).max), 50000)
     a = np.array([maximum, maximum - 1, maximum // 2, 1], dtype=dtype)
     group_idx = np.array([0, 0, 1, 1])
-    expected = [sum(int(value) ** 2 for value in a[:2]), sum(int(value) ** 2 for value in a[2:]), -1]
-    result = aggregate_numpy.aggregate(group_idx, a, func=func, size=3, fill_value=-1)
-    assert result.dtype == np.int64
+    expected = [sum(int(value) ** 2 for value in a[:2]), sum(int(value) ** 2 for value in a[2:])]
+    if np.dtype(dtype).kind == "u":
+        # the squares of unsigned values are unsigned - a negative sum of
+        # squares is no answer at all, and the squares of uint32 leave int64
+        result = aggregate_numpy.aggregate(group_idx, a, func=func, size=2)
+        assert result.dtype == np.uint64
+    else:
+        expected.append(-1)
+        result = aggregate_numpy.aggregate(group_idx, a, func=func, size=3, fill_value=-1)
+        assert result.dtype == np.int64
     np.testing.assert_array_equal(result, expected)
+    # the square of the widest value of the dtype is exact in the
+    # accumulator - one value per group, for the sum of two squares of the
+    # widest uint32 would leave even the uint64
+    edge = np.array([np.iinfo(dtype).max], dtype=dtype)
+    edge_result = aggregate_numpy.aggregate(np.array([0]), edge, func=func, size=1)
+    assert edge_result.dtype == (np.uint64 if np.dtype(dtype).kind == "u" else np.int64)
+    np.testing.assert_array_equal(edge_result, int(np.iinfo(dtype).max) ** 2)
 
 
 @pytest.mark.parametrize("func", ["sumofsquares", "nansumofsquares"])
@@ -418,3 +441,69 @@ def test_the_sum_of_small_integers_answers_with_the_ladder_dtype(impl):
     a = np.array([100, 100, 100], dtype=np.uint8)
     actual = impl.aggregate(np.array([0, 0, 0]), a, func="sum", size=1)
     assert np.asarray(actual).dtype == np.dtype(np.uint32)
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_the_dtype_policy_of_the_running_values_and_the_products(dtype):
+    """The dtype policy of the answers that accumulate: the running sums
+    climb the ladder of the sums (the same rung for the same values), the
+    products land in the accumulator of the input's own sign, and the
+    functions that hand the values of the group out keep the dtype of the
+    values.
+
+    The ladder is the policy of the package - it is numpy's accumulator
+    (int64 for the signed values and bool, uint64 for the unsigned ones)
+    with a 32-bit rung in the middle, and the widening never crosses the
+    sign: an unsigned input never lands in a signed dtype, where half of
+    its range would read as negative.
+    """
+    a_dtype = np.dtype(dtype)
+    n = 1000
+    # the running sums climb the ladder of the sums, whatever the size of a
+    # single group - their growth is linear, and the count is known
+    for func in ("sum", "nansum", "cumsum", "nancumsum"):
+        assert resolve_output_dtype(None, func, a_dtype, n) == resolve_output_dtype(None, "sum", a_dtype, n), func
+    # the products grow exponentially - no rung of the ladder can promise
+    # them anything, and the wide accumulator of the input's own sign is the
+    # floor
+    accumulator = np.promote_types(a_dtype, np.uint if a_dtype.kind == "u" else np.int_)
+    for func in ("prod", "nanprod", "cumprod", "nancumprod"):
+        assert resolve_output_dtype(None, func, a_dtype, n) == accumulator, func
+    # the extrema and the sorted values hand out the values of the group
+    # themselves - their dtype is the dtype of the values
+    for func in ("min", "max", "sort", "cummin", "cummax"):
+        assert resolve_output_dtype(None, func, a_dtype, n) == a_dtype, func
+
+
+@pytest.mark.parametrize("impl_name_", ["purepy", "numpy", "numba"])
+@pytest.mark.parametrize(
+    "dtype",
+    ["int8", "int16", "int32", "uint8", "uint16", "uint32"],
+)
+def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl_name_, dtype):
+    """No backend hands back a value that wrapped in the dtype of the input.
+
+    The sums and running sums of the narrow integers are widened before they
+    are computed - the values of the answer are the exact ones the ladder's
+    rung holds, whatever backend computed them.  The pure python backend
+    accumulates in python numbers and answers exact values of its own; the
+    comparison here is the value of the answer, not its dtype.  The int64
+    and the uint64 are not part of this promise: they are the end of the
+    ladder, and their wrap is numpy's own.
+    """
+    a_dtype = np.dtype(dtype)
+    maximum = int(np.iinfo(a_dtype).max)
+    # three values whose exact sum leaves the input dtype
+    values = np.array([maximum, maximum, maximum // 2], dtype=a_dtype)
+    group_idx = np.array([0, 0, 0])
+    impl = {"purepy": aggregate_purepy, "numpy": aggregate_numpy, "numba": aggregate_numba}[impl_name_]
+    if impl_name_ == "numba":
+        pytest.importorskip("numba")
+    wanted = 2 * maximum + maximum // 2
+    got = np.asarray(impl.aggregate(group_idx, values, func="sum", size=1))
+    np.testing.assert_array_equal(got, wanted, err_msg=f"sum over {dtype} wrapped")
+    # the running sum at the last position is the sum itself - the pure
+    # python backend knows no running values
+    if impl_name_ != "purepy":
+        got = np.asarray(impl.aggregate(group_idx, values, func="cumsum", size=1))
+        np.testing.assert_array_equal(got[-1], wanted, err_msg=f"cumsum over {dtype} wrapped")
