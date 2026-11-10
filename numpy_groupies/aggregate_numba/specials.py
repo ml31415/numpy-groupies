@@ -113,7 +113,7 @@ def _select_kth(
     lo: int,
     hi: int,
     k: int,
-) -> Any:
+) -> np.number:
     """The k-th smallest of ``arr[lo:hi]``, the block reordered in place.
 
     A quickselect: the block is partitioned around a pivot until the position
@@ -147,7 +147,7 @@ def _select_kth(
         if limit <= 0:
             # the fallback: order the range and take the element from there
             arr[lo:hi].sort()
-            return arr[k]
+            return arr[k]  # type: ignore[no-any-return]  # the stubs know no type for np.number
         mid = lo + span // 2
         # the pivot: the median of the first, the middle and the last value of
         # the range, with the ordering of the package - for the real dtypes
@@ -186,7 +186,7 @@ def _select_kth(
         else:
             lo = j + 1
         span = hi - lo
-    return arr[k]
+    return arr[k]  # type: ignore[no-any-return]  # the stubs know no type for np.number
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ _select = njit_stable(_select_kth)
 
 
 @functools.lru_cache(maxsize=2)
-def _middle_of(ticks: bool) -> Callable[..., Any]:
+def _middle_of(ticks: bool) -> Callable[..., np.number | int]:
     """the middle value(s) of the block at ``a_sorted[begin:begin+m]``.
 
     No sorting needed: the wanted element is selected in place, and the block is
@@ -246,7 +246,7 @@ def _middle_of(ticks: bool) -> Callable[..., Any]:
     """
 
     @njit_stable(name=f"{'tick_' if ticks else ''}median_middle")
-    def middle(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> Any:
+    def middle(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> np.number | int:
         k = m // 2
         upper = _select(a_sorted, begin, begin + m, begin + k)
         if m % 2 == 1:
@@ -258,8 +258,9 @@ def _middle_of(ticks: bool) -> Callable[..., Any]:
             if complex_less(lower, a_sorted[i]):
                 lower = a_sorted[i]
         if ticks:
-            return _tick_pair_average(lower, upper)
-        return (lower * 1.0 + upper) / 2
+            # the ticks are integers - the exact mean of two of them is one
+            return _tick_pair_average(int(lower), int(upper))
+        return (lower * 1.0 + upper) / 2  # type: ignore[no-any-return]  # the stubs know no type for np.number
 
     return middle
 
@@ -379,7 +380,7 @@ _tick_median_group_plain = _median_group(True, False)
 _tick_median_group_nan = _median_group(True, True)
 
 
-def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float, method: str) -> Any:
+def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float, method: str) -> np.number:
     """the quantile q of the block at ``a_sorted[begin:begin+m]``.
 
     The quantile names a position between two of the values of the group: the
@@ -420,8 +421,8 @@ def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float,
     else:
         gamma = pos - lower_index
     if gamma < 0.5:
-        return lower * 1.0 + diff * gamma
-    return upper - diff * (1 - gamma)
+        return lower * 1.0 + diff * gamma  # type: ignore[no-any-return]  # the stubs know no type for np.number
+    return upper - diff * (1 - gamma)  # type: ignore[no-any-return]  # the stubs know no type for np.number
 
 
 _quantile_at = njit_stable(_quantile_at, name="quantile_quantile_at")
@@ -595,7 +596,7 @@ _ranges = njit_stable(group_ranges)
 @njit_stable
 def _place_values(
     group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number], size: int
-) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[Any]]:
+) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[np.number]]:
     """The counting sort that places the values of every group in a block.
 
     It hands back the number of the values of every group, where the block
@@ -625,7 +626,7 @@ class GroupMTSetup(NamedTuple):
 
     counts: npt.NDArray[np.int64]  # the number of the values of every group
     starts: npt.NDArray[np.int64]  # where the block of every group starts
-    a_sorted: npt.NDArray[Any]  # the values, placed group by group
+    a_sorted: npt.NDArray[np.number]  # the values, placed group by group
     edges: npt.NDArray[np.intp]  # the boundaries of the ranges
     largest: npt.NDArray[np.int64]  # the largest block of every range
 
@@ -689,7 +690,7 @@ _NS_PER_VALUE_TOPK = 24.0
 _NS_PER_VALUE_MODE = 14.0
 
 
-def _median_driver_factory(nans: bool, ticks: bool = False) -> Any:
+def _median_driver_factory(nans: bool, ticks: bool = False) -> Callable[..., npt.NDArray[np.number]]:
     # the block of the group is what the two drivers work on - the plain one
     # and the parallel one reach the ONE compiled body of it (see the note
     # above ``_median_group``); the counting sort is the shared one of
@@ -720,7 +721,9 @@ def _median_driver_factory(nans: bool, ticks: bool = False) -> Any:
     return njit_stable(driver, name=f"{'nan' if nans else ''}{'tick_' if ticks else ''}median_driver")
 
 
-def _median_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]], ticks: bool = False) -> Any:
+def _median_mt_factory(
+    nans: bool, driver: Callable[..., npt.NDArray[np.number]], ticks: bool = False
+) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the median: the groups cut into ranges.
 
     The gate, the counting sort that places the values and the cut of the
@@ -769,7 +772,7 @@ def _median_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]
     )
 
 
-def _tick_quantile_driver_factory(nans: bool) -> Any:
+def _tick_quantile_driver_factory(nans: bool) -> Callable[..., npt.NDArray[np.number]]:
     """The driver of the quantile of the ticks - the same counting sort and
     the same selection the median uses, and numpy's rule of the interpolation
     on the ticks of the values.
@@ -801,7 +804,9 @@ def _tick_quantile_driver_factory(nans: bool) -> Any:
     return njit_stable(driver, name=f"{'nan' if nans else ''}tick_quantile_driver")
 
 
-def _tick_quantile_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.int64]]) -> Any:
+def _tick_quantile_mt_factory(
+    nans: bool, driver: Callable[..., npt.NDArray[np.int64]]
+) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the quantile of the ticks: the groups cut into
     ranges, every group belonging to exactly one of them - so the result is
     the one of the sequential driver bit for bit.
@@ -864,7 +869,9 @@ median = build_custom_kernel(
 )
 
 
-def _quantile_driver_factory(nans: bool, scale: float = 1.0, name: str = "quantile") -> Any:
+def _quantile_driver_factory(
+    nans: bool, scale: float = 1.0, name: str = "quantile"
+) -> Callable[..., npt.NDArray[np.number]]:
     """The driver of the quantile - the median is the quantile 0.5.
 
     The quantile is an order statistic, so it groups the data the same way the
@@ -908,7 +915,7 @@ def _quantile_driver_factory(nans: bool, scale: float = 1.0, name: str = "quanti
 
 def _quantile_mt_factory(
     nans: bool, driver: Callable[..., npt.NDArray[np.number]], scale: float = 1.0, name: str = "quantile"
-) -> Any:
+) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the quantile, the groups cut into ranges.
 
     The same shape as ``_median_mt_factory``, for the same reasons.
@@ -1100,7 +1107,7 @@ def _sort_scatter(
         cursor[g] += 1
 
 
-def _sort_driver_factory(nans: bool) -> Any:
+def _sort_driver_factory(nans: bool) -> Callable[..., npt.NDArray[np.number]]:
     # the ordering and the scatter are the sort's own blocks - the counting
     # sort is the shared one of the module (see the note at ``_count``)
     _blocks = njit_stable(_sort_blocks)
@@ -1127,7 +1134,9 @@ def _sort_driver_factory(nans: bool) -> Any:
     return njit_stable(driver, name=f"{'nan' if nans else ''}sort_driver")
 
 
-def _sort_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+def _sort_mt_factory(
+    nans: bool, driver: Callable[..., npt.NDArray[np.number]]
+) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the sort: the blocks cut into ranges.
 
     The ordering of the blocks is what the sort spends most of its time on,
@@ -1334,7 +1343,7 @@ def _topk_group(
     _rank_order(out, g, k, largest)
 
 
-def _topk_driver_factory(ticks: bool) -> Any:
+def _topk_driver_factory(ticks: bool) -> Callable[..., npt.NDArray[np.number]]:
     """The compiled driver of the topk.
 
     The values of every group are placed in their blocks, the missing values
@@ -1370,7 +1379,9 @@ def _topk_driver_factory(ticks: bool) -> Any:
     return njit_stable(driver, name=f"{'tick_' if ticks else ''}topk_driver")
 
 
-def _topk_mt_factory(ticks: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+def _topk_mt_factory(
+    ticks: bool, driver: Callable[..., npt.NDArray[np.number]]
+) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the topk: the blocks cut into ranges.
 
     The block of a group belongs to that group alone, and the threads work
@@ -1438,7 +1449,7 @@ tick_topk = build_custom_kernel(
 
 
 @njit_stable
-def _mix_bits(x: np.uint64) -> Any:
+def _mix_bits(x: np.uint64) -> np.uint64:
     """the finalizer of splitmix64: a bijection of the 64 bits.
 
     Every bit of the input reaches every bit of the output, and two
@@ -1446,8 +1457,8 @@ def _mix_bits(x: np.uint64) -> Any:
     table needs of its hash, and the reason the counts of the distinct
     count and of the mode are right.
 
-    The result is an unsigned integer - numba's stubs do not know the
-    arithmetic of them, so the type checker is told nothing here.
+    The arithmetic of the unsigned integers wraps around, which is what a
+    hash wants: the bits of the word are the whole state.
     """
     x = (x ^ (x >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
     x = (x ^ (x >> np.uint64(27))) * np.uint64(0x94D049BB61D108B)
@@ -1459,7 +1470,7 @@ _ZERO_BITS = np.int64(-9223372036854775808)
 
 
 @njit_stable
-def _hash_float(v: float | np.floating[Any]) -> Any:
+def _hash_float(v: float | np.floating[Any]) -> np.uint64:
     """the hash of a floating point value - over its bits.
 
     The bits of a double name the value: no two different values have the
@@ -1480,7 +1491,7 @@ def _hash_float(v: float | np.floating[Any]) -> Any:
 
 
 @njit_stable
-def _hash_value(v: Any) -> Any:
+def _hash_value(v: Any) -> np.uint64:
     """the hash of a value - the values that are equal have the same hash.
 
     A complex value mixes the hashes of its two parts, a floating point one
@@ -1584,7 +1595,7 @@ def _table_capacity(n: int) -> int:
 _table_capacity = njit_stable(_table_capacity)
 
 
-def _nunique_driver_factory(nans: bool) -> Any:
+def _nunique_driver_factory(nans: bool) -> Callable[..., npt.NDArray[np.number]]:
     """The driver of the number of distinct values of every group.
 
     The values are placed group by group with a counting sort, and the
@@ -1623,7 +1634,9 @@ def _nunique_driver_factory(nans: bool) -> Any:
     return njit_stable(driver, name=f"{op_name}_driver")
 
 
-def _nunique_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+def _nunique_mt_factory(
+    nans: bool, driver: Callable[..., npt.NDArray[np.number]]
+) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the distinct count: the groups cut into ranges.
 
     The one thing the shape needs that the median does not is a hash table of
@@ -1765,7 +1778,7 @@ def _mode_group(
         out[g] = best_value
 
 
-def _mode_driver_factory() -> Any:
+def _mode_driver_factory() -> Callable[..., npt.NDArray[np.number]]:
     """The driver of the mode: the values are placed group by group with the
     counting sort, and the most frequent value of every block is counted in a
     hash table - which needs no ordering of the values and so is linear in
@@ -1799,7 +1812,7 @@ def _mode_driver_factory() -> Any:
     return njit_stable(driver, name="mode_driver")
 
 
-def _mode_mt_factory(driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+def _mode_mt_factory(driver: Callable[..., npt.NDArray[np.number]]) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the mode: the groups cut into ranges.
 
     The one thing the shape needs that the median does not is a hash table of
