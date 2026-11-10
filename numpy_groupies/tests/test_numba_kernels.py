@@ -139,6 +139,7 @@ _FLOAT_OPS = [
     ("nansumofsquares", {}),
     ("nunique", {}),
     ("nannunique", {}),
+    ("mode", {}),
     ("argmin", {}),
     ("nanargmin", {}),
     ("argmax", {}),
@@ -160,6 +161,7 @@ _INT_OPS = [
     ("nanlen", {}),
     ("nunique", {}),
     ("nannunique", {}),
+    ("mode", {}),
     ("min", {}),
     ("max", {}),
     ("first", {}),
@@ -183,6 +185,7 @@ _BOOL_OPS = [
     ("nanall", {}),
     ("any", {}),
     ("nanany", {}),
+    ("mode", {}),
     ("sort", {}),
     ("sort", {"reverse": True}),
     ("topk", {}),
@@ -530,8 +533,11 @@ _TEMPORAL_KERNELS = frozenset(
         "percentile",
         "nanpercentile",
         # the topk orders the values of a group and leaves the missing ones
-        # out - a NaT is neither the largest nor the smallest value
+        # out - a NaT is neither the largest nor the smallest value.  The
+        # mode counts them and leaves the missing ones out as well - a NaT
+        # is never the most frequent value of a group.
         "topk",
+        "mode",
     }
 )
 # the durations add up (NaT included, which the addition propagates), so the

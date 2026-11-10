@@ -39,7 +39,7 @@ Group 2 never occurs in `group_idx`, so its slot is filled with `fill_value`.
 ## Why numpy-groupies?
 
 - **Fast.** With Numba installed, `aggregate` is the fastest group-by aggregation for plain NumPy arrays. See [Performance](#performance).
-- **One call, many functions.** The usual reductions plus `median`, `quantile`/`percentile`, `skew`/`kurt`, `sort` (ascending or descending), `topk` (the k largest values of each group), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant.
+- **One call, many functions.** The usual reductions plus `median`, `quantile`/`percentile`, `skew`/`kurt`, `sort` (ascending or descending), `topk` (the k largest values of each group), `mode` (the most frequent value of each group), `trapezoid`, the cumulative `cumsum`/`cumprod`/`cummin`/`cummax`, `argmin`/`argmax`, `array` (collect the members of each group) and any custom callable. Every reduction has a `nan…` variant - the `topk` and the `mode` have none, their missing values are in no selection.
 - **Array in, array out.** Plain NumPy arrays, no DataFrame and no index. The result is an array indexed by group label, with empty groups filled with the value you choose. Multi-dimensional output (N-D binning) and aggregation along an `axis` are built in.
 - **Usable inside your own jitted code.** Every Numba kernel is `@njit`-callable, so group statistics can sit inside your own compiled loops.
 - **Numerically careful.** Integer sums, means and variances accumulate in a dtype wide enough not to wrap around, NaN handling follows NumPy, and complex and `float16` input are supported.
@@ -279,14 +279,15 @@ Best of three passes, every cell measured in one block of five runs, in millisec
 | `skew`          |  5.578 |  1.015 |   ---- |  3.160 |  9.080 |
 | `kurt`          |  5.655 |  0.989 |   ---- |  4.096 | 10.263 |
 | `quantile`      | 15.341 |  2.756 |   ---- |  3.669 | 22.869 |
-| `nunique`       | 15.567 |  2.952 |   ---- | 12.481 | 56.930 |
+| `nunique`       | 15.380 |  2.628 |   ---- | 12.481 | 56.930 |
 | `sort`          | 71.208 |  6.277 |   ---- |   ---- |   ---- |
 | `topk`          | 13.866 |  2.890 |   ---- |   ---- |   ---- |
+| `mode`          | 26.473 |  2.973 |   ---- |   ---- |   ---- |
 | `cumsum`        | 15.739 |  0.583 |   ---- |  9.976 |  7.241 |
 | `array`         |  7.562 |  1.952 |   ---- |   ---- |   ---- |
 | custom callable | 112.480 |  2.842 |   ---- | 81.065 | 98.810 |
 
-The `numba` column is the backend of this package, optimized as far as we could get it: it uses the threads of the machine where that pays for itself. The operations that can be reduced in chunks - the sums, the products, the counts, the extremes, the mean, the moments (the skewness and the kurtosis), the first and the last value of a group and the index of its best value (the argmax and the argmin) - split their data into chunks that are reduced separately and folded afterwards. The operations that cannot - the order statistics (the median, the quantile, the sort, the topk, the number of the distinct values) and the callables of the caller - cut their *groups* into ranges instead and let the threads work on the ranges one after another; every group belongs to one range, so nothing is folded afterwards and the result is the one of the sequential kernel bit for bit. The chunks and the ranges are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the pieces that are left. The operations that give an output per value (the cumulatives) stay single-threaded.
+The `numba` column is the backend of this package, optimized as far as we could get it: it uses the threads of the machine where that pays for itself. The operations that can be reduced in chunks - the sums, the products, the counts, the extremes, the mean, the moments (the skewness and the kurtosis), the first and the last value of a group and the index of its best value (the argmax and the argmin) - split their data into chunks that are reduced separately and folded afterwards. The operations that cannot - the order statistics (the median, the quantile, the sort, the topk, the mode, the number of the distinct values) and the callables of the caller - cut their *groups* into ranges instead and let the threads work on the ranges one after another; every group belongs to one range, so nothing is folded afterwards and the result is the one of the sequential kernel bit for bit. The chunks and the ranges are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the pieces that are left. The operations that give an output per value (the cumulatives) stay single-threaded.
 
 Every participant gets the same data, the same arguments and the same machine, and the threads of the machine are as much theirs as ours - the comparison is meant to be a fair one.
 

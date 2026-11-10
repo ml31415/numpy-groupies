@@ -74,7 +74,7 @@ allows: the comparisons of compiled code order datetime64 and timedelta64
 values (NaT is the smallest tick among them, and ``val != val`` detects it
 like a nan), so the selection and the reduction kernels - min, max, first,
 last, their nan variants, the argreductions, len, allnan, anynan, nunique,
-array, the topk, the cumulative extrema, and the sum and the cumulative
+array, the topk, the mode, the cumulative extrema, and the sum and the cumulative
 sums of the durations -
 aggregate them directly, as a python call and as a
 jitted one.  The kernels whose arithmetic cannot take them (the product
@@ -296,6 +296,7 @@ sort = specials.sort.plain.stub
 nunique = specials.nunique.plain.stub
 nannunique = specials.nunique.nan.stub
 topk = specials.topk.plain.stub
+mode = specials.mode.plain.stub
 
 # the collecting function: its result is a sequence per group, so the kernel
 # hands out a list of the arrays of the groups - numba cannot hold an object
@@ -338,6 +339,7 @@ __all__ = [
     "mean",
     "median",
     "min",
+    "mode",
     "nanall",
     "nanany",
     "nanargmax",

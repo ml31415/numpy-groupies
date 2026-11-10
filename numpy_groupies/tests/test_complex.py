@@ -229,8 +229,10 @@ def test_nan_in_either_part(impl, func):
         # in which index is (not) chosen
         np.testing.assert_array_equal(imag_nan, res)
         return
-    if func in ("first", "last"):
-        # these pick a position, so the value simply follows the conjugation
+    if func in ("first", "last", "mode"):
+        # these pick a value of the group, so the value simply follows the
+        # conjugation - the mode's tie breaks the other way round only for
+        # two values that share a real part, which these do not
         np.testing.assert_allclose(imag_nan, np.conj(res), rtol=1e-9)
         return
     if not func.startswith("nan"):

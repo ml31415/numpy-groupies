@@ -81,6 +81,7 @@ TEMPORAL_VALUE_FUNCS = frozenset(
         "last",
         "sort",
         "topk",
+        "mode",
         "cumsum",
         "cummax",
         "cummin",
@@ -138,6 +139,7 @@ TEMPORAL_NATIVE_FUNCS = frozenset(
         "array",
         "nunique",
         "nannunique",
+        "mode",
         "sum",
         "nansum",
         "cumsum",
@@ -154,7 +156,9 @@ TEMPORAL_NAT_POISON = frozenset({"sum", "mean", "max", "median", "quantile", "pe
 # the value functions whose default fill is nan - the temporal answer of an
 # empty group is NaT for them, and 0 (the epoch, or no duration) for the
 # functions that fill with zero, like the sum of the durations
-TEMPORAL_NAT_FILL = frozenset({"min", "max", "mean", "median", "quantile", "percentile", "first", "last", "topk"})
+TEMPORAL_NAT_FILL = frozenset(
+    {"min", "max", "mean", "median", "quantile", "percentile", "first", "last", "topk", "mode"}
+)
 
 
 def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:
@@ -398,10 +402,10 @@ def build_temporal_op(
     # leaves the NaT of a group out on its own, and filtering the rows would
     # cost a copy of the data.  The nan median filters them in its own
     # backend: the kernel of the numba one leaves the NaT tick out, the
-    # exact one of the numpy one drops its rows.  The topk has no nan
-    # variant, and it leaves the NaT out as well: a NaT is neither the
-    # largest nor the smallest value of a group, and the sort of a group puts
-    # it last.
+    # exact one of the numpy one drops its rows.  The topk and the mode have
+    # no nan variant, and they leave the NaT out as well: a NaT is in no
+    # selection of theirs - neither the largest nor the smallest value of a
+    # group, and never the most frequent one.
     #
     # the operation of the backend on the ticks can carry the NaT policy of
     # the function itself - the plain form poisons the group of a NaT and
@@ -415,7 +419,10 @@ def build_temporal_op(
         if handles_nat
         else (
             (is_nan and base not in ("cumsum", "mean") and not (base == "median" and tick_op is not None))
-            or base == "topk"
+            # the topk and the mode have no nan variant, and the missing value
+            # is in no selection of theirs - the rows of the NaT are dropped
+            # where the engine answers on the ticks
+            or base in ("topk", "mode")
         )
     )
     # what the NaT does to the answer: the plain argmin finds the NaT on its

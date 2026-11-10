@@ -295,6 +295,53 @@ def _nunique(
     return ret
 
 
+def _mode(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[np.number],
+    size: int,
+    fill_value: AScalar,
+    dtype: npt.DTypeLike | None = None,
+) -> npt.NDArray[np.generic]:
+    """The most frequent value of every group - the smallest of them on a tie.
+
+    The values of a group are ordered, and the runs of equal values are the
+    candidates: the first run of the maximal length wins, which is the
+    smallest of the values that share the highest count - the way
+    ``scipy.stats.mode`` breaks a tie.
+
+    Like the topk, the mode has no nan variant: the missing values are in no
+    selection - a nan is never the most frequent value of a group - and a
+    group that holds nothing but them has no mode at all, so it keeps the
+    fill value, as does a group the labels never name.
+    """
+    out_dtype = np.dtype(dtype) if dtype is not None else a.dtype
+    ret = np.full(size, fill_value, dtype=out_dtype)
+    if group_idx.size == 0:
+        return ret
+    # the missing values are left out before the groups are gathered - the
+    # nans of the inexact dtypes; a temporal input never reaches here, the
+    # wrapper of the temporal values hands the int64 ticks over without them
+    good: npt.NDArray[np.bool_] | None = None
+    if a.dtype.kind in "fc":
+        good = ~np.isnan(a)
+        if not good.any():
+            return ret
+    order = group_order(group_idx, a, good)
+    values, starts, counts = order.values, order.starts, order.counts
+    labels = order.group_idx
+    vals = np.empty(starts.size, dtype=out_dtype)
+    for grp in range(starts.size):
+        begin, count = starts[grp], counts[grp]
+        block = np.sort(values[begin : begin + count])
+        # the runs of equal values are neighbours now; the first run of the
+        # maximal length is the smallest of the values that share the count
+        bounds = np.flatnonzero(np.concatenate(([True], block[1:] != block[:-1])))
+        lengths = np.diff(np.append(bounds, block.size))
+        vals[grp] = block[bounds[int(np.argmax(lengths))]]
+    ret[labels[starts]] = vals
+    return ret
+
+
 def _sort(
     group_idx: npt.NDArray[np.integer],
     a: Any,

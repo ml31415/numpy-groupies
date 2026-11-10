@@ -276,6 +276,7 @@ if TYPE_CHECKING:
     sort: EntryPoint
     array: EntryPoint
     topk: EntryPoint
+    mode: EntryPoint
     sumofsquares: EntryPoint
     cumsum: EntryPoint
     cumprod: EntryPoint

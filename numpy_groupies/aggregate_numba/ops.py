@@ -708,6 +708,7 @@ _TABLE = (
     ("sort", specials.sort),
     ("topk", specials.topk),
     ("nunique", specials.nunique),
+    ("mode", specials.mode),
     # the collecting function: its result is a sequence per group, which the
     # driver assembles into the object array the caller expects
     ("array", collect.array),

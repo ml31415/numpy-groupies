@@ -63,6 +63,7 @@ GROUP_PARALLEL = [
     "nunique",
     "nannunique",
     "topk",
+    "mode",
 ]
 
 N_GROUPS = 100

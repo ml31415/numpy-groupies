@@ -70,6 +70,10 @@ default_fill_values: dict[str, AFillValue] = {
     # default of the output dtype - a nan where the output can hold one, and
     # a zero where it cannot
     "topk": nan,
+    # the mode answers one of the values of the group; a group it never saw,
+    # and one that holds nothing but missing values, has no mode and takes
+    # the default of the output dtype
+    "mode": nan,
 }
 
 
