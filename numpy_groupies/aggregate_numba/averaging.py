@@ -8,6 +8,12 @@ Integer input is centered on the first value of each group and the global
 min/max is tracked in the same accumulation pass; the exactness gates run
 between the passes and raise ``OverflowError`` for the same inputs in every
 backend (see ``validation`` for the policy constants).
+
+The answers are the floats of the operations - the mean, the deviation, the
+variance, the skewness, the kurtosis - and the type checker is told so where
+the stubs of numpy know no type: the element of an array is ``Any`` there, and
+``typing.cast`` is not compiled in nopython mode, so the few places that read
+such an element state the type of the local variable instead.
 """
 
 from collections.abc import Callable
@@ -229,8 +235,7 @@ def _mean_finish(st: MeanState, g: int, fill_value: float, extra: Any) -> float:
     # zero of an operation without an argument and the test is the plain one of
     # a group that received a value at all
     if st.count[g] > extra:
-        # the mean of the group - the element of the array is a number, and
-        # the stubs of numpy know no type for it
+        # the mean of the group
         mean: float = st.out[g] / st.count[g]
         return mean
     return fill_value
@@ -663,6 +668,7 @@ def _kurt_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> floa
         return np.nan
     if st.m2[g] == 0:
         return 0.0
+    # the kurtosis of the group
     kurt: float = n * (n + 1) * (n - 1) * st.m4[g] / ((n - 2) * (n - 3) * st.m2[g] ** 2) - 3 * (n - 1) ** 2 / (
         (n - 2) * (n - 3)
     )
@@ -967,6 +973,7 @@ def _std_finish(st: StdState, g: int, fill_value: float, ddof: int) -> float:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
+        # the standard deviation of the group
         deviation: float = np.sqrt(_variance_of(st, g, mean2, ddof))
         return deviation
     return fill_value
@@ -1012,6 +1019,7 @@ def _var_finish(st: StdState, g: int, fill_value: float, ddof: int) -> float:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
+        # the variance of the group
         variance: float = _variance_of(st, g, mean2, ddof)
         return variance
     return fill_value

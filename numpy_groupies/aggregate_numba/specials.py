@@ -9,6 +9,12 @@ scatters the blocks back to the positions their group occupies in the input.
 ``trapezoid`` integrates consecutive sample pairs within each group in a
 single pass - it composes like the streaming reductions and takes the sample
 spacing ``dx`` as the argument of its own.
+
+The types of the answers are the ones of the input - a number of the dtype of
+the values, an integer tick - and the type checker is told so where the stubs
+of numpy know no type: the element of an array is ``Any`` there, and
+``typing.cast`` is not compiled in nopython mode, so the few places that read
+such an element state the type of the local variable instead.
 """
 
 import functools
@@ -147,6 +153,7 @@ def _select_kth(
         if limit <= 0:
             # the fallback: order the range and take the element from there
             arr[lo:hi].sort()
+            # the value of the block
             ordered: np.number = arr[k]
             return ordered
         mid = lo + span // 2
@@ -187,6 +194,7 @@ def _select_kth(
         else:
             lo = j + 1
         span = hi - lo
+    # the value of the block
     element: np.number = arr[k]
     return element
 
@@ -425,8 +433,10 @@ def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float,
     else:
         gamma = pos - lower_index
     if gamma < 0.5:
+        # the quantile, interpolated from the lower neighbour
         interpolated: np.number = lower * 1.0 + diff * gamma
         return interpolated
+    # the quantile, interpolated from the upper one
     extrapolated: np.number = upper - diff * (1 - gamma)
     return extrapolated
 
