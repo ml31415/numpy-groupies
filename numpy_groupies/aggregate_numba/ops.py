@@ -604,8 +604,10 @@ def build_generic_aggregate(func: Callable[..., AScalar]) -> Callable[..., AResu
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func_name=None)
         group_idx, a, flat_size, ndim_idx, size, _ = iv
 
-        # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
-        dtype = check_dtype(dtype, func, a, len(group_idx))
+        # a callable of the caller's own: its answer is a number of its own
+        # making - without a dtype of the caller it is read as a float, which
+        # is what the numpy based backends build their answer in
+        dtype = np.dtype(dtype) if dtype is not None else np.dtype(np.float64)
         fill_value = resolve_fill_value(func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=func)
         ret = np.full(flat_size, fill_value, dtype=dtype)
