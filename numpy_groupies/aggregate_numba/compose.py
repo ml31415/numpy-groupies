@@ -466,7 +466,7 @@ def _fill_fits(fill_value: Any, low: Any, high: Any, high_exclusive: Any) -> boo
 
 
 @register_overload(_fill_fits)
-def _fill_fits_overload(fill_value: Any, low: Any, high: Any, high_exclusive: Any) -> Any:
+def _fill_fits_overload(fill_value: Any, low: Any, high: Any, high_exclusive: Any) -> Callable[..., bool]:
     if isinstance(fill_value, nb.types.Integer) and getattr(fill_value, "signed", True):
         # a signed integer is compared with the integer bounds of the output -
         # the largest one fits exactly, which a float comparison would not say
@@ -865,7 +865,7 @@ def _typing_prologue(
 # has of its own is part of the contract with the caller.
 
 
-def _round_float16(ret: Any) -> Any:
+def _round_float16(ret: Any) -> AResult | list[AResult]:
     """The result of a kernel that ran on the float32 its float16 input was
     widened to.
 
@@ -882,14 +882,14 @@ def _round_float16(ret: Any) -> Any:
 
 
 def _call_kernel_stub(
-    driver: Callable[..., Any],
+    driver: Callable[..., AResult | list[AResult]],
     resolve: _PythonPrologue,
     group_idx: Any,
     a: Any,
     size: int,
     fill_value: AScalar | None,
     extra_args: tuple[Any, ...] = (),
-) -> Any:
+) -> AResult | list[AResult]:
     """The python half of a call of a kernel.
 
     The driver takes the two arrays, the size, the two dtypes and the fill
@@ -914,7 +914,7 @@ def _call_kernel_stub(
 
 def _kernel_none(
     name: str,
-    driver: Callable[..., Any],
+    driver: Callable[..., AResult | list[AResult]],
     resolve: _PythonPrologue,
     prepare: _TypingPrologue,
     tick: Callable[..., Any] | None = None,
@@ -926,30 +926,40 @@ def _kernel_none(
     kernel is viewed back into the unit of the input.
     """
 
-    def stub(group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None) -> Any:
+    def stub(group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None) -> AResult | list[AResult]:
         if tick is not None and is_temporal_input(a):
             group_idx, a = _kernel_checks(group_idx, a)
             ticks = a.view(np.int64)
             fill = NAT_TICK if fill_value is None else np.int64(fill_value)
-            return tick(group_idx, ticks, size, fill).view(a.dtype)
+            # the answer of the tick kernel, viewed back into the unit
+            answer: AResult = tick(group_idx, ticks, size, fill).view(a.dtype)
+            return answer
         return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value)
 
-    def typing(group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None) -> Any:
+    def typing(
+        group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None
+    ) -> Callable[..., AResult | list[AResult]]:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
         if tick is not None and _is_temporal_type(a):
 
-            def _temporal_impl(group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None) -> Any:
+            def _temporal_impl(
+                group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None
+            ) -> AResult | list[AResult]:
                 _require_inputs(group_idx, a)
                 ticks = a.view(np.int64)
                 fill = NAT_TICK if fill_value is None else np.int64(fill_value)
-                return tick(group_idx, ticks, size, fill).view(a.dtype)
+                # the answer of the tick kernel, viewed back into the unit
+                answer: AResult = tick(group_idx, ticks, size, fill).view(a.dtype)
+                return answer
 
             _temporal_impl.__qualname__ = f"{name}_temporal_impl"
             return _temporal_impl
 
-        def _kernel_impl(group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None) -> Any:
+        def _kernel_impl(
+            group_idx: Any, a: Any, size: int = -1, fill_value: float | None = None
+        ) -> AResult | list[AResult]:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill)
@@ -965,7 +975,7 @@ def _kernel_none(
 
 def _kernel_ddof(
     name: str,
-    driver: Callable[..., Any],
+    driver: Callable[..., AResult | list[AResult]],
     resolve: _PythonPrologue,
     prepare: _TypingPrologue,
     tick: Callable[..., Any] | None = None,
@@ -975,15 +985,21 @@ def _kernel_ddof(
         # this operation has no kernel on the ticks
         raise TypeError("the _kernel_ddof kernel takes no tick kernel")
 
-    def stub(group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None) -> Any:
+    def stub(
+        group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None
+    ) -> AResult | list[AResult]:
         return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (ddof,))
 
-    def typing(group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None) -> Any:
+    def typing(
+        group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None
+    ) -> Callable[..., AResult | list[AResult]]:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
 
-        def _kernel_impl(group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None) -> Any:
+        def _kernel_impl(
+            group_idx: Any, a: Any, ddof: int = 0, size: int = -1, fill_value: float | None = None
+        ) -> AResult | list[AResult]:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, ddof)
@@ -999,7 +1015,7 @@ def _kernel_ddof(
 
 def _kernel_dx(
     name: str,
-    driver: Callable[..., Any],
+    driver: Callable[..., AResult | list[AResult]],
     resolve: _PythonPrologue,
     prepare: _TypingPrologue,
     tick: Callable[..., Any] | None = None,
@@ -1015,15 +1031,21 @@ def _kernel_dx(
         # this operation has no kernel on the ticks
         raise TypeError("the _kernel_dx kernel takes no tick kernel")
 
-    def stub(group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None) -> Any:
+    def stub(
+        group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None
+    ) -> AResult | list[AResult]:
         return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (dx,))
 
-    def typing(group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None) -> Any:
+    def typing(
+        group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None
+    ) -> Callable[..., AResult | list[AResult]]:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
 
-        def _kernel_impl(group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None) -> Any:
+        def _kernel_impl(
+            group_idx: Any, a: Any, dx: float = 1, size: int = -1, fill_value: float | None = None
+        ) -> AResult | list[AResult]:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, dx)
@@ -1039,7 +1061,7 @@ def _kernel_dx(
 
 def _kernel_reverse(
     name: str,
-    driver: Callable[..., Any],
+    driver: Callable[..., AResult | list[AResult]],
     resolve: _PythonPrologue,
     prepare: _TypingPrologue,
     tick: Callable[..., Any] | None = None,
@@ -1049,17 +1071,21 @@ def _kernel_reverse(
         # this operation has no kernel on the ticks
         raise TypeError("the _kernel_reverse kernel takes no tick kernel")
 
-    def stub(group_idx: Any, a: Any, reverse: bool = False, size: int = -1, fill_value: float | None = None) -> Any:
+    def stub(
+        group_idx: Any, a: Any, reverse: bool = False, size: int = -1, fill_value: float | None = None
+    ) -> AResult | list[AResult]:
         return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (reverse,))
 
-    def typing(group_idx: Any, a: Any, reverse: bool = False, size: int = -1, fill_value: float | None = None) -> Any:
+    def typing(
+        group_idx: Any, a: Any, reverse: bool = False, size: int = -1, fill_value: float | None = None
+    ) -> Callable[..., AResult | list[AResult]]:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
 
         def _kernel_impl(
             group_idx: Any, a: Any, reverse: bool = False, size: int = -1, fill_value: float | None = None
-        ) -> Any:
+        ) -> AResult | list[AResult]:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, reverse)
@@ -1075,7 +1101,7 @@ def _kernel_reverse(
 
 def _kernel_q_method(
     name: str,
-    driver: Callable[..., Any],
+    driver: Callable[..., AResult | list[AResult]],
     resolve: _PythonPrologue,
     prepare: _TypingPrologue,
     tick: Callable[..., Any] | None = None,
@@ -1100,12 +1126,14 @@ def _kernel_q_method(
         method: str = default_method,
         size: int = -1,
         fill_value: float | None = None,
-    ) -> Any:
+    ) -> AResult | list[AResult]:
         if tick is not None and is_temporal_input(a):
             group_idx, a = _kernel_checks(group_idx, a)
             ticks = a.view(np.int64)
             fill = NAT_TICK if fill_value is None else np.int64(fill_value)
-            return tick(group_idx, ticks, q, method, size, fill).view(a.dtype)
+            # the answer of the tick kernel, viewed back into the unit
+            answer: AResult = tick(group_idx, ticks, q, method, size, fill).view(a.dtype)
+            return answer
         return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, (q, method))
 
     def typing(
@@ -1115,7 +1143,7 @@ def _kernel_q_method(
         method: str = default_method,
         size: int = -1,
         fill_value: float | None = None,
-    ) -> Any:
+    ) -> Callable[..., AResult | list[AResult]]:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
@@ -1128,11 +1156,13 @@ def _kernel_q_method(
                 method: str = default_method,
                 size: int = -1,
                 fill_value: float | None = None,
-            ) -> Any:
+            ) -> AResult | list[AResult]:
                 _require_inputs(group_idx, a)
                 ticks = a.view(np.int64)
                 fill = NAT_TICK if fill_value is None else np.int64(fill_value)
-                return tick(group_idx, ticks, q, method, size, fill).view(a.dtype)
+                # the answer of the tick kernel, viewed back into the unit
+                answer: AResult = tick(group_idx, ticks, q, method, size, fill).view(a.dtype)
+                return answer
 
             _temporal_impl.__qualname__ = f"{name}_temporal_impl"
             return _temporal_impl
@@ -1144,7 +1174,7 @@ def _kernel_q_method(
             method: str = default_method,
             size: int = -1,
             fill_value: float | None = None,
-        ) -> Any:
+        ) -> AResult | list[AResult]:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, q, method)
@@ -1160,7 +1190,7 @@ def _kernel_q_method(
 
 def _kernel_topk(
     name: str,
-    driver: Callable[..., Any],
+    driver: Callable[..., AResult | list[AResult]],
     resolve: _PythonPrologue,
     prepare: _TypingPrologue,
     tick: Callable[..., Any] | None = None,
@@ -1178,12 +1208,12 @@ def _kernel_topk(
 
     def stub(
         group_idx: Any, a: Any, k: int = 5, largest: bool = True, size: int = -1, fill_value: float | None = None
-    ) -> Any:
+    ) -> AResult | list[AResult]:
         return _call_kernel_stub(driver, resolve, group_idx, a, size, fill_value, ((k, largest),))
 
     def typing(
         group_idx: Any, a: Any, k: int = 5, largest: bool = True, size: int = -1, fill_value: float | None = None
-    ) -> Any:
+    ) -> Callable[..., AResult | list[AResult]]:
         out_dtype, aux_dtype, default_fill, message, is_bool, is_exact, low, high, high_exclusive = prepare(
             group_idx, a, fill_value
         )
@@ -1195,7 +1225,7 @@ def _kernel_topk(
             largest: bool = True,
             size: int = -1,
             fill_value: float | None = None,
-        ) -> Any:
+        ) -> AResult | list[AResult]:
             _require_inputs(group_idx, a)
             if fill_value is None:
                 return driver(group_idx, a, size, out_dtype, aux_dtype, default_fill, (k, largest))
@@ -1229,7 +1259,7 @@ _TYPING_FUNCTIONS: dict[str, Callable[..., Any]] = {}
 
 def _make_stub(
     stub_name: str,
-    driver: Callable[..., Any],
+    driver: Callable[..., AResult | list[AResult]],
     rule: Callable[[nb.types.Type], tuple[np.dtype, np.dtype]],
     fill_default: AScalar,
     doc: str | None,
@@ -1306,7 +1336,9 @@ def _make_stub(
 # of the pass structure.
 
 
-def build_driver(name: str, passes: Any, suffix: str, multi_threading: bool = False) -> Any:
+def build_driver(
+    name: str, passes: Any, suffix: str, multi_threading: bool = False
+) -> Callable[..., AResult | list[AResult]]:
     """The driver of an operation.
 
     The driver takes the two arrays, the size, the two dtypes and the fill
@@ -1334,8 +1366,11 @@ def build_driver(name: str, passes: Any, suffix: str, multi_threading: bool = Fa
             aux_dtype: np.dtype,
             fill_value: float,
             extra: Any = 0,
-        ) -> Any:
-            return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra, n_threads)
+        ) -> AResult | list[AResult]:
+            result: AResult | list[AResult] = passes(
+                group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra, n_threads
+            )
+            return result
 
     else:
 
@@ -1347,8 +1382,9 @@ def build_driver(name: str, passes: Any, suffix: str, multi_threading: bool = Fa
             aux_dtype: np.dtype,
             fill_value: float,
             extra: Any = 0,
-        ) -> Any:
-            return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
+        ) -> AResult | list[AResult]:
+            result: AResult | list[AResult] = passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
+            return result
 
     return njit_stable(driver, name=f"{name}{suffix}")
 
@@ -1433,7 +1469,7 @@ def make_tick_call(name: str, handle: KernelHandle) -> Callable[..., Any]:
     driver = handle.driver
 
     @njit_stable(name=name)
-    def call(group_idx: Any, ticks: Any, size: int, fill: int) -> Any:
+    def call(group_idx: Any, ticks: Any, size: int, fill: int) -> AResult | list[AResult]:
         return driver(group_idx, ticks, size, np.dtype(np.int64), np.dtype(np.int64), fill)
 
     return call
@@ -1450,7 +1486,7 @@ def make_tick_call_q(name: str, handle: KernelHandle, scale: float = 1.0) -> Cal
     driver = handle.driver
 
     @njit_stable(name=name)
-    def call(group_idx: Any, ticks: Any, q: float, method: str, size: int, fill: int) -> Any:
+    def call(group_idx: Any, ticks: Any, q: float, method: str, size: int, fill: int) -> AResult | list[AResult]:
         return driver(group_idx, ticks, size, np.dtype(np.int64), np.dtype(np.int64), fill, q * scale, method)
 
     return call
@@ -1562,8 +1598,11 @@ def build_kernel(
     def _gate_none(st: Any, n_values: int) -> None:
         pass
 
-    def _finish_none(st: Any, g: int, fill_value: float, extra: Any) -> Any:
-        return st.out[g]
+    def _finish_none(st: Any, g: int, fill_value: float, extra: Any) -> np.generic:
+        # the value of the group - the element of the array, and the stubs of
+        # numpy know no type for it
+        value: np.generic = st.out[g]
+        return value
 
     # the same story in the other direction: the qualname is part of numba's
     # mangled symbol, so nested blocks of this factory need the operation in
@@ -1598,7 +1637,7 @@ def build_kernel(
     fill_untouched = njit_stable(fill_untouched, name=f"{name}_fill_untouched")
 
     @njit_stable(name=f"{name}_finish_pass")
-    def finish_pass(st: Any, size: int, n_values: int, fill_value: float, extra: Any) -> Any:
+    def finish_pass(st: Any, size: int, n_values: int, fill_value: float, extra: Any) -> AResult:
         """The gate, the finishing pass and the fill of the untouched groups.
 
         The last third of the work of an aggregation - the exactness gate,
@@ -1610,7 +1649,7 @@ def build_kernel(
         # the array of the state is bound to a local: a write through the
         # field of a state that came out of a list lands in a copy of it and
         # is lost
-        out = st.out
+        out: AResult = st.out
         for g in range(size):
             out[g] = finish_c(st, g, fill_value, extra)
         fill_untouched(st, size, fill_value)
@@ -1702,7 +1741,7 @@ def build_kernel(
             aux_dtype: np.dtype,
             fill_value: float,
             extra: Any,
-        ) -> Any:
+        ) -> AResult | list[AResult]:
             # numba's np.max reduction is several times faster than a scalar
             # loop here; negative indices slip through and are caught by the
             # bounds check inside the kernel below
@@ -1749,7 +1788,7 @@ def build_kernel(
                 fill_value: float,
                 extra: Any,
                 n_threads: int,
-            ) -> Any:
+            ) -> AResult | list[AResult]:
                 size = np.max(group_idx) + 1
                 if size_arg >= 0:
                     if size > size_arg:

@@ -11,7 +11,7 @@ same way the numpy implementation collects the blocks of its own sort, so that
 the two hand out the very same object.
 """
 
-from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 import numpy.typing as npt
@@ -55,7 +55,7 @@ def _placeable(dtype: np.dtype | None) -> bool:
     return dtype in _PLACEABLE
 
 
-def _array_driver_factory(nan_variant: bool) -> Any:
+def _array_driver_factory(nan_variant: bool) -> Callable[..., list[npt.NDArray[np.generic]]]:
     """The compiled driver of the collecting function.
 
     The values of a group are placed in a contiguous block, in the order they

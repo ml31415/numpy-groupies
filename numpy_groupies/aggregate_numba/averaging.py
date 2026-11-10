@@ -224,12 +224,15 @@ def _mean_gate(st: MeanState, n_values: int) -> None:
     _mean_limit_check(st.low[0], st.high[0], n_values)
 
 
-def _mean_finish(st: MeanState, g: int, fill_value: float, extra: Any) -> Any:
+def _mean_finish(st: MeanState, g: int, fill_value: float, extra: Any) -> float:
     # the mean takes nothing of its own, so the driver reaches this with the
     # zero of an operation without an argument and the test is the plain one of
     # a group that received a value at all
     if st.count[g] > extra:
-        return st.out[g] / st.count[g]
+        # the mean of the group - the element of the array is a number, and
+        # the stubs of numpy know no type for it
+        mean: float = st.out[g] / st.count[g]
+        return mean
     return fill_value
 
 
@@ -335,7 +338,7 @@ _tick_mean_update = _make_tick_mean_update(False)
 _tick_mean_update_nan = _make_tick_mean_update(True)
 
 
-def _tick_mean_finish(st: TickMeanState, g: int, fill_value: int, extra: Any) -> Any:
+def _tick_mean_finish(st: TickMeanState, g: int, fill_value: int, extra: Any) -> int:
     """The mean of the ticks of a group, rounded half to even.
 
     The sum of the deviations is exact, so the quotient and the remainder are
@@ -366,7 +369,9 @@ def _tick_mean_finish(st: TickMeanState, g: int, fill_value: int, extra: Any) ->
         odd = (st.origin[g] & 1) + (quotient & 1)
         if 2 * remainder > count or (2 * remainder == count and odd % 2 == 1):
             quotient += 1
-        return st.origin[g] + quotient
+        # the mean of the ticks, rounded half to even
+        mean: int = st.origin[g] + quotient
+        return mean
     return fill_value
 
 
@@ -634,7 +639,7 @@ def _moment_combine(acc: MomentState, other: MomentState, fill_value: float, ext
                 acc.high[0] = other.high[0]
 
 
-def _skew_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
+def _skew_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> float:
     n = st.count[g]
     if n == 0:
         return fill_value
@@ -645,10 +650,11 @@ def _skew_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
         # a group whose values are all the same has no spread - and no
         # skewness either, which pandas answers with a zero
         return 0.0
-    return n * np.sqrt(n - 1) / (n - 2) * st.m3[g] / st.m2[g] ** 1.5
+    skew: float = n * np.sqrt(n - 1) / (n - 2) * st.m3[g] / st.m2[g] ** 1.5
+    return skew
 
 
-def _kurt_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
+def _kurt_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> float:
     n = st.count[g]
     if n == 0:
         return fill_value
@@ -657,9 +663,10 @@ def _kurt_finish(st: MomentState, g: int, fill_value: float, extra: Any) -> Any:
         return np.nan
     if st.m2[g] == 0:
         return 0.0
-    return n * (n + 1) * (n - 1) * st.m4[g] / ((n - 2) * (n - 3) * st.m2[g] ** 2) - 3 * (n - 1) ** 2 / (
+    kurt: float = n * (n + 1) * (n - 1) * st.m4[g] / ((n - 2) * (n - 3) * st.m2[g] ** 2) - 3 * (n - 1) ** 2 / (
         (n - 2) * (n - 3)
     )
+    return kurt
 
 
 skew = build_kernel(
@@ -956,11 +963,12 @@ def _std_combine_extrema(acc: StdState, other: StdState) -> None:
         high[0] = other.high[0]
 
 
-def _std_finish(st: StdState, g: int, fill_value: float, ddof: int) -> Any:
+def _std_finish(st: StdState, g: int, fill_value: float, ddof: int) -> float:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
-        return np.sqrt(_variance_of(st, g, mean2, ddof))
+        deviation: float = np.sqrt(_variance_of(st, g, mean2, ddof))
+        return deviation
     return fill_value
 
 
@@ -1000,11 +1008,12 @@ def _variance_of(st: StdState, g: int, mean2: float, ddof: int) -> float:
     return variance
 
 
-def _var_finish(st: StdState, g: int, fill_value: float, ddof: int) -> Any:
+def _var_finish(st: StdState, g: int, fill_value: float, ddof: int) -> float:
     if st.count[g] > ddof:
         m = st.dev[g]
         mean2 = m.real * m.real + m.imag * m.imag
-        return _variance_of(st, g, mean2, ddof)
+        variance: float = _variance_of(st, g, mean2, ddof)
+        return variance
     return fill_value
 
 

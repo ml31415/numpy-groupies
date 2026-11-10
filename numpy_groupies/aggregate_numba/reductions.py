@@ -470,7 +470,7 @@ def _ordered_scan(nans: bool, last: bool) -> Callable[..., int]:
     return scan
 
 
-def _ordered_driver_factory(nans: bool, last: bool) -> Any:
+def _ordered_driver_factory(nans: bool, last: bool) -> Callable[..., npt.NDArray[np.number]]:
     """The compiled driver of the first (or the last) value of every group.
 
     The driver is a thin wrapper around the scan: it allocates the state,
@@ -513,7 +513,7 @@ def _ordered_mt_factory(last: bool) -> Callable[[bool, Callable[..., Any]], Any]
     the last.
     """
 
-    def factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+    def factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Callable[..., npt.NDArray[np.number]]:
         scan = _ordered_scan(nans, last)
         name = "last" if last else "first"
 

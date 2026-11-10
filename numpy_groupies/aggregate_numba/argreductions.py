@@ -152,7 +152,7 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
     return scan
 
 
-def _arg_driver_factory(nans: bool, greater: bool) -> Any:
+def _arg_driver_factory(nans: bool, greater: bool) -> Callable[..., npt.NDArray[np.int64]]:
     """The compiled driver of the argmax (the greater one) and the argmin.
 
     The driver is a thin wrapper around the scan: it allocates the state,
@@ -203,7 +203,7 @@ def _arg_driver_factory(nans: bool, greater: bool) -> Any:
 def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
     """The parallel passes of the argmax (the greater one) and the argmin."""
 
-    def factory(nans: bool, driver: Callable[..., npt.NDArray[np.int64]]) -> Any:
+    def factory(nans: bool, driver: Callable[..., npt.NDArray[np.int64]]) -> Callable[..., npt.NDArray[np.int64]]:
         scan = _arg_scan(nans, greater)
         name = "argmax" if greater else "argmin"
 

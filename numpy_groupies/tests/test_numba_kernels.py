@@ -215,6 +215,10 @@ def _kernel_arguments(name, kwargs):
 # call against the signature of that typing function - and the two have to be
 # the same signature, down to the name of the argument an operation has of its
 # own.  An operation without such an argument has no extra argument at all.
+#
+# The arguments are the same; the return is not: the stub answers with the
+# result of the operation, the typing function with the implementation it
+# hands numba - which numba compiles and whose answer is the one of the stub.
 def test_the_python_and_the_jitted_signature_of_a_kernel_are_one():
     for name, typing_function in compose._TYPING_FUNCTIONS.items():
         stub = getattr(aggregate_numba, name, None)
@@ -228,7 +232,7 @@ def test_the_python_and_the_jitted_signature_of_a_kernel_are_one():
                     stub = pair.nan.stub if name.startswith("nan") else pair.plain.stub
                     break
         assert stub is not None, name
-        assert signature(stub) == signature(typing_function), name
+        assert signature(stub).parameters == signature(typing_function).parameters, name
 
 
 def test_a_kernel_carries_the_arguments_of_its_function_and_no_others():

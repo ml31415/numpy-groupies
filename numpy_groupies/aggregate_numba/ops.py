@@ -208,7 +208,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             ddof: float,
             q: float,
             method: str = "linear",
-        ) -> Any:
+        ) -> AResult | list[AResult]:
             if mt_driver is not None and group_idx.size >= min_values:
                 # the number of the threads is asked of every call: a number
                 # captured when the wrapper was built would be the number the
@@ -240,7 +240,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             ddof: float,
             q: float,
             method: str,
-        ) -> Any:
+        ) -> AResult | list[AResult]:
             if mt_driver is not None and group_idx.size >= min_values:
                 n_threads = mt_thread_count()
                 if n_threads > 1:
@@ -264,7 +264,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             ddof: float,
             q: float,
             method: str = "linear",
-        ) -> Any:
+        ) -> AResult | list[AResult]:
             if mt_driver is not None and group_idx.size >= min_values:
                 n_threads = mt_thread_count()
                 if n_threads > 1:
@@ -285,7 +285,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
         ddof: float,
         q: float,
         method: str = "linear",
-    ) -> Any:
+    ) -> AResult | list[AResult]:
         if mt_driver is not None and group_idx.size >= min_values:
             n_threads = mt_thread_count()
             if n_threads > 1:

@@ -147,7 +147,8 @@ def _select_kth(
         if limit <= 0:
             # the fallback: order the range and take the element from there
             arr[lo:hi].sort()
-            return arr[k]  # type: ignore[no-any-return]  # the stubs know no type for np.number
+            ordered: np.number = arr[k]
+            return ordered
         mid = lo + span // 2
         # the pivot: the median of the first, the middle and the last value of
         # the range, with the ordering of the package - for the real dtypes
@@ -186,7 +187,8 @@ def _select_kth(
         else:
             lo = j + 1
         span = hi - lo
-    return arr[k]  # type: ignore[no-any-return]  # the stubs know no type for np.number
+    element: np.number = arr[k]
+    return element
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +262,9 @@ def _middle_of(ticks: bool) -> Callable[..., np.number | int]:
         if ticks:
             # the ticks are integers - the exact mean of two of them is one
             return _tick_pair_average(int(lower), int(upper))
-        return (lower * 1.0 + upper) / 2  # type: ignore[no-any-return]  # the stubs know no type for np.number
+        # the mean of the two middles, in float64
+        average: np.number = (lower * 1.0 + upper) / 2
+        return average
 
     return middle
 
@@ -421,8 +425,10 @@ def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float,
     else:
         gamma = pos - lower_index
     if gamma < 0.5:
-        return lower * 1.0 + diff * gamma  # type: ignore[no-any-return]  # the stubs know no type for np.number
-    return upper - diff * (1 - gamma)  # type: ignore[no-any-return]  # the stubs know no type for np.number
+        interpolated: np.number = lower * 1.0 + diff * gamma
+        return interpolated
+    extrapolated: np.number = upper - diff * (1 - gamma)
+    return extrapolated
 
 
 _quantile_at = njit_stable(_quantile_at, name="quantile_quantile_at")
