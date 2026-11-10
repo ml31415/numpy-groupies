@@ -160,7 +160,11 @@ def _central_moments(
     """
     counts = np.bincount(group_idx, minlength=size)
     origins = _first(group_idx, a, size, 0, dtype=a.dtype)
-    devs = a - origins[group_idx]
+    # the deviations of the values of a narrow integer wrap in their dtype
+    # (a 0 against an origin of 3 is a 253 there) - the moments are floats,
+    # so the arithmetic is carried in float64, where no value of the input
+    # can lose its sign
+    devs = a.astype(np.float64, copy=False) - origins[group_idx].astype(np.float64, copy=False)
     with np.errstate(divide="ignore", invalid="ignore"):
         means = (
             np.bincount(

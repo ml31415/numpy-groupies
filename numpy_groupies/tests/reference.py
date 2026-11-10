@@ -523,6 +523,29 @@ def aggregate_ref(
         raise ValueError("a group index is too large for the requested size")
 
     call = _REF_FUNCS[name]
+
+    def _group_values(index: npt.NDArray[np.integer]) -> npt.NDArray[np.number]:
+        """the values of one group, the arithmetic of the integers widened.
+
+        The functions that compute with the values - the sums, the products,
+        the running ones, the moments and their deviations - would wrap in
+        the dtype of narrow values, and the package promises that no group
+        reduction wraps silently: the values of a group of narrow integers
+        are carried in the wide signed integer here, the one dtype that
+        cannot wrap.  The functions that only compare or hand the values out
+        (the extrema, the first and the last, the sorted and collected ones)
+        answer the very same values either way, and the values of the wide
+        unsigned integer stay in it - a signed one could not hold its half
+        of the range.
+        """
+        values = a[index]
+        if values.dtype.kind in "iu" and values.dtype.itemsize < 8:
+            # the unsigned narrow ones fit the signed wide one exactly, and
+            # only a signed dtype cannot wrap under the subtractions of the
+            # moments and the running values
+            return values.astype(np.int64)
+        return values
+
     # one stable argsort gathers the groups, each of them in the order its
     # values had in the input - the arg reductions report an input position
     order = np.argsort(labels, kind="stable")
@@ -534,14 +557,14 @@ def aggregate_ref(
         if not pos.size:
             continue
         if name in _REF_TOPK:
-            value = call(a[pos], pos, fill_value=fill_value, **kwargs)
+            value = call(_group_values(pos), pos, fill_value=fill_value, **kwargs)
         elif name in _REF_SEEDED_BY_FILL:
             # the running extreme starts at the fill value - the places before
             # the first value of a group hold it
             fill = default_fill_value(name, a.dtype) if fill_value is DEFAULT_FILL_VALUE else fill_value
-            value = call(a[pos], pos, fill_value=fill, **kwargs)
+            value = call(_group_values(pos), pos, fill_value=fill, **kwargs)
         else:
-            value = call(a[pos], pos, **kwargs)
+            value = call(_group_values(pos), pos, **kwargs)
         if value is None:
             # the function has no answer for this group, which is handled like
             # an empty one: it takes the fill value

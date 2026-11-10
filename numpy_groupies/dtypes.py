@@ -245,7 +245,17 @@ def resolve_output_dtype(
     if func_str in _forced_same_type:
         return a_dtype
 
-    if isinstance(a_dtype, np.integer):
+    # the temporal values run on their ticks, and their answer is a temporal
+    # value again - the wide integer below would take the unit away
+    if a_dtype.kind in TEMPORAL_KINDS:
+        return a_dtype
+
+    # any other integer answer widens: a product or a running value in the
+    # dtype of narrow values wraps silently, and the wide signed integer is
+    # the one dtype that cannot - the ladder of the sum above narrows this
+    # down where it can, this is the floor of it.  The unsigned 64 is the
+    # widest there is, and a signed one could not hold its half of the range
+    if a_dtype != np.dtype(np.uint64) and np.issubdtype(a_dtype, np.integer):
         return np.dtype(np.int64)
     return a_dtype
 

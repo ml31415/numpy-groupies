@@ -234,6 +234,15 @@ def _std(x: Sequence[Any], ddof: int = 0) -> Any:
 
 
 def _prod(x: Sequence[Any]) -> Any:
+    # the integer twin of _sum: numpy integers multiply in the input dtype
+    # without promotion (NEP 50), so large groups silently wrap - python ints
+    # keep the per-group accumulation exact, everything else (floats, complex,
+    # numpy bools, decimals) keeps its own behaviour
+    if all(isinstance(val, numbers.Integral) for val in x):
+        r = 1
+        for xx in x:
+            r *= int(xx)
+        return r
     r = x[0]
     for xx in x[1:]:
         r *= xx
