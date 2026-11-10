@@ -192,8 +192,11 @@ def _aggregate_wrap(
     elif not isinstance(funcname, str):
         # a callable of the caller's own: it sees the values as they are, and
         # its result is a number of its own making - the dtype it asked for is
-        # the one it gets
-        fill_value = resolve_fill_value(funcname, fill_value, dtype if dtype is not None else np.asarray(a).dtype)
+        # the one it gets.  Without one, the fill assumes a floating result,
+        # like the callable path itself does - the dtype of the *values* says
+        # nothing about the dtype of the answer, and a nan default resolved
+        # against integer values would come out as a 0 in the float result.
+        fill_value = resolve_fill_value(funcname, fill_value, dtype)
         ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
     else:
         # a known function: the nan variants drop the nans of the input first

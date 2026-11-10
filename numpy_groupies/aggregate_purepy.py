@@ -594,6 +594,12 @@ def aggregate(
         and (resolve_name(funcname) in forced_float_types or resolve_name(funcname) in forced_real_float_types)
     ):
         result_dtype = float
+    if result_dtype is int and not isinstance(funcname, str) and dtype is None:
+        # a callable of the caller's own: its answer is a number of its own
+        # making, and without a dtype of the caller the fill assumes a
+        # floating result - the reading of the numpy based backends, whose
+        # callable path answers floats for integer values as well
+        result_dtype = float
     fill_value = resolve_fill_value(funcname, fill_value, result_dtype)
     # the numpy implementations look the fill value against the datatype of the
     # result, not of the values: neither a count nor a boolean answer holds a nan
