@@ -62,7 +62,7 @@ The result of a run on the machine of the numeric table (same conditions, `--run
 | sort datetime64         |       53.429 |        6.347 |
 | array datetime64        |        7.791 |        7.952 |
 | topk datetime64         |       14.106 |        2.867 |
-| mode datetime64         |       26.304 |        3.549 |
+| mode datetime64         |       26.304 |        3.229 |
 | min timedelta64         |        1.697 |        0.413 |
 | max timedelta64         |        1.343 |        0.506 |
 | nanmin timedelta64      |        5.011 |        0.523 |
@@ -90,7 +90,7 @@ The result of a run on the machine of the numeric table (same conditions, `--run
 | sort timedelta64        |       53.893 |        6.532 |
 | array timedelta64       |        8.151 |        8.059 |
 | topk timedelta64        |       13.472 |        3.004 |
-| mode timedelta64        |       27.232 |        3.850 |
+| mode timedelta64        |       26.576 |        2.728 |
 | sum timedelta64         |        1.650 |        0.431 |
 | nansum timedelta64      |        4.759 |        0.423 |
 | cumsum timedelta64      |       14.596 |        0.887 |
@@ -193,6 +193,6 @@ python -m numpy_groupies.benchmarks.mt --scaling
 | sort        |     71.208 |      6.277 |       ---- |       ---- |       ---- |       ---- |
 | array       |      7.562 |      1.952 |       ---- |       ---- |       ---- |       ---- |
 | topk        |     13.866 |      2.890 |       ---- |       ---- |       ---- |       ---- |
-| mode        |     26.594 |      3.817 |       ---- |       ---- |       ---- |       ---- |
+| mode        |     26.473 |      2.973 |       ---- |       ---- |       ---- |       ---- |
 
 *Linux(x86_64), Python 3.14.7, Numpy 2.5.4, Numba 0.68.0, numbagg 0.9.6, Pandas 3.0.6, Polars 2.0.0 (6 threads max)*

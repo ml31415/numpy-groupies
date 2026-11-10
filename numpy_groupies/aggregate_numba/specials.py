@@ -12,7 +12,6 @@ spacing ``dx`` as the argument of its own.
 """
 
 import functools
-import math
 from collections.abc import Callable
 from functools import partial
 from typing import Any, NamedTuple
@@ -668,25 +667,26 @@ def _group_mt_setup(
 _group_mt_setup = njit_stable(_group_mt_setup)
 
 
-# what one value of the operation costs in the sequential kernel, measured on
-# the machine of ``docs/benchmarks.md``, the counting sort of the placement
-# included.  The select is the cheapest of the operations that cut their
-# groups into ranges and the sort the most expensive; all of them cost orders
-# of magnitude more per value than the sum the cost model was fitted on, so
-# the fixed cost of a parallel region is a far smaller share of their time.
+# the cost of a value of the operation in the sequential kernel, measured on
+# the machine of ``docs/benchmarks.md``.  The select is the cheapest of the
+# operations that cut their groups into ranges and the sort the most
+# expensive; all of them cost orders of magnitude more per value than the sum
+# the cost model was fitted on, so the fixed cost of a parallel region is a
+# far smaller share of their time.
 _NS_PER_VALUE_SELECT = 18.0
-_NS_PER_VALUE_NUNIQUE = 19.0
+# the distinct count and the mode count their values in a hash table, which
+# needs no ordering of them - 12.3 and 14.0 ns a value, measured with the
+# tool of the benchmarks
+_NS_PER_VALUE_NUNIQUE = 13.0
 _NS_PER_VALUE_SORT = 68.0
 # the selection of the topk, with the gathering of the values that are
 # better than the border - the work of the median and a sweep over the block
 _NS_PER_VALUE_TOPK = 24.0
 # the mode: the hash table of the distinct count, the counts kept and the
 # best value tracked besides.  Measured with the tool of the benchmarks:
-# 19.5 and 20.4 ns a value in two runs, against the 18.1 and 18.6 the same
-# runs measured for the distinct count - whose 19.0 the package carries.
-# The same ratio brings the mode to the 21.0 of the machine of
-# ``docs/benchmarks.md``.
-_NS_PER_VALUE_MODE = 21.0
+# 14.0 ns a value, against the 12.3 of the distinct count - the same table,
+# with the counter and the tie-break besides.
+_NS_PER_VALUE_MODE = 14.0
 
 
 def _median_driver_factory(nans: bool, ticks: bool = False) -> Any:
@@ -1438,30 +1438,45 @@ tick_topk = build_custom_kernel(
 
 
 @njit_stable
-def _mix_hash(x: np.uint64) -> Any:
-    """spread the bits of a hash over the whole word (splitmix64).
+def _mix_bits(x: np.uint64) -> Any:
+    """the finalizer of splitmix64: a bijection of the 64 bits.
+
+    Every bit of the input reaches every bit of the output, and two
+    different inputs have two different outputs - the property a hash
+    table needs of its hash, and the reason the counts of the distinct
+    count and of the mode are right.
 
     The result is an unsigned integer - numba's stubs do not know the
     arithmetic of them, so the type checker is told nothing here.
     """
     x = (x ^ (x >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
-    x = (x ^ (x >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+    x = (x ^ (x >> np.uint64(27))) * np.uint64(0x94D049BB61D108B)
     return x ^ (x >> np.uint64(31))
+
+
+# the bits of -0.0 - the two zeros are one value, so they have one hash
+_ZERO_BITS = np.int64(-9223372036854775808)
 
 
 @njit_stable
 def _hash_float(v: float | np.floating[Any]) -> Any:
-    """the hash of a floating point value.
+    """the hash of a floating point value - over its bits.
 
-    The mantissa of a double is exact in 53 bits, so the mantissa and the
-    exponent name the value - and no two different values have the same pair.
-    A zero of either sign has the same mantissa, so the two have the same
-    hash, as they are the same value.
+    The bits of a double name the value: no two different values have the
+    same bits, and the two zeros - the same value - are the one exception,
+    so they are put on the same hash here.
+
+    The bits are cheaper to get than the mantissa and the exponent of the
+    value: the frexp of it is a call into the floating point library, and
+    the two of them together cost more than the whole rest of the hash -
+    measured 2.0ms against 0.3ms per 500k values, which is more than
+    half of the time the mode spends on its data.
     """
-    m, e = math.frexp(v)
-    return _mix_hash(
-        np.uint64(int(m * 9007199254740992.0)) ^ (np.uint64(e & 0xFFFFFFFF) * np.uint64(0x9E3779B97F4A7C15))
-    )
+    bits = np.float64(v).view(np.int64)
+    if bits == _ZERO_BITS:
+        # -0.0 and 0.0 are the same value
+        bits = np.int64(0)
+    return _mix_bits(np.uint64(bits))
 
 
 @njit_stable
@@ -1472,10 +1487,10 @@ def _hash_value(v: Any) -> Any:
     has a hash of its own, an integer its own value.
     """
     if isinstance(v, (complex, np.complex64, np.complex128)):
-        return _mix_hash(_hash_float(v.real) ^ (_hash_float(v.imag) * np.uint64(0x9E3779B97F4A7C15)))
+        return _mix_bits(_hash_float(v.real) ^ (_hash_float(v.imag) * np.uint64(0x9E3779B97F4A7C15)))
     if isinstance(v, (float, np.float32, np.float64)):
         return _hash_float(v)
-    return _mix_hash(np.uint64(v))
+    return _mix_bits(np.uint64(v))
 
 
 @njit_stable
