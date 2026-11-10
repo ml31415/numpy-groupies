@@ -69,6 +69,10 @@ _N_DEPENDENT_ADTYPES = frozenset(
     np.dtype(t) for t in ("bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "uint64")
 )
 
+# the functions whose answer climbs the ladder with the number of the values
+# - the running sums climb it with the same per-group count as the sums
+_N_DEPENDENT_FUNCS = frozenset(("sum", "nansum", "cumsum", "nancumsum"))
+
 # the dtypes and fill values that can be a key of the dtype plan cache:
 # the hashable ones - a list is not, and the cache raises a TypeError for it
 _KeyedDType: TypeAlias = str | type | np.dtype | None
@@ -367,7 +371,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
             and a.shape[0] == group_idx.size
         ):
             a_key = a.dtype
-            n_key = len(group_idx) if (func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
+            n_key = len(group_idx) if (func in _N_DEPENDENT_FUNCS and a_key in _N_DEPENDENT_ADTYPES) else 0
             try:
                 # a dtype that is no key of the cache raises there, which is caught
                 plan_dtype, plan_fill = _dtype_fill_plan(func, a_key, dtype, fill_value, n_key, False)
@@ -420,7 +424,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         # value, so its dtype is all that is left to resolve the plan from -
         # for a python number the type stands in, see scalar_dtype
         a_key = scalar_dtype(a) if scalar else cast("npt.NDArray[np.generic]", a).dtype
-        n_key = len(group_idx) if (func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
+        n_key = len(group_idx) if (func in _N_DEPENDENT_FUNCS and a_key in _N_DEPENDENT_ADTYPES) else 0
         try:
             # a dtype that is no key of the cache raises there, which is caught
             dtype, fill_value = _dtype_fill_plan(func, a_key, dtype, fill_value, n_key, scalar)

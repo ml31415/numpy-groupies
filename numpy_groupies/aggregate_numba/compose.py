@@ -172,25 +172,31 @@ def rule_same(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
 
 
 def rule_sum(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
-    """sum: narrow integers and bools widen to int64; uint64 stays unsigned.
-
-    This is the njit-kernel approximation - the python-level ``aggregate()``
-    keeps the exact narrow-dtype overflow guesses, which depend on the value
-    count and therefore cannot be resolved at compile time.
-    """
+    """sum and the running sums: narrow integers widen to int64, narrow
+    unsigned ones to uint64 - the sign of the input stays, and uint64 stays
+    unsigned.  This is the njit-kernel approximation - the python-level
+    ``aggregate()`` keeps the exact narrow-dtype overflow guesses of the
+    ladder, which depend on the value count and therefore cannot be resolved
+    at compile time."""
     dt = _as_np_dtype(a_type)
     if dt == np.dtype(np.uint64):
         return dt, dt
-    if dt.kind in "iub":
+    if dt.kind == "u":
+        return np.dtype(np.uint64), np.dtype(np.uint64)
+    if dt.kind in "ib":
         return np.dtype(np.int64), np.dtype(np.int64)
     return dt, dt
 
 
 def rule_widen_int(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
-    """prod and the cumulatives: integer input widens to int64, everything
-    else (bool included) passes through - matching the python-level rules."""
+    """prod and cumprod: integer input widens to the accumulator of its own
+    sign (int64 for the signed ones and bool, uint64 for the unsigned ones,
+    whose uint64 stays), everything else passes through - matching the
+    python-level rules."""
     dt = _as_np_dtype(a_type)
-    if dt.kind in "iu":
+    if dt.kind == "u":
+        return np.dtype(np.uint64), np.dtype(np.uint64)
+    if dt.kind in "ib":
         return np.dtype(np.int64), np.dtype(np.int64)
     return dt, dt
 
@@ -220,13 +226,16 @@ def rule_real_float(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
 
 
 def rule_sumofsquares(a_type: nb.types.Type) -> tuple[np.dtype, np.dtype]:
-    """sumofsquares: like var/std, except integers/bools widen to int64 - the
-    exact squares of integers are integral."""
+    """sumofsquares: like var/std, except integers widen to the exact
+    integral accumulator - int64 for the signed ones and bool, uint64 for
+    the unsigned ones, whose squares leave the signed range."""
     dt = _as_np_dtype(a_type)
     if dt.kind == "f":
         out = dt
     elif dt.kind == "c":
         out = np.dtype(dt.char.lower())
+    elif dt.kind == "u":
+        out = np.dtype(np.uint64)
     else:
         out = np.dtype(np.int64)
     return out, out

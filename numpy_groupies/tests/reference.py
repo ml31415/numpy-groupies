@@ -210,7 +210,13 @@ def _deviations(values: npt.NDArray[np.number]) -> npt.NDArray[np.floating]:
     whose values are all the same are then exactly zero, and the spread of
     such a group is zero - and the mean of those deviations is taken off as
     well, which is the mean of the group.
+
+    The subtraction runs in float64, like numpy's own var and std of integer
+    values do - in the dtype of the values the deviations of an unsigned one
+    would wrap (a 0 against an origin of 3 is a 253 there), and the moments
+    are floats anyway.
     """
+    values = values.astype(np.float64, copy=False)
     devs = values - values[0]
     return devs - devs.mean()
 
@@ -528,22 +534,19 @@ def aggregate_ref(
         """the values of one group, the arithmetic of the integers widened.
 
         The functions that compute with the values - the sums, the products,
-        the running ones, the moments and their deviations - would wrap in
-        the dtype of narrow values, and the package promises that no group
-        reduction wraps silently: the values of a group of narrow integers
-        are carried in the wide signed integer here, the one dtype that
-        cannot wrap.  The functions that only compare or hand the values out
-        (the extrema, the first and the last, the sorted and collected ones)
-        answer the very same values either way, and the values of the wide
-        unsigned integer stay in it - a signed one could not hold its half
-        of the range.
+        the running ones - would wrap in the dtype of narrow values, and
+        numpy widens its own sums and products the same way: the values of a
+        group of narrow integers are carried in the accumulator of their own
+        sign here, int64 for the signed ones, uint64 for the unsigned ones,
+        whose wide dtype stays.  The functions that only compare or hand the
+        values out (the extrema, the first and the last, the sorted and
+        collected ones) answer the very same values either way.
         """
         values = a[index]
-        if values.dtype.kind in "iu" and values.dtype.itemsize < 8:
-            # the unsigned narrow ones fit the signed wide one exactly, and
-            # only a signed dtype cannot wrap under the subtractions of the
-            # moments and the running values
+        if values.dtype.kind == "i" and values.dtype.itemsize < 8:
             return values.astype(np.int64)
+        if values.dtype.kind == "u" and values.dtype.itemsize < 8:
+            return values.astype(np.uint64)
         return values
 
     # one stable argsort gathers the groups, each of them in the order its

@@ -10,7 +10,7 @@ from typing import Any, NamedTuple
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_widen_int
+from numpy_groupies.aggregate_numba.compose import build_kernel, complex_less, rule_same, rule_widen_int
 
 
 class CumulativeState(NamedTuple):
@@ -183,7 +183,7 @@ cummax = build_kernel(
     update=_cummax_update,
     update_nan=_cummax_update_nan,
     record=_cummax_record,
-    rule=rule_widen_int,
+    rule=rule_same,
     fill_default=0,
     nton=True,
     doc="Running maximum within every group",
@@ -244,7 +244,7 @@ cummin = build_kernel(
     update=_cummin_update,
     update_nan=_cummin_update_nan,
     record=_cummin_record,
-    rule=rule_widen_int,
+    rule=rule_same,
     fill_default=0,
     nton=True,
     doc="Running minimum within every group",
