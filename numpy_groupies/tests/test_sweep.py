@@ -1,9 +1,13 @@
 """The sweep of the suite: every function of the package against the group loop.
 
-One test per (backend, values, function): the values are the three sets the
-block fixture carries - the plain ones, the ones with nans in them and the
-complex ones - so a function that the sweep does not know about is a hole in
-the sweep and not a hole in some test of its own.
+One test per (backend, values, function): the values are the six sets the
+block fixture carries - the plain floats, the ones with nans in them, the
+complex ones, and the integer ones in the three dtypes the package meets:
+the wide signed one, the narrow signed one, whose dtype the reductions that
+answer a value of the group preserve, and the narrow unsigned one, whose
+sums and products the dtype ladder widens.  A function that the sweep does
+not know about is a hole in the sweep and not a hole in some test of its
+own, whatever kind of values it is asked for.
 
 The data comes in two sizes: the small one is below the floor of the parallel
 path of the numba backend, the big one above it.  The sweep therefore
@@ -16,11 +20,8 @@ with the backends: no bincount, no ufunc trick, no compiled kernel, one
 computation per group.
 """
 
-import numba as nb
-import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_numba
 from numpy_groupies.tests.helpers import (
     SWEEP_SIZES,
     assert_matches_the_group_loop,
@@ -30,11 +31,17 @@ from numpy_groupies.tests.helpers import (
 
 # the values of the block and the functions that answer for them - the
 # complex values are only asked of the functions whose result is defined for
-# a complex value (see the sets of the helpers)
+# a complex value (see the sets of the helpers); the integer values get every
+# function - a nan variant over integers is the function itself, and the
+# ladder of the output dtypes is the business of the comparison, not of the
+# selection
 _SWEEPS = (
     ("a", func_list),
     ("a_nans", func_list),
     ("a_complex", complex_funcs),
+    ("a_ints", func_list),
+    ("a_ints8", func_list),
+    ("a_uints", func_list),
 )
 
 _CASES = [(values, func) for values, funcs in _SWEEPS for func in funcs]
@@ -70,45 +77,30 @@ def test_the_big_data_reaches_the_parallel_path(block):
     """The big data of the sweep is the data of the parallel path.
 
     The cost model is the one the drivers ask before they take the parallel
-    path - and the big data is above the floor of both of them, with the
-    threads of the pool: the operations that reduce the values in chunks and
-    the ones that cut the groups into ranges both take their parallel path.
+    path - and the big data is above the floor of both of them.  The cheapest
+    and the dearest operation of each path is asked, at the fewest threads
+    that can take the path at all, so the answer covers the whole span of the
+    operations the sweep runs: if the big data dropped below the floor of one
+    of them, the sweep would measure the sequential path twice and call it
+    the parallel one.
     """
     from numpy_groupies.aggregate_numba import mt
 
-    threads = nb.get_num_threads()
-    if threads < 4:
-        pytest.skip("the machine has fewer than four threads to compare against")
     n_values = SWEEP_SIZES["large"]
     # the groups of the block - the scaled block of the sweep has the same
     # ones, the two of them empty
     groups = block.size
     # the chunked path: the operations that reduce the values in chunks, the
-    # state of the cheapest and of the dearest one of them
-    for state_size in (1, 3):
-        assert mt.should_use_mt(groups, threads, n_values, state_size)
+    # state of the cheapest and of the dearest one of them - two threads are
+    # the fewest the path takes
+    for state_size in (1, 5):
+        assert mt.should_use_mt(groups, 2, n_values, state_size)
     # the path over the groups: the order statistics, the cheapest and the
-    # dearest of them
-    for ns_per_value in (18.0, 68.0):
-        assert mt.should_use_group_mt(groups, threads, n_values, ns_per_value)
+    # dearest of them - four threads are the fewest theirs takes
+    for ns_per_value in (13.0, 68.0):
+        assert mt.should_use_group_mt(groups, 4, n_values, ns_per_value)
 
 
-def test_the_parallel_path_is_the_one_that_runs(scaled_block, n_values):
-    """The sums of the parallel path add up in the order of the chunks.
-
-    The last bits of a float sum notice it - so a result that is identical
-    to the one of the single thread is a result of the single thread, and
-    the big data of the sweep is the data of the parallel path.
-    """
-    if n_values <= SWEEP_SIZES["small"]:
-        pytest.skip("the small data is below the floor of the parallel path")
-    group_idx, values = scaled_block.group_idx, scaled_block.a
-    before = nb.get_num_threads()
-    try:
-        nb.set_num_threads(1)
-        one = aggregate_numba.aggregate(group_idx, values, func="sum", size=scaled_block.size)
-        nb.set_num_threads(before)
-        many = aggregate_numba.aggregate(group_idx, values, func="sum", size=scaled_block.size)
-    finally:
-        nb.set_num_threads(before)
-    assert not np.array_equal(one, many)
+# test_the_parallel_path_is_the_one_that_runs lives in test_mt_kernels.py
+# (``test_the_number_of_the_threads_of_a_call_reaches_the_kernel``): the same
+# tripwire over the same data, over every number of the threads above one.

@@ -6,7 +6,7 @@ import pytest
 
 from numpy_groupies.aggregate_numba import mt
 
-# the decision of the chunked path: the values, the groups and the threads
+# the decision of the chunked path: the groups, the threads and the values
 # against the answer the gate gives
 _CHUNKED_CASES = [
     # one thread: nothing is shared, and the region costs more than the work
@@ -20,9 +20,9 @@ _CHUNKED_CASES = [
 ]
 
 
-@pytest.mark.parametrize(("n_values", "n_groups", "n_threads", "expected"), _CHUNKED_CASES)
-def test_the_chunked_path_is_decided_by_the_model(n_values, n_groups, n_threads, expected):
-    assert mt.should_use_mt(n_values, n_groups, n_threads) is expected
+@pytest.mark.parametrize(("n_groups", "n_threads", "n_values", "expected"), _CHUNKED_CASES)
+def test_the_chunked_path_is_decided_by_the_model(n_groups, n_threads, n_values, expected):
+    assert mt.should_use_mt(n_groups, n_threads, n_values) is expected
 
 
 # the decision of the path that cuts the groups into ranges: the same model,
@@ -39,9 +39,9 @@ _GROUP_CASES = [
 ]
 
 
-@pytest.mark.parametrize(("n_values", "n_groups", "n_threads", "expected"), _GROUP_CASES)
-def test_the_group_path_is_decided_by_the_model(n_values, n_groups, n_threads, expected):
-    assert mt.should_use_group_mt(n_values, n_groups, n_threads, 18.0) is expected
+@pytest.mark.parametrize(("n_groups", "n_threads", "n_values", "expected"), _GROUP_CASES)
+def test_the_group_path_is_decided_by_the_model(n_groups, n_threads, n_values, expected):
+    assert mt.should_use_group_mt(n_groups, n_threads, n_values, 18.0) is expected
 
 
 def test_the_decision_does_not_depend_on_the_machine():

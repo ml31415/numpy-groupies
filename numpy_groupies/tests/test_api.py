@@ -19,6 +19,7 @@ from numpy_groupies.tests.helpers import (
     assert_same_result,
     func_list,
     is_numba,
+    is_purepy,
     random_values,
 )
 from numpy_groupies.tests.reference import aggregate_ref
@@ -78,16 +79,36 @@ def test_create_lists(impl):
 def test_item_counting(impl):
     group_idx = np.array([0, 1, 2, 3, 3, 3, 3, 4, 5, 5, 5, 6, 5, 4, 3, 8, 8])
     a = np.arange(group_idx.size)
-    res = impl.aggregate(group_idx, a, func=lambda x: len(x) > 1)
-    np.testing.assert_array_equal(res, np.array([0, 0, 0, 1, 1, 1, 0, 0, 1]))
+
+    def more_than_one(x):
+        return len(x) > 1
+
+    res = np.asarray(impl.aggregate(group_idx, a, func=more_than_one))
+    # group 7 is never named - a callable of the caller's own has a result of
+    # its own making, and the absent group takes the generic default resolved
+    # against the dtype of the result: the nan where the result holds one
+    # (the numpy based backends answer floats), the 0 where it does not (the
+    # numba one keeps the dtype of the values)
+    wanted = np.array([0, 0, 0, 1, 1, 1, 0, default_fill_value(more_than_one, res.dtype), 1])
+    np.testing.assert_array_equal(res, wanted, err_msg="absent group")
 
 
-@pytest.mark.parametrize("a_dtype", ["float64", "int64", "float16"], ids=["float", "int", "float16"])
 @pytest.mark.parametrize("func", default_fill_funcs, ids=lambda x: getattr(x, "__name__", x))
-def test_default_fill_value(impl, func, a_dtype):
+def test_default_fill_value_of_an_integer_result(impl, func):
+    """the default of an integer result, where the nan of the table falls back
+    to 0.
+
+    The floating results carry their default through the generic sweep -
+    every function of the sweep runs over the floating values of the block
+    and is measured against the group loop, absent groups included.  What
+    the sweep never sees is the integer result: min, first and their kind
+    keep the dtype of the values, their nan default cannot fill it, and the
+    conservative 0 stands in - the fallback the policy of the package pins,
+    here against every backend.
+    """
     # group 1 has no items at all, so it takes the function specific default
     group_idx = np.array([0, 0, 2, 2])
-    a = np.array([1.0, 2.0, 4.0, 8.0], dtype=a_dtype)
+    a = np.array([1, 2, 4, 8], dtype=np.int64)
 
     res = impl.aggregate(group_idx, a, func=func, size=3)
     if isinstance(res, list) and isinstance(res[0], list):
@@ -543,15 +564,27 @@ def test_the_out_argument_is_the_one_of_the_numba_backend(impl):
             impl.aggregate(group_idx, a, func="sum", out=out)
 
 
-@pytest.mark.parametrize("fill_value", [0, np.nan])
-@pytest.mark.parametrize("func", func_list)
+@pytest.mark.parametrize("fill_value", [0, np.nan], ids=["zero", "nan"])
+@pytest.mark.parametrize("func", default_fill_funcs, ids=lambda x: getattr(x, "__name__", x))
 def test_the_fill_value_matches_the_group_loop(impl, func, fill_value, block):
     """what an absent group is filled with, and which fill value is refused.
 
-    Two of the block's labels name no value, so the fill value shows up in the
-    result - and one that does not fit the dtype of the result is refused, which
-    the group loop refuses before it computes anything.
+    Only the calls the default does not answer anyway are asked here: a fill
+    value that is the default of the function is the very call the generic
+    sweep runs over the block - twice the sizes, three sets of values - so
+    the combos whose fill matches the default of the function (against the
+    floating result the table names) are left to the sweep.  What is left is
+    the override of the default and the value the result cannot hold: the
+    nan for a count, a flag or a position, which the package refuses before
+    it computes anything.
+
+    The one-out-per-item functions are the business of :mod:`.test_axis` -
+    they have no absent group to fill at all.
     """
+    default = default_fill_value(func, np.float64)
+    if fill_value == default or (fill_value != fill_value and default != default):
+        pytest.skip("the fill value is the default of the function - the sweep runs this call")
+
     labels, a = block.group_idx, block.a
     kwargs = {"func": func, "size": block.size, "fill_value": fill_value}
     try:
@@ -561,6 +594,35 @@ def test_the_fill_value_matches_the_group_loop(impl, func, fill_value, block):
             impl.aggregate(labels, a, **kwargs)
     else:
         assert_same_result(impl.aggregate(labels, a, **kwargs), want, func)
+
+
+def test_a_callable_of_the_caller_fills_the_absent_group_like_its_result(impl):
+    """the fill of a callable of the caller's own follows the dtype of the
+    result, not the one of the values.
+
+    A callable may answer floats for integer values - the backends do - and
+    an absent group then takes the nan of the generic rule, like it does for
+    the floating input.  The dtype the caller asks for decides where the
+    result cannot hold the nan: an integer result is filled with 0.
+    """
+    group_idx = np.array([0, 0, 2, 2])  # group 1 is never named
+
+    def total(x):
+        return float(np.sum(x))
+
+    for values in (np.array([1, 2, 4, 8]), np.array([1.0, 2.0, 4.0, 8.0])):
+        res = np.asarray(impl.aggregate(group_idx, values, func=total))
+        expected = default_fill_value(total, res.dtype)
+        if expected != expected:
+            assert res[1] != res[1]
+        else:
+            assert res[1] == expected
+
+    # the dtype of the caller is the one the fill has to fit - the pure
+    # python implementation carries no dtype at all, so it is not asked
+    if not is_purepy(impl):
+        res = np.asarray(impl.aggregate(group_idx, np.array([1.0, 2.0, 4.0, 8.0]), func=total, dtype=np.int64))
+        assert res[1] == 0
 
 
 def test_the_arg_reductions_name_a_position_in_the_input(impl):

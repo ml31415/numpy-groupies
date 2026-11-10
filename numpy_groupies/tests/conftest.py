@@ -21,8 +21,12 @@ class Block(typing.NamedTuple):
 
     ``group_idx`` labels ``a``; ``a_nans`` and ``a_complex`` are the same
     positions with nans in them, the latter of a nan in one, in the other or in
-    both of its parts.  ``size`` names two groups more than the labels use, so
-    that an absent group is part of every comparison.
+    both of its parts.  ``a_ints``, ``a_ints8`` and ``a_uints`` are integer
+    values of three dtypes - the wide signed one, the narrow signed one, whose
+    dtype the reductions that keep the values of the group preserve, and the
+    narrow unsigned one, whose sums and products the dtype ladder widens.
+    ``size`` names two groups more than the labels use, so that an absent group
+    is part of every comparison.
     """
 
     group_idx: npt.NDArray[np.integer]
@@ -30,6 +34,9 @@ class Block(typing.NamedTuple):
     a: npt.NDArray[np.number]
     a_nans: npt.NDArray[np.floating]
     a_complex: npt.NDArray[np.complexfloating]
+    a_ints: npt.NDArray[np.integer]
+    a_ints8: npt.NDArray[np.integer]
+    a_uints: npt.NDArray[np.integer]
 
 
 @pytest.fixture(params=_implementations, ids=impl_name)
@@ -135,14 +142,25 @@ def block(request):
     a_complex[eight[:6]] = kinds * 2
     a_complex[eight[6:]] = (1 + 1j) * a[eight[6:]]  # ... and plain values among them
 
+    # the integer values: small ones, so the products of the biggest group fit
+    # the wide integer whatever the dtype they are carried in - the sums and
+    # the products of the narrow dtypes are exact all the same, and no wrap of
+    # a narrow dtype can make the backends disagree about the values
+    a_ints = rng.integers(-2, 3, group_idx.size)  # the wide signed dtype
+    a_ints8 = rng.integers(-2, 3, group_idx.size).astype(np.int8)  # the narrow signed one
+    a_uints = rng.integers(0, 5, group_idx.size).astype(np.uint8)  # the narrow unsigned one
+
     block = Block(
         group_idx=group_idx,
         size=14,  # labels 12 and 13 name no value at all
         a=a,
         a_nans=a_nans,
         a_complex=a_complex,
+        a_ints=a_ints,
+        a_ints8=a_ints8,
+        a_uints=a_uints,
     )
-    for array in (group_idx, a, a_nans, a_complex):
+    for array in (group_idx, a, a_nans, a_complex, a_ints, a_ints8, a_uints):
         array.setflags(write=False)
     return block
 
@@ -174,10 +192,22 @@ def scaled_block(block, n_values):
     """
     repeats = -(-n_values // block.group_idx.size)
     group_idx = np.tile(block.group_idx, repeats)[:n_values]
-    a, a_nans, a_complex = (np.tile(values, repeats)[:n_values] for values in (block.a, block.a_nans, block.a_complex))
-    for array in (group_idx, a, a_nans, a_complex):
+    a, a_nans, a_complex, a_ints, a_ints8, a_uints = (
+        np.tile(values, repeats)[:n_values]
+        for values in (block.a, block.a_nans, block.a_complex, block.a_ints, block.a_ints8, block.a_uints)
+    )
+    for array in (group_idx, a, a_nans, a_complex, a_ints, a_ints8, a_uints):
         array.setflags(write=False)
-    return Block(group_idx=group_idx, size=block.size, a=a, a_nans=a_nans, a_complex=a_complex)
+    return Block(
+        group_idx=group_idx,
+        size=block.size,
+        a=a,
+        a_nans=a_nans,
+        a_complex=a_complex,
+        a_ints=a_ints,
+        a_ints8=a_ints8,
+        a_uints=a_uints,
+    )
 
 
 def pytest_collection_modifyitems(config, items):
