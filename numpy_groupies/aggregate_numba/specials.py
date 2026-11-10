@@ -681,8 +681,12 @@ _NS_PER_VALUE_SORT = 68.0
 # better than the border - the work of the median and a sweep over the block
 _NS_PER_VALUE_TOPK = 24.0
 # the mode: the hash table of the distinct count, the counts kept and the
-# best value tracked besides
-_NS_PER_VALUE_MODE = 24.0
+# best value tracked besides.  Measured with the tool of the benchmarks:
+# 19.5 and 20.4 ns a value in two runs, against the 18.1 and 18.6 the same
+# runs measured for the distinct count - whose 19.0 the package carries.
+# The same ratio brings the mode to the 21.0 of the machine of
+# ``docs/benchmarks.md``.
+_NS_PER_VALUE_MODE = 21.0
 
 
 def _median_driver_factory(nans: bool, ticks: bool = False) -> Any:
@@ -1728,17 +1732,25 @@ def _mode_group(
                 seen = slot_counts[h]
                 break
             h = (h + 1) & mask
-        # a tie keeps the value that is held: only a strictly higher count
-        # takes the answer over, and so does a count that is even with a
-        # smaller value - the smallest of the most frequent ones wins
-        if seen > best_count or (seen == best_count and complex_less(v, best_value)):
+        # the value takes the answer over when it is more frequent than the
+        # one that holds it, and a count that is even with a smaller value
+        # takes it as well - the smallest of the most frequent ones wins.
+        # A value that is equal to the one that holds the answer leaves it
+        # alone: the answer is the first of the equal values, so a zero
+        # keeps the sign it came with - the numpy backend orders the values
+        # of the group and takes the first of the longest run, and the two
+        # have to agree on the sign of a zero as well.
+        if seen > best_count:
             best_count = seen
+            if v != best_value:
+                best_value = v
+        elif seen == best_count and complex_less(v, best_value):
             best_value = v
     if best_count > 0:
         out[g] = best_value
 
 
-def _mode_driver_factory(nans: bool) -> Any:
+def _mode_driver_factory() -> Any:
     """The driver of the mode: the values are placed group by group with the
     counting sort, and the most frequent value of every block is counted in a
     hash table - which needs no ordering of the values and so is linear in
@@ -1772,7 +1784,7 @@ def _mode_driver_factory(nans: bool) -> Any:
     return njit_stable(driver, name="mode_driver")
 
 
-def _mode_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Any:
+def _mode_mt_factory(driver: Callable[..., npt.NDArray[np.number]]) -> Any:
     """The parallel passes of the mode: the groups cut into ranges.
 
     The one thing the shape needs that the median does not is a hash table of
@@ -1818,8 +1830,9 @@ def _mode_mt_factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) 
 
 mode = build_custom_kernel(
     "mode",
-    driver_factory=_mode_driver_factory,
-    mt_driver_factory=_mode_mt_factory,
+    # the mode has no nan variant: the missing values are in no selection
+    driver_factory=lambda nans: _mode_driver_factory(),
+    mt_driver_factory=lambda nans, driver: _mode_mt_factory(driver),
     rule=rule_same,
     fill_default=nan,
     nans=False,

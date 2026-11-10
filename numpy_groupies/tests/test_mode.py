@@ -96,6 +96,25 @@ def test_the_mode_of_the_temporal_values(impl):
     np.testing.assert_array_equal(answer, np.array(["2011-01-01", "2011-01-05"], dtype="datetime64[s]"))
 
 
+@pytest.mark.parametrize(
+    "values", [[-0.0, 0.0], [0.0, -0.0], [-0.0, 0.0, 0.0]], ids=["minus-first", "plus-first", "three"]
+)
+def test_the_sign_of_a_zero_is_the_sign_of_the_first_one(impl, values):
+    """A zero of a group keeps the sign of the first zero of the group.
+
+    The two zeros are the same value - ``0.0 == -0.0`` - and every backend
+    answers the one of them, but the sign of the answer is the sign of the
+    first zero the group holds.  The numpy backend orders the values of the
+    group and takes the first of the longest run, the numba one counts them
+    in its hash table - where the two zeros share their slot - and the pure
+    python one counts them in its dict, which keeps the first key.
+    """
+    group_idx = np.zeros(len(values), dtype=int)
+    a = np.array(values)
+    answer = np.asarray(impl.aggregate(group_idx, a, func="mode"))
+    assert np.signbit(answer[0]) == np.signbit(a[0])
+
+
 def test_the_mode_of_the_package_is_the_one_of_the_best_implementation():
     import numpy_groupies.aggregate_numpy as npgn
 
