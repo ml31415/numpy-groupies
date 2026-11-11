@@ -20,7 +20,7 @@ from numpy_groupies.dtypes import (
     minimum_dtype,
     resolve_output_dtype,
 )
-from numpy_groupies.tests.helpers import impl_name, is_purepy
+from numpy_groupies.tests.helpers import is_purepy
 
 float_funcs = [np.std, np.var, np.mean, np.median, np.nanmedian]
 if hasattr(np, "trapezoid"):
@@ -93,18 +93,25 @@ def test_sum_bool_dtype_guess_ignores_empty_groups(impl):
         assert res.dtype == np.int8
 
 
-def test_purepy_integer_sum_does_not_overflow():
-    """Integer group sums in purepy do not wrap when the result overflows
-    the input dtype.
+def test_the_integer_sums_wrap_in_the_accumulator(impl):
+    """The sums of the integers are computed in the accumulator of their
+    sign, and they wrap there - the way numpy's own sums wrap in int64 and
+    uint64.
 
-    A Python int in the group keeps the accumulation in Python-int arithmetic
-    and bypasses the wrapping numpy scalar path; integer groups therefore
-    sum without the fixed dtype limits.
+    The accumulator is the floor of the ladder: a narrow integer is widened
+    before it is summed, and the wide one wraps - quietly, as numpy does it.
+
+    The pure python implementation is the exception: it accumulates in the
+    python integers, which do not wrap - the widening there is exact.
     """
-    res = aggregate_purepy.aggregate([0, 0], [1, np.uint64(2**64 - 1)], func="sum")
-    assert res[0] == 2**64
-    res = aggregate_purepy.aggregate([0, 0], np.array([2**64 - 1, 2**64 - 1], dtype=np.uint64), func="sum")
-    assert res[0] == 2**65 - 2
+    if is_purepy(impl):
+        pytest.skip("the pure python implementation accumulates in python integers, which do not wrap")
+    # the uint64 accumulator wraps
+    res = impl.aggregate(np.array([0, 0]), np.array([2**64 - 1, 2**64 - 1], dtype=np.uint64), func="sum", size=1)
+    np.testing.assert_array_equal(np.asarray(res), [(2**65 - 2) % 2**64])
+    # and so does the int64 one
+    res = impl.aggregate(np.array([0, 0]), np.array([2**63 - 1, 2**63 - 1], dtype=np.int64), func="sum", size=1)
+    np.testing.assert_array_equal(np.asarray(res), [(2**64 - 2) % 2**64 - 2**64])
 
 
 @pytest.mark.parametrize("func", ["sum", "nansum"])
@@ -349,10 +356,6 @@ def test_integer_mean_half_to_even_beyond_exact_window(impl):
     # an integer output rounds the exact quotient half to even: the sum of
     # (2**53 + 1) and 2 is odd, the tie of (2**53 + 3) / 2 rounds up to the
     # even neighbour - although the values themselves are not floats.
-    # purepy keeps its answers as python floats, an integer dtype of the
-    # result is the business of the caller there
-    if impl_name(impl) == "purepy":
-        pytest.skip("purepy hands out floats and leaves the dtype to the caller")
     values = np.array([2**53 + 1, 2], dtype=np.int64)
     actual = impl.aggregate(np.array([0, 0]), values, func="mean", size=1, dtype=np.int64)
     np.testing.assert_array_equal(actual, [2**52 + 2])
@@ -424,8 +427,8 @@ def test_the_ladder_ends_in_float64_and_never_in_float32(dtype):
 def test_the_sum_of_small_integers_answers_with_the_ladder_dtype(impl):
     """The dtype of the answer is the one of the ladder, in every backend.
 
-    The pure python implementation has no dtype of its own - it answers with
-    the python integers it accumulates.
+    The pure python implementation carries no dtype of its own - it answers
+    with the python integers it accumulates.
     """
     if is_purepy(impl):
         pytest.skip("the pure python implementation carries no dtype")

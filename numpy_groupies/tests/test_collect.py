@@ -14,7 +14,7 @@ import itertools
 import numpy as np
 import pytest
 
-from numpy_groupies.tests.helpers import assert_same_result, is_purepy
+from numpy_groupies.tests.helpers import assert_same_result
 from numpy_groupies.tests.reference import aggregate_ref
 
 
@@ -92,9 +92,7 @@ def test_collecting_keeps_the_dtype(impl):
     a = np.array([1.5, 2.5, 3.5], dtype=np.float16)
     res = impl.aggregate(group_idx, a, func="array")
     np.testing.assert_array_equal(res[0], [1.5, 2.5])
-    if not is_purepy(impl):
-        # the pure python implementation carries no dtype at all
-        assert res[0].dtype == np.float16
+    assert np.asarray(res[0]).dtype == np.float16
 
 
 def test_collecting_keeps_the_widest_float(impl):
@@ -105,8 +103,7 @@ def test_collecting_keeps_the_widest_float(impl):
     a = np.array([1.5, 2.5, 3.5], dtype=np.longdouble)
     res = impl.aggregate(group_idx, a, func="array")
     np.testing.assert_array_equal(res[0], [1.5, 2.5])
-    if not is_purepy(impl):
-        assert res[0].dtype == np.longdouble
+    assert np.asarray(res[0]).dtype == np.longdouble
 
 
 @pytest.mark.parametrize("values", ["a_nans", "a_complex"], ids=["nan", "complex"])

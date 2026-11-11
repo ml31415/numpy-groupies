@@ -53,16 +53,19 @@ def impl(request):
 
 @pytest.fixture
 def skip_purepy(impl):
-    """The pure python backend knows no datetime64 or timedelta64 values.
+    """The pure python backend computes no temporal arithmetic.
 
-    It answers some of them - the order reductions compare the values - and
-    it cannot answer the others, so the temporal tests leave it out.  The
+    It answers the temporal values that are only ordered - the extrema, the
+    first and the last, the sorted values, the topk and the mode - and it
+    refuses the rest the way numpy refuses it, but the arithmetic of the
+    durations and the moments of the timestamps run on their ticks, and that
+    is not what this backend does.  The temporal tests leave it out.  The
     fixture is not autouse: it would ask for the backend of every test of
     the suite, and the tests that ask for no backend at all would run three
     times over for nothing.
     """
     if impl_name(impl) == "purepy":
-        pytest.skip("the pure python backend knows no datetime64 or timedelta64 values")
+        pytest.skip("the pure python backend computes no temporal arithmetic")
 
 
 @pytest.fixture(scope="module")

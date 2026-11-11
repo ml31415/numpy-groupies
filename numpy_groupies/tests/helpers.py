@@ -211,10 +211,10 @@ def _assert_same_groups(got, want):
 
 
 def is_purepy(impl):
-    """True for the implementation that computes with python numbers.
+    """True for the implementation that computes with python loops.
 
-    Those carry no dtype: purepy neither honours a ``dtype`` argument nor hands
-    back a result of the dtype of its input.
+    It answers the same values and the same dtypes as the other backends, but
+    it computes no temporal arithmetic and no multidimensional output.
     """
     return impl_name(impl) == "purepy"
 

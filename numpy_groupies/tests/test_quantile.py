@@ -10,7 +10,6 @@ computes one group at a time.
 import numpy as np
 import pytest
 
-from numpy_groupies.aggregate_purepy import aggregate as aggregate_purepy
 from numpy_groupies.tests.helpers import assert_matches_the_group_loop_values
 from numpy_groupies.tests.reference import aggregate_ref
 
@@ -78,12 +77,6 @@ def test_an_unknown_interpolation_method_is_refused(impl, block):
         impl.aggregate(block.group_idx, block.a, func="quantile", q=0.5, method="cubic", size=block.size)
 
 
-def test_the_pure_python_backend_says_that_it_does_not_know_the_quantile(block):
-    """The pure python implementation does not do the quantile, and says so."""
-    with pytest.raises(NotImplementedError, match="quantile"):
-        aggregate_purepy(block.group_idx, block.a, func="quantile", q=0.5, size=block.size)
-
-
 def test_the_quantile_of_a_complex_group_keeps_the_complex_dtype(impl, block):
     """The complex groups are ordered lexicographically, like the median orders them.
 
@@ -100,6 +93,6 @@ def test_the_quantile_of_integer_values_is_a_float(impl):
     """The quantile of integers is a float, as it is in numpy."""
     group_idx = np.array([0, 0, 0, 1, 1])
     a = np.array([1, 2, 3, 4, 5], dtype=np.int8)
-    got = impl.aggregate(group_idx, a, func="quantile", q=0.5, size=2)
+    got = np.asarray(impl.aggregate(group_idx, a, func="quantile", q=0.5, size=2))
     assert got.dtype == np.float64
     np.testing.assert_allclose(got, [2.0, 4.5])
