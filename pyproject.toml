@@ -91,8 +91,9 @@ omit = ["numpy_groupies/benchmarks/*"]
 addopts = "-n auto --dist loadgroup"
 
 [tool.ruff.lint]
-# relative imports are not used anywhere in the package
-extend-select = ["TID252"]
+# relative imports are not used anywhere in the package, and the imports of a
+# module belong at its top - a local import hides where a name comes from
+extend-select = ["TID252", "PLC0415"]
 ignore = [
     "B008", # np.dtype defaults in signatures are immutable singletons
     "PLR0124", # val != val is the idiomatic NaN check
@@ -110,6 +111,11 @@ write_to = "numpy_groupies/_version.py"
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "numpy_groupies/benchmarks/*" = ["B023"] # closures are invoked immediately within the loop
+# the imports below are the ones the tests are about
+"numpy_groupies/tests/test_backend_names.py" = ["PLC0415"] # the old paths of the modules
+# the validation module is loaded before numpy is known to be there, so it
+# imports it where it is needed
+"numpy_groupies/validation.py" = ["PLC0415"]
 
 [tool.codespell]
 ignore-words-list = "nd,"

@@ -22,6 +22,7 @@ computation per group.
 
 import pytest
 
+from numpy_groupies.npg_numba import mt
 from numpy_groupies.tests.helpers import (
     SWEEP_SIZES,
     assert_matches_the_group_loop,
@@ -84,7 +85,6 @@ def test_the_big_data_reaches_the_parallel_path(block):
     of them, the sweep would measure the sequential path twice and call it
     the parallel one.
     """
-    from numpy_groupies.aggregate_numba import mt
 
     n_values = SWEEP_SIZES["large"]
     # the groups of the block - the scaled block of the sweep has the same

@@ -6,13 +6,21 @@ numpy, because the pure python implementation is loaded before numpy is
 known to be available.
 """
 
+import ast
+import inspect
+import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import get_args
 
 import numpy as np
 import pytest
 
+import numpy_groupies
+import numpy_groupies as npg
+from numpy_groupies import functions, validation
 from numpy_groupies.driver import aliasing
+from numpy_groupies.npg_numpy.ops import _op_dict
 from numpy_groupies.registry import (
     FuncName,
     Registry,
@@ -24,7 +32,12 @@ from numpy_groupies.registry import (
     function_names,
     resolve_name,
 )
-from numpy_groupies.tests.helpers import aliasing_of, assert_same_result, is_supported
+from numpy_groupies.tests.helpers import (
+    aliasing_of,
+    assert_same_result,
+    impl_name,
+    is_supported,
+)
 
 
 def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():
@@ -155,25 +168,21 @@ def test_the_functions_that_hold_a_none_match_the_registry():
     fill values knows every function of the package.  The two have to agree,
     or a function would be filled with a None its result cannot hold.
     """
-    from numpy_groupies import functions, validation
 
     assert validation.NONE_RESULT_FUNCTIONS == frozenset({"array"})
     assert frozenset(functions.default_fill_values) - validation.NONE_RESULT_FUNCTIONS
 
 
-def test_every_function_of_the_package_has_an_entry_point_on_every_backend():
+def test_every_function_of_the_package_has_an_entry_point_on_every_backend(impl):
     """Every function is reachable by its name, on every backend.
 
     The entry points of a backend are the functions of ``funcs_common`` and
     their nan-variants - so the list has to name every function of the
     package, or a function is reachable only through the ``func`` argument.
     """
-    from numpy_groupies import aggregate_numba, aggregate_numpy, aggregate_purepy
-    from numpy_groupies.aggregate_numpy.ops import _op_dict
 
-    for backend in (aggregate_numpy, aggregate_numba, aggregate_purepy):
-        for name in _op_dict:
-            assert hasattr(backend, name), f"{backend!r} has no entry point for {name}"
+    for name in _op_dict:
+        assert hasattr(impl._module, name), f"the {impl_name(impl)} backend has no entry point for {name}"
 
 
 def _the_support_matrix_of_the_docs():
@@ -183,16 +192,19 @@ def _the_support_matrix_of_the_docs():
     and the backend that answers it - and a function that a backend has
     learned since the table was written is a hole in the table.
     """
-    import re
-    from pathlib import Path
-
     docs = Path(__file__).parents[2] / "docs" / "functions.md"
     if not docs.exists():  # pragma: no cover - the docs are not in the wheel
         pytest.skip("the docs are not there")
+    columns = []
     rows = []
     for line in docs.read_text().splitlines():
         match = re.match(r"\|\s*`([^`]+)`\s*\|\s*(x|-)\s*\|\s*(x|-)\s*\|\s*(x|-)\s*\|", line)
         if match is None:
+            if not columns:
+                # the head of the table names the backends in its columns
+                head = re.match(r"\|\s*Function\s*\|(.+)\|", line)
+                if head and "numba" in head.group(1):
+                    columns = [name.strip() for name in head.group(1).split("|")]
             continue
         names, numpy, numba, purepy = match.groups()
         if "…" in names or "variants" in names:
@@ -201,30 +213,26 @@ def _the_support_matrix_of_the_docs():
             continue
         rows.append((tuple(n.strip() for n in names.split(",")), numpy, numba, purepy))
     assert rows, "the table of the supported functions is not in the docs"
-    return rows
+    return columns, rows
 
 
-def test_the_support_matrix_of_the_docs_agrees_with_the_backends():
+def test_the_support_matrix_of_the_docs_agrees_with_the_backends(impl):
     """The table of the docs says what every backend answers - and it is right.
 
     A function that a backend has learned since the table was written is a
     hole in the table: the docs would send the reader to a backend that
     refuses the function.
     """
-    from numpy_groupies import aggregate_numba, aggregate_numpy, aggregate_purepy
+    columns, rows = _the_support_matrix_of_the_docs()
+    # the columns of the table name the backends
+    columns_of_the_backends = {"numpy": "numpy", "numba": "numba", "purepy": "pure python"}
+    name_of_the_backend = impl_name(impl)
+    column = columns.index(columns_of_the_backends[name_of_the_backend])
 
-    backends = {
-        "numpy": aggregate_numpy,
-        "numba": aggregate_numba,
-        "purepy": aggregate_purepy,
-    }
-    for names, *marks in _the_support_matrix_of_the_docs():
+    for names, *marks in rows:
         for name, mark in zip(names, marks):
-            for backend, mark_of_backend in zip(backends.values(), marks):
-                if backend is aggregate_numba and aggregate_numba is None:
-                    continue
-                supported = is_supported(backend, name)
-                assert supported == (mark_of_backend == "x"), f"{name} and the {backend.__name__} backend"
+            supported = is_supported(impl, name)
+            assert supported == (marks[column] == "x"), f"{name} and the {name_of_the_backend} backend"
 
 
 def test_the_list_of_the_functions_names_every_function_of_the_package():
@@ -234,7 +242,6 @@ def test_the_list_of_the_functions_names_every_function_of_the_package():
     nan-variants are added to it, so a function is named by the one it skips
     the nans of.
     """
-    from numpy_groupies.aggregate_numpy.ops import _op_dict
 
     names = set(funcs_common)
     for name in _op_dict:
@@ -244,20 +251,17 @@ def test_the_list_of_the_functions_names_every_function_of_the_package():
     assert {"cumprod", "cummax", "cummin"} <= names
 
 
-def test_the_package_carries_the_functions_of_the_best_implementation():
+def test_the_package_carries_the_functions_of_the_best_implementation(impl):
     """Every function of the package is a name of the package itself.
 
     ``npg.mean(group_idx, a)`` is the mean of every group, computed by the
     best implementation available - and every backend has a name of its own,
     so that the implementation can be chosen explicitly.
     """
-    import numpy_groupies as npg
-    from numpy_groupies import aggregate_numpy, aggregate_purepy
 
     for name in funcs_common:
         assert hasattr(npg, name), f"the package has no {name}"
-        assert hasattr(aggregate_numpy, name), f"the numpy backend has no {name}"
-        assert hasattr(aggregate_purepy, name), f"the pure python backend has no {name}"
+        assert hasattr(impl._module, name), f"the {impl_name(impl)} backend has no {name}"
 
 
 def test_every_function_of_the_package_is_declared_for_the_type_checker():
@@ -269,11 +273,6 @@ def test_every_function_of_the_package_is_declared_for_the_type_checker():
     the same: a function the type checker does not know is one the caller
     cannot use without an error.
     """
-    import ast
-    import inspect
-
-    import numpy_groupies
-
     tree = ast.parse(inspect.getsource(numpy_groupies))
     declared = {
         node.target.id
@@ -287,20 +286,17 @@ def test_every_function_of_the_package_is_declared_for_the_type_checker():
     assert declared == set(function_names())
 
 
-def test_the_package_carries_every_function_of_the_registry():
+def test_the_package_carries_every_function_of_the_registry(impl):
     """Every function of the registry is a name of the package itself.
 
     The nan variants are functions of the package, too - they are named by the
     function they skip the nans of, and the entry points are built out of the
     names of the registry.
     """
-    import numpy_groupies as npg
-    from numpy_groupies import aggregate_numpy, aggregate_purepy
 
     for name in function_names():
         assert hasattr(npg, name), f"the package has no {name}"
-        assert hasattr(aggregate_numpy, name), f"the numpy backend has no {name}"
-        assert hasattr(aggregate_purepy, name), f"the pure python backend has no {name}"
+        assert hasattr(impl._module, name), f"the {impl_name(impl)} backend has no {name}"
 
 
 @pytest.mark.parametrize("name", sorted(function_names()))
@@ -311,7 +307,6 @@ def test_the_entry_point_of_the_package_answers_as_its_function(name):
     points of the backend - so the name in the package and the function of the
     aggregation have to be one and the same.
     """
-    import numpy_groupies as npg
 
     group_idx = np.array([0, 0, 1, 1, 1])
     a = np.array([1.0, 3.0, 5.0, 7.0, 9.0])
@@ -340,7 +335,6 @@ def test_the_entry_point_passes_the_arguments_of_its_function(name, kwargs):
     The entry point of the package takes the arguments of its function - the
     ``ddof`` of the variance, the ``q`` of the quantile - and hands them on.
     """
-    import numpy_groupies as npg
 
     group_idx = np.array([0, 0, 1, 1, 1])
     a = np.array([1.0, 3.0, 5.0, 7.0, 9.0])

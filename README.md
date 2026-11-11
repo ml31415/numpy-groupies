@@ -86,7 +86,7 @@ npg.aggregate(np.array([0, 1, 0, 1, 0]), np.array([1, 2, 3, 4, 5]), func="cumsum
 **Custom functions.** Any callable works. Non-numeric output needs `dtype=object`, and since the default fill value of a custom function cannot be guessed, give one explicitly. Use the NumPy implementation for this: Numba can only compile numeric functions, so with Numba installed the plain `aggregate` fails on the string example below — and it compiles *functions*, so a callable object (a `functools.partial`, a dataclass with `__call__`) is for the NumPy implementation as well.
 
 ```python
-import numpy_groupies.aggregate_numpy as npg
+import numpy_groupies.npg_numpy as npg
 
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
@@ -99,7 +99,7 @@ npg.aggregate(group_idx, a, func=lambda x: " or ".join(map(str, x)), fill_value=
 ```python
 import numba as nb
 import numpy as np
-import numpy_groupies.aggregate_numba as npg
+import numpy_groupies.npg_numba as npg
 
 @nb.njit
 def zscore(group_idx, a):
@@ -196,7 +196,7 @@ npg.quantile(group_idx, a, q=0.9)   # the same as func="quantile", q=0.9
 The same names are the attributes of the module of every implementation, so an implementation can be chosen and used the same way:
 
 ```python
-import numpy_groupies.aggregate_numpy as npg
+import numpy_groupies.npg_numpy as npg
 npg.mean(group_idx, a)              # the numpy implementation
 ```
 
@@ -233,9 +233,9 @@ npg.purge_cache()   # the compiled kernels are gone, the next call compiles them
 `from numpy_groupies import aggregate` picks the best available implementation: **numba** if installed, otherwise **numpy**. Every implementation is a module of its own, and it is called through its `aggregate` — its functions are its attributes as well:
 
 ```python
-import numpy_groupies.aggregate_numba as npg   # numba
-import numpy_groupies.aggregate_numpy as npg   # numpy
-import numpy_groupies.aggregate_purepy as npg  # pure python
+import numpy_groupies.npg_numba as npg   # numba
+import numpy_groupies.npg_numpy as npg   # numpy
+import numpy_groupies.npg_purepy as npg  # pure python
 
 npg.aggregate(group_idx, a, func="mean")  # the aggregate of that implementation
 npg.mean(group_idx, a)                    # one of its functions
@@ -251,6 +251,12 @@ from numpy_groupies import aggregate_np as aggregate  # numpy
 from numpy_groupies import aggregate_py as aggregate  # pure python
 ```
 
+The modules had their names before as well, and the package still carries them: `aggregate_numpy` is `npg_numpy`, `aggregate_numba` is `npg_numba` and `aggregate_purepy` is `npg_purepy`.
+
+```python
+from numpy_groupies import aggregate_numpy as npg  # the same as npg_numpy
+```
+
 All implementations share the calling syntax and produce the same results up to floating-point error, but some support only a subset of functions and raise `NotImplementedError` otherwise.
 
 | Implementation | Needs        | Notes |
@@ -262,7 +268,7 @@ All implementations share the calling syntax and produce the same results up to 
 | pandas         | numpy, pandas | For benchmarking only: wraps `groupby` (in `numpy_groupies.benchmarks`). Skips NaN even in the plain functions (except `median`, `quantile`, `cumsum`). |
 | polars         | numpy, polars | For benchmarking only: wraps `group_by` (in `numpy_groupies.benchmarks`). |
 
-> **Gotchas:** with Numba installed, custom callables must be Numba-compilable (numeric code). For the cases that are not, call the NumPy implementation: `import numpy_groupies.aggregate_numpy as npg`, then `npg.aggregate(group_idx, a, func=my_callable)`.
+> **Gotchas:** with Numba installed, custom callables must be Numba-compilable (numeric code). For the cases that are not, call the NumPy implementation: `import numpy_groupies.npg_numpy as npg`, then `npg.aggregate(group_idx, a, func=my_callable)`.
 
 ## Performance
 

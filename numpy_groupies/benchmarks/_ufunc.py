@@ -107,7 +107,7 @@ def _prod(
     fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.generic]:
-    """Same as aggregate_numpy.py"""
+    """Same as the numpy implementation."""
     dtype = minimum_dtype_scalar(fill_value, dtype, a)
     ret = np.full(size, fill_value, dtype=dtype)
     if fill_value != 1:
@@ -123,7 +123,7 @@ def _min(
     fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.generic]:
-    """Same as aggregate_numpy.py"""
+    """Same as the numpy implementation."""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmax = maxval(fill_value, dtype)
     with np.errstate(invalid="ignore"):
@@ -142,7 +142,7 @@ def _max(
     fill_value: AFillValue,
     dtype: np.dtype | None = None,
 ) -> npt.NDArray[np.generic]:
-    """Same as aggregate_numpy.py"""
+    """Same as the numpy implementation."""
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     dmin = minval(fill_value, dtype)
     with np.errstate(invalid="ignore"):
@@ -208,7 +208,7 @@ def aggregate(
 
 aggregate.__doc__ = (
     """
-    Unlike ``aggregate_numpy``, which in most cases does some custom
+    Unlike ``aggregate_np``, which in most cases does some custom
     optimisations, this version simply uses ``numpy``'s ``ufunc.at``.
 
     With numpy 1.25 the performance of ``ufunc.at`` improved substantially,

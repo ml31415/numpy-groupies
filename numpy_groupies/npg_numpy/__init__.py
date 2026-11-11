@@ -14,16 +14,16 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numpy.collect import blocks_to_object_array
-from numpy_groupies.aggregate_numpy.gather import unpack
-from numpy_groupies.aggregate_numpy.ops import _dispatch
-from numpy_groupies.aggregate_numpy.steps import step_count, step_indices
 from numpy_groupies.driver import _aggregate_wrap
 from numpy_groupies.fills import DEFAULT_FILL_VALUE
 from numpy_groupies.functions import (
     aggregate_common_doc,
     bind_functions,
 )
+from numpy_groupies.npg_numpy.collect import blocks_to_object_array
+from numpy_groupies.npg_numpy.gather import unpack
+from numpy_groupies.npg_numpy.ops import _dispatch
+from numpy_groupies.npg_numpy.steps import step_count, step_indices
 from numpy_groupies.registry import (
     FuncName,
     function_names,

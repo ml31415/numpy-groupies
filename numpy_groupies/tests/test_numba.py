@@ -5,6 +5,7 @@ cache from growing from run to run.
 """
 
 import importlib
+import inspect
 import os
 import pkgutil
 import re
@@ -19,12 +20,12 @@ import pytest
 from numba.core.dispatcher import Dispatcher
 from numba.core.serialize import dumps
 
-from numpy_groupies import aggregate_numba, uaggregate
-from numpy_groupies.aggregate_numba import aggregate, ops
-from numpy_groupies.aggregate_numba.gather import _gather_1d
-from numpy_groupies.aggregate_numba.jit import _ProcessSafeCacheFile, njit_stable
-from numpy_groupies.aggregate_numba.ops import _dispatch
+from numpy_groupies import npg_numba, uaggregate
 from numpy_groupies.dtypes import resolve_output_dtype
+from numpy_groupies.npg_numba import aggregate, averaging, ops
+from numpy_groupies.npg_numba.gather import _gather_1d
+from numpy_groupies.npg_numba.jit import _OVERLOADS, _ProcessSafeCacheFile, njit_stable
+from numpy_groupies.npg_numba.ops import _dispatch
 
 
 @pytest.fixture(
@@ -177,7 +178,7 @@ def test_errors_match_slow_path(args, kwargs):
     with pytest.raises(Exception) as fast_exc:
         aggregate(group_idx, a, **kwargs)
     with pytest.raises(Exception) as slow_exc:
-        aggregate_numba.aggregate(group_idx, a, **kwargs)
+        npg_numba.aggregate(group_idx, a, **kwargs)
 
     assert type(fast_exc.value) is type(slow_exc.value)
     assert str(fast_exc.value) == str(slow_exc.value)
@@ -243,7 +244,7 @@ def test_numba_callable_cache_construction(monkeypatch):
     monkeypatch.setattr(ops, "build_generic_aggregate", counting)
 
     for _ in range(3):
-        aggregate_numba.aggregate(group_idx, a, func=func)
+        npg_numba.aggregate(group_idx, a, func=func)
 
     # the loop is built once and reused - the cache of the backend is bounded
     # and holds it (dict.setdefault used to build it on every call)
@@ -468,16 +469,16 @@ def _walk_dispatchers():
             for item in obj.values():
                 push(item)
 
-    queue = [aggregate_numba] + [
-        importlib.import_module(f"numpy_groupies.aggregate_numba.{name}")
-        for _, name, _ in sorted(pkgutil.iter_modules(aggregate_numba.__path__))
+    queue = [npg_numba] + [
+        importlib.import_module(f"numpy_groupies.npg_numba.{name}")
+        for _, name, _ in sorted(pkgutil.iter_modules(npg_numba.__path__))
     ]
     while queue:
         item = queue.pop(0)
         if isinstance(item, ModuleType):
             # only the modules of this backend - the names a module imports
             # are followed as values, they are not walked as namespaces
-            if not item.__name__.startswith("numpy_groupies.aggregate_numba"):
+            if not item.__name__.startswith("numpy_groupies.npg_numba"):
                 continue
             queue.extend(value for _, value in sorted(vars(item).items()))
             continue
@@ -556,7 +557,7 @@ def test_the_identity_of_a_dispatcher_is_the_same_in_every_process(tmp_path):
     """
     script = tmp_path / "probe_identity.py"
     script.write_text(
-        "from numpy_groupies.aggregate_numba.jit import njit_stable\n"
+        "from numpy_groupies.npg_numba.jit import njit_stable\n"
         "\n"
         "def build():\n"
         "    def helper(x):\n"
@@ -601,8 +602,6 @@ def test_the_overload_implementations_are_registered():
     The registry is what lets the identity of a dispatcher cover the body of
     the implementation it reaches.
     """
-    from numpy_groupies.aggregate_numba import averaging
-    from numpy_groupies.aggregate_numba.jit import _OVERLOADS
 
     for stub in (averaging._track_extrema, averaging._mean_limit_check, averaging._span_limit_check):
         assert stub in _OVERLOADS, stub
@@ -616,11 +615,6 @@ def test_the_identity_of_a_dispatcher_covers_the_overload_it_reaches(monkeypatch
     and the caller says nothing of the body of the implementation in its own
     source, so the identity has to cover it separately.
     """
-    import inspect
-
-    from numpy_groupies.aggregate_numba import averaging
-    from numpy_groupies.aggregate_numba.jit import njit_stable
-
     plain = njit_stable(averaging._std_combine)._uuid
     original = inspect.getsource
 
@@ -643,11 +637,6 @@ def test_the_identity_of_a_dispatcher_covers_a_nested_overload(monkeypatch):
     itself says nothing of either body in its own source, so the walk of the
     identity has to follow the implementations it finds.
     """
-    import inspect
-
-    from numpy_groupies.aggregate_numba import averaging
-    from numpy_groupies.aggregate_numba.jit import njit_stable
-
     plain = njit_stable(averaging._std_update)._uuid
     original = inspect.getsource
 

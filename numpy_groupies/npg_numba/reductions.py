@@ -8,7 +8,7 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import (
+from numpy_groupies.npg_numba.compose import (
     _fill_differs,
     build_custom_kernel,
     build_kernel,
@@ -21,8 +21,8 @@ from numpy_groupies.aggregate_numba.compose import (
     rule_sumofsquares,
     rule_widen_int,
 )
-from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.aggregate_numba.mt import chunk_count, should_use_mt
+from numpy_groupies.npg_numba.jit import njit_stable
+from numpy_groupies.npg_numba.mt import chunk_count, should_use_mt
 from numpy_groupies.validation import NEGATIVE_INDICES
 
 

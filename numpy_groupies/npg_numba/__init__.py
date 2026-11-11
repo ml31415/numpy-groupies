@@ -7,7 +7,7 @@ under the name of that function.  A kernel is the compiled driver of its
 operation and nothing else, so that jitted code can call it::
 
     import numba as nb
-    from numpy_groupies import aggregate_numba as aggregate
+    from numpy_groupies import npg_numba as aggregate
 
     @nb.njit
     def zscore(group_idx, values):
@@ -94,11 +94,15 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
-from numpy_groupies.aggregate_numba.fallback import FALLBACK
-from numpy_groupies.aggregate_numba.gather import unpack, unpack_into
-from numpy_groupies.aggregate_numba.ops import _dispatch
-from numpy_groupies.aggregate_numba.steps import step_count, step_indices
+from numpy_groupies.dtypes import is_temporal_input
+from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.functions import aggregate_common_doc
+from numpy_groupies.groups import exact_integer_group_mean
+from numpy_groupies.npg_numba import argreductions, averaging, collect, cumulative, reductions, specials
+from numpy_groupies.npg_numba.fallback import FALLBACK
+from numpy_groupies.npg_numba.gather import unpack, unpack_into
+from numpy_groupies.npg_numba.ops import _dispatch
+from numpy_groupies.npg_numba.steps import step_count, step_indices
 
 # The numpy implementation answers the three calls of this backend that
 # numba cannot: the median of a complex input, the quantile of a method
@@ -106,11 +110,7 @@ from numpy_groupies.aggregate_numba.steps import step_count, step_indices
 # numba has no dtype for.  The dependency of this backend on the other one
 # is here and nowhere else - the modules take the box, and the box gets
 # the implementation now.
-from numpy_groupies.aggregate_numpy import aggregate as _numpy_aggregate
-from numpy_groupies.dtypes import is_temporal_input
-from numpy_groupies.fills import DEFAULT_FILL_VALUE
-from numpy_groupies.functions import aggregate_common_doc
-from numpy_groupies.groups import exact_integer_group_mean
+from numpy_groupies.npg_numpy import aggregate as _numpy_aggregate
 from numpy_groupies.registry import (
     FuncName,
     missing_impl_error,

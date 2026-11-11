@@ -11,8 +11,9 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numpy.argreductions import _argmax, _argmin
-from numpy_groupies.aggregate_numpy.averaging import (
+from numpy_groupies.driver import aliasing
+from numpy_groupies.npg_numpy.argreductions import _argmax, _argmin
+from numpy_groupies.npg_numpy.averaging import (
     _kurt,
     _mean,
     _skew,
@@ -21,9 +22,9 @@ from numpy_groupies.aggregate_numpy.averaging import (
     _trapezoid,
     _var,
 )
-from numpy_groupies.aggregate_numpy.collect import _array, _generic_callable
-from numpy_groupies.aggregate_numpy.cumulative import _cumsum, _nancumsum
-from numpy_groupies.aggregate_numpy.reductions import (
+from numpy_groupies.npg_numpy.collect import _array, _generic_callable
+from numpy_groupies.npg_numpy.cumulative import _cumsum, _nancumsum
+from numpy_groupies.npg_numpy.reductions import (
     _all,
     _allnan,
     _any,
@@ -36,7 +37,7 @@ from numpy_groupies.aggregate_numpy.reductions import (
     _prod,
     _sum,
 )
-from numpy_groupies.aggregate_numpy.specials import (
+from numpy_groupies.npg_numpy.specials import (
     _median,
     _mode,
     _nunique,
@@ -45,8 +46,7 @@ from numpy_groupies.aggregate_numpy.specials import (
     _sort,
     _topk,
 )
-from numpy_groupies.aggregate_numpy.temporal import build_temporal_ops
-from numpy_groupies.driver import aliasing
+from numpy_groupies.npg_numpy.temporal import build_temporal_ops
 from numpy_groupies.registry import (
     Registry,
     Resolved,

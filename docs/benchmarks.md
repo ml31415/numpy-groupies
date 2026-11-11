@@ -117,7 +117,7 @@ the group path (the median, the quantile, the sort, the topk, the mode and
 the number of the distinct values) and the gather - fits the constants of the model to the
 measurements and prints them together with the crossovers, the sizes from
 which the parallel path is faster. It writes no file: its output is the
-result, and the constants in `numpy_groupies/aggregate_numba/mt.py` are the
+result, and the constants in `numpy_groupies/npg_numba/mt.py` are the
 ones it prints.
 
 Every kernel is measured twice: warm (the threads of the pool awake, which

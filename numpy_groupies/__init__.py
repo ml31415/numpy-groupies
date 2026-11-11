@@ -8,10 +8,10 @@ implementation there is.
 
 The implementations are reached in two ways, and both of them are kept:
 
-- the modules of the implementations: ``aggregate_numpy``, ``aggregate_numba``
-  and ``aggregate_purepy`` are the modules the implementations live in, and
+- the modules of the implementations: ``npg_numpy``, ``npg_numba``
+  and ``npg_purepy`` are the modules the implementations live in, and
   they carry the functions of their implementation as their attributes -
-  ``import numpy_groupies.aggregate_numpy as npg`` gives a ``npg`` whose
+  ``import numpy_groupies.npg_numpy as npg`` gives a ``npg`` whose
   ``aggregate`` is the aggregate of the numpy implementation and whose
   ``mean`` is the mean of the numpy implementation.  A module is ``None``
   where the package it needs is not installed.
@@ -21,6 +21,11 @@ The implementations are reached in two ways, and both of them are kept:
   implementation.  An aggregate is ``None`` where its implementation is not
   there, exactly like its module.  They are the names the readme of the
   package documents.
+- the old names of the modules, ``aggregate_numpy``, ``aggregate_numba`` and
+  ``aggregate_purepy``: they are the modules of the implementations above under
+  the names they had before, and they stay, so that the callers that use them
+  keep working.  Like every name of an implementation they are ``None`` where
+  that implementation is not there.
 
 The rule runs through the whole package: a name that belongs to an
 implementation - its module, its aggregate, its tools - is ``None`` where that
@@ -37,10 +42,11 @@ not what the package hands out here.
 
 from __future__ import annotations
 
+import sys
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, cast
 
-from numpy_groupies import aggregate_purepy
+from numpy_groupies import npg_purepy
 from numpy_groupies.cache import purge_cache
 from numpy_groupies.functions import bind_functions
 from numpy_groupies.registry import function_names
@@ -124,15 +130,15 @@ if TYPE_CHECKING:
 #
 # A backend is the module of its implementation: it carries the aggregate of
 # the implementation and the entry point of every function of the package as
-# its attribute - ``aggregate_numpy.mean(group_idx, a)`` is the mean of every
+# its attribute - ``npg_numpy.mean(group_idx, a)`` is the mean of every
 # group, with the function in the name.  The numba module carries its
 # kernels there, which jitted code can reach (a plain python object is no
 # numba type, a module attribute is).
 
 # the modules of the implementations - a module is None where the package it
 # needs is not installed
-aggregate_numpy: ModuleType | None
-aggregate_numba: ModuleType | None
+npg_numpy: ModuleType | None
+npg_numba: ModuleType | None
 
 # the aggregates of the implementations - the aggregate of an implementation is
 # None where the implementation is not there, exactly like its module
@@ -141,15 +147,23 @@ aggregate_np: Aggregate | None
 aggregate_nb: Aggregate | None
 # the pure python one is always there, and it keeps its own type: it answers
 # with a list where the numpy based backends answer with an array
-aggregate_py = aggregate_purepy.aggregate
+aggregate_py = npg_purepy.aggregate
+# the old name of the module of the implementation - it stays
+aggregate_purepy = npg_purepy
+
+# the old names of the modules are in sys.modules, so that the path of the
+# import stays: "from numpy_groupies.aggregate_purepy import aggregate" finds
+# the module of the implementation under its old name
+sys.modules["numpy_groupies.aggregate_purepy"] = npg_purepy
 
 try:
     import numpy as np
 except ImportError:
     # the numpy implementation needs numpy - without it there is none of it:
     # neither its module nor its aggregate nor its tools
-    aggregate_numpy = None
+    npg_numpy = None
     aggregate_np = None
+    aggregate_numpy = None
     multi_arange = label_contiguous_1d = None
     relabel_groups_masked = relabel_groups_unique = None
     default_fill_value = None
@@ -159,14 +173,18 @@ except ImportError:
     # with a list, where the protocol of the public aggregate describes the
     # array of the numpy based backends, and its gather gathers a list
     aggregate = cast("Aggregate", aggregate_py)
-    from numpy_groupies.aggregate_purepy import unpack
+    from numpy_groupies.npg_purepy import unpack
 else:
     # the module of the implementation - importing it sets it as the
     # attribute of the package as well
-    from numpy_groupies import aggregate_numpy
-    from numpy_groupies.aggregate_numpy import aggregate, step_count, step_indices, unpack
+    from numpy_groupies import npg_numpy
+    from numpy_groupies.npg_numpy import aggregate, step_count, step_indices, unpack
 
     aggregate_np = aggregate
+    # the old name of the module of the implementation - it stays
+    aggregate_numpy = npg_numpy
+    if npg_numpy is not None:
+        sys.modules["numpy_groupies.aggregate_numpy"] = npg_numpy
 
     from numpy_groupies.fills import default_fill_value
     from numpy_groupies.groups import (
@@ -181,18 +199,23 @@ try:
 except ImportError:
     # no numba, no numba backend - the old name says so as well, and the
     # benchmarks ask for it before they measure anything
-    aggregate_numba = None
+    npg_numba = None
     aggregate_nb = None
+    aggregate_numba = None
     # the gather into an array of the caller is numba work
     unpack_into = None
 else:
     # the module of the implementation - importing it sets it as the
     # attribute of the package as well
-    from numpy_groupies import aggregate_numba
-    from numpy_groupies.aggregate_numba import aggregate, step_count, step_indices, unpack, unpack_into
+    from numpy_groupies import npg_numba
+    from numpy_groupies.npg_numba import aggregate, step_count, step_indices, unpack, unpack_into
 
     # the numba implementation wins: the aggregate of the package is its one
     aggregate_nb = aggregate
+    # the old name of the module of the implementation - it stays
+    aggregate_numba = npg_numba
+    if npg_numba is not None:
+        sys.modules["numpy_groupies.aggregate_numba"] = npg_numba
 
 
 def uaggregate(

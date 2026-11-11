@@ -6,8 +6,8 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba import mt
-from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.npg_numba import mt
+from numpy_groupies.npg_numba.jit import njit_stable
 from numpy_groupies.typing import AResult
 
 

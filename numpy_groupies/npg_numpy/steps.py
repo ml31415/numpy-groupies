@@ -18,7 +18,7 @@ def step_count(group_idx: npt.NDArray[np.integer]) -> int:
 
     A strictly increasing array of length ``n`` has ``n`` runs, an empty
     array has 0, and an array of length 1 has 1. The return value matches
-    ``aggregate_numba.step_count`` exactly, so the two backends can be used
+    ``npg_numba.step_count`` exactly, so the two backends can be used
     interchangeably.
     """
     group_idx = np.asarray(group_idx)

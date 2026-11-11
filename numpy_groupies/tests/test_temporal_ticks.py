@@ -18,10 +18,11 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
+from numpy_groupies import npg_numba
+from numpy_groupies.npg_numba.specials import _tick_pair_average
 from numpy_groupies.tests.helpers import impl_name
 
 pytestmark = pytest.mark.usefixtures("skip_purepy")
-
 
 # ---------------------------------------------------------------------------
 # the exact mean
@@ -42,7 +43,6 @@ def test_the_average_of_two_ticks_is_exact_over_the_whole_int64_range():
     # rounds the half remainder to the even neighbour - here it is checked
     # against the python integers, over the corners of the range, the ties
     # of half to even and twenty thousand random pairs.
-    from numpy_groupies.aggregate_numba.specials import _tick_pair_average
 
     lo, hi = np.iinfo(np.int64).min, np.iinfo(np.int64).max
 
@@ -247,9 +247,7 @@ def test_the_parallel_path_of_the_mean_answers_the_same(impl):
     parallel = impl.aggregate(group_idx, a, func="mean", size=groups)
     if impl_name(impl) == "numba":
         # the sequential kernel of the numba backend is the yardstick
-        from numpy_groupies import aggregate_numba
-
-        sequential = aggregate_numba.ops._tick_ops["mean"](group_idx, ticks, groups)
+        sequential = npg_numba.ops._tick_ops["mean"](group_idx, ticks, groups)
         np.testing.assert_array_equal(np.asarray(parallel).view(np.int64), sequential)
     # and the answer is the exact mean of the ticks, NaT and all
     for g in range(groups):
@@ -264,13 +262,11 @@ def test_the_bare_tick_mean_poisons_the_nat_of_a_group():
     # the kernel sees the ticks alone - the tick of the NaT is the smallest
     # one, and the plain kernel takes its group over with it, while the nan
     # kernel leaves it out
-    from numpy_groupies import aggregate_numba
-
     group_idx = np.array([0, 0, 1, 1])
     ticks = np.array([10, np.iinfo(np.int64).min, 3, 5], dtype=np.int64)
-    plain = aggregate_numba.ops._tick_ops["mean"](group_idx, ticks, 2)
+    plain = npg_numba.ops._tick_ops["mean"](group_idx, ticks, 2)
     np.testing.assert_array_equal(plain, np.array([np.iinfo(np.int64).min, 4], dtype=np.int64))
-    nan = aggregate_numba.ops._tick_ops["nanmean"](group_idx, ticks, 2)
+    nan = npg_numba.ops._tick_ops["nanmean"](group_idx, ticks, 2)
     np.testing.assert_array_equal(nan, np.array([10, 4], dtype=np.int64))
 
 
@@ -321,12 +317,10 @@ def test_the_parallel_path_of_the_median_answers_the_same(impl):
         # plain one averages the NaT tick like any other, so its groups that
         # hold a NaT are compared as the kernel answers them, and the rest
         # as the plain answer of the aggregation (the NaT of the wrapper)
-        from numpy_groupies import aggregate_numba
-
         nat_groups = np.zeros(groups, dtype=bool)
         np.maximum.at(nat_groups, group_idx[a.view(np.int64) == np.iinfo(np.int64).min], True)
-        sequential = aggregate_numba.ops._tick_ops["median"](group_idx, ticks, groups)
-        sequential_nan = aggregate_numba.ops._tick_ops["nanmedian"](group_idx, ticks, groups)
+        sequential = npg_numba.ops._tick_ops["median"](group_idx, ticks, groups)
+        sequential_nan = npg_numba.ops._tick_ops["nanmedian"](group_idx, ticks, groups)
         np.testing.assert_array_equal(
             np.asarray(parallel).view(np.int64)[~nat_groups], np.asarray(sequential)[~nat_groups]
         )
@@ -370,18 +364,16 @@ def test_the_bare_tick_median_poisons_the_nat_of_a_group():
     # numbers takes the group of a nan over - the answer of a group that
     # holds a NaT is the NaT of the unit; the nan kernel leaves the NaT out
     # on its own and answers the middle of the ticks that remain
-    from numpy_groupies import aggregate_numba
-
     group_idx = np.array([0, 0, 1, 1])
     ticks = np.array([np.iinfo(np.int64).min, 10, 3, 5], dtype=np.int64)
-    plain = aggregate_numba.ops._tick_ops["median"](group_idx, ticks, 2)
+    plain = npg_numba.ops._tick_ops["median"](group_idx, ticks, 2)
     # the NaT of the unit
     assert int(plain[0]) == np.iinfo(np.int64).min
     assert int(plain[1]) == 4
-    nan = aggregate_numba.ops._tick_ops["nanmedian"](group_idx, ticks, 2)
+    nan = npg_numba.ops._tick_ops["nanmedian"](group_idx, ticks, 2)
     np.testing.assert_array_equal(nan, np.array([10, 4], dtype=np.int64))
     # an even group whose middles sum beyond the window of int64 - the exact
     # average of (2**62, 2**62 + 1) is a half above 2**62, and half to even
     # keeps the even neighbour
-    edge = aggregate_numba.ops._tick_ops["nanmedian"](np.array([0, 0]), np.array([2**62, 2**62 + 1], dtype=np.int64), 1)
+    edge = npg_numba.ops._tick_ops["nanmedian"](np.array([0, 0]), np.array([2**62, 2**62 + 1], dtype=np.int64), 1)
     assert int(edge[0]) == 2**62

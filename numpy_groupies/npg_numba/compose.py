@@ -63,7 +63,7 @@ the same bits every time.  With many groups the memory is what counts.
 The factory assembles these into ONE compiled driver per operation that owns
 the group loop, bounds checks and pass structure, and exposes it as a function
 callable from jitted code and from python alike (the kernels of
-``numpy_groupies.aggregate_numba``).  The driver hands the argument the
+``numpy_groupies.npg_numba``).  The driver hands the argument the
 operation has of its own on as the ``extra`` of the pass structure - the
 kernel keeps the name the caller uses, the driver does not need it.  The
 python-level ``aggregate()`` calls
@@ -81,18 +81,18 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.jit import njit_stable, register_overload
-from numpy_groupies.aggregate_numba.mt import (
-    GROUP_MT_MIN_VALUES,
-    MT_MIN_VALUES,
-    chunk_count,
-    should_use_mt,
-)
 from numpy_groupies.dtypes import (
     TEMPORAL_KINDS,
     is_temporal_input,
 )
 from numpy_groupies.functions import func_argument_default, nan
+from numpy_groupies.npg_numba.jit import njit_stable, register_overload
+from numpy_groupies.npg_numba.mt import (
+    GROUP_MT_MIN_VALUES,
+    MT_MIN_VALUES,
+    chunk_count,
+    should_use_mt,
+)
 from numpy_groupies.temporal import NAT_TICK
 from numpy_groupies.typing import AResult, AScalar
 from numpy_groupies.validation import (
@@ -651,7 +651,7 @@ _KERNEL_ARGUMENT_DEFAULTS: dict[str, Any] = {"dx": 1}
 
 # the names the composed kernels of ``build_kernel`` take - the quantile and
 # the reverse flag belong to operations whose pass structure is written by
-# hand (see ``numpy_groupies.aggregate_numba.specials``)
+# hand (see ``numpy_groupies.npg_numba.specials``)
 ComposedVariant = Literal["none", "ddof", "dx"]
 
 # what the python half of a kernel call hands the driver: the two checked
@@ -1407,7 +1407,7 @@ class KernelHandle(NamedTuple):
     ``driver``  the raw compiled driver - the python-level ``aggregate()``
                 calls it with fully resolved arguments
     ``variant`` the argument the driver takes of its own, which is the one the
-                caller of ``driver`` has to supply - ``aggregate_numba.ops``
+                caller of ``driver`` has to supply - ``npg_numba.ops``
                 picks it out of the two that its own entry point takes
     ``forced_fill`` the seeding default of the output (or None when the
                 output is seeded with the fill value itself)

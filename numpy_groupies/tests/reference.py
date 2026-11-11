@@ -3,7 +3,7 @@
 One computation per group, no bincount, no ufunc trick and no compiled kernel -
 the code is the specification the backends are measured against.  It exists so
 that a test can compare a backend against something it does not share code
-with: comparing ``aggregate_numpy`` against ``aggregate_numpy`` (or against its
+with: comparing ``npg_numpy`` against ``npg_numpy`` (or against its
 own group loop) proves nothing about the paths that differ between them.
 
 What the reference does not do is guess dtypes: a group reduction hands its

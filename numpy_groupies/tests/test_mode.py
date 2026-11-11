@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 import numpy_groupies as npg
-import numpy_groupies.aggregate_numba as npgb
+from numpy_groupies.tests.helpers import is_numba
 
 
 def test_the_mode_answers_the_most_frequent_value_of_every_group(impl):
@@ -110,37 +110,41 @@ def test_the_sign_of_a_zero_is_the_sign_of_the_first_one(impl, values):
     assert np.signbit(answer[0]) == np.signbit(a[0])
 
 
-def test_the_mode_of_the_package_is_the_one_of_the_best_implementation():
-    import numpy_groupies.aggregate_numpy as npgn
-
+def test_the_mode_of_the_package_is_the_one_of_the_implementation(impl):
+    """The mode of the package - the one of the best implementation - is the
+    mode of every implementation."""
     group_idx = np.array([0, 0, 1, 1, 1, 2])
     a = np.array([3.0, 1.0, 2.0, 2.0, 1.0, 5.0])
-    np.testing.assert_array_equal(npg.mode(group_idx, a), npgn.aggregate(group_idx, a, func="mode"))
+    np.testing.assert_array_equal(npg.mode(group_idx, a), impl.mode(group_idx, a))
 
 
-def test_the_mode_of_the_kernel_answers_the_same_as_the_call():
-    """The bare kernel of the numba backend and the python-level call of the
-    backend answer the same values."""
+def test_the_mode_of_the_function_answers_the_same_as_the_call(impl):
+    """The function of the implementation - the bare kernel of the numba one -
+    and the call of the backend answer the same values."""
     group_idx = np.array([0, 0, 1, 1, 1, 2])
     a = np.array([3.0, 1.0, 2.0, 2.0, 1.0, 5.0])
-    np.testing.assert_array_equal(npgb.mode(group_idx, a), npgb.aggregate(group_idx, a, func="mode"))
+    np.testing.assert_array_equal(impl.mode(group_idx, a), impl.aggregate(group_idx, a, func="mode"))
 
 
-def test_the_mode_of_the_numba_backend_goes_into_the_array_of_the_caller():
+def test_the_mode_of_the_numba_backend_goes_into_the_array_of_the_caller(impl):
     """The out= of the numba backend takes the values of the mode."""
+    if not is_numba(impl):
+        pytest.skip("only the numba backend gathers into the array of the caller")
     group_idx = np.array([0, 0, 1, 1, 1, 2])
     a = np.array([3.0, 1.0, 2.0, 2.0, 1.0, 5.0])
     out = np.empty(3)
-    answer = npgb.aggregate(group_idx, a, func="mode", out=out)
+    answer = impl.aggregate(group_idx, a, func="mode", out=out)
     assert answer is out
     np.testing.assert_array_equal(out, [1.0, 2.0, 5.0])
 
 
-def test_the_mode_of_the_numba_backend_of_float16_runs_on_float32():
+def test_the_mode_of_the_numba_backend_of_float16_runs_on_float32(impl):
     """Numba has no float16, so the values run on float32 and the answer is
     rounded back - like the other operations of the backend."""
+    if not is_numba(impl):
+        pytest.skip("only the numba backend runs the values on float32")
     group_idx = np.array([0, 0, 1])
     a = np.array([5.0, 5.0, 4.0], dtype=np.float16)
-    answer = npgb.aggregate(group_idx, a, func="mode")
+    answer = impl.aggregate(group_idx, a, func="mode")
     assert answer.dtype == np.float16
     np.testing.assert_array_equal(answer, np.array([5.0, 4.0], dtype=np.float16))

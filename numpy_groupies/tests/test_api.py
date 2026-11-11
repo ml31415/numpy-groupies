@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_purepy
+from numpy_groupies import npg_purepy
 from numpy_groupies.fills import default_fill_value
 from numpy_groupies.functions import default_fill_values, fill_value_key
 from numpy_groupies.registry import function_names
@@ -569,7 +569,7 @@ def test_the_pure_python_path_refuses_what_is_no_sequence_of_values(values):
     is the path that has to say so.
     """
     with pytest.raises(ValueError, match="must be scalar or 1 dimensional"):
-        aggregate_purepy.aggregate(np.array([0, 1]), values, func="sum", size=2)
+        npg_purepy.aggregate(np.array([0, 1]), values, func="sum", size=2)
 
 
 def test_the_out_argument_is_the_one_of_the_numba_backend(impl):

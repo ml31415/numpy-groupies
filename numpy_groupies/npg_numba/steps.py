@@ -10,7 +10,7 @@ that the compiled artifacts of one operation never reach into another.
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.npg_numba.jit import njit_stable
 from numpy_groupies.validation import NEGATIVE_INDICES, TOO_LARGE
 
 

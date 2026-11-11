@@ -22,9 +22,9 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numpy.reductions import _all, _any
-from numpy_groupies.aggregate_numpy.specials import _temporal_median, _temporal_quantile
 from numpy_groupies.groups import exact_integer_group_mean
+from numpy_groupies.npg_numpy.reductions import _all, _any
+from numpy_groupies.npg_numpy.specials import _temporal_median, _temporal_quantile
 from numpy_groupies.registry import function_names
 from numpy_groupies.temporal import NAT_TICK, build_temporal_op
 from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder

@@ -23,7 +23,7 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import (
+from numpy_groupies.npg_numba.compose import (
     TickKernel,
     build_kernel,
     complex_less,
@@ -32,7 +32,7 @@ from numpy_groupies.aggregate_numba.compose import (
     rule_int64,
     rule_real_float,
 )
-from numpy_groupies.aggregate_numba.jit import njit_stable, register_overload
+from numpy_groupies.npg_numba.jit import njit_stable, register_overload
 from numpy_groupies.temporal import NAT_TICK
 from numpy_groupies.validation import (
     EXACT_FLOAT64_INTEGER_LIMIT,

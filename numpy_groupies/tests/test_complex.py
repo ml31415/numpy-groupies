@@ -3,9 +3,8 @@
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_numpy
+from numpy_groupies import npg_numpy
 from numpy_groupies.tests.helpers import (
-    aggregate_numba,
     assert_result_dtype,
     complex_arg_funcs,
     complex_asymmetric_funcs,
@@ -15,6 +14,7 @@ from numpy_groupies.tests.helpers import (
     complex_order_funcs,
     complex_real_out_funcs,
     impl_name,
+    npg_numba,
 )
 from numpy_groupies.tests.reference import aggregate_ref
 
@@ -429,12 +429,10 @@ def test_order_functions_follow_numpy_lexicographic(impl, func):
 def test_order_functions_are_not_rejected_by_numba(func):
     # the numba kernels used to refuse complex values here; they compare the two
     # parts themselves now, so they have to agree with the numpy implementation
-    if aggregate_numba is None:
-        pytest.skip("numba implementation not available")
     group_idx = np.array([0, 0, 1, 1, 2, 2])
     a = np.array([1 + 9j, 1 - 1j, 3 + 0j, 2 + 5j, -0.0 + 0j, 0.0 - 0j])
 
-    res = np.asarray(aggregate_numba.aggregate(group_idx, a, func=func, size=3))
+    res = np.asarray(npg_numba.aggregate(group_idx, a, func=func, size=3))
     expected = np.asarray(aggregate_ref(group_idx, a, func=func, size=3))
     np.testing.assert_array_equal(res, expected)
 
@@ -470,7 +468,7 @@ def test_order_functions_use_the_extreme_value_of_the_order():
         np.testing.assert_array_equal(np.asarray(aggregate_ref(group_idx, a, func=func, size=2)), [0, 1])
 
     # masking with inf+0j would leave no value equal to the found minimum
-    impls = [aggregate_numpy.aggregate] + ([aggregate_numba.aggregate] if aggregate_numba is not None else [])
+    impls = [npg_numpy.aggregate, npg_numba.aggregate]
     both_in_one_group = np.array([0, 0])
     for impl in impls:
         for values, func in (

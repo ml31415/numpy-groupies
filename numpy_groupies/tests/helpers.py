@@ -11,12 +11,11 @@ filtered out of the collection.
 """
 
 from functools import wraps
-from typing import Any
 
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_numpy, aggregate_purepy
+from numpy_groupies import npg_numba, npg_numpy, npg_purepy
 from numpy_groupies.driver import aliasing
 from numpy_groupies.registry import (
     aliasing_py,
@@ -25,32 +24,21 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.tests.reference import aggregate_ref, reference_names
 
-aggregate_numba: Any
-
-try:
-    from numpy_groupies import aggregate_numba
-except ImportError:
-    aggregate_numba = None
-
 # backend registry: module -> short name, in fixture-parametrization order
-_backend_names = {
-    module: name
-    for name, module in (
-        ("purepy", aggregate_purepy),
-        ("numpy", aggregate_numpy),
-        ("numba", aggregate_numba),
-    )
-    if module is not None
-}
-_implementations = list(_backend_names)
+# the backends the suite runs against - the module of every implementation
+_implementations = [npg_purepy, npg_numpy, npg_numba]
 
 
 def impl_name(impl):
     """Short backend name ("purepy", "numpy", ...) for a backend module
-    or its ``_BackendProxy``."""
+    or its ``_BackendProxy``.
+
+    The name of the module of a backend carries the name of the backend:
+    ``npg_purepy`` is the pure python one, ``npg_numpy`` the numpy one.
+    """
     if isinstance(impl, _BackendProxy):
         return impl._name
-    return _backend_names.get(impl)
+    return impl.__name__.rsplit(".", 1)[-1].removeprefix("npg_")
 
 
 def random_group_idx(rng, size, n_groups):
@@ -109,12 +97,12 @@ def _dispatch_of(impl):
     Every backend holds one: a table of the aliases of the functions it knows
     and the implementation of its own behind every one of them.
     """
-    if impl is aggregate_purepy:
-        return aggregate_purepy._dispatch
-    if impl is aggregate_numpy:
-        return aggregate_numpy.ops._dispatch
-    if aggregate_numba is not None and impl is aggregate_numba:
-        return aggregate_numba.ops._dispatch
+    if impl is npg_purepy:
+        return npg_purepy._dispatch
+    if impl is npg_numpy:
+        return npg_numpy.ops._dispatch
+    if impl is npg_numba:
+        return npg_numba.ops._dispatch
     return None
 
 
@@ -146,7 +134,7 @@ class _BackendProxy:
 
     def __init__(self, module):
         self._module = module
-        self._name = _backend_names[module]
+        self._name = module.__name__.rsplit(".", 1)[-1].removeprefix("npg_")
         self.aggregate = _wrap_notimplemented_skip(module.aggregate, f"aggregate_{self._name}")
 
     def __getattr__(self, name):
