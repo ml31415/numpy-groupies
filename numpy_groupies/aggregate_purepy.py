@@ -457,8 +457,10 @@ def _cumsum(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
     running: Any = 0
     for val in x:
         # the addition carries the poison: a nan in one part of a complex
-        # value poisons that part alone, the way numpy's cumsum carries it
-        running = running + val
+        # value poisons that part alone, the way numpy's cumsum carries it.
+        # The integers are widened first: the running sum of the narrow ones
+        # is computed in the wide python integer, where it cannot wrap.
+        running = running + (int(val) if isinstance(val, numbers.Integral) and not isinstance(val, bool) else val)
         out.append(running)
     return out
 
@@ -472,7 +474,7 @@ def _nancumsum(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any
     running: Any = 0
     for val in x:
         if val == val:
-            running = running + val
+            running = running + (int(val) if isinstance(val, numbers.Integral) and not isinstance(val, bool) else val)
         out.append(running)
     return out
 
@@ -482,7 +484,7 @@ def _cumprod(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
     out: list[Any] = []
     running: Any = 1
     for val in x:
-        running = running * val
+        running = running * (int(val) if isinstance(val, numbers.Integral) and not isinstance(val, bool) else val)
         out.append(running)
     return out
 
@@ -496,7 +498,7 @@ def _nancumprod(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[An
     running: Any = 1
     for val in x:
         if val == val:
-            running = running * val
+            running = running * (int(val) if isinstance(val, numbers.Integral) and not isinstance(val, bool) else val)
         out.append(running)
     return out
 
@@ -895,6 +897,17 @@ aggregate.__doc__ = (
     """
     This is the pure python implementation of aggregate. It is terribly slow.
     Using the numpy version is highly recommended.
+
+    It computes with python numbers and needs no numpy: the answers are the
+    python numbers it computes, without a dtype of their own, and the
+    integers accumulate exactly where the other backends accumulate in the
+    wide accumulator of their sign and wrap there.
+
+    Every function of the package is there - the quantile and the running
+    values among them.  What it cannot do is the temporal arithmetic and the
+    multidimensional output: the durations and the moments of the timestamps
+    run on their ticks, and the axis and the sequence of sizes are refused,
+    as they are by the backend that has no numpy to lay the values out with.
     """
     + aggregate_common_doc
 )
