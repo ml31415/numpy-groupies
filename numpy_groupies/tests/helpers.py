@@ -24,10 +24,6 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.tests.reference import aggregate_ref, reference_names
 
-# backend registry: module -> short name, in fixture-parametrization order
-# the backends the suite runs against - the module of every implementation
-_implementations = [npg_purepy, npg_numpy, npg_numba]
-
 
 def impl_name(impl):
     """Short backend name ("purepy", "numpy", ...) for a backend module
