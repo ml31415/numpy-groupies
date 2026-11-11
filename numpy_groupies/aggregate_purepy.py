@@ -65,11 +65,12 @@ def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> list
 
 
 def _sum(x: Sequence[Any]) -> Any:
-    # builtin sum over numpy integers accumulates in the input dtype without
-    # promotion (NEP 50), so large groups silently wrap - python ints keep
-    # the per-group accumulation exact, everything else (floats, complex,
-    # numpy bools, decimals) keeps the builtin behaviour; numbers is stdlib
-    # and numpy registers its integer scalars as Integral
+    # the integers are summed as python numbers, which do not wrap: the sum
+    # of a group is exact where the other backends accumulate in the
+    # accumulator of their sign and wrap there.  Everything else (the floats,
+    # the complex values, the decimals) keeps the builtin behaviour.
+    # numbers is stdlib, and numpy registers its integer scalars as Integral
+    # - its booleans it does not, and those keep the builtin behaviour as well
     if all(isinstance(val, numbers.Integral) for val in x):
         return sum(int(val) for val in x)
     return sum(x)
@@ -237,11 +238,11 @@ def _std(x: Sequence[Any], ddof: int = 0) -> Any:
 def _sum_of_squares(x: Sequence[Any]) -> Any:
     """The sum of the squared values of one group.
 
-    The squared magnitude of complex values, the square of real ones - and
-    for integers the exact square of the python number, which no dtype of a
-    narrow input can wrap: the answer of the other backends is the wide
-    accumulator of the input's own sign, and the exact sum is what that
-    accumulator promises as long as it fits it.
+    The square of the real values, the squared magnitude of the complex ones.
+    The integers are squared as python numbers, which do not wrap: the sum is
+    exact where the other backends square them in the accumulator of their
+    sign (int64 or uint64), and it is the exact sum that the accumulator
+    holds as long as the squares fit it.
     """
     if all(isinstance(val, numbers.Integral) for val in x):
         return sum(int(val) * int(val) for val in x)
@@ -249,12 +250,12 @@ def _sum_of_squares(x: Sequence[Any]) -> Any:
 
 
 def _prod(x: Sequence[Any]) -> Any:
-    # the integer twin of _sum: the python integers accumulate exactly, so
-    # the product of a group is exact where a narrow dtype would wrap - and
-    # the bools are no integers here: a product of booleans is a boolean, the
-    # way the builtin product of them is.  Everything else (floats, complex,
+    # the multiplicative counterpart of _sum: the integers are multiplied as
+    # python numbers, which do not wrap, so the product of a group is exact
+    # where the other backends accumulate in the accumulator of their sign
+    # and wrap there.  Everything else (the floats, the complex values, the
     # decimals) keeps its own behaviour, overflow included.
-    if all(isinstance(val, numbers.Integral) and not isinstance(val, bool) for val in x):
+    if all(isinstance(val, numbers.Integral) for val in x):
         r = 1
         for xx in x:
             r *= int(xx)
@@ -447,6 +448,18 @@ def _percentile(x: Sequence[Any], q: float = 50.0, method: str = "linear") -> An
     return _quantile(x, q / 100.0, method=method)
 
 
+def _widened(x: Sequence[Any]) -> list[Any]:
+    """the values of a group, the integers as python numbers.
+
+    The python numbers do not wrap, so the running values of the narrow
+    integers are computed where nothing can overflow them - the other
+    backends compute them in the accumulator of their sign.
+    """
+    if all(isinstance(val, numbers.Integral) for val in x):
+        return [int(val) for val in x]
+    return list(x)
+
+
 def _cumsum(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
     """The running sum of the values of one group.
 
@@ -455,12 +468,10 @@ def _cumsum(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
     """
     out: list[Any] = []
     running: Any = 0
-    for val in x:
+    for val in _widened(x):
         # the addition carries the poison: a nan in one part of a complex
-        # value poisons that part alone, the way numpy's cumsum carries it.
-        # The integers are widened first: the running sum of the narrow ones
-        # is computed in the wide python integer, where it cannot wrap.
-        running = running + (int(val) if isinstance(val, numbers.Integral) and not isinstance(val, bool) else val)
+        # value poisons that part alone, the way numpy's cumsum carries it
+        running = running + val
         out.append(running)
     return out
 
@@ -472,9 +483,9 @@ def _nancumsum(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any
     """
     out: list[Any] = []
     running: Any = 0
-    for val in x:
+    for val in _widened(x):
         if val == val:
-            running = running + (int(val) if isinstance(val, numbers.Integral) and not isinstance(val, bool) else val)
+            running = running + val
         out.append(running)
     return out
 
@@ -483,8 +494,8 @@ def _cumprod(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
     """The running product of the values of one group."""
     out: list[Any] = []
     running: Any = 1
-    for val in x:
-        running = running * (int(val) if isinstance(val, numbers.Integral) and not isinstance(val, bool) else val)
+    for val in _widened(x):
+        running = running * val
         out.append(running)
     return out
 
@@ -496,9 +507,9 @@ def _nancumprod(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[An
     """
     out: list[Any] = []
     running: Any = 1
-    for val in x:
+    for val in _widened(x):
         if val == val:
-            running = running * (int(val) if isinstance(val, numbers.Integral) and not isinstance(val, bool) else val)
+            running = running * val
         out.append(running)
     return out
 
