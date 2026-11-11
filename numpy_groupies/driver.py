@@ -84,6 +84,8 @@ if hasattr(np, "trapezoid"):
     # np.trapezoid replaced np.trapz in numpy 2.0
     _alias_numpy[np.trapezoid] = "trapezoid"
 
+# the table of the aliases with the numpy functions in it: they name the
+# functions of the package as well - np.sum is the sum
 aliasing = get_aliasing(_alias_numpy)
 
 

@@ -15,12 +15,13 @@ import pytest
 from numpy_groupies.registry import function_names
 from numpy_groupies.tests.helpers import impl_name
 
+# the pure python backend knows no temporal types - the same reason the
+# other temporal modules of the suite leave it out, and the same fixture
+pytestmark = pytest.mark.usefixtures("skip_purepy")
+
 
 def _dispatch_of(impl):
-    """The dispatch table of a backend - None for the pure python one, which
-    knows no temporal types."""
-    if impl_name(impl) == "purepy":
-        return None
+    """The dispatch table of a backend."""
     return impl.ops._dispatch
 
 
@@ -28,8 +29,6 @@ def test_every_function_has_a_temporal_operation(impl):
     """The temporal operation of every function of the package is in the
     dispatch of the backend, beside the numeric one."""
     dispatch = _dispatch_of(impl)
-    if dispatch is None:
-        pytest.skip("the pure python backend knows no temporal types")
     for name in function_names():
         temporal_op = dispatch[name].temporal_op
         assert temporal_op is not None, name

@@ -15,7 +15,6 @@ import pytest
 
 import numpy_groupies as npg
 import numpy_groupies.aggregate_numba as npgb
-from numpy_groupies.tests.helpers import is_purepy
 
 
 def test_the_mode_answers_the_most_frequent_value_of_every_group(impl):
@@ -53,9 +52,8 @@ def test_a_group_of_nothing_but_missing_values_takes_the_fill_value(impl):
 def test_the_mode_keeps_the_dtype_of_the_values(impl):
     group_idx = np.array([0, 0, 1, 1])
     a = np.array([3, 1, 2, 2], dtype=np.int32)
-    answer = impl.aggregate(group_idx, a, func="mode")
-    if not is_purepy(impl):
-        assert answer.dtype == np.int32
+    answer = np.asarray(impl.aggregate(group_idx, a, func="mode"))
+    assert answer.dtype == np.int32
     np.testing.assert_array_equal(answer, [1, 2])
 
 
@@ -86,12 +84,9 @@ def test_the_mode_of_complex_values_ties_lexicographically(impl):
 def test_the_mode_of_the_temporal_values(impl):
     """The temporal values are counted like any other value, and their NaT
     is in no selection."""
-    if is_purepy(impl):
-        # the pure python backend knows no temporal types
-        pytest.skip("the pure python implementation has no temporal types")
     group_idx = np.array([0, 0, 0, 1])
     a = np.array(["2011-01-01", "NaT", "2011-01-01", "2011-01-05"], dtype="datetime64[s]")
-    answer = impl.aggregate(group_idx, a, func="mode")
+    answer = np.asarray(impl.aggregate(group_idx, a, func="mode"))
     assert answer.dtype == a.dtype
     np.testing.assert_array_equal(answer, np.array(["2011-01-01", "2011-01-05"], dtype="datetime64[s]"))
 

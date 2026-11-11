@@ -23,20 +23,14 @@ from numpy_groupies.tests.reference import aggregate_ref
 def test_len(impl, group_size):
     group_idx = np.arange(0, 100, 2, dtype=int).repeat(group_size)
     a = np.arange(group_idx.size)
-    res = impl.aggregate(group_idx, a, func="len")
+    res = np.asarray(impl.aggregate(group_idx, a, func="len"))
     ref = impl.aggregate(group_idx, 1, func="sum")
-    if isinstance(res, np.ndarray):
-        assert issubclass(res.dtype.type, np.integer)
-    else:
-        assert isinstance(res[0], int)
+    assert issubclass(res.dtype.type, np.integer)
     np.testing.assert_array_equal(res, ref)
     group_idx = np.arange(0, 100, dtype=int).repeat(group_size)
     a = np.arange(group_idx.size)
-    res = impl.aggregate(group_idx, a, func=len)
-    if isinstance(res, np.ndarray):
-        assert np.all(res == group_size)
-    else:
-        assert all(x == group_size for x in res)
+    res = np.asarray(impl.aggregate(group_idx, a, func=len))
+    assert np.all(res == group_size)
 
 
 @pytest.mark.parametrize("first_last", ["first", "last"])

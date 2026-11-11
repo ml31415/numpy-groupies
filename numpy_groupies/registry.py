@@ -25,9 +25,7 @@ if TYPE_CHECKING:
     from numpy_groupies.typing import AScalar
 
 
-# fmt: on
-
-
+# fmt: off
 funcs_common = [
     "sum",
     "prod",
@@ -150,6 +148,7 @@ FuncName: TypeAlias = Literal[
     "var",
     "nunique",
 ]
+# fmt: on
 
 
 _alias_str = {
@@ -214,6 +213,10 @@ def get_aliasing(*extra: dict[str | Callable[..., object], str]) -> dict[str | C
     return alias
 
 
+# the table of the aliases: the names of the functions of the package and the
+# aliases that name them.  It holds no objects, so that the pure python
+# implementation can have it without numpy - the numpy functions among the
+# aliases are added by the numpy based backends, which have numpy.
 aliasing_py = get_aliasing()
 
 

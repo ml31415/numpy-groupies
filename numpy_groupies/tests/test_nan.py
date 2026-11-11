@@ -48,12 +48,9 @@ def test_nan_len(impl, rng):
     a = random_values(rng, group_idx.size)
     a[::4] = np.nan
     a[::5] = np.nan
-    res = impl.aggregate(group_idx, a, func="nanlen")
+    res = np.asarray(impl.aggregate(group_idx, a, func="nanlen"))
     ref = impl.aggregate(group_idx[~np.isnan(a)], 1, func="sum")
-    if isinstance(res, np.ndarray):
-        assert issubclass(res.dtype.type, np.integer)
-    else:
-        assert isinstance(res[0], int)
+    assert issubclass(res.dtype.type, np.integer)
     np.testing.assert_array_equal(res, ref)
 
 

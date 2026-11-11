@@ -24,7 +24,7 @@ from numpy_groupies.registry import (
     function_names,
     resolve_name,
 )
-from numpy_groupies.tests.helpers import aliasing_of, assert_same_result
+from numpy_groupies.tests.helpers import aliasing_of, assert_same_result, is_supported
 
 
 def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():
@@ -36,6 +36,7 @@ def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():
     """
     names = set(get_args(FuncName))
     assert names == {name for name in aliasing if isinstance(name, str)}
+    # the table without the numpy functions names the same functions
     assert names == {name for name in aliasing_py if isinstance(name, str)}
 
 
@@ -173,6 +174,57 @@ def test_every_function_of_the_package_has_an_entry_point_on_every_backend():
     for backend in (aggregate_numpy, aggregate_numba, aggregate_purepy):
         for name in _op_dict:
             assert hasattr(backend, name), f"{backend!r} has no entry point for {name}"
+
+
+def _the_support_matrix_of_the_docs():
+    """the table of the functions of the docs, as the backends and the names.
+
+    The table of ``docs/functions.md`` names every function of the package
+    and the backend that answers it - and a function that a backend has
+    learned since the table was written is a hole in the table.
+    """
+    import re
+    from pathlib import Path
+
+    docs = Path(__file__).parents[2] / "docs" / "functions.md"
+    if not docs.exists():  # pragma: no cover - the docs are not in the wheel
+        pytest.skip("the docs are not there")
+    rows = []
+    for line in docs.read_text().splitlines():
+        match = re.match(r"\|\s*`([^`]+)`\s*\|\s*(x|-)\s*\|\s*(x|-)\s*\|\s*(x|-)\s*\|", line)
+        if match is None:
+            continue
+        names, numpy, numba, purepy = match.groups()
+        if "…" in names or "variants" in names:
+            # the rows of the nan-variants and of the custom callables name
+            # no function of their own
+            continue
+        rows.append((tuple(n.strip() for n in names.split(",")), numpy, numba, purepy))
+    assert rows, "the table of the supported functions is not in the docs"
+    return rows
+
+
+def test_the_support_matrix_of_the_docs_agrees_with_the_backends():
+    """The table of the docs says what every backend answers - and it is right.
+
+    A function that a backend has learned since the table was written is a
+    hole in the table: the docs would send the reader to a backend that
+    refuses the function.
+    """
+    from numpy_groupies import aggregate_numba, aggregate_numpy, aggregate_purepy
+
+    backends = {
+        "numpy": aggregate_numpy,
+        "numba": aggregate_numba,
+        "purepy": aggregate_purepy,
+    }
+    for names, *marks in _the_support_matrix_of_the_docs():
+        for name, mark in zip(names, marks):
+            for backend, mark_of_backend in zip(backends.values(), marks):
+                if backend is aggregate_numba and aggregate_numba is None:
+                    continue
+                supported = is_supported(backend, name)
+                assert supported == (mark_of_backend == "x"), f"{name} and the {backend.__name__} backend"
 
 
 def test_the_list_of_the_functions_names_every_function_of_the_package():

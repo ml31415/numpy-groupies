@@ -6,6 +6,7 @@ import pytest
 from numpy_groupies import aggregate_numpy
 from numpy_groupies.tests.helpers import (
     aggregate_numba,
+    assert_result_dtype,
     complex_arg_funcs,
     complex_asymmetric_funcs,
     complex_bool_funcs,
@@ -14,7 +15,6 @@ from numpy_groupies.tests.helpers import (
     complex_order_funcs,
     complex_real_out_funcs,
     impl_name,
-    is_purepy,
 )
 from numpy_groupies.tests.reference import aggregate_ref
 
@@ -51,21 +51,18 @@ def test_matches_reference(impl, func, a_dtype):
     expected = aggregate_ref(group_idx, a, func=func, size=3)
 
     res = np.asarray(res)
-    if is_purepy(impl):
-        # the pure python implementation computes with python numbers, which
-        # are always double precision
-        pass
-    elif func in complex_bool_funcs:
-        assert res.dtype == np.dtype(bool)
+    if func in complex_bool_funcs:
+        assert_result_dtype(impl, res, np.dtype(bool))
     elif func in complex_int_funcs:
-        assert np.issubdtype(res.dtype, np.integer)
+        # the counts and the positions are int64 in every backend
+        assert_result_dtype(impl, res, np.int64)
     elif func in complex_real_out_funcs:
         # the squared magnitude is real, with the real counterpart dtype of
         # the input (complex64 -> float32), exactly like np.var
         expected_real_dtype = {np.complex64: np.float32, np.complex128: np.float64}[a_dtype]
-        assert res.dtype == expected_real_dtype
+        assert_result_dtype(impl, res, expected_real_dtype)
     else:
-        assert res.dtype == a_dtype
+        assert_result_dtype(impl, res, a_dtype)
     np.testing.assert_allclose(res, expected, rtol=1e-5)
 
 
@@ -78,8 +75,7 @@ def test_median(impl, a_dtype):
 
     res = impl.aggregate(group_idx, a, func="median", size=2)
     res = np.asarray(res)
-    if not is_purepy(impl):
-        assert res.dtype == a_dtype
+    assert_result_dtype(impl, res, a_dtype)
     expected = [np.median(vals) for vals in (a[:4], a[4:])]
     np.testing.assert_allclose(res, expected, rtol=1e-5)
 
@@ -103,7 +99,7 @@ def test_median_of_a_poisoned_group(impl, a_dtype, poisoned_part):
     a = (real + 1j * imag).astype(a_dtype)
 
     res = np.asarray(impl.aggregate(group_idx, a, func="median", size=1))
-    assert res.dtype == a_dtype
+    assert_result_dtype(impl, res, a_dtype)
     assert np.isnan(res[0].real) and np.isnan(res[0].imag), res[0]
 
 
@@ -115,7 +111,7 @@ def test_sort(impl, a_dtype, reverse):
     a = np.array([3 + 1j, 1 + 2j, 1 - 5j, 1 + 5j]).astype(a_dtype)
 
     res = np.asarray(impl.aggregate(group_idx, a, func="sort", reverse=reverse))
-    assert res.dtype == a_dtype
+    assert_result_dtype(impl, res, a_dtype)
     order = slice(None, None, -1) if reverse else slice(None)
     expected = np.concatenate([np.sort(a[group_idx == grp])[order] for grp in range(2)])
     np.testing.assert_array_equal(res, expected)
@@ -138,7 +134,7 @@ def test_sort_moves_the_incomparable_values_last(impl, a_dtype, reverse):
     )
 
     res = np.asarray(impl.aggregate(group_idx, a, func="sort", reverse=reverse))
-    assert res.dtype == a_dtype
+    assert_result_dtype(impl, res, a_dtype)
     # not the ascending order turned around: the incomparable values stay last
     # - the group loop is the reference, not the numpy backend the test also
     # runs on
@@ -153,10 +149,7 @@ def test_empty_group(impl, a_dtype):
     a = np.array([1 + 2j, 3 + 1j, 5 + 5j, 4 - 3j]).astype(a_dtype)
 
     res = np.asarray(impl.aggregate(group_idx, a, func="mean", size=3))
-    if not is_purepy(impl):
-        # the pure python implementation computes with python numbers, which
-        # are always double precision
-        assert res.dtype == a_dtype
+    assert_result_dtype(impl, res, a_dtype)
     # the nan default of a complex output is a nan in *both* parts, so all
     # implementations fill an empty group identically
     assert np.isnan(res[1].real) and np.isnan(res[1].imag)
@@ -273,8 +266,7 @@ def test_accepts_complex_scalar_dtype_classes(impl, dtype, func, as_list):
     values = list(a) if as_list else a
     result = np.asarray(impl.aggregate(group_idx, values, func=func, dtype=dtype))
     np.testing.assert_allclose(result, expected, rtol=1e-6)
-    if not is_purepy(impl):
-        assert result.dtype == np.dtype(dtype)
+    assert_result_dtype(impl, result, dtype)
 
 
 @pytest.mark.parametrize(
@@ -295,9 +287,7 @@ def test_accepts_the_real_result_dtypes(impl, func, dtype):
     a = np.array([1 + 2j, 3 - 1j, -2 + 4j, 5 + 5j, 6 - 6j]).astype(np.complex64)
 
     res = np.asarray(impl.aggregate(group_idx, a, func=func, size=3, dtype=dtype))
-    if not is_purepy(impl):
-        # the pure python implementation ignores the dtype argument entirely
-        assert res.dtype == np.dtype(dtype)
+    assert_result_dtype(impl, res, dtype)
 
 
 @pytest.mark.parametrize("func", ["sum", "prod", "mean", "var", "std", "min", "max"])
@@ -383,7 +373,7 @@ def test_axis(impl, rng, axis):
     else:
         expected = np.stack([a[:, group_idx == grp].sum(axis=1) for grp in groups], axis=1)
     np.testing.assert_allclose(res, expected, rtol=1e-9)
-    assert res.dtype == a.dtype
+    assert_result_dtype(impl, res, a.dtype)
 
 
 @pytest.mark.parametrize("func", ["sum", "mean", "var", "max", "first", "last"])
@@ -405,7 +395,7 @@ def test_list_input(impl):
 
     res = np.asarray(impl.aggregate(group_idx, a, func="mean", size=2))
     np.testing.assert_allclose(res, [np.mean(a[:2]), np.mean(a[2:])], rtol=1e-5)
-    assert res.dtype == np.complex128
+    assert_result_dtype(impl, res, np.complex128)
 
 
 @pytest.mark.parametrize("func", complex_order_funcs + complex_arg_funcs)

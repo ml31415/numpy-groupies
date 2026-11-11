@@ -12,6 +12,7 @@ from numpy_groupies.fills import (
     resolve_fill_value,
 )
 from numpy_groupies.functions import (
+    QUANTILE_METHODS,
     aggregate_common_doc,
     bind_functions,
     forced_float_types,
@@ -64,11 +65,12 @@ def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> list
 
 
 def _sum(x: Sequence[Any]) -> Any:
-    # builtin sum over numpy integers accumulates in the input dtype without
-    # promotion (NEP 50), so large groups silently wrap - python ints keep
-    # the per-group accumulation exact, everything else (floats, complex,
-    # numpy bools, decimals) keeps the builtin behaviour; numbers is stdlib
-    # and numpy registers its integer scalars as Integral
+    # the integers are summed as python numbers, which do not wrap: the sum
+    # of a group is exact where the other backends accumulate in the
+    # accumulator of their sign and wrap there.  Everything else (the floats,
+    # the complex values, the decimals) keeps the builtin behaviour.
+    # numbers is stdlib, and numpy registers its integer scalars as Integral
+    # - its booleans it does not, and those keep the builtin behaviour as well
     if all(isinstance(val, numbers.Integral) for val in x):
         return sum(int(val) for val in x)
     return sum(x)
@@ -233,13 +235,26 @@ def _std(x: Sequence[Any], ddof: int = 0) -> Any:
     return math.sqrt(var)
 
 
+def _sum_of_squares(x: Sequence[Any]) -> Any:
+    """The sum of the squared values of one group.
+
+    The square of the real values, the squared magnitude of the complex ones.
+    The integers are squared as python numbers, which do not wrap: the sum is
+    exact where the other backends square them in the accumulator of their
+    sign (int64 or uint64), and it is the exact sum that the accumulator
+    holds as long as the squares fit it.
+    """
+    if all(isinstance(val, numbers.Integral) for val in x):
+        return sum(int(val) * int(val) for val in x)
+    return sum(abs(xx) ** 2 for xx in x)
+
+
 def _prod(x: Sequence[Any]) -> Any:
-    # the integer twin of _sum: numpy integers multiply in their own dtype
-    # without promotion (NEP 50), so a product in the dtype of narrow values
-    # would wrap - python ints keep the per-group accumulation exact, and the
-    # bools go with them (numpy answers int64 for a product of booleans as
-    # well); everything else (floats, complex, decimals) keeps its own
-    # behaviour, overflow included
+    # the multiplicative counterpart of _sum: the integers are multiplied as
+    # python numbers, which do not wrap, so the product of a group is exact
+    # where the other backends accumulate in the accumulator of their sign
+    # and wrap there.  Everything else (the floats, the complex values, the
+    # decimals) keeps its own behaviour, overflow included.
     if all(isinstance(val, numbers.Integral) for val in x):
         r = 1
         for xx in x:
@@ -370,17 +385,175 @@ def _propagate_nan(reduction: Callable[[Sequence[Any]], Any]) -> Callable[[Seque
     return reduction_with_nan
 
 
-def _quantile(x: Sequence[Any], **kwargs: Any) -> Any:
-    """The quantile is not implemented by the pure python backend.
+def _sorted_values(x: Sequence[Any]) -> list[Any]:
+    """the values of a group, in the order numpy orders them.
 
-    The quantile is an order statistic over the values of a group - the same
-    kind of operation the median is, and the median is implemented here.  The
-    quantile needs the same machinery, though: the two values it interpolates
-    between have to be picked out of the sorted group.  The numpy and the
-    numba implementations do that; this one does not, and says so instead of
-    answering something else.
+    numpy orders the complex values lexicographically - the real part first,
+    the imaginary one breaking the tie - and the python numbers cannot be
+    compared at all, so the key does the ordering the numpy way.
     """
-    raise NotImplementedError("the quantile is not implemented by the pure python backend")
+    if any(isinstance(val, complex) or getattr(getattr(val, "dtype", None), "kind", None) == "c" for val in x):
+        return sorted(x, key=lambda val: (val.real, val.imag))
+    return sorted(x)
+
+
+def _quantile(x: Sequence[Any], q: float = 0.5, method: str = "linear") -> Any:
+    """The quantile of the values of one group, the way numpy computes it.
+
+    The values are sorted, and the quantile is the position it asks for in
+    that order - a fraction of the way from the first to the last one -
+    interpolated between the two neighbours the way the method names.  The
+    methods are the ones numpy knows: linear, lower, higher, midpoint and
+    nearest.
+
+    A nan poisons the whole group, like it poisons the median - the quantile
+    of a group with a nan in it is a nan.
+    """
+    if method not in QUANTILE_METHODS:
+        raise ValueError(f"unknown interpolation method '{method}' - use one of {sorted(QUANTILE_METHODS)}")
+    if not 0.0 <= q <= 1.0:
+        raise ValueError("Quantiles must be in the range [0, 1]")
+    if any(val != val for val in x):
+        # like np.median, any nan poisons the whole group - and the poison is
+        # shaped like the values it poisons
+        return x[0] * math.nan
+    values = _sorted_values(x)
+    count = len(values)
+    # the virtual index of the quantile: the position it asks for in the
+    # sorted group, counted in fractions of the way from 0 to n - 1
+    pos = q * (count - 1)
+    lower_index = math.floor(pos)
+    upper_index = math.ceil(pos)
+    lower = values[lower_index]
+    upper = values[upper_index]
+    if method == "nearest":
+        # numpy rounds the virtual index to the nearest element, halves to
+        # even, and takes that element as it is
+        return values[min(round(pos), count - 1)]
+    if method == "lower":
+        return lower
+    if method == "higher":
+        return upper
+    if method == "midpoint":
+        return (lower + upper) / 2
+    if lower_index == upper_index:
+        # the quantile is one of the values of the group
+        return lower
+    # the linear interpolation between the two neighbours
+    return lower + (upper - lower) * (pos - lower_index)
+
+
+def _percentile(x: Sequence[Any], q: float = 50.0, method: str = "linear") -> Any:
+    """The percentile is the quantile in percent."""
+    return _quantile(x, q / 100.0, method=method)
+
+
+def _widened(x: Sequence[Any]) -> list[Any]:
+    """the values of a group, the integers as python numbers.
+
+    The python numbers do not wrap, so the running values of the narrow
+    integers are computed where nothing can overflow them - the other
+    backends compute them in the accumulator of their sign.
+    """
+    if all(isinstance(val, numbers.Integral) for val in x):
+        return [int(val) for val in x]
+    return list(x)
+
+
+def _cumsum(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
+    """The running sum of the values of one group.
+
+    A nan poisons the group it sits in - the running sum is a nan from there
+    on - and the values of the other groups are untouched.
+    """
+    out: list[Any] = []
+    running: Any = 0
+    for val in _widened(x):
+        # the addition carries the poison: a nan in one part of a complex
+        # value poisons that part alone, the way numpy's cumsum carries it
+        running = running + val
+        out.append(running)
+    return out
+
+
+def _nancumsum(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
+    """The running sum of the values of one group, the nans left out.
+
+    A nan counts as nothing - the running value stands where it is.
+    """
+    out: list[Any] = []
+    running: Any = 0
+    for val in _widened(x):
+        if val == val:
+            running = running + val
+        out.append(running)
+    return out
+
+
+def _cumprod(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
+    """The running product of the values of one group."""
+    out: list[Any] = []
+    running: Any = 1
+    for val in _widened(x):
+        running = running * val
+        out.append(running)
+    return out
+
+
+def _nancumprod(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
+    """The running product of the values of one group, the nans left out.
+
+    A nan counts as the one - the running value stands where it is.
+    """
+    out: list[Any] = []
+    running: Any = 1
+    for val in _widened(x):
+        if val == val:
+            running = running * val
+        out.append(running)
+    return out
+
+
+def _cum_extreme(kind: str, skip_nan: bool) -> Callable[..., list[Any]]:
+    """The running extreme of the values of one group.
+
+    The running value starts at the fill value, and the first value of the
+    group always wins.  A nan poisons the group it sits in - the plain
+    running extreme takes it as the running value - while the nan variant
+    leaves it out: a nan neither wins nor clears the flag that says that no
+    value has been seen yet, so the places before the first value of the
+    group hold the fill value and the ones after it the running extreme.
+    """
+
+    def one_group(x: Sequence[Any], fill_value: Any = 0, **kwargs: Any) -> list[Any]:
+        out: list[Any] = []
+        running: Any = fill_value
+        seen = False
+        for val in x:
+            if val != val:
+                # a nan - in either part of a complex value
+                if skip_nan:
+                    out.append(running)
+                    continue
+                # the plain variant: the nan is the running value from here on
+                running = val
+                seen = True
+                out.append(running)
+                continue
+            if not seen or (val > running if kind == "max" else val < running):
+                running = val
+            seen = True
+            out.append(running)
+        return out
+
+    one_group.__name__ = f"{'nan' if skip_nan else ''}cum{kind}"
+    return one_group
+
+
+_cummin = _cum_extreme("min", skip_nan=False)
+_cummax = _cum_extreme("max", skip_nan=False)
+_nancummin = _cum_extreme("min", skip_nan=True)
+_nancummax = _cum_extreme("max", skip_nan=True)
 
 
 # the reductions hand out a scalar, the sorting and the collecting function a
@@ -397,10 +570,19 @@ _op_dict: dict[str, Callable[..., Any]] = {
     "mean": _mean,
     "median": _median,
     "quantile": _quantile,
-    "percentile": _quantile,
+    "percentile": _percentile,
     "trapezoid": _trapezoid,
     "std": _std,
     "var": _var,
+    "sumofsquares": _sum_of_squares,
+    "cumsum": _cumsum,
+    "nancumsum": _nancumsum,
+    "cumprod": _cumprod,
+    "nancumprod": _nancumprod,
+    "cummin": _cummin,
+    "nancummin": _nancummin,
+    "cummax": _cummax,
+    "nancummax": _nancummax,
     "skew": _propagate_nan(_skew),
     "kurt": _propagate_nan(_kurt),
     "anynan": _anynan,
@@ -414,7 +596,15 @@ _op_dict: dict[str, Callable[..., Any]] = {
     "nunique": _nunique,
     "mode": _mode,
 }
-_op_dict.update(("nan" + k, v) for k, v in list(_op_dict.items()) if k not in funcs_no_separate_nan)
+# the nan variants of the functions that have one of their own are not
+# generated - the running values leave the nans out in their own way
+_op_dict.update(
+    ("nan" + k, v) for k, v in list(_op_dict.items()) if k not in funcs_no_separate_nan and ("nan" + k) not in _op_dict
+)
+
+# the running values: they answer one value per input item, in the order of
+# the input, and not one per group
+_ONE_PER_ITEM = (_cumsum, _nancumsum, _cumprod, _nancumprod, _cummin, _cummax, _nancummin, _nancummax)
 
 
 def _custom_operation(func: Any) -> Resolved:
@@ -429,7 +619,38 @@ def _custom_operation(func: Any) -> Resolved:
 
 _dispatch = Registry(_op_dict, aliasing, _custom_operation)
 
+# the names the aliases answer to: the table of the aliases holds the names
+# of the functions of the package and the aliases that name them, and the
+# numpy functions among the aliases are named by their own name - np.max is
+# the max, np.quantile the quantile with its q and its method
+_ALIASES_BY_NAME = {name: aliased for name, aliased in aliasing.items() if isinstance(name, str)}
+# numpy's asarray names the collecting function as well - the numpy based
+# backends know it by its identity
+_ALIASES_BY_NAME["asarray"] = "array"
 
+
+def _resolve_alias(func: Any) -> Any:
+    """the function of the package a func names.
+
+    The numpy functions name the functions of the package here as they do in
+    the numpy based backends: np.max is the max, np.quantile the quantile -
+    and with it the arguments of the call reach the function of the package,
+    which they would not if the numpy function were called as a callable of
+    the caller.  The name of a callable of the caller's own is no name of the
+    package - unless it happens to be one of them.
+    """
+    if isinstance(func, str) or not callable(func):
+        return func
+    name = getattr(func, "__name__", None)
+    if name is None:
+        return func
+    return _ALIASES_BY_NAME.get(name, func)
+
+
+# the names the functions of the package answer to: the aliases of the
+# registry, which know the numpy functions by their name as well - the numpy
+# based backends know them by their identity, and the table of the aliases
+# carries them in both ways
 def _a_dtype(a: Sequence[Any]) -> type:
     # python numbers carry no dtype; the element types decide what a numpy
     # array of these values would have made of them - a mixed list of ints
@@ -564,7 +785,7 @@ def aggregate(
                 raise ValueError(TOO_LARGE_FOR_SIZE.format(size=size))
 
     try:
-        funcname, op, _temporal_op = _dispatch[func]
+        funcname, op, _temporal_op = _dispatch[_resolve_alias(func)]
     except TypeError:
         # a func that cannot be a key of the table at all: it names no known
         # function either, so the registry answers it as a callable of the
@@ -588,11 +809,13 @@ def aggregate(
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it - the averaging functions
     # answer floats even for integer values, so their output dtype is the one
-    # the fill value has to fit
+    # the fill value has to fit.  The squared sums are the exception: their
+    # integral answer is exact in the python numbers, like the sums are
     result_dtype = _a_dtype(vals)
     if (
         result_dtype is int
         and isinstance(funcname, str)
+        and resolve_name(funcname) not in ("sumofsquares", "nansumofsquares")
         and (resolve_name(funcname) in forced_float_types or resolve_name(funcname) in forced_real_float_types)
     ):
         result_dtype = float
@@ -616,7 +839,10 @@ def aggregate(
     # shortens the input, or those positions would count the removed values too
     pos: Sequence[int] = range(len(vals))
 
-    if isinstance(funcname, str) and funcname.startswith("nan"):
+    # the running values answer one value per input item: their nan variants
+    # leave the nan in place - the running value stands there, the way the
+    # kernels of the other backends answer it - so they are not shortened
+    if isinstance(funcname, str) and funcname.startswith("nan") and op not in _ONE_PER_ITEM:
         # remove nans (works for complex values, where math.isnan fails) -
         # a group of nothing but nans loses every one of its values and is
         # then left to the fill value, exactly like a group missing from
@@ -630,6 +856,21 @@ def aggregate(
 
     if op is _sort:
         return _sort(idx, vals, reverse=kwargs.get("reverse", False))
+    if op in _ONE_PER_ITEM:
+        # the running values answer one value per input item, in the order of
+        # the input - the places of a group hold its running values, the ones
+        # of the other groups are untouched
+        ret = [fill_value] * len(pos)
+        running_data = sorted(zip(pos, idx, vals), key=operator.itemgetter(1))
+        for _ix, entries_of_group in itertools.groupby(running_data, key=operator.itemgetter(1)):
+            # the entries of the group are needed twice - the values of the
+            # group and the places they sit at - and the iterator of the
+            # groupby is spent by the first of the two
+            group_entries: list[tuple[Any, Any, Any]] = list(entries_of_group)
+            running = op([val for _, _, val in group_entries], fill_value=fill_value, **kwargs)
+            for (p, _ix2, _val), value in zip(group_entries, running):
+                ret[p] = value
+        return ret
     if op is _topk:
         # the topk answers k values per group: a list per group, the way the
         # collecting function answers its sequences - the pure python
@@ -672,6 +913,17 @@ aggregate.__doc__ = (
     """
     This is the pure python implementation of aggregate. It is terribly slow.
     Using the numpy version is highly recommended.
+
+    It computes with python numbers and needs no numpy: the answers are the
+    python numbers it computes, without a dtype of their own, and the
+    integers accumulate exactly where the other backends accumulate in the
+    wide accumulator of their sign and wrap there.
+
+    Every function of the package is there - the quantile and the running
+    values among them.  What it cannot do is the temporal arithmetic and the
+    multidimensional output: the durations and the moments of the timestamps
+    run on their ticks, and the axis and the sequence of sizes are refused,
+    as they are by the backend that has no numpy to lay the values out with.
     """
     + aggregate_common_doc
 )
