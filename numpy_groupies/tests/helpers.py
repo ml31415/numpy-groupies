@@ -79,20 +79,14 @@ def is_supported(impl, func):
         func = getattr(func, "__name__", None)
         if not isinstance(func, str):
             return True
-    table = _dispatch_of(impl)
+    # every backend holds a dispatch table: a table of the aliases of the
+    # functions it knows and the implementation of its own behind every one
+    # of them - and one that has none knows no function at all
+    table = getattr(impl, "_dispatch", None)
     if table is None:
         return True
     resolved = table.get(func)
     return resolved is not None and resolved.op is not None
-
-
-def _dispatch_of(impl):
-    """The dispatch table of a backend.
-
-    Every backend holds one: a table of the aliases of the functions it knows
-    and the implementation of its own behind every one of them.
-    """
-    return impl._dispatch
 
 
 def _wrap_notimplemented_skip(impl, name=None):
