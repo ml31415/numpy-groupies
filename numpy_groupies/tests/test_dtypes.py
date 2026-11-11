@@ -15,7 +15,7 @@ never depends on which backend computed it.
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_numba, aggregate_numpy, aggregate_purepy
+from numpy_groupies import aggregate_numpy, aggregate_purepy
 from numpy_groupies.dtypes import (
     minimum_dtype,
     resolve_output_dtype,
@@ -466,12 +466,11 @@ def test_the_dtype_policy_of_the_running_values_and_the_products(dtype):
         assert resolve_output_dtype(None, func, a_dtype, n) == a_dtype, func
 
 
-@pytest.mark.parametrize("impl_name_", ["purepy", "numpy", "numba"])
 @pytest.mark.parametrize(
     "dtype",
     ["int8", "int16", "int32", "uint8", "uint16", "uint32"],
 )
-def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl_name_, dtype):
+def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl, dtype):
     """No backend hands back a value that wrapped in the dtype of the input.
 
     The sums and running sums of the narrow integers are widened before they
@@ -487,12 +486,11 @@ def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl_nam
     # three values whose exact sum leaves the input dtype
     values = np.array([maximum, maximum, maximum // 2], dtype=a_dtype)
     group_idx = np.array([0, 0, 0])
-    impl = {"purepy": aggregate_purepy, "numpy": aggregate_numpy, "numba": aggregate_numba}[impl_name_]
     wanted = 2 * maximum + maximum // 2
     got = np.asarray(impl.aggregate(group_idx, values, func="sum", size=1))
     np.testing.assert_array_equal(got, wanted, err_msg=f"sum over {dtype} wrapped")
     # the running sum at the last position is the sum itself - the pure
     # python backend knows no running values
-    if impl_name_ != "purepy":
+    if not is_purepy(impl):
         got = np.asarray(impl.aggregate(group_idx, values, func="cumsum", size=1))
         np.testing.assert_array_equal(got[-1], wanted, err_msg=f"cumsum over {dtype} wrapped")
