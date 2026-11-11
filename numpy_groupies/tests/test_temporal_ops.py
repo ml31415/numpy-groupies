@@ -22,15 +22,10 @@ from numpy_groupies.tests.helpers import impl_name
 pytestmark = pytest.mark.usefixtures("skip_purepy")
 
 
-def _dispatch_of(impl):
-    """The dispatch table of a backend."""
-    return impl.ops._dispatch
-
-
 def test_every_function_has_a_temporal_operation(impl):
     """The temporal operation of every function of the package is in the
     dispatch of the backend, beside the numeric one."""
-    dispatch = _dispatch_of(impl)
+    dispatch = impl._dispatch
     for name in function_names():
         temporal_op = dispatch[name].temporal_op
         assert temporal_op is not None, name
@@ -41,7 +36,7 @@ def test_the_temporal_operations_are_not_aliases(impl):
     """The temporal operations are no aliases of the public functions - they
     are the other half of the operation of a function, and they are reached
     by their name."""
-    dispatch = _dispatch_of(impl)
+    dispatch = impl._dispatch
     if dispatch is None:
         pytest.skip("the pure python backend knows no temporal types")
     for name in function_names():

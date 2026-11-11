@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from numpy_groupies import npg_numpy
+from numpy_groupies import npg_numba, npg_numpy
 from numpy_groupies.tests.helpers import (
     assert_result_dtype,
     complex_arg_funcs,
@@ -14,7 +14,6 @@ from numpy_groupies.tests.helpers import (
     complex_order_funcs,
     complex_real_out_funcs,
     impl_name,
-    npg_numba,
 )
 from numpy_groupies.tests.reference import aggregate_ref
 

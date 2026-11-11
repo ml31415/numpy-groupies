@@ -15,7 +15,6 @@ from functools import wraps
 import numpy as np
 import pytest
 
-from numpy_groupies import npg_numba, npg_numpy, npg_purepy
 from numpy_groupies.driver import aliasing
 from numpy_groupies.registry import (
     aliasing_py,
@@ -88,18 +87,12 @@ def is_supported(impl, func):
 
 
 def _dispatch_of(impl):
-    """The dispatch table of a backend, or None for one that has none.
+    """The dispatch table of a backend.
 
     Every backend holds one: a table of the aliases of the functions it knows
     and the implementation of its own behind every one of them.
     """
-    if impl is npg_purepy:
-        return npg_purepy._dispatch
-    if impl is npg_numpy:
-        return npg_numpy.ops._dispatch
-    if impl is npg_numba:
-        return npg_numba.ops._dispatch
-    return None
+    return impl._dispatch
 
 
 def _wrap_notimplemented_skip(impl, name=None):
@@ -132,6 +125,11 @@ class _BackendProxy:
         self._module = module
         self._name = module.__name__.rsplit(".", 1)[-1].removeprefix("npg_")
         self.aggregate = _wrap_notimplemented_skip(module.aggregate, f"aggregate_{self._name}")
+
+    @property
+    def _dispatch(self):
+        """The dispatch table of the backend under test."""
+        return self._module._dispatch
 
     def __getattr__(self, name):
         if name.startswith("_"):
