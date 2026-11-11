@@ -12,19 +12,10 @@ could leave the +/-2**53 window that float64 represents exactly, so a result
 never depends on which backend computed it.
 """
 
-from typing import Any
-
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_numpy, aggregate_purepy
-
-aggregate_numba: Any
-
-try:
-    from numpy_groupies import aggregate_numba
-except ImportError:
-    aggregate_numba = None
+from numpy_groupies import aggregate_numba, aggregate_numpy, aggregate_purepy
 from numpy_groupies.dtypes import (
     minimum_dtype,
     resolve_output_dtype,
@@ -497,8 +488,6 @@ def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl_nam
     values = np.array([maximum, maximum, maximum // 2], dtype=a_dtype)
     group_idx = np.array([0, 0, 0])
     impl = {"purepy": aggregate_purepy, "numpy": aggregate_numpy, "numba": aggregate_numba}[impl_name_]
-    if impl_name_ == "numba":
-        pytest.importorskip("numba")
     wanted = 2 * maximum + maximum // 2
     got = np.asarray(impl.aggregate(group_idx, values, func="sum", size=1))
     np.testing.assert_array_equal(got, wanted, err_msg=f"sum over {dtype} wrapped")
