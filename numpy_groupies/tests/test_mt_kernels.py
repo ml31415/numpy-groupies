@@ -31,8 +31,8 @@ import numba as nb
 import numpy as np
 import pytest
 
-from numpy_groupies.aggregate_numba import aggregate, mt
 from numpy_groupies.fills import DEFAULT_FILL_VALUE
+from numpy_groupies.npg_numba import aggregate, averaging, mt
 
 # the operations that can be reduced in chunks - the others need the values
 # of a group together (the order statistics) or one output per value (the
@@ -338,8 +338,6 @@ def test_the_number_of_the_threads_of_a_call_reaches_the_kernel(data):
     # the wrapper of the operation was built would be the number the package
     # was imported with, whatever the caller does with numba.set_num_threads after
     # that - and the sequential path would be unreachable
-    import numba as nb
-
     group_idx, values = data
     if nb.get_num_threads() < 2:
         pytest.skip("the machine has no second thread to compare against")
@@ -540,7 +538,6 @@ def test_the_group_path_complains_about_a_fault_of_the_indices(func, group_data)
 # equal numbers is where the difference shows: the tests below compare the
 # two results with a tolerance and not with the last bits.
 
-
 MOMENTS = ["skew", "kurt", "nanskew", "nankurt"]
 
 
@@ -633,7 +630,6 @@ def test_the_fold_of_the_moments_takes_over_the_extrema_of_an_empty_chunk():
     # never seeded, and it holds whatever the allocator left there.  The
     # fold of two such states has to take the extrema of the one that has
     # values, and it has to leave the ones of the other alone.
-    from numpy_groupies.aggregate_numba import averaging
 
     def state(count: int, low: int, high: int) -> np.ndarray:
         return averaging.MomentState(
@@ -703,7 +699,6 @@ def test_the_moments_refuse_the_complex_input(func, rng):
 # The result is the one of the sequential path bit for bit: every chunk looks
 # at its own values in the order they come, and the fold picks the value of
 # the chunk that comes first (or last) in the input.
-
 
 ORDERED = ["first", "last", "nanfirst", "nanlast"]
 
@@ -811,7 +806,6 @@ def test_the_ordered_values_complain_about_a_fault_of_the_indices(func, data):
 # with the same code the sequential loop runs - so the result is the one of
 # the sequential loop bit for bit.
 
-
 CUSTOM = [
     lambda x: x.sum(),
     lambda x: float(np.sort(x)[len(x) // 2]),
@@ -906,7 +900,6 @@ def test_the_number_of_the_threads_does_not_change_the_result_of_the_callable(fu
 # first of two equal values.
 #
 # The result is the one of the sequential path bit for bit.
-
 
 ARGUMENTS = ["argmax", "argmin", "nanargmax", "nanargmin"]
 

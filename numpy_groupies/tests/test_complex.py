@@ -3,20 +3,70 @@
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_numpy
+from numpy_groupies import npg_numba, npg_numpy
 from numpy_groupies.tests.helpers import (
-    aggregate_numba,
     assert_result_dtype,
-    complex_arg_funcs,
-    complex_asymmetric_funcs,
-    complex_bool_funcs,
-    complex_funcs,
-    complex_int_funcs,
-    complex_order_funcs,
-    complex_real_out_funcs,
     impl_name,
 )
 from numpy_groupies.tests.reference import aggregate_ref
+
+# The functions with a well-defined complex result, following numpy semantics -
+# the order statistics included, as numpy orders complex values lexicographically.
+# median is the one order statistic missing: over incomparable values numpy's own
+# partition and its sort disagree, so the group loop cannot tell what a poisoned
+# group mediates to - what its answer has to look like is pinned by
+# test_median_of_a_poisoned_group instead, and a clean group by test_median
+complex_funcs = (
+    "sum",
+    "prod",
+    "mean",
+    "var",
+    "std",
+    "trapezoid",
+    "sumofsquares",
+    "first",
+    "last",
+    "nansum",
+    "nanprod",
+    "nanmean",
+    "nanvar",
+    "nanstd",
+    "nanmedian",
+    "nantrapezoid",
+    "nansumofsquares",
+    "cumsum",
+    "all",
+    "any",
+    "allnan",
+    "anynan",
+    "nanall",
+    "nanany",
+    "len",
+    "nanlen",
+    "nanfirst",
+    "nanlast",
+    "min",
+    "max",
+    "nanmin",
+    "nanmax",
+    "mode",
+    "argmin",
+    "argmax",
+    "nanargmin",
+    "nanargmax",
+)
+# their complex result is the real squared magnitude, not complex a*a
+complex_real_out_funcs = frozenset({"var", "std", "sumofsquares", "nanvar", "nanstd", "nansumofsquares"})
+# these count, test or point at a position, so their result is not a number of
+# the input type
+complex_bool_funcs = frozenset({"all", "any", "allnan", "anynan", "nanall", "nanany"})
+complex_arg_funcs = ("argmin", "argmax", "nanargmin", "nanargmax")
+complex_int_funcs = frozenset({"len", "nanlen", *complex_arg_funcs})
+# order statistics over the values themselves, as opposed to their positions
+complex_order_funcs = ("min", "max", "nanmin", "nanmax", "mode")
+# conjugating the input does not simply conjugate the result for these: it
+# flips the order of two values sharing a real part
+complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
 
 
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
@@ -429,12 +479,10 @@ def test_order_functions_follow_numpy_lexicographic(impl, func):
 def test_order_functions_are_not_rejected_by_numba(func):
     # the numba kernels used to refuse complex values here; they compare the two
     # parts themselves now, so they have to agree with the numpy implementation
-    if aggregate_numba is None:
-        pytest.skip("numba implementation not available")
     group_idx = np.array([0, 0, 1, 1, 2, 2])
     a = np.array([1 + 9j, 1 - 1j, 3 + 0j, 2 + 5j, -0.0 + 0j, 0.0 - 0j])
 
-    res = np.asarray(aggregate_numba.aggregate(group_idx, a, func=func, size=3))
+    res = np.asarray(npg_numba.aggregate(group_idx, a, func=func, size=3))
     expected = np.asarray(aggregate_ref(group_idx, a, func=func, size=3))
     np.testing.assert_array_equal(res, expected)
 
@@ -470,7 +518,7 @@ def test_order_functions_use_the_extreme_value_of_the_order():
         np.testing.assert_array_equal(np.asarray(aggregate_ref(group_idx, a, func=func, size=2)), [0, 1])
 
     # masking with inf+0j would leave no value equal to the found minimum
-    impls = [aggregate_numpy.aggregate] + ([aggregate_numba.aggregate] if aggregate_numba is not None else [])
+    impls = [npg_numpy.aggregate, npg_numba.aggregate]
     both_in_one_group = np.array([0, 0])
     for impl in impls:
         for values, func in (

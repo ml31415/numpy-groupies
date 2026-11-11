@@ -8,14 +8,14 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba.compose import (
+from numpy_groupies.npg_numba.compose import (
     build_custom_kernel,
     complex_less,
     output_size,
     rule_int64,
 )
-from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.aggregate_numba.mt import chunk_count, should_use_mt
+from numpy_groupies.npg_numba.jit import njit_stable
+from numpy_groupies.npg_numba.mt import chunk_count, should_use_mt
 from numpy_groupies.validation import NEGATIVE_INDICES
 
 # The state of the scan: the index of the best value of every group, the

@@ -11,12 +11,10 @@ filtered out of the collection.
 """
 
 from functools import wraps
-from typing import Any
 
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_numpy, aggregate_purepy
 from numpy_groupies.driver import aliasing
 from numpy_groupies.registry import (
     aliasing_py,
@@ -25,32 +23,17 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.tests.reference import aggregate_ref, reference_names
 
-aggregate_numba: Any
-
-try:
-    from numpy_groupies import aggregate_numba
-except ImportError:
-    aggregate_numba = None
-
-# backend registry: module -> short name, in fixture-parametrization order
-_backend_names = {
-    module: name
-    for name, module in (
-        ("purepy", aggregate_purepy),
-        ("numpy", aggregate_numpy),
-        ("numba", aggregate_numba),
-    )
-    if module is not None
-}
-_implementations = list(_backend_names)
-
 
 def impl_name(impl):
     """Short backend name ("purepy", "numpy", ...) for a backend module
-    or its ``_BackendProxy``."""
+    or its ``_BackendProxy``.
+
+    The name of the module of a backend carries the name of the backend:
+    ``npg_purepy`` is the pure python one, ``npg_numpy`` the numpy one.
+    """
     if isinstance(impl, _BackendProxy):
         return impl._name
-    return _backend_names.get(impl)
+    return impl.__name__.rsplit(".", 1)[-1].removeprefix("npg_")
 
 
 def random_group_idx(rng, size, n_groups):
@@ -96,26 +79,14 @@ def is_supported(impl, func):
         func = getattr(func, "__name__", None)
         if not isinstance(func, str):
             return True
-    table = _dispatch_of(impl)
+    # every backend holds a dispatch table: a table of the aliases of the
+    # functions it knows and the implementation of its own behind every one
+    # of them - and one that has none knows no function at all
+    table = getattr(impl, "_dispatch", None)
     if table is None:
         return True
     resolved = table.get(func)
     return resolved is not None and resolved.op is not None
-
-
-def _dispatch_of(impl):
-    """The dispatch table of a backend, or None for one that has none.
-
-    Every backend holds one: a table of the aliases of the functions it knows
-    and the implementation of its own behind every one of them.
-    """
-    if impl is aggregate_purepy:
-        return aggregate_purepy._dispatch
-    if impl is aggregate_numpy:
-        return aggregate_numpy.ops._dispatch
-    if aggregate_numba is not None and impl is aggregate_numba:
-        return aggregate_numba.ops._dispatch
-    return None
 
 
 def _wrap_notimplemented_skip(impl, name=None):
@@ -146,8 +117,13 @@ class _BackendProxy:
 
     def __init__(self, module):
         self._module = module
-        self._name = _backend_names[module]
+        self._name = module.__name__.rsplit(".", 1)[-1].removeprefix("npg_")
         self.aggregate = _wrap_notimplemented_skip(module.aggregate, f"aggregate_{self._name}")
+
+    @property
+    def _dispatch(self):
+        """The dispatch table of the backend under test."""
+        return self._module._dispatch
 
     def __getattr__(self, name):
         if name.startswith("_"):
@@ -240,67 +216,6 @@ def is_numba(impl):
     implementation, where the other two only call what they are handed.
     """
     return impl_name(impl) == "numba"
-
-
-# The functions with a well-defined complex result, following numpy semantics -
-# the order statistics included, as numpy orders complex values lexicographically.
-# median is the one order statistic missing: over incomparable values numpy's own
-# partition and its sort disagree, so the group loop cannot tell what a poisoned
-# group mediates to - what its answer has to look like is pinned by
-# test_median_of_a_poisoned_group instead, and a clean group by test_median
-complex_funcs = (
-    "sum",
-    "prod",
-    "mean",
-    "var",
-    "std",
-    "trapezoid",
-    "sumofsquares",
-    "first",
-    "last",
-    "nansum",
-    "nanprod",
-    "nanmean",
-    "nanvar",
-    "nanstd",
-    "nanmedian",
-    "nantrapezoid",
-    "nansumofsquares",
-    "cumsum",
-    "all",
-    "any",
-    "allnan",
-    "anynan",
-    "nanall",
-    "nanany",
-    "len",
-    "nanlen",
-    "nanfirst",
-    "nanlast",
-    "min",
-    "max",
-    "nanmin",
-    "nanmax",
-    "mode",
-    "argmin",
-    "argmax",
-    "nanargmin",
-    "nanargmax",
-)
-# their complex result is the real squared magnitude, not complex a*a
-complex_real_out_funcs = {"var", "std", "sumofsquares", "nanvar", "nanstd", "nansumofsquares"}
-# these count, test or point at a position, so their result is not a number of
-# the input type
-complex_bool_funcs = {"all", "any", "allnan", "anynan", "nanall", "nanany"}
-complex_arg_funcs = ("argmin", "argmax", "nanargmin", "nanargmax")
-complex_int_funcs = {"len", "nanlen", *complex_arg_funcs}
-# order statistics over the values themselves, as opposed to their positions
-complex_order_funcs = ("min", "max", "nanmin", "nanmax", "mode")
-# conjugating the input does not simply conjugate the result for these: it
-# flips the order of two values sharing a real part
-complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
-# functions whose output dtype a complex input does not fix
-complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
 
 
 def aliasing_of(impl):

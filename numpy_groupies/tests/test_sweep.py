@@ -22,16 +22,17 @@ computation per group.
 
 import pytest
 
+from numpy_groupies.npg_numba import mt
 from numpy_groupies.tests.helpers import (
     SWEEP_SIZES,
     assert_matches_the_group_loop,
-    complex_funcs,
     func_list,
 )
+from numpy_groupies.tests.test_complex import complex_funcs
 
 # the values of the block and the functions that answer for them - the
 # complex values are only asked of the functions whose result is defined for
-# a complex value (see the sets of the helpers); the integer values get every
+# a complex value (see the lists of the complex test); the integer values get every
 # function - a nan variant over integers is the function itself, and the
 # ladder of the output dtypes is the business of the comparison, not of the
 # selection
@@ -84,7 +85,6 @@ def test_the_big_data_reaches_the_parallel_path(block):
     of them, the sweep would measure the sequential path twice and call it
     the parallel one.
     """
-    from numpy_groupies.aggregate_numba import mt
 
     n_values = SWEEP_SIZES["large"]
     # the groups of the block - the scaled block of the sweep has the same

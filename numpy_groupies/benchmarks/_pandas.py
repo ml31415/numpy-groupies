@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from numpy_groupies.aggregate_numpy import aggregate as _aggregate_numpy
+from numpy_groupies import aggregate_np
 from numpy_groupies.driver import (
     _aggregate_wrap,
     aliasing,
@@ -180,7 +180,7 @@ def aggregate(
     if iscomplexobj(a):
         # pandas' groupby kernels have no signatures for complex dtypes - the
         # numpy implementation handles complex values, scalars included
-        return _aggregate_numpy(
+        return aggregate_np(
             group_idx,
             a,
             func=func,

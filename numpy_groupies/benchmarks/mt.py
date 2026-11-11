@@ -109,9 +109,19 @@ import time
 import numba as nb
 import numpy as np
 
-from numpy_groupies.aggregate_numba.jit import njit_stable
-from numpy_groupies.aggregate_numba.mt import logical_core_count, physical_core_count
 from numpy_groupies.benchmarks import _release_numba_resources
+from numpy_groupies.npg_numba.jit import njit_stable
+from numpy_groupies.npg_numba.mt import logical_core_count, physical_core_count
+
+try:
+    from numpy_groupies import npg_numba
+    from numpy_groupies.npg_numba import mt as package_mt
+    from numpy_groupies.npg_numba import reductions, specials
+except ImportError:  # pragma: no cover - the package is optional
+    npg_numba = None
+    package_mt = None
+    reductions = None
+    specials = None
 
 BYTES_PER_ELEMENT = 16.0  # a float64 value and an int64 index
 
@@ -149,9 +159,7 @@ def _package_ns_per_value() -> dict[str, float]:
     global _PACKAGE_NS_PER_VALUE
     if _PACKAGE_NS_PER_VALUE:
         return _PACKAGE_NS_PER_VALUE
-    try:
-        from numpy_groupies.aggregate_numba import specials
-    except ImportError:
+    if specials is None:
         return {}
     _PACKAGE_NS_PER_VALUE = {
         "median": specials._NS_PER_VALUE_SELECT,
@@ -371,18 +379,14 @@ def repeat_for(n_values: int) -> int:
 
 def _package_kernel():
     """The sequential kernel of numpy_groupies, if the package is there."""
-    try:
-        from numpy_groupies.aggregate_numba import sum as npg_sum
-    except ImportError:  # the package is optional
+    if npg_numba is None:  # the package is optional
         return None
-    return npg_sum
+    return npg_numba.sum
 
 
 def _group_handles():
     """The handles of the operations that parallelize over the groups."""
-    try:
-        from numpy_groupies.aggregate_numba import specials
-    except ImportError:
+    if specials is None:
         return {}
     handles = {}
     for name in GROUP_OPS:
@@ -433,8 +437,8 @@ def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool
     rows = []
     pool = nb.get_num_threads()  # the size of the pool, before any set_num_threads
 
-    npg_sum = _package_kernel()
-    if npg_sum is None:
+    package_sum = _package_kernel()
+    if package_sum is None:
         print("numpy_groupies is not importable - the overhead of the package is unknown")
 
     points = len(sizes) * len(group_counts) * sum(1 for t in thread_counts if t <= pool)
@@ -447,8 +451,8 @@ def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool
             sum_mt(warm, warm_a, np.zeros((t, 10)), 10)
     empty_parallel(warm)
     sum_seq(warm, warm_a, np.zeros(10))
-    if npg_sum is not None:
-        npg_sum(warm, warm_a)
+    if package_sum is not None:
+        package_sum(warm, warm_a)
     print("         compiled, measuring", flush=True)
 
     for n_values in sizes:
@@ -464,10 +468,10 @@ def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool
                 sum_seq(group_idx, a, out)
                 return out
 
-            if npg_sum is not None:
+            if package_sum is not None:
 
                 def npg_call(group_idx=group_idx, a=a):
-                    return npg_sum(group_idx, a)
+                    return package_sum(group_idx, a)
 
             for n_threads in thread_counts:
                 if n_threads > pool:
@@ -499,7 +503,7 @@ def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool
                 seq_median = mt_median = 0.0
                 for _ in range(rounds):
                     (seq, seq_median), (mt, mt_median) = measure_pair(seq_call, mt_call, repeat)
-                    if npg_sum is not None:
+                    if package_sum is not None:
                         npg, _ = measure(npg_call, repeat)
                 nb.set_num_threads(pool)
 
@@ -536,9 +540,7 @@ def run_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool
 
 def run_package_chunked_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool):
     """The measurements of the chunked path with the kernels of the package."""
-    try:
-        from numpy_groupies.aggregate_numba import reductions
-    except ImportError:
+    if reductions is None:
         print("numpy_groupies is not importable - the package kernels cannot be measured")
         return []
 
@@ -680,9 +682,7 @@ def run_group_grid(sizes, group_counts, thread_counts, rounds: int, cold: bool):
 
 def run_gather_grid(sizes, thread_counts, rounds: int, cold: bool):
     """The measurements of the gather: one value per value."""
-    try:
-        from numpy_groupies.aggregate_numba import gather as npg_gather
-    except ImportError:
+    if npg_numba is None:
         print("numpy_groupies is not importable - the gather cannot be measured")
         return []
 
@@ -694,8 +694,8 @@ def run_gather_grid(sizes, thread_counts, rounds: int, cold: bool):
     print(f"--- the gather: {points} points ---", flush=True)
     print("warming up the gather ...", flush=True)
     warm = rng.integers(0, 10, 1000)
-    npg_gather._gather_1d(rng.random(10), warm, np.empty(1000))
-    npg_gather._gather_1d_mt(rng.random(10), warm, np.empty(1000), 2)
+    npg_numba.gather._gather_1d(rng.random(10), warm, np.empty(1000))
+    npg_numba.gather._gather_1d_mt(rng.random(10), warm, np.empty(1000), 2)
     print("         compiled, measuring", flush=True)
 
     for n_values in sizes:
@@ -705,14 +705,14 @@ def run_gather_grid(sizes, thread_counts, rounds: int, cold: bool):
         out = np.empty(n_values)
 
         def seq_call(group_idx=group_idx, ret=ret, out=out):
-            return npg_gather._gather_1d(ret, group_idx, out)
+            return npg_numba.gather._gather_1d(ret, group_idx, out)
 
         for n_threads in thread_counts:
             if n_threads > pool:
                 continue
 
             def mt_call(group_idx=group_idx, ret=ret, out=out, n_threads=n_threads):
-                return npg_gather._gather_1d_mt(ret, group_idx, out, n_threads)
+                return npg_numba.gather._gather_1d_mt(ret, group_idx, out, n_threads)
 
             want = seq_call()
             got = mt_call()
@@ -791,11 +791,11 @@ def run_scaling(sizes, thread_counts) -> None:
     """
     script = (
         "import sys, timeit, numpy as np\n"
-        "from numpy_groupies import aggregate_numba\n"
+        "from numpy_groupies import npg_numba\n"
         "n = int(sys.argv[1])\n"
         "rng = np.random.default_rng(0)\n"
         "gi = rng.integers(0, 1000, n); a = rng.random(n)\n"
-        "call = lambda: aggregate_numba.aggregate(gi, a, func=np.sum)\n"
+        "call = lambda: npg_numba.aggregate(gi, a, func=np.sum)\n"
         "for _ in range(3): call()\n"
         "times = sorted(timeit.Timer(call).repeat(repeat=20, number=10))\n"
         "print(min(times) * 1000 / 10, times[len(times) // 2] * 1000 / 10)\n"
@@ -1122,12 +1122,10 @@ def report(rows: list, info: dict, overhead_rows: list, verbose: bool) -> None:
     package = [r for r in rows if r["path"] == "chunked" and r.get("kernel") == "package"]
     group = [r for r in rows if r["path"] == "group"]
     gather = [r for r in rows if r["path"] == "gather"]
-    try:
-        from numpy_groupies.aggregate_numba import mt as package_mt
-
+    if package_mt is not None:
         GATHER_MT_MIN_VALUES = package_mt.GATHER_MT_MIN_VALUES
         MT_MIN_VALUES = package_mt.MT_MIN_VALUES
-    except ImportError:
+    else:
         GATHER_MT_MIN_VALUES = MT_MIN_VALUES = 0
 
     # the cost of the region, warm and cold
@@ -1227,10 +1225,8 @@ def report(rows: list, info: dict, overhead_rows: list, verbose: bool) -> None:
             print(f"      the crossover: warm at {_values(warm_cross)} (below {_values(warm_below)} it does not pay)")
             print(f"                     cold at {_values(cold_cross)} (below {_values(cold_below)} it does not pay)")
         try:
-            from numpy_groupies.aggregate_numba import mt as package_mt
-
             print(f"    the floor of the package: {package_mt.GROUP_MT_MIN_VALUES:,} values")
-        except ImportError:
+        except AttributeError:
             pass
 
     # the gather
@@ -1287,9 +1283,7 @@ def _package_decision(row: dict) -> tuple[bool | None, float]:
     constants it carries now - the tool does not change them, it says what
     they do.
     """
-    try:
-        from numpy_groupies.aggregate_numba import mt as package_mt
-    except ImportError:
+    if package_mt is None:
         return None, float("nan")
     n, g, t = row["n_values"], row["n_groups"], row["n_threads"]
     if row["path"] == "chunked":

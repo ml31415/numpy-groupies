@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 
 import numpy_groupies as npg
-import numpy_groupies.aggregate_numba as npgb
-from numpy_groupies.tests.helpers import is_purepy
+from numpy_groupies.npg_numba import specials
+from numpy_groupies.tests.helpers import is_numba, is_purepy
 
 
 def _rows(answer):
@@ -125,59 +125,63 @@ def test_the_topk_needs_a_flat_group_index(impl):
         impl.aggregate(group_idx, a, func="topk", k=1, axis=0)
 
 
-def test_the_topk_of_the_package_is_the_one_of_the_best_implementation():
-    import numpy_groupies.aggregate_numpy as npgn
-
+def test_the_topk_of_the_package_is_the_one_of_the_implementation(impl):
+    """The topk of the package - the one of the best implementation - is the
+    topk of every implementation."""
     group_idx = np.array([0, 0, 1, 1, 1, 2])
     a = np.array([5.0, 9.0, 1.0, 7.0, 3.0, 4.0])
-    np.testing.assert_array_equal(npg.topk(group_idx, a, k=2), npgn.aggregate(group_idx, a, func="topk", k=2))
+    np.testing.assert_array_equal(npg.topk(group_idx, a, k=2), impl.topk(group_idx, a, k=2))
 
 
-def test_the_topk_of_the_kernel_answers_the_same_as_the_call():
-    """The bare kernel of the numba backend and the python-level call of the
-    backend answer the same rows."""
+def test_the_topk_of_the_function_answers_the_same_as_the_call(impl):
+    """The function of the implementation - the bare kernel of the numba one -
+    and the call of the backend answer the same rows."""
     group_idx = np.array([0, 0, 1, 1, 1, 2])
     a = np.array([5.0, 9.0, 1.0, 7.0, 3.0, 4.0])
-    np.testing.assert_array_equal(npgb.topk(group_idx, a, 2), npgb.aggregate(group_idx, a, func="topk", k=2))
+    np.testing.assert_array_equal(impl.topk(group_idx, a, k=2), impl.aggregate(group_idx, a, func="topk", k=2))
 
 
 def test_the_topk_of_the_ticks_answers_the_ticks():
     """The bare kernel of the topk of the ticks works on the int64 ticks, and
     it leaves the NaT of a group out."""
+
     ticks = np.array([5, -9223372036854775808, 9, 3], dtype=np.int64)
     group_idx = np.array([0, 0, 1, 1])
     np.testing.assert_array_equal(
-        npgb.specials.tick_topk.plain.stub(group_idx, ticks, 2),
+        specials.tick_topk.plain.stub(group_idx, ticks, 2),
         np.array([[5, 0], [9, 3]], dtype=np.int64),
     )
 
 
-def test_the_topk_of_a_temporal_input_can_be_asked_for_in_ticks():
-    import numpy_groupies.aggregate_numpy as npgn
-
+def test_the_topk_of_a_temporal_input_can_be_asked_for_in_ticks(impl, skip_purepy):
+    """The ticks of the temporal values are the int64 of the moments."""
     group_idx = np.array([0, 0, 1])
     a = np.array(["2011-01-03", "2011-01-01", "2011-01-05"], dtype="datetime64[s]")
-    ticks = npgn.aggregate(group_idx, a, func="topk", k=1, dtype=np.int64)
+    ticks = impl.aggregate(group_idx, a, func="topk", k=1, dtype=np.int64)
     np.testing.assert_array_equal(ticks, np.array([[1294012800], [1294185600]]))
 
 
-def test_the_topk_of_the_numba_backend_goes_into_the_array_of_the_caller():
+def test_the_topk_of_the_numba_backend_goes_into_the_array_of_the_caller(impl):
     """The out= of the numba backend takes the matrix of the topk."""
+    if not is_numba(impl):
+        pytest.skip("only the numba backend gathers into the array of the caller")
     group_idx = np.array([0, 0, 1, 1, 1, 2])
     a = np.array([5.0, 9.0, 1.0, 7.0, 3.0, 4.0])
     out = np.empty((3, 2))
-    answer = npgb.aggregate(group_idx, a, func="topk", k=2, out=out)
+    answer = impl.aggregate(group_idx, a, func="topk", k=2, out=out)
     assert answer is out
     np.testing.assert_array_equal(out[0], [9.0, 5.0])
     np.testing.assert_array_equal(out[2], [4.0, np.nan])
 
 
-def test_the_topk_of_the_numba_backend_of_float16_runs_on_float32():
+def test_the_topk_of_the_numba_backend_of_float16_runs_on_float32(impl):
     """Numba has no float16, so the values run on float32 and the answer is
     rounded back - like the other operations of the backend."""
+    if not is_numba(impl):
+        pytest.skip("only the numba backend runs the values on float32")
     group_idx = np.array([0, 0, 1])
     a = np.array([5.0, 9.0, 4.0], dtype=np.float16)
-    answer = npgb.aggregate(group_idx, a, func="topk", k=1)
+    answer = impl.aggregate(group_idx, a, func="topk", k=1)
     assert answer.dtype == np.float16
     np.testing.assert_array_equal(answer, np.array([[9.0], [4.0]], dtype=np.float16))
 

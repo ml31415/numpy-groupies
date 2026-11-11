@@ -4,7 +4,7 @@ import numba as nb
 import numpy as np
 import pytest
 
-from numpy_groupies.aggregate_numba import mt
+from numpy_groupies.npg_numba import mt, specials
 
 # the decision of the chunked path: the groups, the threads and the values
 # against the answer the gate gives
@@ -159,7 +159,6 @@ def test_the_shape_of_the_kernel_tests_is_one_the_parallel_path_is_used_for():
     # sequential kernel, passing and empty.  The select is the cheapest of the
     # operations that cut their groups into ranges, so what is enough for it is
     # enough for all of them.
-    from numpy_groupies.aggregate_numba import specials
 
     for n_groups in (100, 1000, 10_000):
         assert mt.should_use_group_mt(n_groups, 4, 200_000, specials._NS_PER_VALUE_SELECT)

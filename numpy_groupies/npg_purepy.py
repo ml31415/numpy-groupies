@@ -64,6 +64,9 @@ def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> list
 # min, max, all, any - builtin
 
 
+__all__ = ["aggregate", "unpack"]
+
+
 def _sum(x: Sequence[Any]) -> Any:
     # the integers are summed as python numbers, which do not wrap: the sum
     # of a group is exact where the other backends accumulate in the

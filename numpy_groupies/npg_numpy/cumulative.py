@@ -6,7 +6,7 @@ The cumulative sum of every group, and its nan-skipping variant.
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numpy.steps import group_bounds, group_order
+from numpy_groupies.npg_numpy.steps import group_bounds, group_order
 from numpy_groupies.typing import AScalar
 
 

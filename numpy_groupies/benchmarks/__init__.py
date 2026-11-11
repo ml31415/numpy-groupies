@@ -16,6 +16,7 @@ one and fits the cost model that decides between them.
 """
 
 import argparse
+import gc
 import platform
 import sys
 import timeit
@@ -23,7 +24,7 @@ from typing import Any
 
 import numpy as np
 
-from numpy_groupies import aggregate_numpy, aggregate_purepy
+from numpy_groupies import npg_numpy, npg_purepy
 from numpy_groupies.benchmarks import _ufunc
 from numpy_groupies.dtypes import TEMPORAL_KINDS
 from numpy_groupies.registry import (
@@ -50,10 +51,6 @@ def _release_numba_resources() -> None:
     name from /dev/shm and unregisters it from the tracker - the very
     cleanup the shutdown of a normal exit runs.
     """
-    import gc
-
-    from numba.np.ufunc import parallel as numba_parallel
-
     # dropping the reference of numba runs the dealloc of the lock, and the
     # dealloc is what calls the finalizer - the finalizer of the lock is the
     # one that unlinks and unregisters, and calling it here as well would
@@ -63,9 +60,30 @@ def _release_numba_resources() -> None:
 
 
 try:
-    from numpy_groupies import aggregate_numba
+    import numba
+except ImportError:  # pragma: no cover - the benchmarks need numba
+    numba = None
+try:
+    import numbagg
+except ImportError:  # pragma: no cover - numbagg is optional
+    numbagg = None
+try:
+    import pandas
+except ImportError:  # pragma: no cover - pandas is optional
+    pandas = None
+try:
+    import polars
+except ImportError:  # pragma: no cover - polars is optional
+    polars = None
+try:
+    from numba.np.ufunc import parallel as numba_parallel
+except ImportError:  # pragma: no cover - the benchmarks need numba
+    numba_parallel = None
+
+try:
+    from numpy_groupies import npg_numba
 except ImportError:
-    aggregate_numba = None
+    npg_numba = None
 try:
     from numpy_groupies.benchmarks import _numbagg
 except ImportError:
@@ -520,35 +538,28 @@ def _open_report(header, implementations, labels, runs):
     return sys.stdout, label_width
 
 
+def _version_of(package):
+    """The version of a package, if it is there."""
+    return getattr(package, "__version__", "unknown")
+
+
 def _versions_line(implementations):
     """The setup of this run as an italic Markdown paragraph."""
     implementation_names = [name for name, _ in implementations]
     postfix = ""
     if "numba" in implementation_names:
-        import numba
-
         postfix += f", Numba {numba.__version__}"
     if "numbagg" in implementation_names:
-        import numbagg
-
-        postfix += f", numbagg {numbagg.__version__}"
+        postfix += f", numbagg {_version_of(numbagg)}"
     if "pandas" in implementation_names:
-        import pandas
-
-        postfix += f", Pandas {pandas.__version__}"
+        postfix += f", Pandas {_version_of(pandas)}"
     if "polars" in implementation_names:
-        import polars
-
-        postfix += f", Polars {polars.__version__}"
+        postfix += f", Polars {_version_of(polars)}"
     # the threads the implementations had at their disposal
     threads: list[tuple[str, int]] = []
     if "numba" in implementation_names:
-        import numba
-
         threads.append(("numba", numba.get_num_threads()))
     if "polars" in implementation_names:
-        import polars
-
         threads.append(("polars", polars.thread_pool_size()))
     if threads:
         counts = [count for _, count in threads]
@@ -757,12 +768,12 @@ COLUMN_ARGUMENTS: dict[str, str] = {}
 def _build_implementations(args):
     """the participants as (column name, aggregate callable) pairs, in
     ``COLUMN_ORDER``, the optional ones only when they were asked for"""
-    if aggregate_numba is None:
+    if npg_numba is None:
         raise SystemExit("this benchmark needs the numba package installed")
     aggregates = {
-        "numpy": aggregate_numpy.aggregate,
-        "numba": aggregate_numba.aggregate,
-        "purepy": aggregate_purepy.aggregate,
+        "numpy": npg_numpy.aggregate,
+        "numba": npg_numba.aggregate,
+        "purepy": npg_purepy.aggregate,
         "grouploop": aggregate_ref,
         "ufunc": _ufunc.aggregate,
         # the optional dependencies are None when they are not installed
@@ -866,8 +877,6 @@ nothing, the whole array being the core of the kernel.""",
         # the numba kernels split their data into as many chunks as there
         # are threads - the flag sets the pool of numba, and the kernels use
         # the threads they find there
-        import numba
-
         numba.set_num_threads(args.threads)
     if args.all:
         for column in OPTIONAL_COLUMNS:

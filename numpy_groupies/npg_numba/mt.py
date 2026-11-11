@@ -33,7 +33,7 @@ import os
 
 import numba as nb
 
-from numpy_groupies.aggregate_numba.jit import njit_stable
+from numpy_groupies.npg_numba.jit import njit_stable
 
 # --- the fitted constants, on the pessimistic side ---
 _BYTES_PER_ELEMENT = 16.0  # a float64 value and an int64 index

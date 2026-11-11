@@ -64,7 +64,7 @@ def test_purge_cache_removes_the_cache_and_the_leftovers_in_the_source_tree(monk
     bytecode.write_bytes(b"\x00")
     # and one in a subpackage: the leftovers are in the whole tree, not
     # only next to the modules of the top level
-    sub = PACKAGE / "aggregate_numpy" / "__pycache__"
+    sub = PACKAGE / "npg_numpy" / "__pycache__"
     assert sub.is_dir(), "the subpackage of the backends is not imported"
     (sub / "old.nbi").write_text("index")
     try:
@@ -102,7 +102,7 @@ def test_the_sweep_also_answers_where_the_backend_is_gone(tmp_path):
     (cache / "a.nbi").write_text("index")
     script = (
         "import numpy_groupies as npg\n"
-        "assert npg.aggregate_numba is None, 'the backend should not be there'\n"
+        "assert npg.npg_numba is None, 'the backend should not be there'\n"
         "assert npg.purge_cache() == 1\n"
     )
     result = subprocess.run(
@@ -141,7 +141,7 @@ def test_the_cache_of_a_kernel_lands_in_the_directory_and_is_used(tmp_path):
     """A kernel compiles into the directory, and the next process finds it there."""
     script = (
         "import numpy as np\n"
-        "from numpy_groupies.aggregate_numba import aggregate\n"
+        "from numpy_groupies.npg_numba import aggregate\n"
         "aggregate(np.arange(1000), np.random.random(1000), func='sum')\n"
     )
     env = {**os.environ, "NUMBA_CACHE_DIR": str(tmp_path)}

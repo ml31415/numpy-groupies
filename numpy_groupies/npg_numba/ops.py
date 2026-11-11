@@ -19,15 +19,6 @@ import numba as nb
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.aggregate_numba import argreductions, averaging, collect, cumulative, reductions, specials
-from numpy_groupies.aggregate_numba.compose import KernelHandle, _round_float16
-from numpy_groupies.aggregate_numba.mt import (
-    GROUP_MT_MIN_VALUES,
-    group_chunk_count,
-    mt_thread_count,
-    should_use_group_mt,
-)
-from numpy_groupies.aggregate_numba.steps import group_count, group_place, group_ranges, group_starts
 from numpy_groupies.driver import aliasing
 from numpy_groupies.dtypes import (
     check_dtype,
@@ -44,6 +35,15 @@ from numpy_groupies.inputs import (
     check_nton_shape,
     input_validation,
 )
+from numpy_groupies.npg_numba import argreductions, averaging, collect, cumulative, reductions, specials
+from numpy_groupies.npg_numba.compose import KernelHandle, _round_float16
+from numpy_groupies.npg_numba.mt import (
+    GROUP_MT_MIN_VALUES,
+    group_chunk_count,
+    mt_thread_count,
+    should_use_group_mt,
+)
+from numpy_groupies.npg_numba.steps import group_count, group_place, group_ranges, group_starts
 from numpy_groupies.registry import (
     Registry,
     Resolved,
@@ -193,7 +193,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     should not pay for it.
 
     The driver itself decides whether the parallel path is worth it (the cost
-    model of ``aggregate_numba.mt``) and falls back to the sequential one
+    model of ``npg_numba.mt``) and falls back to the sequential one
     when it is not.
     """
     driver = handle.driver

@@ -6,14 +6,17 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
+from numpy_groupies import npg_numba, npg_numpy, npg_purepy
 from numpy_groupies.tests.helpers import (
     SWEEP_SIZES,
     _BackendProxy,
-    _implementations,
     impl_name,
     is_purepy,
     is_supported,
 )
+
+# the backends the suite runs against - the module of every implementation
+_implementations = [npg_purepy, npg_numpy, npg_numba]
 
 
 class Block(typing.NamedTuple):

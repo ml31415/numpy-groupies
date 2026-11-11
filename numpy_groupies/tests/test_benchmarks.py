@@ -16,11 +16,21 @@ import time
 import numpy as np
 import pytest
 
-from numpy_groupies.benchmarks import COLUMN_ORDER, _numbagg, mt, select_funcs
+from numpy_groupies.benchmarks import (
+    COLUMN_ORDER,
+    _byte_snapshot,
+    _numbagg,
+    _restore,
+    func_list,
+    mt,
+    select_funcs,
+    select_temporal_funcs,
+    temporal_benchmark_data,
+)
+from numpy_groupies.npg_numba import mt as package_mt
 
 
 def test_the_function_names_are_the_ones_of_the_package():
-    from numpy_groupies.benchmarks import func_list
 
     assert select_funcs(None) == tuple(func_list)
     namen = [getattr(func, "__name__", func) for func in func_list]
@@ -30,7 +40,6 @@ def test_the_function_names_are_the_ones_of_the_package():
 
 
 def test_the_temporal_functions_are_split_by_the_dtype_of_their_data():
-    from numpy_groupies.benchmarks import select_temporal_funcs
 
     by_type = select_temporal_funcs(None)
     datetime = [getattr(func, "__name__", func) for func in by_type["datetime64"]]
@@ -54,7 +63,6 @@ def test_the_temporal_data_is_suitable_for_the_kernels(rng):
     # functions), and nana holds a fifth of the rest as NaT - while the span
     # of every group stays inside the window the mean of the ticks sums
     # exactly, so the kernels stay on their fast path
-    from numpy_groupies.benchmarks import temporal_benchmark_data
 
     for kind in ("M", "m"):
         a, nana, group_idx = temporal_benchmark_data(size=50_000, groups=100, kind=kind)
@@ -74,7 +82,6 @@ def test_a_participant_that_writes_into_the_data_is_undone(rng):
     # change the results of the runs that follow, silently.  The snapshot is
     # the bytes of the data as they were at the start of the run, and a change
     # is put back.
-    from numpy_groupies.benchmarks import _byte_snapshot, _restore
 
     values = rng.random(1000)
     snapshot = _byte_snapshot(values)
@@ -87,7 +94,7 @@ def test_the_pandas_column_does_not_copy_the_data(rng):
     # the benchmark goes from the array to the array: a participant that
     # copies the data pays for the copy, and the pandas one does not have to
     # - its Series takes the buffer of the array.
-    import pandas as pd
+    pd = pytest.importorskip("pandas")
 
     values = rng.random(1000)
     series = pd.Series(values, copy=False)
@@ -101,7 +108,7 @@ def test_the_numbagg_column_is_the_one_of_numbagg():
     # second column would only show the same numbers twice - on a
     # one-dimensional input there is nothing for the parallel target of
     # numbagg to split
-    import numbagg
+    numbagg = pytest.importorskip("numbagg")
 
     for name, func in _numbagg.funcs.items():
         assert isinstance(func, numbagg.decorators.groupndreduce), name
@@ -197,7 +204,6 @@ def test_the_decision_of_the_package_is_the_one_of_its_model():
     The tool does not change the constants of the package - it says what
     they do, so that a decision can be compared with the measurement.
     """
-    from numpy_groupies.aggregate_numba import mt as package_mt
 
     row = {"path": "chunked", "n_values": 1_000_000, "n_groups": 1000, "n_threads": 6}
     decision, modelled = mt._package_decision(row)
@@ -231,7 +237,6 @@ def test_the_model_of_the_group_path_has_a_term_for_the_groups():
 
 def test_the_fit_of_the_group_path_finds_the_constants():
     """The fit finds the constants of a model that made the measurements."""
-    from numpy_groupies.aggregate_numba import mt as package_mt
 
     truth = mt.GroupModel(18.0, 40.0, 0.3, 0.45, 12.0)
     rows = []

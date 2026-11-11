@@ -17,8 +17,8 @@ that answers the function for temporal input.
 
 The dtype facts stay in ``numpy_groupies``: the kinds of the temporal dtypes.
 The order statistics of the numpy backend live in
-``aggregate_numpy.specials`` - the exact median of the ticks - and the
-numba kernels in ``aggregate_numba``: nothing in this module reaches into
+``npg_numpy.specials`` - the exact median of the ticks - and the
+numba kernels in ``npg_numba``: nothing in this module reaches into
 a backend, so both of them reach into this module.
 """
 

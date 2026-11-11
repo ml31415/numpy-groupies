@@ -50,15 +50,15 @@ npg.quantile(group_idx, a, q=0.9)            # the same as func="quantile", q=0.
 The same names are the attributes of the module of every implementation, so an implementation can be chosen and used the same way:
 
 ```python
-import numpy_groupies.aggregate_numpy as npg
+import numpy_groupies.npg_numpy as npg
 npg.mean(group_idx, a)                       # the numpy implementation
 ```
 
-The kernels of the numba implementation - the compiled functions behind them, callable from jitted code and from python - are the attributes of its module, `numpy_groupies.aggregate_numba`, which is the one place jitted code can reach them (numba cannot reach the attributes of a python object):
+The kernels of the numba implementation - the compiled functions behind them, callable from jitted code and from python - are the attributes of its module, `numpy_groupies.npg_numba`, which is the one place jitted code can reach them (numba cannot reach the attributes of a python object):
 
 ```python
 import numba as nb
-import numpy_groupies.aggregate_numba as npg
+import numpy_groupies.npg_numba as npg
 
 @nb.njit
 def zscore(group_idx, a):
@@ -189,7 +189,7 @@ The nan-variants are supported wherever the plain function is.
 | custom callables               |  x    |  x²   |      x      |
 
 ¹ For the same functions as in the plain row. The `topk` and the `mode` have no nan-variant: the missing values are in no selection of theirs, the way the `sort` of a group puts them last.
-² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use the NumPy implementation (`numpy_groupies.aggregate_numpy`) instead.
+² Numba jit-compiles custom functions, so they must consist of numeric, Numba-compatible code, and the speed-up is modest. Anything else — for instance building strings with `dtype=object` — fails; use the NumPy implementation (`numpy_groupies.npg_numpy`) instead.
 
 Which implementation you get by default is explained in the [README](../README.md#implementations). When numba is installed, call the NumPy or the pure Python implementation for the functions the default implementation lacks.
 
@@ -328,7 +328,7 @@ npg.aggregate(group_idx, a, func="cumsum")
 Custom function producing strings (NumPy implementation; Numba cannot compile this):
 
 ```python
-import numpy_groupies.aggregate_numpy as npg
+import numpy_groupies.npg_numpy as npg
 
 group_idx = np.array([1, 0, 1, 4, 1])
 a = np.array([12.0, 3.2, -15, 88, 12.9])
