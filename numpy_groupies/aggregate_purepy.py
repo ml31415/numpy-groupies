@@ -234,6 +234,17 @@ def _std(x: Sequence[Any], ddof: int = 0) -> Any:
 
 
 def _prod(x: Sequence[Any]) -> Any:
+    # the integer twin of _sum: numpy integers multiply in their own dtype
+    # without promotion (NEP 50), so a product in the dtype of narrow values
+    # would wrap - python ints keep the per-group accumulation exact, and the
+    # bools go with them (numpy answers int64 for a product of booleans as
+    # well); everything else (floats, complex, decimals) keeps its own
+    # behaviour, overflow included
+    if all(isinstance(val, numbers.Integral) for val in x):
+        r = 1
+        for xx in x:
+            r *= int(xx)
+        return r
     r = x[0]
     for xx in x[1:]:
         r *= xx
@@ -584,6 +595,12 @@ def aggregate(
         and isinstance(funcname, str)
         and (resolve_name(funcname) in forced_float_types or resolve_name(funcname) in forced_real_float_types)
     ):
+        result_dtype = float
+    if result_dtype is int and not isinstance(funcname, str) and dtype is None:
+        # a callable of the caller's own: its answer is a number of its own
+        # making, and without a dtype of the caller the fill assumes a
+        # floating result - the reading of the numpy based backends, whose
+        # callable path answers floats for integer values as well
         result_dtype = float
     fill_value = resolve_fill_value(funcname, fill_value, result_dtype)
     # the numpy implementations look the fill value against the datatype of the

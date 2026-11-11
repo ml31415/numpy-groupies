@@ -69,6 +69,10 @@ _N_DEPENDENT_ADTYPES = frozenset(
     np.dtype(t) for t in ("bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "uint64")
 )
 
+# the functions whose answer climbs the ladder with the number of the values
+# - the running sums climb it with the same per-group count as the sums
+_N_DEPENDENT_FUNCS = frozenset(("sum", "nansum", "cumsum", "nancumsum"))
+
 # the dtypes and fill values that can be a key of the dtype plan cache:
 # the hashable ones - a list is not, and the cache raises a TypeError for it
 _KeyedDType: TypeAlias = str | type | np.dtype | None
@@ -367,7 +371,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
             and a.shape[0] == group_idx.size
         ):
             a_key = a.dtype
-            n_key = len(group_idx) if (func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
+            n_key = len(group_idx) if (func in _N_DEPENDENT_FUNCS and a_key in _N_DEPENDENT_ADTYPES) else 0
             try:
                 # a dtype that is no key of the cache raises there, which is caught
                 plan_dtype, plan_fill = _dtype_fill_plan(func, a_key, dtype, fill_value, n_key, False)
@@ -420,7 +424,7 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         # value, so its dtype is all that is left to resolve the plan from -
         # for a python number the type stands in, see scalar_dtype
         a_key = scalar_dtype(a) if scalar else cast("npt.NDArray[np.generic]", a).dtype
-        n_key = len(group_idx) if (func == "sum" and a_key in _N_DEPENDENT_ADTYPES) else 0
+        n_key = len(group_idx) if (func in _N_DEPENDENT_FUNCS and a_key in _N_DEPENDENT_ADTYPES) else 0
         try:
             # a dtype that is no key of the cache raises there, which is caught
             dtype, fill_value = _dtype_fill_plan(func, a_key, dtype, fill_value, n_key, scalar)
@@ -600,8 +604,10 @@ def build_generic_aggregate(func: Callable[..., AScalar]) -> Callable[..., AResu
         iv = input_validation(group_idx, a, size=size, order=order, axis=axis, check_bounds=False, func_name=None)
         group_idx, a, flat_size, ndim_idx, size, _ = iv
 
-        # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
-        dtype = check_dtype(dtype, func, a, len(group_idx))
+        # a callable of the caller's own: its answer is a number of its own
+        # making - without a dtype of the caller it is read as a float, which
+        # is what the numpy based backends build their answer in
+        dtype = np.dtype(dtype) if dtype is not None else np.dtype(np.float64)
         fill_value = resolve_fill_value(func, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=func)
         ret = np.full(flat_size, fill_value, dtype=dtype)

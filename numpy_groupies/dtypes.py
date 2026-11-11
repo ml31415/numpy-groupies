@@ -148,6 +148,14 @@ _forced_same_type = {
     "topk",
     # the mode answers one of the values of the group as well
     "mode",
+    # the sorted values and the running extrema hand out the values of the
+    # group themselves, like min and max do - their dtype is the dtype of
+    # the values, not a widened one
+    "sort",
+    "cummin",
+    "cummax",
+    "nancummin",
+    "nancummax",
 }
 
 
@@ -217,11 +225,16 @@ def resolve_output_dtype(
             # the real counterpart of the complex dtype (complex64 -> float32)
             return np.dtype(a_dtype.char.lower())
         if func_str in ("sumofsquares", "nansumofsquares"):
-            # exact squares of integers
-            return np.dtype(np.int64)
+            # exact squares of integers - and the square of an unsigned value
+            # is unsigned again, so the unsigned ones keep theirs (the squares
+            # of uint32 leave int64, and a negative sum of squares is no
+            # answer at all)
+            return np.dtype(np.uint64) if a_dtype.kind == "u" else np.dtype(np.int64)
         return np.dtype(np.float64)
 
-    if func_str == "sum":
+    if func_str in ("sum", "nansum", "cumsum", "nancumsum"):
+        # the running sums climb the same ladder the sums do - their growth
+        # is linear, and the number of the values is known
         if a_dtype.kind in TEMPORAL_KINDS:
             # the sum of durations is a duration - numpy answers
             # in the unit of the input, and there is no integer
@@ -242,10 +255,32 @@ def resolve_output_dtype(
         # floating, inexact, whatever
         return a_dtype
 
+    if func_str in ("prod", "nanprod", "cumprod", "nancumprod"):
+        # the accumulator of numpy: the products grow exponentially, so no
+        # rung of the ladder can promise them an exact rung - the wide
+        # accumulator of the input's own sign is the floor (numpy widens its
+        # sums and products the same way, signed in int64, unsigned in
+        # uint64), and a duration keeps its unit
+        if a_dtype.kind in TEMPORAL_KINDS:
+            return a_dtype
+        if a_dtype.kind in "iub":
+            return np.promote_types(a_dtype, np.uint if a_dtype.kind == "u" else np.int_)
+        return a_dtype
+
     if func_str in _forced_same_type:
         return a_dtype
 
-    if isinstance(a_dtype, np.integer):
+    # the temporal values run on their ticks, and their answer is a temporal
+    # value again - the wide integer below would take the unit away
+    if a_dtype.kind in TEMPORAL_KINDS:
+        return a_dtype
+
+    # any other integer answer widens to the accumulator of the input's own
+    # sign - a product or a running value in the dtype of narrow values wraps
+    # silently, and the wide accumulator is the floor of the ladder.  The
+    # unsigned 64 is the widest there is, and a signed one could not hold its
+    # half of the range
+    if a_dtype != np.dtype(np.uint64) and np.issubdtype(a_dtype, np.integer):
         return np.dtype(np.int64)
     return a_dtype
 

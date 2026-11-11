@@ -132,11 +132,20 @@ def _sum_of_squres(
         # a real result like np.var, instead of the complex a*a
         sq = a.real**2
         sq += a.imag**2
+        # the square of a real or complex value is real, bincount takes it
+        ret = np.bincount(group_idx, weights=sq, minlength=size)
+    elif np.dtype(dtype).kind in "iu":
+        # the exact squares of integers are integral, and the answer is
+        # carried in the integral accumulator the dtype resolution chose -
+        # the float64 accumulation of the bincount would round a large
+        # square away and wrap on the way back into the integer
+        ret = np.zeros(size, dtype=np.dtype(dtype))
+        np.add.at(ret, group_idx, a.astype(np.dtype(dtype)) ** 2)
     else:
         # the square of the values, in the dtype of the input itself
         sq = a * a
-    # the square of a real or complex value is real, bincount takes it
-    ret = np.bincount(group_idx, weights=sq, minlength=size)
+        # the square of a real value is real, bincount takes it
+        ret = np.bincount(group_idx, weights=cast("npt.NDArray[np.floating]", sq), minlength=size)
     if fill_value != 0:
         counts = np.bincount(group_idx, minlength=size)
         ret[counts == 0] = fill_value
@@ -160,7 +169,11 @@ def _central_moments(
     """
     counts = np.bincount(group_idx, minlength=size)
     origins = _first(group_idx, a, size, 0, dtype=a.dtype)
-    devs = a - origins[group_idx]
+    # the deviations of the values of a narrow integer wrap in their dtype
+    # (a 0 against an origin of 3 is a 253 there) - the moments are floats,
+    # so the arithmetic is carried in float64, where no value of the input
+    # can lose its sign
+    devs = a.astype(np.float64, copy=False) - origins[group_idx].astype(np.float64, copy=False)
     with np.errstate(divide="ignore", invalid="ignore"):
         means = (
             np.bincount(
