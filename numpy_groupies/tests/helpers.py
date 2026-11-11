@@ -218,67 +218,6 @@ def is_numba(impl):
     return impl_name(impl) == "numba"
 
 
-# The functions with a well-defined complex result, following numpy semantics -
-# the order statistics included, as numpy orders complex values lexicographically.
-# median is the one order statistic missing: over incomparable values numpy's own
-# partition and its sort disagree, so the group loop cannot tell what a poisoned
-# group mediates to - what its answer has to look like is pinned by
-# test_median_of_a_poisoned_group instead, and a clean group by test_median
-complex_funcs = (
-    "sum",
-    "prod",
-    "mean",
-    "var",
-    "std",
-    "trapezoid",
-    "sumofsquares",
-    "first",
-    "last",
-    "nansum",
-    "nanprod",
-    "nanmean",
-    "nanvar",
-    "nanstd",
-    "nanmedian",
-    "nantrapezoid",
-    "nansumofsquares",
-    "cumsum",
-    "all",
-    "any",
-    "allnan",
-    "anynan",
-    "nanall",
-    "nanany",
-    "len",
-    "nanlen",
-    "nanfirst",
-    "nanlast",
-    "min",
-    "max",
-    "nanmin",
-    "nanmax",
-    "mode",
-    "argmin",
-    "argmax",
-    "nanargmin",
-    "nanargmax",
-)
-# their complex result is the real squared magnitude, not complex a*a
-complex_real_out_funcs = {"var", "std", "sumofsquares", "nanvar", "nanstd", "nansumofsquares"}
-# these count, test or point at a position, so their result is not a number of
-# the input type
-complex_bool_funcs = {"all", "any", "allnan", "anynan", "nanall", "nanany"}
-complex_arg_funcs = ("argmin", "argmax", "nanargmin", "nanargmax")
-complex_int_funcs = {"len", "nanlen", *complex_arg_funcs}
-# order statistics over the values themselves, as opposed to their positions
-complex_order_funcs = ("min", "max", "nanmin", "nanmax", "mode")
-# conjugating the input does not simply conjugate the result for these: it
-# flips the order of two values sharing a real part
-complex_asymmetric_funcs = complex_order_funcs + complex_arg_funcs
-# functions whose output dtype a complex input does not fix
-complex_dtype_funcs = tuple(complex_real_out_funcs | complex_bool_funcs | complex_int_funcs)
-
-
 def aliasing_of(impl):
     """The alias table of the backend under test.
 
