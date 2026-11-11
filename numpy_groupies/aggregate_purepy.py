@@ -619,10 +619,10 @@ def _custom_operation(func: Any) -> Resolved:
 
 _dispatch = Registry(_op_dict, aliasing, _custom_operation)
 
-# the names the functions of the package answer to: the aliases of the
-# registry, which know the numpy functions by their name as well - the numpy
-# based backends know them by their identity, and the table of the aliases
-# carries them in both ways
+# the names the aliases answer to: the table of the aliases holds the names
+# of the functions of the package and the aliases that name them, and the
+# numpy functions among the aliases are named by their own name - np.max is
+# the max, np.quantile the quantile with its q and its method
 _ALIASES_BY_NAME = {name: aliased for name, aliased in aliasing.items() if isinstance(name, str)}
 # numpy's asarray names the collecting function as well - the numpy based
 # backends know it by its identity
@@ -633,10 +633,11 @@ def _resolve_alias(func: Any) -> Any:
     """the function of the package a func names.
 
     The numpy functions name the functions of the package here as they do in
-    the numpy based backends: np.sum is the sum, np.array the collecting
-    function.  The table of the aliases knows them by their name, and the
-    name of a callable of the caller's own is no name of the package - unless
-    it happens to be one of them.
+    the numpy based backends: np.max is the max, np.quantile the quantile -
+    and with it the arguments of the call reach the function of the package,
+    which they would not if the numpy function were called as a callable of
+    the caller.  The name of a callable of the caller's own is no name of the
+    package - unless it happens to be one of them.
     """
     if isinstance(func, str) or not callable(func):
         return func
@@ -646,6 +647,10 @@ def _resolve_alias(func: Any) -> Any:
     return _ALIASES_BY_NAME.get(name, func)
 
 
+# the names the functions of the package answer to: the aliases of the
+# registry, which know the numpy functions by their name as well - the numpy
+# based backends know them by their identity, and the table of the aliases
+# carries them in both ways
 def _a_dtype(a: Sequence[Any]) -> type:
     # python numbers carry no dtype; the element types decide what a numpy
     # array of these values would have made of them - a mixed list of ints

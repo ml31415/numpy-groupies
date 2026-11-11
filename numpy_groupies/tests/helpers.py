@@ -167,6 +167,18 @@ class _BackendProxy:
 func_list = tuple(name for name in function_names() if name in set(reference_names()))
 
 
+def assert_result_dtype(impl, res, dtype):
+    """The dtype of the answer of a backend.
+
+    The pure python implementation carries no dtype of its own - its python
+    numbers are the answer - so the dtype is asked of the backends that have
+    one.  The question is asked in one place, so that the tests over the
+    complex values do not answer it again and again.
+    """
+    if not is_purepy(impl):
+        assert np.asarray(res).dtype == np.dtype(dtype)
+
+
 def assert_same_result(got, want, func, rtol=10**-10, atol=0.0):
     """Compare the results of two backends, whatever the function returns.
 
@@ -214,8 +226,9 @@ def is_purepy(impl):
     """True for the implementation that computes with python numbers.
 
     Those carry no dtype: purepy neither honours a ``dtype`` argument nor
-    hands back a result of the dtype of its input.  It also knows no
-    temporal values and no multidimensional output.
+    hands back a result of the dtype of its input.  Its other gaps have their
+    own names - the temporal ones the ``skip_purepy`` fixture, the
+    multidimensional output the refusal of the backend itself.
     """
     return impl_name(impl) == "purepy"
 

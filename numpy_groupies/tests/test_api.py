@@ -50,7 +50,8 @@ scalar_input_values = [
 def test_preserve_missing(impl):
     res = impl.aggregate(np.array([0, 1, 3, 1, 3]), np.arange(101, 106, dtype=int))
     np.testing.assert_array_equal(res, np.array([101, 206, 0, 208]))
-    if not isinstance(res, list):
+    if not is_purepy(impl):
+        # the pure python implementation carries no dtype of its own
         assert "int" in res.dtype.name
 
 
@@ -59,7 +60,8 @@ def test_uint_group_idx(impl, group_idx_type):
     group_idx = np.array([1, 1, 2, 2, 2, 2, 4, 4], dtype=group_idx_type)
     res = impl.aggregate(group_idx, np.ones(group_idx.size), dtype=int)
     np.testing.assert_array_equal(res, np.array([0, 2, 4, 0, 2]))
-    if not isinstance(res, list):
+    if not is_purepy(impl):
+        # the pure python implementation carries no dtype of its own
         assert "int" in res.dtype.name
 
 
@@ -299,6 +301,33 @@ def test_custom_callable(impl, rng):
     assert actual.ndim == a.ndim
 
     np.testing.assert_allclose(actual, expected)
+
+
+def test_a_callable_of_the_caller_with_the_name_of_a_function_of_the_package(impl):
+    """A callable of the caller is called - unless its name is the name of a
+    function of the package, and then the pure python backend calls the
+    function of the package.
+
+    The numpy based backends resolve a func by its identity: the numpy
+    functions among them name the functions of the package, a callable of
+    the caller is a callable of the caller.  The pure python backend knows
+    the functions of the package by their names, so a callable of the caller
+    whose name is one of them is bent into the function of the package.  The
+    two answers differ here, and the test names the difference.
+    """
+
+    def len(x):
+        return 42.0
+
+    group_idx = np.array([0, 0, 1])
+    a = np.array([1.0, 2.0, 3.0])
+    res = impl.aggregate(group_idx, a, func=len)
+    if is_purepy(impl):
+        # the name of the callable is the name of the function of the package:
+        # the answer is the length of the group, not the 42 of the caller
+        assert np.asarray(res)[0] == 2.0
+    else:
+        assert res[0] == 42.0
 
 
 def test_custom_callable_gets_the_values_in_the_order_of_the_input(impl):

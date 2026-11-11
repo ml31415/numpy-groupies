@@ -174,13 +174,13 @@ The nan-variants are supported wherever the plain function is.
 | `allnan`, `anynan`             |  x    |  x    |      x      |
 | `mean`, `median`, `var`, `std` |  x    |  x    |      x      |
 | `skew`, `kurt`                 |  x    |  x    |      x      |
-| `quantile`, `percentile`        |  x    |  x    |      -      |
+| `quantile`, `percentile`        |  x    |  x    |      x      |
 | `first`, `last`                |  x    |  x    |      x      |
 | `argmin`, `argmax`             |  x    |  x    |      x      |
-| `sumofsquares`                 |  x    |  x    |      -      |
+| `sumofsquares`                 |  x    |  x    |      x      |
 | `trapezoid`                    |  x    |  x    |      x      |
-| `cumsum`                       |  x    |  x    |      -      |
-| `cumprod`, `cummin`, `cummax`  |  -    |  x    |      -      |
+| `cumsum`                       |  x    |  x    |      x      |
+| `cumprod`, `cummin`, `cummax`  |  -    |  x    |      x      |
 | `sort`                         |  x    |  x    |      x      |
 | `array`                        |  x    |  x    |      x      |
 | `topk`                         |  x    |  x    |      x      |
