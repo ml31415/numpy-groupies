@@ -15,7 +15,7 @@ never depends on which backend computed it.
 import numpy as np
 import pytest
 
-from numpy_groupies import aggregate_purepy
+from numpy_groupies import aggregate_numba, aggregate_numpy, aggregate_purepy
 from numpy_groupies.dtypes import (
     minimum_dtype,
     resolve_output_dtype,
@@ -29,44 +29,35 @@ if hasattr(np, "trapezoid"):
 
 @pytest.mark.parametrize("func", ["sumofsquares", "nansumofsquares"])
 @pytest.mark.parametrize("dtype", [np.int8, np.uint8, np.int16, np.uint16, np.int32, np.uint32])
-def test_the_integer_sumofsquares(impl, func, dtype):
-    """The sum of the squares of the integers is exact in the accumulator of
-    their sign, in every backend.
-
-    The squares of unsigned values are unsigned - a negative sum of squares
-    is no answer at all, and the squares of the widest uint32 leave the
-    int64.
-    """
+def test_numpy_integer_sumofsquares(func, dtype):
     maximum = min(int(np.iinfo(dtype).max), 50000)
     a = np.array([maximum, maximum - 1, maximum // 2, 1], dtype=dtype)
     group_idx = np.array([0, 0, 1, 1])
     expected = [sum(int(value) ** 2 for value in a[:2]), sum(int(value) ** 2 for value in a[2:])]
     if np.dtype(dtype).kind == "u":
-        result = impl.aggregate(group_idx, a, func=func, size=2)
-        if not is_purepy(impl):
-            # the pure python implementation carries no dtype of its own
-            assert result.dtype == np.uint64
+        # the squares of unsigned values are unsigned - a negative sum of
+        # squares is no answer at all, and the squares of uint32 leave int64
+        result = aggregate_numpy.aggregate(group_idx, a, func=func, size=2)
+        assert result.dtype == np.uint64
     else:
         expected.append(-1)
-        result = impl.aggregate(group_idx, a, func=func, size=3, fill_value=-1)
-        if not is_purepy(impl):
-            assert result.dtype == np.int64
+        result = aggregate_numpy.aggregate(group_idx, a, func=func, size=3, fill_value=-1)
+        assert result.dtype == np.int64
     np.testing.assert_array_equal(result, expected)
     # the square of the widest value of the dtype is exact in the
     # accumulator - one value per group, for the sum of two squares of the
     # widest uint32 would leave even the uint64
     edge = np.array([np.iinfo(dtype).max], dtype=dtype)
-    edge_result = impl.aggregate(np.array([0]), edge, func=func, size=1)
-    if not is_purepy(impl):
-        assert edge_result.dtype == (np.uint64 if np.dtype(dtype).kind == "u" else np.int64)
+    edge_result = aggregate_numpy.aggregate(np.array([0]), edge, func=func, size=1)
+    assert edge_result.dtype == (np.uint64 if np.dtype(dtype).kind == "u" else np.int64)
     np.testing.assert_array_equal(edge_result, int(np.iinfo(dtype).max) ** 2)
 
 
 @pytest.mark.parametrize("func", ["sumofsquares", "nansumofsquares"])
-def test_the_integer_sumofsquares_float_output(impl, func):
+def test_numpy_integer_sumofsquares_float_output(func):
     a = np.array([[20000, -20000], [10000, -10000]], dtype=np.int16)
-    result = impl.aggregate(np.array([0, 0]), a, func=func, axis=1, dtype=np.float64)
-    assert np.asarray(result).dtype == np.float64
+    result = aggregate_numpy.aggregate(np.array([0, 0]), a, func=func, axis=1, dtype=np.float64)
+    assert result.dtype == np.float64
     np.testing.assert_array_equal(result, [[800000000], [200000000]])
 
 
@@ -475,11 +466,12 @@ def test_the_dtype_policy_of_the_running_values_and_the_products(dtype):
         assert resolve_output_dtype(None, func, a_dtype, n) == a_dtype, func
 
 
+@pytest.mark.parametrize("impl_name_", ["purepy", "numpy", "numba"])
 @pytest.mark.parametrize(
     "dtype",
     ["int8", "int16", "int32", "uint8", "uint16", "uint32"],
 )
-def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl, dtype):
+def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl_name_, dtype):
     """No backend hands back a value that wrapped in the dtype of the input.
 
     The sums and running sums of the narrow integers are widened before they
@@ -495,11 +487,24 @@ def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl, dt
     # three values whose exact sum leaves the input dtype
     values = np.array([maximum, maximum, maximum // 2], dtype=a_dtype)
     group_idx = np.array([0, 0, 0])
+    impl = {"purepy": aggregate_purepy, "numpy": aggregate_numpy, "numba": aggregate_numba}[impl_name_]
     wanted = 2 * maximum + maximum // 2
     got = np.asarray(impl.aggregate(group_idx, values, func="sum", size=1))
     np.testing.assert_array_equal(got, wanted, err_msg=f"sum over {dtype} wrapped")
-    # the running sum at the last position is the sum itself - the pure
-    # python backend knows no running values
-    if not is_purepy(impl):
-        got = np.asarray(impl.aggregate(group_idx, values, func="cumsum", size=1))
-        np.testing.assert_array_equal(got[-1], wanted, err_msg=f"cumsum over {dtype} wrapped")
+    # the running sum at the last position is the sum itself
+    got = np.asarray(impl.aggregate(group_idx, values, func="cumsum", size=1))
+    np.testing.assert_array_equal(got[-1], wanted, err_msg=f"cumsum over {dtype} wrapped")
+    # the product of values whose exact product fits the wide accumulator of
+    # the input's own sign is exact - the wrap of the input dtype would
+    # answer a 1 for the pair of the widest values
+    small = np.array([maximum, 2, 3], dtype=a_dtype)
+    wanted = 6 * maximum
+    got = np.asarray(impl.aggregate(group_idx, small, func="prod", size=1))
+    np.testing.assert_array_equal(got, wanted, err_msg=f"prod over {dtype} wrapped")
+    # and the sum of the squares of one widest value is exact in the
+    # accumulator - the squares of the widest uint32 leave the int64, and
+    # two of them would leave even the uint64
+    one = np.array([maximum], dtype=a_dtype)
+    wanted = maximum**2
+    got = np.asarray(impl.aggregate(np.array([0]), one, func="sumofsquares", size=1))
+    np.testing.assert_array_equal(got, wanted, err_msg=f"sumofsquares over {dtype} wrapped")

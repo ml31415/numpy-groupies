@@ -233,6 +233,20 @@ def _std(x: Sequence[Any], ddof: int = 0) -> Any:
     return math.sqrt(var)
 
 
+def _sum_of_squares(x: Sequence[Any]) -> Any:
+    """The sum of the squared values of one group.
+
+    The squared magnitude of complex values, the square of real ones - and
+    for integers the exact square of the python number, which no dtype of a
+    narrow input can wrap: the answer of the other backends is the wide
+    accumulator of the input's own sign, and the exact sum is what that
+    accumulator promises as long as it fits it.
+    """
+    if all(isinstance(val, numbers.Integral) for val in x):
+        return sum(int(val) * int(val) for val in x)
+    return sum(abs(xx) ** 2 for xx in x)
+
+
 def _prod(x: Sequence[Any]) -> Any:
     # the integer twin of _sum: numpy integers multiply in their own dtype
     # without promotion (NEP 50), so a product in the dtype of narrow values
@@ -401,6 +415,7 @@ _op_dict: dict[str, Callable[..., Any]] = {
     "trapezoid": _trapezoid,
     "std": _std,
     "var": _var,
+    "sumofsquares": _sum_of_squares,
     "skew": _propagate_nan(_skew),
     "kurt": _propagate_nan(_kurt),
     "anynan": _anynan,
@@ -588,11 +603,13 @@ def aggregate(
     # the datatype rule of the numpy implementations: nan is only a sensible
     # default where the output datatype can hold it - the averaging functions
     # answer floats even for integer values, so their output dtype is the one
-    # the fill value has to fit
+    # the fill value has to fit.  The squared sums are the exception: their
+    # integral answer is exact in the python numbers, like the sums are
     result_dtype = _a_dtype(vals)
     if (
         result_dtype is int
         and isinstance(funcname, str)
+        and resolve_name(funcname) not in ("sumofsquares", "nansumofsquares")
         and (resolve_name(funcname) in forced_float_types or resolve_name(funcname) in forced_real_float_types)
     ):
         result_dtype = float
