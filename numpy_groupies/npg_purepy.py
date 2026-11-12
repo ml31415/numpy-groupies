@@ -611,43 +611,19 @@ _ONE_PER_ITEM = (_cumsum, _nancumsum, _cumprod, _nancumprod, _cummin, _cummax, _
 
 
 def _custom_operation(func: Any) -> Resolved:
-    """The operation of a callable of the caller's own.
+    """The operation of a func that missed the table - a callable, run as it is.
 
-    The pure python implementation runs any callable, so the callable is its
-    own implementation.
+    This implementation computes with python numbers and sequences, and the
+    table of the aliases holds nothing but names.  A func that is no name of
+    theirs is run on the values of a group, with the arguments of the call
+    beside them.  It is the cold path of the call - the hot path of a known
+    name pays for one dict lookup and nothing else.
     """
     callable_ = custom_callable(func)
     return Resolved(callable_, callable_)
 
 
 _dispatch = Registry(_op_dict, aliasing, _custom_operation)
-
-# the names the aliases answer to: the table of the aliases holds the names
-# of the functions of the package and the aliases that name them, and the
-# numpy functions among the aliases are named by their own name - np.max is
-# the max, np.quantile the quantile with its q and its method
-_ALIASES_BY_NAME = {name: aliased for name, aliased in aliasing.items() if isinstance(name, str)}
-# numpy's asarray names the collecting function as well - the numpy based
-# backends know it by its identity
-_ALIASES_BY_NAME["asarray"] = "array"
-
-
-def _resolve_alias(func: Any) -> Any:
-    """the function of the package a func names.
-
-    The numpy functions name the functions of the package here as they do in
-    the numpy based backends: np.max is the max, np.quantile the quantile -
-    and with it the arguments of the call reach the function of the package,
-    which they would not if the numpy function were called as a callable of
-    the caller.  The name of a callable of the caller's own is no name of the
-    package - unless it happens to be one of them.
-    """
-    if isinstance(func, str) or not callable(func):
-        return func
-    name = getattr(func, "__name__", None)
-    if name is None:
-        return func
-    return _ALIASES_BY_NAME.get(name, func)
 
 
 # the names the functions of the package answer to: the aliases of the
@@ -787,8 +763,10 @@ def aggregate(
             if i >= size:
                 raise ValueError(TOO_LARGE_FOR_SIZE.format(size=size))
 
+    # the lookup of the func is the one plain subscript of the table: a func
+    # that misses it is a callable, and runs as it is
     try:
-        funcname, op, _temporal_op = _dispatch[_resolve_alias(func)]
+        funcname, op, _temporal_op = _dispatch[func]
     except TypeError:
         # a func that cannot be a key of the table at all: it names no known
         # function either, so the registry answers it as a callable of the

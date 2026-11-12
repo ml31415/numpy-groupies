@@ -303,17 +303,14 @@ def test_custom_callable(impl, rng):
     np.testing.assert_allclose(actual, expected)
 
 
-def test_a_callable_of_the_caller_with_the_name_of_a_function_of_the_package(impl):
-    """A callable of the caller is called - unless its name is the name of a
-    function of the package, and then the pure python backend calls the
-    function of the package.
+def test_a_callable_of_the_caller_runs_as_it_is(impl):
+    """A callable of the caller is called, whatever its name is.
 
-    The numpy based backends resolve a func by its identity: the numpy
-    functions among them name the functions of the package, a callable of
-    the caller is a callable of the caller.  The pure python backend knows
-    the functions of the package by their names, so a callable of the caller
-    whose name is one of them is bent into the function of the package.  The
-    two answers differ here, and the test names the difference.
+    A func that is no key of the table of the aliases is the callable of the
+    caller, and every backend runs it as it is - a callable is asked for by
+    its identity, and its name names nothing.  The name of a function of the
+    package is no exception: a callable whose name is one of them is still
+    the callable of the caller, in every backend alike.
     """
 
     def len(x):
@@ -322,12 +319,7 @@ def test_a_callable_of_the_caller_with_the_name_of_a_function_of_the_package(imp
     group_idx = np.array([0, 0, 1])
     a = np.array([1.0, 2.0, 3.0])
     res = impl.aggregate(group_idx, a, func=len)
-    if is_purepy(impl):
-        # the name of the callable is the name of the function of the package:
-        # the answer is the length of the group, not the 42 of the caller
-        assert np.asarray(res)[0] == 2.0
-    else:
-        assert res[0] == 42.0
+    assert np.asarray(res)[0] == 42.0
 
 
 def test_custom_callable_gets_the_values_in_the_order_of_the_input(impl):
