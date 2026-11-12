@@ -184,7 +184,7 @@ def test_errors_match_slow_path(args, kwargs):
     assert str(fast_exc.value) == str(slow_exc.value)
 
 
-def test_custom_callable_checks_the_indices():
+def test_custom_callable_checks_indices():
     """The custom callable groups the values with the counting sort, which
     checks the group indices on the way."""
     a = np.arange(4.0)
@@ -207,7 +207,7 @@ def test_integer_sum_dtype_guess(rng):
             np.testing.assert_array_equal(fast, ref)
 
 
-def test_slow_path_still_reachable(rng):
+def test_slow_path_reachable(rng):
     """Inputs the fast path does not take must keep their behaviour."""
     group_idx = rng.integers(0, 4, 100)
     a = rng.random(100)
@@ -282,7 +282,7 @@ def test_every_known_function_is_implemented():
     assert missing == []
 
 
-def test_a_func_that_named_nothing():
+def test_func_named_nothing():
     """A func that is no key of the dispatch table at all.
 
     It is neither a function anybody knows nor a callable of the caller's own,
@@ -356,7 +356,7 @@ def test_uaggregate_out_complex(rng):
         uaggregate(group_idx, a, out=np.empty(300), func="sum")
 
 
-def test_float16_follows_the_float32_plan():
+def test_float16_follows_float32_plan():
     # numba has no float16: the input is widened to float32, the kernel runs
     # in the float32 plan and an inexact result is rounded back once.  The
     # numpy twin instead rounds after every step in float16, so on values
@@ -386,7 +386,7 @@ def test_collecting_out():
         aggregate(group_idx, a, func="array", out=np.empty(3, dtype=object))
 
 
-def test_collecting_refuses_an_index_beyond_the_size():
+def test_collecting_refuses_index_beyond_size():
     group_idx = np.array([0, 1, 1])
     a = np.arange(3.0)
     with pytest.raises(ValueError, match="too large"):
@@ -418,7 +418,7 @@ def _write(worker, count, cache_path):
         cache_file.save(f"key-{worker}-{index}", (worker, index))
 
 
-def test_every_key_of_a_contended_cache_names_its_own_machine(tmp_path):
+def test_every_key_of_contended_cache_names_machine(tmp_path):
     """No key of a raced cache may name another writer's machine code."""
     cache_path = str(tmp_path)
     threads = [Thread(target=_write, args=(worker, _per_worker, cache_path)) for worker in range(_workers)]
@@ -503,7 +503,7 @@ def _cell_contents(disp):
     return tuple(cells)
 
 
-def test_the_jitted_callables_of_the_backend_are_pinned():
+def test_jitted_callables_of_backend_are_pinned():
     """Every dispatcher of the backend carries the 16 hex digits of a pinned
     uuid - the 36 of a ``uuid4`` say it was drawn fresh in this process."""
     unpinned = sorted(
@@ -514,7 +514,7 @@ def test_the_jitted_callables_of_the_backend_are_pinned():
     assert unpinned == []
 
 
-def test_no_process_local_uuid_reaches_the_index_key_of_the_cache():
+def test_no_process_local_uuid_reaches_index_key_of_cache():
     """The cloudpickled closure of every cached dispatcher - the bytes the
     second hash of the index key covers - is free of a uuid of the draw."""
     leaks = sorted(
@@ -527,7 +527,7 @@ def test_no_process_local_uuid_reaches_the_index_key_of_the_cache():
     assert leaks == []
 
 
-def test_a_dispatcher_without_the_pin_would_be_caught():
+def test_dispatcher_without_pin_would_be_caught():
     """The two checks above are not vacuous: a dispatcher jitted without
     ``njit_stable`` right here leaks its draw into both of them."""
 
@@ -541,7 +541,7 @@ def test_a_dispatcher_without_the_pin_would_be_caught():
     assert outer._uuid != str(inner._uuid)
 
 
-def test_the_identity_of_a_dispatcher_is_the_same_in_every_process(tmp_path):
+def test_identity_of_dispatcher_is_same_in_every_process(tmp_path):
     """The identity of a dispatcher decides the name of its cache file.
 
     The identity covers the contents of the closure of the dispatcher, and
@@ -596,7 +596,7 @@ def test_the_identity_of_a_dispatcher_is_the_same_in_every_process(tmp_path):
 # silently wrong kernel.
 
 
-def test_the_overload_implementations_are_registered():
+def test_overload_implementations_are_registered():
     """Every overload of the backend is remembered by the package.
 
     The registry is what lets the identity of a dispatcher cover the body of
@@ -608,7 +608,7 @@ def test_the_overload_implementations_are_registered():
     assert averaging._fold_std in _OVERLOADS
 
 
-def test_the_identity_of_a_dispatcher_covers_the_overload_it_reaches(monkeypatch):
+def test_dispatcher_identity_covers_overload_body(monkeypatch):
     """The body of an overload implementation is part of the identity.
 
     The fold of the dispersion is reached by the dispatcher of its caller -
@@ -628,7 +628,7 @@ def test_the_identity_of_a_dispatcher_covers_the_overload_it_reaches(monkeypatch
     assert njit_stable(averaging._std_combine)._uuid != plain
 
 
-def test_the_identity_of_a_dispatcher_covers_a_nested_overload(monkeypatch):
+def test_identity_of_dispatcher_covers_nested_overload(monkeypatch):
     """The body of an overload behind an overload is part of the identity.
 
     The accumulate of the dispersion reaches the extrema through the

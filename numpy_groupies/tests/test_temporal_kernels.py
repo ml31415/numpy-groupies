@@ -60,7 +60,7 @@ def test_bare_kernel_aggregates_datetime_values(func, expected):
         ("nanargmax", [0, 5]),
     ],
 )
-def test_bare_kernel_names_the_nat_position(func, expected):
+def test_bare_kernel_names_nat_position(func, expected):
     group_idx = np.array([0, 0, 0, 1, 1, 1])
     a = np.array(
         ["2011-01-03", "NaT", "2011-01-01", "2011-02-01", "NaT", "2011-05-01"],
@@ -71,7 +71,7 @@ def test_bare_kernel_names_the_nat_position(func, expected):
 
 
 @pytest.mark.parametrize("func", ["allnan", "anynan", "len", "nanlen"])
-def test_bare_kernel_counts_the_temporal_values(func):
+def test_bare_kernel_counts_temporal_values(func):
     group_idx = np.array([0, 0, 0, 1, 1])
     a = np.array(["2011-01-03", "NaT", "2011-01-01", "2011-02-01", "NaT"], dtype="M8[s]")
     kernel = getattr(npg_numba, func)
@@ -85,7 +85,7 @@ def test_bare_kernel_counts_the_temporal_values(func):
     assert list(res) == expected
 
 
-def test_bare_kernel_sums_the_durations():
+def test_bare_kernel_sums_durations():
     group_idx = np.array([0, 0, 0, 1, 1])
     a = np.array([5, "NaT", 3, 1, 7], dtype="m8[s]")
     # the plain sum carries the NaT (numpy adds it into the sum), the nan
@@ -94,7 +94,7 @@ def test_bare_kernel_sums_the_durations():
     np.testing.assert_array_equal(npg_numba.nansum(group_idx, a, 2), np.array([8, 8], dtype="m8[s]"))
 
 
-def test_bare_kernel_accumulates_the_durations_with_the_nat():
+def test_bare_kernel_accumulates_durations_with_nat():
     group_idx = np.array([0, 0, 0, 1, 1])
     a = np.array([5, "NaT", 3, 1, 7], dtype="m8[s]")
     # the NaT poisons the rest of its own group and of no other one
@@ -105,7 +105,7 @@ def test_bare_kernel_accumulates_the_durations_with_the_nat():
 
 
 @pytest.mark.parametrize("func", ["sort", "var", "std"])
-def test_bare_kernel_refuses_what_it_cannot_compute(func):
+def test_bare_kernel_refuses_uncomputable_input(func):
     group_idx = np.array([0, 0])
     a = np.array(["2011-01-03", "2011-01-01"], dtype="M8[s]")
     kernel = getattr(npg_numba, func)
@@ -129,7 +129,7 @@ def test_bare_kernel_refuses_what_it_cannot_compute(func):
         ("nanpercentile", (50.0, "linear", 2), "2011-01-02T00:00:00"),
     ],
 )
-def test_bare_kernel_answers_the_temporal_input_on_the_ticks(func, args, expected):
+def test_bare_kernel_answers_temporal_input_on_ticks(func, args, expected):
     """The kernel of the mean, the median and the quantile answers the
     temporal input: it hands the ticks to the kernel of the ticks and views
     the answer back into the unit of the input."""
@@ -142,7 +142,7 @@ def test_bare_kernel_answers_the_temporal_input_on_the_ticks(func, args, expecte
     np.testing.assert_array_equal(res, np.array([expected, "NaT"], dtype="M8[s]"))
 
 
-def test_bare_kernel_answers_the_mean_of_the_durations_on_the_ticks():
+def test_bare_kernel_answers_mean_of_durations_on_ticks():
     # numba's division of durations truncates, and the package rounds the
     # mean of a duration half to even - the kernel of the mean answers the
     # durations on their ticks, where the rounding is the one of numpy
@@ -154,7 +154,7 @@ def test_bare_kernel_answers_the_mean_of_the_durations_on_the_ticks():
     np.testing.assert_array_equal(res, np.array([2, "NaT"], dtype="m8[s]"))
 
 
-def test_the_jitted_kernel_answers_the_temporal_input():
+def test_jitted_kernel_answers_temporal_input():
     """The kernel of the mean is called from jitted code with temporal
     values - the ticks are the int64 the kernel works on."""
 
@@ -169,7 +169,7 @@ def test_the_jitted_kernel_answers_the_temporal_input():
 
 
 @pytest.mark.parametrize("unit", ["M8[s]", "m8[s]"])
-def test_the_sort_of_numba_makes_no_move_when_a_nat_is_in_the_values(unit):
+def test_sort_of_numba_makes_no_move_with_nat_in_values(unit):
     # why the bare sort kernel refuses temporal input: the sort of numba
     # itself does not survive a NaT.  Its comparison makes the NaT
     # incomparable - both < and > answer False where a value takes part -
@@ -216,7 +216,7 @@ def test_the_sort_of_numba_makes_no_move_when_a_nat_is_in_the_values(unit):
         npg_numba.sort(group_idx, a, 1)
 
 
-def test_the_bare_kernels_and_the_aggregate_entry_agree():
+def test_bare_kernels_and_aggregate_entry_agree():
     # the low-level entry and the high-level one answer the same temporal
     # questions the same way
     group_idx = np.array([0, 0, 0, 1, 1, 2])

@@ -28,7 +28,7 @@ if hasattr(np, "trapezoid"):
 
 @pytest.mark.parametrize("func", ["sumofsquares", "nansumofsquares"])
 @pytest.mark.parametrize("dtype", [np.int8, np.uint8, np.int16, np.uint16, np.int32, np.uint32])
-def test_the_integer_sumofsquares(impl, func, dtype):
+def test_integer_sumofsquares(impl, func, dtype):
     """The sum of the squares of the integers is exact in the accumulator of
     their sign, in every backend.
 
@@ -62,7 +62,7 @@ def test_the_integer_sumofsquares(impl, func, dtype):
 
 
 @pytest.mark.parametrize("func", ["sumofsquares", "nansumofsquares"])
-def test_the_integer_sumofsquares_float_output(impl, func):
+def test_integer_sumofsquares_float_output(impl, func):
     a = np.array([[20000, -20000], [10000, -10000]], dtype=np.int16)
     result = impl.aggregate(np.array([0, 0]), a, func=func, axis=1, dtype=np.float64)
     assert np.asarray(result).dtype == np.float64
@@ -102,7 +102,7 @@ def test_sum_bool_dtype_guess_ignores_empty_groups(impl):
         assert res.dtype == np.int8
 
 
-def test_the_integer_sums_wrap_in_the_accumulator(impl):
+def test_integer_sums_wrap_in_accumulator(impl):
     """The sums of the integers are computed in the accumulator of their
     sign, and they wrap there - the way numpy's own sums wrap in int64 and
     uint64.
@@ -405,7 +405,7 @@ INTEGER_DTYPES = ["bool", "int8", "int16", "int32", "int64", "uint8", "uint16", 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 @pytest.mark.parametrize("n", [1, 2, 8, 1000, 10**6])
-def test_the_sum_of_integers_answers_with_an_integer(dtype, n):
+def test_sum_of_integers_answers_with_integer(dtype, n):
     """The sum of integers answers with an integer, whatever the count.
 
     The ladder of the output dtype climbs with the number of the values
@@ -424,7 +424,7 @@ def test_the_sum_of_integers_answers_with_an_integer(dtype, n):
 
 
 @pytest.mark.parametrize("dtype", ["bool", "int8", "int16", "int32", "uint8", "uint16", "uint32"])
-def test_the_ladder_ends_in_float64_and_never_in_float32(dtype):
+def test_ladder_ends_in_float64_and_never_in_float32(dtype):
     """A value that fits into no integer dtype answers with float64.
 
     The mantissa of float32 is 24 bits - too coarse for the sum it would
@@ -435,7 +435,7 @@ def test_the_ladder_ends_in_float64_and_never_in_float32(dtype):
     assert out == np.dtype(np.float64)
 
 
-def test_the_sum_of_small_integers_answers_with_the_ladder_dtype(impl):
+def test_sum_of_small_integers_answers_with_ladder_dtype(impl):
     """The dtype of the answer is the one of the ladder, in every backend.
 
     The pure python implementation carries no dtype of its own - it answers
@@ -449,7 +449,7 @@ def test_the_sum_of_small_integers_answers_with_the_ladder_dtype(impl):
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
-def test_the_dtype_policy_of_the_running_values_and_the_products(dtype):
+def test_dtype_policy_of_running_values_and_products(dtype):
     """The dtype policy of the answers that accumulate: the running sums
     climb the ladder of the sums (the same rung for the same values), the
     products land in the accumulator of the input's own sign, and the
@@ -510,7 +510,7 @@ def _the_narrow_values(dtype):
     ],
     ids=["sum", "prod", "sumofsquares"],
 )
-def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl, dtype, func, values_of, wanted_of):
+def test_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl, dtype, func, values_of, wanted_of):
     """No backend hands back a value that wrapped in the dtype of the input.
 
     The answers of the narrow integers are widened before they are computed -
@@ -530,7 +530,7 @@ def test_the_narrow_integer_values_are_never_wrapped_in_their_own_dtype(impl, dt
 
 
 @pytest.mark.parametrize("dtype", ["int8", "int16", "int32", "uint8", "uint16", "uint32"])
-def test_the_narrow_running_sums_are_never_wrapped_in_their_own_dtype(impl, dtype):
+def test_narrow_running_sums_are_never_wrapped_in_their_own_dtype(impl, dtype):
     """The running sum of the narrow integers is widened before it is computed.
 
     The last value of the running sum is the sum of the group, and it is the

@@ -20,7 +20,7 @@ from numpy_groupies.tests.reference import aggregate_ref
 
 @pytest.mark.parametrize("func", ["array", list])
 @pytest.mark.parametrize("order", ["normal", "reverse"])
-def test_the_values_of_a_group_keep_the_order_of_the_input(impl, func, order):
+def test_values_of_group_keep_order_of_input(impl, func, order):
     """The values of a group are handed out in the order they appear.
 
     The order is the one of the input, not the one the backend groups them
@@ -35,7 +35,7 @@ def test_the_values_of_a_group_keep_the_order_of_the_input(impl, func, order):
     np.testing.assert_array_equal(np.array(res[0]), a[:4])
 
 
-def test_collecting_gives_the_values_of_every_group(impl):
+def test_gives_values_of_every_group(impl):
     group_idx = np.array([3, 1, 3, 0, 1, 3])
     a = np.arange(6.0)
     res = impl.aggregate(group_idx, a, func="array")
@@ -47,7 +47,7 @@ def test_collecting_gives_the_values_of_every_group(impl):
 
 
 @pytest.mark.parametrize("func", ["array", list, "split", "splice", np.array, np.asarray])
-def test_collecting_aliases(impl, func):
+def test_aliases(impl, func):
     group_idx = np.array([0, 1, 1])
     a = np.arange(3.0)
     res = impl.aggregate(group_idx, a, func=func)
@@ -55,7 +55,7 @@ def test_collecting_aliases(impl, func):
 
 
 @pytest.mark.parametrize("fill_value", [None, -1, np.nan], ids=["none", "int", "nan"])
-def test_collecting_fill_value(impl, fill_value):
+def test_fill_value(impl, fill_value):
     # a group without values takes the fill value
     group_idx = np.array([0, 2, 2])
     a = np.arange(3.0)
@@ -67,7 +67,7 @@ def test_collecting_fill_value(impl, fill_value):
         np.testing.assert_equal(res[1], fill_value)
 
 
-def test_collecting_empty_fill_value(impl):
+def test_empty_fill_value(impl):
     # an empty sequence leaves the empty sequence of the group alone
     group_idx = np.array([0, 2, 2])
     a = np.arange(3.0)
@@ -75,7 +75,7 @@ def test_collecting_empty_fill_value(impl):
     assert len(res[1]) == 0
 
 
-def test_collecting_multidimensional_labels(impl):
+def test_multidimensional_labels(impl):
     # the labels name a group by coordinate, and a hole in them is a group
     # without values (issue #32)
     group_idx = np.array(list(itertools.product(range(3), range(4)))).T[:, :-1]
@@ -85,7 +85,7 @@ def test_collecting_multidimensional_labels(impl):
     assert len(res[2, 3]) == 0
 
 
-def test_collecting_keeps_the_dtype(impl):
+def test_keeps_dtype(impl):
     # the values are handed out as they are - the float16 of the input is not
     # widened to float32 the way the kernels widen it
     group_idx = np.array([0, 0, 1])
@@ -95,7 +95,7 @@ def test_collecting_keeps_the_dtype(impl):
     assert np.asarray(res[0]).dtype == np.float16
 
 
-def test_collecting_keeps_the_widest_float(impl):
+def test_keeps_widest_float(impl):
     # float128 is no dtype a compiled driver can place - numba refuses it
     # while typing - so the values are copied around by the numpy
     # implementation, which keeps them exact
@@ -107,7 +107,7 @@ def test_collecting_keeps_the_widest_float(impl):
 
 
 @pytest.mark.parametrize("values", ["a_nans", "a_complex"], ids=["nan", "complex"])
-def test_collecting_keeps_the_values_of_the_block(impl, block, values):
+def test_keeps_values_of_block(impl, block, values):
     """the values of a group are handed out as they are.
 
     A nan in either part of a complex value is a nan of the value - and the
@@ -120,14 +120,14 @@ def test_collecting_keeps_the_values_of_the_block(impl, block, values):
     assert_same_result(res, want, "array")
 
 
-def test_collecting_refuses_a_scalar(impl):
+def test_scalar_is_refused(impl):
     # a scalar stands for one value, which the collecting function cannot take
     group_idx = np.array([0, 1, 1])
     with pytest.raises(ValueError, match="scalar inputs"):
         impl.aggregate(group_idx, 1.0, func="array")
 
 
-def test_collecting_refuses_negative_labels(impl):
+def test_negative_labels_are_refused(impl):
     group_idx = np.array([0, 1, 1])
     a = np.arange(3.0)
     with pytest.raises(ValueError, match="negative"):

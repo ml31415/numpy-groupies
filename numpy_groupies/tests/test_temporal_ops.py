@@ -22,7 +22,7 @@ from numpy_groupies.tests.helpers import impl_name
 pytestmark = pytest.mark.usefixtures("skip_purepy")
 
 
-def test_every_function_has_a_temporal_operation(impl):
+def test_every_function_has_temporal_operation(impl):
     """The temporal operation of every function of the package is in the
     dispatch of the backend, beside the numeric one."""
     dispatch = impl._dispatch
@@ -32,7 +32,7 @@ def test_every_function_has_a_temporal_operation(impl):
         assert callable(temporal_op), name
 
 
-def test_the_temporal_operations_are_not_aliases(impl):
+def test_temporal_operations_are_not_aliases(impl):
     """The temporal operations are no aliases of the public functions - they
     are the other half of the operation of a function, and they are reached
     by their name."""
@@ -45,7 +45,7 @@ def test_the_temporal_operations_are_not_aliases(impl):
         assert temporal_op.__name__ == f"temporal_{name}"
 
 
-def test_a_backend_that_carries_the_nat_policy_hands_the_rows_over():
+def test_backend_carrying_nat_policy_hands_rows_over():
     """The engine drops no NaT row when the operation of the backend on the
     ticks carries the NaT policy of the function itself - the kernel finds
     the NaT of a group and leaves it out on its own, so a copy of the data
@@ -77,7 +77,7 @@ def test_a_backend_that_carries_the_nat_policy_hands_the_rows_over():
     np.testing.assert_array_equal(seen[0], np.array([1, 3], dtype=np.int64))
 
 
-def test_the_operations_on_the_ticks_are_operations_of_the_backend():
+def test_operations_on_ticks_are_operations_of_backend():
     """The operations on the int64 ticks of the temporal values are built by
     the same factory as every other operation of the numba backend - they
     take the same arguments and run their compiled kernel the same way."""
@@ -93,7 +93,7 @@ def test_the_operations_on_the_ticks_are_operations_of_the_backend():
     np.testing.assert_array_equal(res, np.array([15, 30], dtype=np.int64))
 
 
-def test_the_temporal_operation_of_a_function_is_built_from_its_own(impl):
+def test_temporal_operation_built_from_function(impl):
     """The policy of a function is resolved when its operation is built, so
     that the call itself holds no questions about the function it answers."""
 
@@ -111,7 +111,7 @@ def test_the_temporal_operation_of_a_function_is_built_from_its_own(impl):
         temporal_op(np.array([0]), np.array([1], dtype="m8[s]"), 1)
 
 
-def test_the_numpy_backend_answers_the_temporal_input_on_the_ticks(impl):
+def test_numpy_backend_answers_temporal_input_on_ticks(impl):
     """The numpy backend has no kernel that takes the temporal values as
     they are - every function of it is answered on the int64 ticks."""
     if impl_name(impl) != "numpy":

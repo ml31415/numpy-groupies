@@ -40,7 +40,7 @@ from numpy_groupies.tests.helpers import (
 )
 
 
-def test_the_names_of_the_literal_type_are_the_names_of_the_alias_table():
+def test_names_of_literal_type_are_names_of_alias_table():
     """The literal type of the func parameter names every function by name.
 
     A name the table does not hold would be one the type checker refuses
@@ -72,7 +72,7 @@ def test_build_dispatch_resolves_every_alias():
     assert dispatch["nansum"] == Resolved("nansum", None, None)
 
 
-def test_a_name_is_resolved_without_asking_its_func_for_a_hash():
+def test_name_is_resolved_without_asking_func_for_hash():
     """A func that cannot be a key names no function - and is not looked up to find
 
     that out.  ``resolve_name`` asks the type first, so the lookup that could not
@@ -85,7 +85,7 @@ def test_a_name_is_resolved_without_asking_its_func_for_a_hash():
     assert resolve_name(np.amin, aliasing) == "min"
 
 
-def test_a_func_that_is_neither_a_name_nor_a_callable_is_said_so():
+def test_func_neither_name_nor_callable_is_reported():
     for func in (42, [1, 2], {"a": 1}, np.array([1.0])):
         with pytest.raises(ValueError, match="neither a valid function string nor a callable object"):
             custom_callable(func)
@@ -105,7 +105,7 @@ def _registry():
     return Registry(op_dict, aliasing, custom)
 
 
-def test_the_registry_answers_both_kinds_of_func_with_one_lookup():
+def test_registry_answers_both_kinds_of_func_with_one_lookup():
     """A known function and a callable of the caller's own come out of one lookup.
 
     The registry holds the aliases of the known functions, and a func that names
@@ -130,7 +130,7 @@ def test_the_registry_answers_both_kinds_of_func_with_one_lookup():
     assert temporal_op is None
 
 
-def test_the_registry_answers_a_func_that_cannot_be_a_key():
+def test_registry_answers_unhashable_func():
     """A func the table cannot hold as a key names no known function either.
 
     A dict asks its keys for a hash, which an object that defines ``__eq__``
@@ -153,14 +153,14 @@ def test_the_registry_answers_a_func_that_cannot_be_a_key():
     assert temporal_op is None
 
 
-def test_a_func_that_named_nothing_is_said_so_by_the_factory():
+def test_func_named_nothing_is_reported_by_factory():
     """The factory of the backend tells a func that named nothing from one that can be run."""
     registry = _registry()
     with pytest.raises(ValueError, match="neither a valid function string nor a callable object"):
         registry[42]
 
 
-def test_the_functions_that_hold_a_none_match_the_registry():
+def test_functions_holding_none_match_registry():
     """The one function whose result holds a None is the object array.
 
     ``validation`` states which functions may be filled with a None - the
@@ -173,7 +173,7 @@ def test_the_functions_that_hold_a_none_match_the_registry():
     assert frozenset(functions.default_fill_values) - validation.NONE_RESULT_FUNCTIONS
 
 
-def test_every_function_of_the_package_has_an_entry_point_on_every_backend(impl):
+def test_every_function_of_package_has_entry_point_on_every_backend(impl):
     """Every function is reachable by its name, on every backend.
 
     The entry points of a backend are the functions of ``funcs_common`` and
@@ -216,7 +216,7 @@ def _the_support_matrix_of_the_docs():
     return columns, rows
 
 
-def test_the_support_matrix_of_the_docs_agrees_with_the_backends(impl):
+def test_support_matrix_of_docs_agrees_with_backends(impl):
     """The table of the docs says what every backend answers - and it is right.
 
     A function that a backend has learned since the table was written is a
@@ -235,7 +235,7 @@ def test_the_support_matrix_of_the_docs_agrees_with_the_backends(impl):
             assert supported == (marks[column] == "x"), f"{name} and the {name_of_the_backend} backend"
 
 
-def test_the_list_of_the_functions_names_every_function_of_the_package():
+def test_list_of_functions_names_every_function_of_package():
     """The list the entry points are built from names every function.
 
     ``funcs_common`` is the list of the functions of the package - the
@@ -251,7 +251,7 @@ def test_the_list_of_the_functions_names_every_function_of_the_package():
     assert {"cumprod", "cummax", "cummin"} <= names
 
 
-def test_the_package_carries_the_functions_of_the_best_implementation(impl):
+def test_package_carries_functions_of_best_implementation(impl):
     """Every function of the package is a name of the package itself.
 
     ``npg.mean(group_idx, a)`` is the mean of every group, computed by the
@@ -264,7 +264,7 @@ def test_the_package_carries_the_functions_of_the_best_implementation(impl):
         assert hasattr(impl._module, name), f"the {impl_name(impl)} backend has no {name}"
 
 
-def test_every_function_of_the_package_is_declared_for_the_type_checker():
+def test_every_function_of_package_is_declared_for_type_checker():
     """The names the package hands out are the names the type checker knows.
 
     The functions of the package are built at runtime, out of the table of
@@ -286,7 +286,7 @@ def test_every_function_of_the_package_is_declared_for_the_type_checker():
     assert declared == set(function_names())
 
 
-def test_the_package_carries_every_function_of_the_registry(impl):
+def test_package_carries_every_function_of_registry(impl):
     """Every function of the registry is a name of the package itself.
 
     The nan variants are functions of the package, too - they are named by the
@@ -300,7 +300,7 @@ def test_the_package_carries_every_function_of_the_registry(impl):
 
 
 @pytest.mark.parametrize("name", sorted(function_names()))
-def test_the_entry_point_of_the_package_answers_as_its_function(name):
+def test_entry_point_of_package_answers_as_function(name):
     """``npg.mean(group_idx, a)`` is ``npg.aggregate(group_idx, a, func="mean")``.
 
     The entry points are built at runtime, out of the table of the entry
@@ -329,7 +329,7 @@ _ENTRY_POINT_ARGUMENTS = [
 
 
 @pytest.mark.parametrize(("name", "kwargs"), _ENTRY_POINT_ARGUMENTS)
-def test_the_entry_point_passes_the_arguments_of_its_function(name, kwargs):
+def test_entry_point_passes_arguments_of_function(name, kwargs):
     """The arguments of the function reach it through the entry point.
 
     The entry point of the package takes the arguments of its function - the
@@ -344,7 +344,7 @@ def test_the_entry_point_passes_the_arguments_of_its_function(name, kwargs):
 
 
 @pytest.mark.parametrize("alias", sorted(alias for alias in aliasing if isinstance(alias, str)))
-def test_every_alias_answers_like_the_function_it_names(impl, alias):
+def test_every_alias_answers_like_named_function(impl, alias):
     """Every alias of the package is another name of the function it names.
 
     The aliases are the names numpy knows - ``add`` for the sum, ``amin``

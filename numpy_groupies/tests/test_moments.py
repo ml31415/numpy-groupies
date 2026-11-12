@@ -24,19 +24,19 @@ def _compare(impl, group_idx, a, func, size=None):
 
 
 @pytest.mark.parametrize("func", ["skew", "kurt", "nanskew", "nankurt"])
-def test_the_moments_of_every_group(impl, block, func):
+def test_every_group(impl, block, func):
     """Every group answers with the moment of the values it holds."""
     _compare(impl, block.group_idx, block.a, func, block.size)
 
 
 @pytest.mark.parametrize("func", ["skew", "kurt", "nanskew", "nankurt"])
-def test_the_moments_of_a_group_with_nans(impl, block, func):
+def test_group_with_nans(impl, block, func):
     """The plain moments are poisoned by a nan, the nan variants skip it."""
     _compare(impl, block.group_idx, block.a_nans, func, block.size)
 
 
 @pytest.mark.parametrize("func", ["skew", "kurt", "nanskew", "nankurt"])
-def test_the_moments_of_integers(impl, func):
+def test_integers(impl, func):
     """The moments of integer values are the moments of the numbers they are."""
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1])
     a = np.array([1, 2, 3, 4, 10, 20, 30, 40, 50, 60, 70, 80])
@@ -44,7 +44,7 @@ def test_the_moments_of_integers(impl, func):
 
 
 @pytest.mark.parametrize("func", ["skew", "kurt", "nanskew", "nankurt"])
-def test_the_moments_of_narrow_integers_do_not_wrap_their_deviations(impl, func):
+def test_narrow_integers_do_not_wrap_their_deviations(impl, func):
     """The deviations of the moments are carried in float64, not in the
     dtype of the values.
 
@@ -59,7 +59,7 @@ def test_the_moments_of_narrow_integers_do_not_wrap_their_deviations(impl, func)
     _compare(impl, group_idx, a, func)
 
 
-def test_a_group_of_two_values_has_no_skewness(impl):
+def test_group_of_two_values_has_no_skewness(impl):
     """Two values have no skewness - the estimator needs three of them."""
     group_idx = np.array([0, 0, 1, 1, 1])
     a = np.array([1.0, 2.0, 1.0, 2.0, 5.0])
@@ -68,7 +68,7 @@ def test_a_group_of_two_values_has_no_skewness(impl):
     np.testing.assert_allclose(got[1], aggregate_ref(group_idx, a, func="skew")[1])
 
 
-def test_a_group_of_three_values_has_no_kurtosis(impl):
+def test_group_of_three_values_has_no_kurtosis(impl):
     """Three values have no kurtosis - the estimator needs four of them."""
     group_idx = np.array([0, 0, 0, 1, 1, 1, 1])
     a = np.array([1.0, 2.0, 5.0, 1.0, 2.0, 3.0, 9.0])
@@ -77,7 +77,7 @@ def test_a_group_of_three_values_has_no_kurtosis(impl):
     np.testing.assert_allclose(got[1], aggregate_ref(group_idx, a, func="kurt")[1])
 
 
-def test_a_group_without_spread_has_no_moment(impl):
+def test_group_without_spread_has_no_moment(impl):
     """A group whose values are all the same has no spread - and no moment."""
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     a = np.array([2.0, 2.0, 2.0, 2.0, 1.0, 2.0, 3.0, 4.0])
@@ -87,7 +87,7 @@ def test_a_group_without_spread_has_no_moment(impl):
     assert got[0] == 0.0
 
 
-def test_a_group_of_equal_values_has_no_moment_either(impl):
+def test_group_of_equal_values_has_no_moment_either(impl):
     """The value 0.1 is the one whose sum is inexact.
 
     The sum of python floats is only exact since python 3.12, where it
@@ -107,7 +107,7 @@ def test_a_group_of_equal_values_has_no_moment_either(impl):
     assert got[0] == 0.0
 
 
-def test_an_absent_group_takes_the_fill_value(impl):
+def test_absent_group_takes_fill_value(impl):
     """A group without values takes the fill value, like every other function."""
     group_idx = np.array([0, 0, 0, 2, 2, 2])
     a = np.array([1.0, 2.0, 5.0, 1.0, 2.0, 9.0])
@@ -116,7 +116,7 @@ def test_an_absent_group_takes_the_fill_value(impl):
     assert np.isnan(got[3])
 
 
-def test_the_moments_of_complex_values_are_refused(impl):
+def test_complex_values_are_refused(impl):
     """The moments of a complex value are not defined - the backends say so."""
     group_idx = np.array([0, 0, 0, 0])
     a = np.array([1 + 1j, 2 + 2j, 3 + 4j, 4 + 8j])
@@ -125,7 +125,7 @@ def test_the_moments_of_complex_values_are_refused(impl):
             impl.aggregate(group_idx, a, func=func)
 
 
-def test_the_kurtosis_is_the_excess_of_the_normal_distribution(impl, rng):
+def test_kurtosis_is_excess_of_normal_distribution(impl, rng):
     """The kurtosis of a normal distribution is zero - the excess over three."""
     # the excess kurtosis of a normal sample is zero up to its own error,
     # which is sqrt(24/n) - a hundred thousand values put the tolerance of

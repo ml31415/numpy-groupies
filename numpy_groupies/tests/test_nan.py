@@ -108,7 +108,7 @@ _ARG_REDUCTION_CASES = [
 
 
 @pytest.mark.parametrize(("group_idx", "a", "expected"), _ARG_REDUCTION_CASES)
-def test_the_arg_reductions_of_a_group_with_nans(impl, group_idx, a, expected):
+def test_arg_reductions_of_group_with_nans(impl, group_idx, a, expected):
     """A nan in a group is a nan of the whole group, and the plain arg
     reductions have no extreme to point at.
 
@@ -213,7 +213,7 @@ def test_var_with_nan_fill_value(impl, ddof, nan_inds, func):
     np.testing.assert_equal(actual, expected)
 
 
-def test_sort_leaves_nan_at_the_end(impl):
+def test_sort_leaves_nan_at_end(impl):
     # numpy orders a nan as the largest value, so it ends up last - and since
     # the descending pass only flips the ordered part of a group, it stays last
     # there too.  The builtin sorted the pure python implementation orders with

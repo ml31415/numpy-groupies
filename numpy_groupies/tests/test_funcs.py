@@ -64,7 +64,7 @@ def test_ddof(impl, rng, func, ddof, dtype, size):
 @pytest.mark.parametrize("func", ["var", "std", "nanvar", "nanstd"])
 @pytest.mark.parametrize("ddof", [1, 2, 3])
 @pytest.mark.parametrize("fill_value", [None, -1.0], ids=["default", "explicit"])
-def test_a_group_without_degrees_of_freedom_takes_the_fill_value(impl, func, ddof, fill_value):
+def test_group_without_degrees_of_freedom_takes_fill_value(impl, func, ddof, fill_value):
     """A group with fewer values than the ``ddof`` asks for has no variance.
 
     The three backends disagreed here: the pure python one raised a
@@ -123,7 +123,7 @@ _REDUCTION_CASES = [
 
 
 @pytest.mark.parametrize(("group_idx", "a", "expected"), _REDUCTION_CASES)
-def test_the_reductions_that_point_at_a_value(impl, group_idx, a, expected):
+def test_reductions_pointing_at_value(impl, group_idx, a, expected):
     """The extreme of a group, and the position of it in the input.
 
     The position is one in the input, not one in an array the backend had to
@@ -215,7 +215,7 @@ def test_sort_reverse_descends(impl, a, ref):
     [np.float64, np.float32, np.float16, np.int64, np.uint8, np.bool_],
     ids=["float64", "float32", "float16", "int64", "uint8", "bool"],
 )
-def test_sort_of_a_small_group_matches_the_reference(impl, rng, size, dtype):
+def test_sort_of_small_group_matches_reference(impl, rng, size, dtype):
     # a block of a few dozen values is ordered by insertion sort in the flat
     # array instead of a library sort of a view - the values, the nan at their
     # end and the descending order of them all have to come out the same, and

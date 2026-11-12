@@ -278,7 +278,7 @@ def test_argreduction_negative_fill_value(impl):
 
 
 @pytest.mark.parametrize(["ndim", "order"], list(itertools.product([2, 3], ["C", "F"])))
-def test_matches_the_group_loop(impl, block, ndim, order):
+def test_matches_group_loop(impl, block, ndim, order):
     """labels of several rows address a group by coordinate, and the group loop
     reaches the same values by flattening the coordinates.
 

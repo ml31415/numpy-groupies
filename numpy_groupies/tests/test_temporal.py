@@ -80,7 +80,7 @@ def test_mode_skips_nat(impl, unit):
     np.testing.assert_array_equal(res, np.array(["2011-01-01", "NaT"], dtype=a.dtype))
 
 
-def test_mode_of_a_temporal_input_can_be_asked_for_in_ticks(impl):
+def test_mode_of_temporal_input_can_be_asked_for_in_ticks(impl):
     """The ticks the caller asked for are the ticks the mode counted."""
     group_idx = np.array([0, 0, 0, 1])
     a = np.array(["2011-01-01", "2011-01-01", "2011-01-03", "2011-01-05"], dtype="M8[s]")
@@ -89,7 +89,7 @@ def test_mode_of_a_temporal_input_can_be_asked_for_in_ticks(impl):
 
 
 @pytest.mark.parametrize("unit", ["s", "ns"])
-def test_argmin_and_argmax_name_the_nat_position(impl, unit):
+def test_argmin_and_argmax_name_nat_position(impl, unit):
     # numpy answers the position of the first NaT of a group for both
     # argreductions - as the smallest tick for argmin, and through the plan
     # for argmax - and the nan variants skip it
@@ -101,7 +101,7 @@ def test_argmin_and_argmax_name_the_nat_position(impl, unit):
     assert list(impl.aggregate(group_idx, a, func="nanargmax", size=2)) == [0, 4]
 
 
-def test_the_plain_argreductions_of_a_temporal_group_follow_numpy(impl):
+def test_plain_argreductions_of_temporal_group_follow_numpy(impl):
     # numpy answers the position of the first NaT of a group for both
     # argreductions - the group holding one has no minimum or maximum to
     # name, and the NaT is the value it names.  The package follows that,
@@ -120,7 +120,7 @@ def test_the_plain_argreductions_of_a_temporal_group_follow_numpy(impl):
         assert ours == numpy
 
 
-def test_the_nan_argreductions_of_a_temporal_group_skip_the_nat(impl):
+def test_nan_argreductions_of_temporal_group_skip_nat(impl):
     # the nan forms skip the missing value, and that is a deliberate
     # deviation from numpy: np.nanargmin and np.nanargmax do not skip a NaT
     # of a datetime64, they answer its position like the plain forms, while
@@ -145,7 +145,7 @@ def test_the_nan_argreductions_of_a_temporal_group_skip_the_nat(impl):
         assert ours == numpy
 
 
-def test_the_nan_argreductions_of_a_temporal_group_differ_from_numpy(impl):
+def test_nan_argreductions_of_temporal_group_differ_from_numpy(impl):
     # the deviation itself, pinned: numpy answers the position of the NaT
     # for the nanarg forms of a datetime64, and the package names the
     # extreme among the values that are left.  If numpy ever changes that,
@@ -162,7 +162,7 @@ def test_the_nan_argreductions_of_a_temporal_group_differ_from_numpy(impl):
 
 
 @pytest.mark.parametrize("trial", range(25))
-def test_the_nan_argreductions_of_a_temporal_group_match_the_reference(impl, trial):
+def test_nan_argreductions_of_temporal_group_match_reference(impl, trial):
     # the reference of the suite computes the nan argreductions the way the
     # contract of the nan forms says: it filters the missing values out and
     # takes the plain argmin over the values that are left, at the positions
@@ -182,7 +182,7 @@ def test_the_nan_argreductions_of_a_temporal_group_match_the_reference(impl, tri
         np.testing.assert_array_equal(ours, want)
 
 
-def test_the_nan_argreductions_of_a_temporal_group_answer_the_fill_of_an_empty_one(impl):
+def test_nan_argreductions_of_temporal_group_answer_fill_of_empty_one(impl):
     # a group that holds nothing but NaT has nothing to name, and answers the
     # fill value - like the plain forms of a group without any item
     group_idx = np.array([0, 0, 1, 1])
@@ -194,7 +194,7 @@ def test_the_nan_argreductions_of_a_temporal_group_answer_the_fill_of_an_empty_o
     assert list(impl.aggregate(group_idx, a, func="nanargmax", size=2)) == [-1, 3]
 
 
-def test_the_nan_argreductions_of_a_temporal_group_keep_the_positions_of_the_input(impl, request):
+def test_nan_argreductions_of_temporal_group_keep_positions_of_input(impl, request):
     # the positions the nan argreductions name are the ones of the input -
     # the values they skip do not shift them
     group_idx = np.array([0, 0, 1, 1, 1])
@@ -318,7 +318,7 @@ def test_timedelta_quantile_linear(impl, q, want):
 
 @pytest.mark.parametrize("method", ["linear", "lower", "higher", "nearest", "midpoint"])
 @pytest.mark.parametrize("q", [0.0, 0.1, 0.25, 1 / 3, 0.5, 0.6, 0.75, 0.9, 1.0])
-def test_the_temporal_quantile_answers_like_numpy(impl, method, q):
+def test_temporal_quantile_answers_like_numpy(impl, method, q):
     # numpy computes the quantile of a temporal value (numpy/numpy#11620,
     # closed with numpy/numpy#11627): it interpolates between the two ticks
     # the quantile falls between, in the arithmetic of the ticks - the
@@ -343,7 +343,7 @@ def test_the_temporal_quantile_answers_like_numpy(impl, method, q):
 
 
 @pytest.mark.parametrize("method", ["linear", "lower", "higher", "nearest", "midpoint"])
-def test_the_temporal_percentile_answers_like_numpy(impl, method):
+def test_temporal_percentile_answers_like_numpy(impl, method):
     # the percentile is the quantile of the fraction of a hundred
     group_idx = np.array([0, 0, 0, 1, 1])
     a = np.array(["2020-01-01", "2020-05-01", "2020-03-01", "2020-02-01", "2020-06-01"], dtype="M8[s]")
@@ -355,7 +355,7 @@ def test_the_temporal_percentile_answers_like_numpy(impl, method):
             assert res[g] == want, (method, q, g)
 
 
-def test_the_datetime_quantile_propagates_the_nat(impl):
+def test_datetime_quantile_propagates_nat(impl):
     # the plain quantile of numpy propagates the NaT of its group, the nan
     # variant leaves it out
     group_idx = np.array([0, 0, 0, 1, 1, 1])
@@ -368,7 +368,7 @@ def test_the_datetime_quantile_propagates_the_nat(impl):
     assert res_nan[1] == np.datetime64("2020-02-01", "s")
 
 
-def test_the_temporal_quantile_refuses_an_unknown_method(impl):
+def test_temporal_quantile_refuses_unknown_method(impl):
     # the methods numpy knows are the ones the package knows
     group_idx = np.array([0, 0])
     a = np.array(["2020-01-01", "2020-02-01"], dtype="M8[s]")
@@ -417,7 +417,7 @@ def test_timedelta_cummax_implemented_or_skipped(impl):
     np.testing.assert_array_equal(res, np.array([5, "NaT", "NaT", "NaT"], dtype=a.dtype))
 
 
-def test_array_collects_the_values(impl):
+def test_array_collects_values(impl):
     group_idx = np.array([0, 0, 1, 1, 1])
     a = np.array(["2011-01-01", "NaT", "2011-03-01", "2011-02-01", "NaT"], dtype="M8[s]")
     res = impl.aggregate(group_idx, a, func="array", size=2)
@@ -450,21 +450,21 @@ def test_empty_groups_answer_nat_by_default(impl):
         assert np.isnat(res[3])
 
 
-def test_user_fill_value_dates_the_empties(impl):
+def test_user_fill_value_dates_empties(impl):
     group_idx = np.array([0, 0])
     a = np.array(["2011-01-01", "2011-02-01"], dtype="M8[s]")
     res = impl.aggregate(group_idx, a, func="min", size=2, fill_value=np.datetime64("2000-01-01", "s"))
     assert res[1] == np.datetime64("2000-01-01", "s")
 
 
-def test_user_fill_value_int_is_a_tick(impl):
+def test_user_fill_value_int_is_tick(impl):
     group_idx = np.array([0, 0])
     a = np.array(["2011-01-01", "2011-02-01"], dtype="M8[s]")
     res = impl.aggregate(group_idx, a, func="min", size=2, fill_value=0)
     assert res[1] == np.datetime64("1970-01-01", "s")
 
 
-def test_int64_dtype_answers_the_ticks(impl):
+def test_int64_dtype_answers_ticks(impl):
     group_idx = np.array([0, 0, 1])
     a = np.array(["2011-01-01", "2011-03-01", "2011-02-01"], dtype="M8[s]")
     res = impl.aggregate(group_idx, a, func="min", dtype=np.int64, size=2)
@@ -553,7 +553,7 @@ def test_timedelta_refusals(impl, func):
             impl.aggregate(group_idx, a, func=func, size=1)
 
 
-def test_custom_callable_sees_the_values(impl):
+def test_custom_callable_sees_values(impl):
     # a callable of the caller's own sees the values as they came - and its
     # result comes back in the dtype the call asks for
     if impl_name(impl) != "numpy":

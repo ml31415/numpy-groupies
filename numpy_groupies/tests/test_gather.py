@@ -28,7 +28,7 @@ def test_unpack_long(rng):
     np.testing.assert_array_equal(npg_numpy.unpack(group_idx, vals), vals[group_idx])
 
 
-def test_the_pure_python_gather_answers_the_same(rng):
+def test_pure_python_path_answers_same(rng):
     """The gather of the pure python implementation is the plain python loop."""
     group_idx = rng.integers(0, 7, size=100)
     vals = random_values(rng, 7)
@@ -39,7 +39,7 @@ def test_the_pure_python_gather_answers_the_same(rng):
     assert isinstance(npg_purepy.unpack(group_idx, list(vals)), list)
 
 
-def test_the_numba_gather_answers_the_same(rng):
+def test_numba_path_answers_same(rng):
     """The gather of the numba implementation is a jitted loop."""
 
     group_idx = rng.integers(0, 7, size=100)
@@ -48,7 +48,7 @@ def test_the_numba_gather_answers_the_same(rng):
     np.testing.assert_array_equal(npg_numba.unpack(group_idx, vals), vals[group_idx])
 
 
-def test_the_parallel_gather_answers_the_same(rng):
+def test_parallel_path_answers_same(rng):
     """The gather of the numba implementation across the threads of the pool.
 
     Below the threshold of the cost model the plain loop runs, so the two
@@ -63,7 +63,7 @@ def test_the_parallel_gather_answers_the_same(rng):
         np.testing.assert_array_equal(npg_numba.unpack(group_idx, vals), vals[group_idx])
 
 
-def test_the_parallel_gather_keeps_the_shape_of_its_out(rng):
+def test_parallel_path_keeps_shape_of_out(rng):
     """The gather writes into the array of the caller and not into a new one.
 
     The parallel region has to fill every position of that array and nothing
@@ -80,7 +80,7 @@ def test_the_parallel_gather_keeps_the_shape_of_its_out(rng):
     np.testing.assert_array_equal(out, ret[group_idx])
 
 
-def test_the_gather_is_parallel_only_where_the_model_says_so(rng):
+def test_parallelism_follows_model(rng):
     """The gather runs in a parallel region only where it pays for itself.
 
     The gather copies one value per value and is bound by the memory: below

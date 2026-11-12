@@ -162,7 +162,7 @@ def restore_the_thread_count():
     nb.set_num_threads(before)
 
 
-def test_the_thread_count_can_be_steered():
+def test_thread_count_can_be_steered():
     # the number of the threads is the one of the pool of numba, and the
     # kernels use what they find there - there is no knob of our own
     assert mt.mt_thread_count() == nb.get_num_threads()
@@ -175,7 +175,7 @@ def test_the_thread_count_can_be_steered():
 
 
 @pytest.mark.parametrize("func", CHUNKABLE)
-def test_the_parallel_path_gives_the_result_of_the_sequential_one(func, data):
+def test_parallel_path_gives_result_of_sequential_one(func, data):
     group_idx, values = data
     nb.set_num_threads(2)
     parallel = aggregate(group_idx, values, func=func)
@@ -185,7 +185,7 @@ def test_the_parallel_path_gives_the_result_of_the_sequential_one(func, data):
 
 
 @pytest.mark.parametrize("func", CHUNKABLE)
-def test_one_thread_gives_the_sequential_result(func, data):
+def test_one_thread_gives_sequential_result(func, data):
     group_idx, values = data
     nb.set_num_threads(1)
     one = aggregate(group_idx, values, func=func)
@@ -200,7 +200,7 @@ def test_one_thread_gives_the_sequential_result(func, data):
 
 
 @pytest.mark.parametrize("func", CHUNKABLE)
-def test_the_number_of_the_threads_does_not_change_the_result(func, data):
+def test_number_of_threads_does_not_change_result(func, data):
     group_idx, values = data
     results = []
     for threads in _thread_counts():
@@ -214,7 +214,7 @@ def test_the_number_of_the_threads_does_not_change_the_result(func, data):
         np.testing.assert_allclose(results[0], result, rtol=1e-12, equal_nan=True)
 
 
-def test_too_few_values_take_the_sequential_path(rng):
+def test_too_few_values_take_sequential_path(rng):
     # below the threshold of the cost model the parallel path is not used, and
     # the result is the one of the sequential path bit for bit
     group_idx = rng.integers(0, 100, 1000)
@@ -226,7 +226,7 @@ def test_too_few_values_take_the_sequential_path(rng):
     np.testing.assert_allclose(parallel, sequential, rtol=0, atol=0, equal_nan=True)
 
 
-def test_the_nan_variants_give_the_same_result(rng):
+def test_nan_variants_give_same_result(rng):
     group_idx = rng.integers(0, 100, 200_000)
     values = rng.random(200_000)
     values[group_idx == 2] = np.nan
@@ -239,7 +239,7 @@ def test_the_nan_variants_give_the_same_result(rng):
         np.testing.assert_allclose(parallel, sequential, rtol=1e-12, equal_nan=True)
 
 
-def test_the_complex_input_gives_the_same_result(rng):
+def test_complex_input_gives_same_result(rng):
     # the complex input has no order, so the extremes compare the way the
     # kernel compares them - and the fold of the states has to as well
     group_idx = rng.integers(0, 100, 200_000)
@@ -252,7 +252,7 @@ def test_the_complex_input_gives_the_same_result(rng):
         np.testing.assert_allclose(parallel, sequential, rtol=1e-12, equal_nan=True)
 
 
-def test_the_groups_without_a_value_keep_the_fill_value(rng):
+def test_groups_without_value_keep_fill_value(rng):
     # a group that no chunk received a value for stays untouched - the fold
     # of the states has to keep that, and the custom fill value has to reach
     # such a group
@@ -268,7 +268,7 @@ def test_the_groups_without_a_value_keep_the_fill_value(rng):
             np.testing.assert_allclose(parallel, sequential, rtol=1e-12, equal_nan=True)
 
 
-def test_the_dispersion_honours_the_ddof(rng):
+def test_dispersion_honours_ddof(rng):
     # the ddof is the argument of the operation of its own - the parallel
     # driver takes it like the sequential one
     group_idx = rng.integers(0, 100, 200_000)
@@ -281,7 +281,7 @@ def test_the_dispersion_honours_the_ddof(rng):
         np.testing.assert_allclose(parallel, sequential, rtol=1e-12, equal_nan=True)
 
 
-def test_the_dispersion_keeps_the_result_of_the_integer_input(rng):
+def test_dispersion_keeps_result_of_integer_input(rng):
     # the integer input is centered on the first value of its group, and
     # every chunk has its own first value - the fold of the two states has
     # to correct for the two anchors
@@ -295,7 +295,7 @@ def test_the_dispersion_keeps_the_result_of_the_integer_input(rng):
         np.testing.assert_allclose(one, many, rtol=1e-12, equal_nan=True)
 
 
-def test_a_fault_of_the_indices_is_complained_about(rng):
+def test_fault_of_indices_is_complained_about(rng):
     # the parallel path cannot raise out of its region, so the kernel
     # remembers the fault and the driver raises the very same complaint
     group_idx = rng.integers(0, 100, 200_000)
@@ -311,7 +311,7 @@ def test_a_fault_of_the_indices_is_complained_about(rng):
 
 
 @pytest.mark.parametrize("func", CHUNKABLE)
-def test_fewer_threads_than_the_pool_has_do_not_lose_a_chunk(func, data):
+def test_fewer_threads_than_pool_has_do_not_lose_chunk(func, data):
     # the number of the threads a call asks for and the number of the threads
     # the pool has are two numbers: a call for two threads on a machine whose
     # pool has six still hands its chunks to those six, and a state per thread
@@ -333,7 +333,7 @@ def test_fewer_threads_than_the_pool_has_do_not_lose_a_chunk(func, data):
     np.testing.assert_allclose(few, many, rtol=1e-12, equal_nan=True)
 
 
-def test_the_number_of_the_threads_of_a_call_reaches_the_kernel(data):
+def test_number_of_threads_of_call_reaches_kernel(data):
     # the number of the threads is asked of every call: a number captured when
     # the wrapper of the operation was built would be the number the package
     # was imported with, whatever the caller does with numba.set_num_threads after
@@ -385,7 +385,7 @@ def _both_ways(group_idx: np.ndarray, values: np.ndarray, func: str, **kwargs: o
 
 
 @pytest.mark.parametrize("func", GROUP_PARALLEL)
-def test_the_group_path_gives_the_result_of_the_sequential_one(func, group_data):
+def test_group_path_gives_result_of_sequential_one(func, group_data):
     group_idx, values = group_data
     parallel, sequential = _both_ways(group_idx, values, func)
     # not "to the last bits": every group is worked on by the one thread that
@@ -395,7 +395,7 @@ def test_the_group_path_gives_the_result_of_the_sequential_one(func, group_data)
 
 
 @pytest.mark.parametrize("func", GROUP_PARALLEL)
-def test_the_number_of_the_threads_does_not_change_the_group_result(func, group_data):
+def test_number_of_threads_does_not_change_group_result(func, group_data):
     group_idx, values = group_data
     results = []
     # the pool of numba takes the number of the threads it was started with,
@@ -411,7 +411,7 @@ def test_the_number_of_the_threads_does_not_change_the_group_result(func, group_
 
 
 @pytest.mark.parametrize("func", GROUP_PARALLEL)
-def test_groups_of_wildly_different_size_give_the_same_result(func, group_skewed):
+def test_groups_of_wildly_different_size_give_same_result(func, group_skewed):
     group_idx, values = group_skewed
     # the biggest group of this input holds a fifth of all the values: a range
     # that ends in the middle of it, or a range that is given nothing but
@@ -422,7 +422,7 @@ def test_groups_of_wildly_different_size_give_the_same_result(func, group_skewed
 
 
 @pytest.mark.parametrize("func", GROUP_PARALLEL)
-def test_the_untouched_groups_of_the_group_path_keep_the_fill_value(func, group_data):
+def test_untouched_groups_of_group_path_keep_fill_value(func, group_data):
     # the groups beyond the last index of the input and the ones the input
     # leaves empty: the ranges are cut after the counts, so a range can easily
     # hold nothing but groups that are empty
@@ -446,13 +446,13 @@ def test_the_untouched_groups_of_the_group_path_keep_the_fill_value(func, group_
 
 @pytest.mark.parametrize("q", [0.0, 0.25, 0.5, 0.75, 1.0])
 @pytest.mark.parametrize("func", ["quantile", "nanquantile"])
-def test_the_quantile_of_every_quantile(func, q, group_data):
+def test_quantile_of_every_q(func, q, group_data):
     group_idx, values = group_data
     parallel, sequential = _both_ways(group_idx, values, func, q=q)
     _same(parallel, sequential, 0)
 
 
-def test_the_median_is_the_quantile_of_a_half(group_data):
+def test_median_is_quantile_of_half(group_data):
     # two kernels that are built separately and have to agree, one with the
     # middle index and one with the quantile of it
     group_idx, values = group_data
@@ -461,7 +461,7 @@ def test_the_median_is_the_quantile_of_a_half(group_data):
 
 
 @pytest.mark.parametrize("func", ["median", "nanmedian", "quantile", "nanquantile"])
-def test_the_result_of_every_group_is_the_result_of_that_group(func, group_clean):
+def test_result_of_every_group_is_result_of_group(func, group_clean):
     # every group, and with them the blocks of one and of two values that the
     # ranges run into at their edges: the two values of a group on either side
     # of a boundary of the ranges is the case a range that is one too short
@@ -475,7 +475,7 @@ def test_the_result_of_every_group_is_the_result_of_that_group(func, group_clean
 
 
 @pytest.mark.parametrize("func", ["nunique", "nannunique"])
-def test_the_distinct_values_are_counted_once(func, group_data):
+def test_distinct_values_are_counted_once(func, group_data):
     group_idx, values = group_data
     parallel, sequential = _both_ways(group_idx, values, func)
     _same(parallel, sequential, 0)
@@ -485,7 +485,7 @@ def test_the_distinct_values_are_counted_once(func, group_data):
 
 
 @pytest.mark.parametrize("reverse", [False, True])
-def test_the_sort_is_sorted_within_every_group(reverse, group_clean):
+def test_sort_is_sorted_within_every_group(reverse, group_clean):
     group_idx, values = group_clean
     parallel, sequential = _both_ways(group_idx, values, "sort", reverse=reverse)
     _same(parallel, sequential, 0)
@@ -495,7 +495,7 @@ def test_the_sort_is_sorted_within_every_group(reverse, group_clean):
         assert ((ordered <= 0) if reverse else (ordered >= 0)).all()
 
 
-def test_the_sort_keeps_the_values_of_its_group(group_clean):
+def test_sort_keeps_values_of_group(group_clean):
     # the same values in every group, only put in order - the ranges of the
     # threads may not move a value across the border of a group
     group_idx, values = group_clean
@@ -506,7 +506,7 @@ def test_the_sort_keeps_the_values_of_its_group(group_clean):
 
 
 @pytest.mark.parametrize("func", GROUP_PARALLEL)
-def test_the_group_path_complains_about_a_fault_of_the_indices(func, group_data):
+def test_group_path_complains_about_fault_of_indices(func, group_data):
     # the ranges cannot raise out of their region, so the complaint of the
     # sequential path has to be made before a single one of them is cut
     group_idx, values = group_data
@@ -573,7 +573,7 @@ def _reference_moment(group_idx: np.ndarray, values: np.ndarray, func: str, n_gr
     return out
 
 
-def test_the_moments_take_the_parallel_path(data):
+def test_moments_take_parallel_path(data):
     # the tests below compare the two paths with each other, and they would
     # compare the sequential path with itself if the cost model kept the
     # call single threaded - the state of the moments is the widest of the
@@ -583,14 +583,14 @@ def test_the_moments_take_the_parallel_path(data):
 
 
 @pytest.mark.parametrize("func", MOMENTS)
-def test_the_moments_give_the_result_of_the_sequential_one(func, data):
+def test_moments_give_result_of_sequential_one(func, data):
     group_idx, values = data
     parallel, sequential = _both_ways(group_idx, values, func)
     np.testing.assert_allclose(parallel, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
 
 
 @pytest.mark.parametrize("func", MOMENTS)
-def test_the_moments_of_every_group_are_the_moments_of_that_group(func, group_data):
+def test_moments_of_every_group_are_moments_of_group(func, group_data):
     # the reference of the moments is the definition itself - the merge of
     # the states of the chunks has to give the moment of the group and not
     # the moment of a chunk of it
@@ -601,7 +601,7 @@ def test_the_moments_of_every_group_are_the_moments_of_that_group(func, group_da
 
 
 @pytest.mark.parametrize("func", MOMENTS)
-def test_one_thread_gives_the_sequential_result_of_the_moments(func, data):
+def test_one_thread_gives_sequential_result_of_moments(func, data):
     group_idx, values = data
     nb.set_num_threads(1)
     one = aggregate(group_idx, values, func=func)
@@ -616,7 +616,7 @@ def test_one_thread_gives_the_sequential_result_of_the_moments(func, data):
 
 
 @pytest.mark.parametrize("func", ["skew", "kurt"])
-def test_the_moments_keep_the_result_of_the_integer_input(func, rng):
+def test_moments_keep_result_of_integer_input(func, rng):
     # the integer input is tracked by the extrema that feed the exactness
     # gate, and the extrema of the chunks have to be folded as well
     group_idx = rng.integers(0, 100, 200_000)
@@ -625,7 +625,7 @@ def test_the_moments_keep_the_result_of_the_integer_input(func, rng):
     np.testing.assert_allclose(parallel, sequential, rtol=1e-9, atol=1e-9, equal_nan=True)
 
 
-def test_the_fold_of_the_moments_takes_over_the_extrema_of_an_empty_chunk():
+def test_fold_of_moments_takes_over_extrema_of_empty_chunk():
     # A chunk that received no value at all has no extrema: its scratch is
     # never seeded, and it holds whatever the allocator left there.  The
     # fold of two such states has to take the extrema of the one that has
@@ -662,7 +662,7 @@ def test_the_fold_of_the_moments_takes_over_the_extrema_of_an_empty_chunk():
 
 
 @pytest.mark.parametrize("func", MOMENTS)
-def test_the_moments_keep_the_fill_value_of_the_empty_groups(func, rng):
+def test_moments_keep_fill_value_of_empty_groups(func, rng):
     # the groups that received no value keep the fill value, and the fill
     # value has to reach them in both paths alike
     group_idx = rng.integers(0, 10, 200_000)
@@ -675,7 +675,7 @@ def test_the_moments_keep_the_fill_value_of_the_empty_groups(func, rng):
 
 
 @pytest.mark.parametrize("func", MOMENTS)
-def test_the_moments_refuse_the_complex_input(func, rng):
+def test_moments_refuse_complex_input(func, rng):
     # the skewness and the kurtosis are not defined for the complex values,
     # and the complaint has to be the same one whichever path the call takes
     group_idx = rng.integers(0, 10, 1000)
@@ -703,7 +703,7 @@ def test_the_moments_refuse_the_complex_input(func, rng):
 ORDERED = ["first", "last", "nanfirst", "nanlast"]
 
 
-def test_the_ordered_values_take_the_parallel_path(data):
+def test_ordered_values_take_parallel_path(data):
     # the tests below compare the two paths with each other, and they would
     # compare the sequential path with itself if the cost model kept the
     # call single threaded
@@ -712,7 +712,7 @@ def test_the_ordered_values_take_the_parallel_path(data):
 
 
 @pytest.mark.parametrize("func", ORDERED)
-def test_the_ordered_values_give_the_result_of_the_sequential_one(func, data):
+def test_ordered_values_give_result_of_sequential_one(func, data):
     group_idx, values = data
     parallel, sequential = _both_ways(group_idx, values, func)
     # not "to the last bits": every value of a group is looked for by the
@@ -723,7 +723,7 @@ def test_the_ordered_values_give_the_result_of_the_sequential_one(func, data):
 
 
 @pytest.mark.parametrize("func", ORDERED)
-def test_the_ordered_value_of_every_group_is_the_value_of_that_group(func, data):
+def test_ordered_value_of_every_group_is_value_of_group(func, data):
     # the reference is the definition itself: the first (or the last) value
     # of the group in the order of the input
     group_idx, values = data
@@ -745,7 +745,7 @@ def test_the_ordered_value_of_every_group_is_the_value_of_that_group(func, data)
 
 
 @pytest.mark.parametrize("func", ORDERED)
-def test_the_ordered_values_with_nans_give_the_result_of_the_sequential_one(func, group_data):
+def test_ordered_values_with_nans_give_result_of_sequential_one(func, group_data):
     # the nan variants leave the NaNs out, the plain ones do not - and both
     # have to say on the parallel path what the sequential one says
     group_idx, values = group_data
@@ -754,7 +754,7 @@ def test_the_ordered_values_with_nans_give_the_result_of_the_sequential_one(func
 
 
 @pytest.mark.parametrize("func", ORDERED)
-def test_one_thread_gives_the_sequential_result_of_the_ordered_values(func, data):
+def test_one_thread_gives_sequential_result_of_ordered_values(func, data):
     group_idx, values = data
     nb.set_num_threads(1)
     one = aggregate(group_idx, values, func=func)
@@ -769,7 +769,7 @@ def test_one_thread_gives_the_sequential_result_of_the_ordered_values(func, data
 
 
 @pytest.mark.parametrize("func", ORDERED)
-def test_the_ordered_values_keep_the_fill_value_of_the_empty_groups(func, rng):
+def test_ordered_values_keep_fill_value_of_empty_groups(func, rng):
     # the groups that no value reached keep the fill value, and the fill
     # value has to reach them in both paths alike
     group_idx = rng.integers(0, 10, 200_000)
@@ -782,7 +782,7 @@ def test_the_ordered_values_keep_the_fill_value_of_the_empty_groups(func, rng):
 
 
 @pytest.mark.parametrize("func", ORDERED)
-def test_the_ordered_values_complain_about_a_fault_of_the_indices(func, data):
+def test_ordered_values_complain_about_fault_of_indices(func, data):
     # the parallel path cannot raise out of its region, so the complaint of
     # the sequential path has to be made after it
     group_idx, values = data
@@ -832,7 +832,7 @@ def _both_ways_with_the_pool(
     return parallel, sequential
 
 
-def test_the_callable_of_the_caller_takes_the_parallel_path(group_data):
+def test_callable_of_caller_takes_parallel_path(group_data):
     # the tests below compare the two paths with each other, and they would
     # compare the sequential path with itself if the cost model kept the
     # call single threaded
@@ -844,14 +844,14 @@ def test_the_callable_of_the_caller_takes_the_parallel_path(group_data):
 
 
 @pytest.mark.parametrize("func", CUSTOM)
-def test_the_callable_of_the_caller_gives_the_result_of_the_sequential_one(func, group_data):
+def test_callable_of_caller_gives_result_of_sequential_one(func, group_data):
     group_idx, values = group_data
     parallel, sequential = _both_ways_with_the_pool(group_idx, values, func)
     _same(parallel, sequential, 0)
 
 
 @pytest.mark.parametrize("func", CUSTOM)
-def test_the_callable_of_the_caller_gives_the_value_of_every_group(func, group_data):
+def test_callable_of_caller_gives_value_of_every_group(func, group_data):
     # the reference is the callable applied to the values of the group, the
     # long way round
     group_idx, values = group_data
@@ -861,7 +861,7 @@ def test_the_callable_of_the_caller_gives_the_value_of_every_group(func, group_d
 
 
 @pytest.mark.parametrize("func", CUSTOM)
-def test_the_callable_of_the_caller_complains_about_a_fault_of_the_indices(func, group_data):
+def test_callable_of_caller_complains_about_fault_of_indices(func, group_data):
     # the counting sort that places the values stays single threaded, and it
     # is the one that complains about the indices - the same complaint in
     # both paths
@@ -876,7 +876,7 @@ def test_the_callable_of_the_caller_complains_about_a_fault_of_the_indices(func,
 
 
 @pytest.mark.parametrize("func", CUSTOM)
-def test_the_number_of_the_threads_does_not_change_the_result_of_the_callable(func, group_data):
+def test_number_of_threads_does_not_change_result_of_callable(func, group_data):
     group_idx, values = group_data
     results = []
     for threads in _thread_counts():
@@ -929,7 +929,7 @@ def _reference_arg(group_idx: np.ndarray, values: np.ndarray, func: str, n_group
     return out
 
 
-def test_the_arguments_take_the_parallel_path(data):
+def test_arguments_take_parallel_path(data):
     # the tests below compare the two paths with each other, and they would
     # compare the sequential path with itself if the cost model kept the
     # call single threaded
@@ -938,14 +938,14 @@ def test_the_arguments_take_the_parallel_path(data):
 
 
 @pytest.mark.parametrize("func", ARGUMENTS)
-def test_the_arguments_give_the_result_of_the_sequential_one(func, data):
+def test_arguments_give_result_of_sequential_one(func, data):
     group_idx, values = data
     parallel, sequential = _both_ways(group_idx, values, func)
     _same(parallel, sequential, 0)
 
 
 @pytest.mark.parametrize("func", ARGUMENTS)
-def test_the_arguments_keep_the_first_of_two_equal_values(func, rng):
+def test_arguments_keep_first_of_two_equal_values(func, rng):
     # two equal values in a group: the first of them wins - and that is the
     # delicate part of the fold of the chunks, where a tie is won by the
     # chunk that comes first
@@ -959,7 +959,7 @@ def test_the_arguments_keep_the_first_of_two_equal_values(func, rng):
 
 
 @pytest.mark.parametrize("func", ARGUMENTS)
-def test_the_argument_of_every_group_is_the_index_of_its_best_value(func, group_data):
+def test_argument_of_every_group_is_index_of_best_value(func, group_data):
     # the reference is the definition itself: the index of the best value of
     # the group, and the first of them if there are several
     group_idx, values = group_data
@@ -969,7 +969,7 @@ def test_the_argument_of_every_group_is_the_index_of_its_best_value(func, group_
 
 
 @pytest.mark.parametrize("func", ARGUMENTS)
-def test_one_thread_gives_the_sequential_result_of_the_arguments(func, data):
+def test_one_thread_gives_sequential_result_of_arguments(func, data):
     group_idx, values = data
     nb.set_num_threads(1)
     one = aggregate(group_idx, values, func=func)
@@ -984,7 +984,7 @@ def test_one_thread_gives_the_sequential_result_of_the_arguments(func, data):
 
 
 @pytest.mark.parametrize("func", ARGUMENTS)
-def test_the_arguments_keep_the_fill_value_of_the_empty_groups(func, rng):
+def test_arguments_keep_fill_value_of_empty_groups(func, rng):
     group_idx = rng.integers(0, 10, 200_000)
     values = rng.random(200_000)
     for fill in (DEFAULT_FILL_VALUE, -7.0):
@@ -995,7 +995,7 @@ def test_the_arguments_keep_the_fill_value_of_the_empty_groups(func, rng):
 
 
 @pytest.mark.parametrize("func", ARGUMENTS)
-def test_the_arguments_complain_about_a_fault_of_the_indices(func, data):
+def test_arguments_complain_about_fault_of_indices(func, data):
     # the parallel path cannot raise out of its region, so the complaint of
     # the sequential path has to be made after it
     group_idx, values = data

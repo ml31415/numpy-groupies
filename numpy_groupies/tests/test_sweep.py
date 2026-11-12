@@ -52,7 +52,7 @@ _CASES = [(values, func) for values, funcs in _SWEEPS for func in funcs]
 @pytest.mark.filterwarnings("ignore:overflow encountered")
 @pytest.mark.filterwarnings("ignore:invalid value encountered")
 @pytest.mark.parametrize(("values", "func"), _CASES, ids=[f"{values}-{func}" for values, func in _CASES])
-def test_matches_the_group_loop(impl, func, scaled_block, n_values, values):
+def test_matches_group_loop(impl, func, scaled_block, n_values, values):
     """every function over the values of the block, against the group loop.
 
     The plain functions let the nan reach the result, their nan counterparts
@@ -74,7 +74,7 @@ def test_matches_the_group_loop(impl, func, scaled_block, n_values, values):
     )
 
 
-def test_the_big_data_reaches_the_parallel_path(block):
+def test_big_data_reaches_parallel_path(block):
     """The big data of the sweep is the data of the parallel path.
 
     The cost model is the one the drivers ask before they take the parallel

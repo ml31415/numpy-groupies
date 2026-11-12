@@ -95,7 +95,7 @@ def test_item_counting(impl):
 
 
 @pytest.mark.parametrize("func", default_fill_funcs, ids=lambda x: getattr(x, "__name__", x))
-def test_default_fill_value_of_a_float16_result(impl, func):
+def test_default_fill_value_of_float16_result(impl, func):
     """the default of a float16 result, the one dtype the sweep does not see.
 
     The defaults of the float64 results are the business of the generic
@@ -224,7 +224,7 @@ def test_default_fill_value_table(func, dtype, expected):
     assert repr(default_fill_value(func, dtype)) == repr(expected)
 
 
-def test_every_function_of_the_registry_has_a_default():
+def test_every_function_of_registry_has_default():
     """Every function of the package resolves to a default of its own.
 
     The table above names them all - a function that is added to the registry
@@ -265,7 +265,7 @@ def test_scalar_input(impl, func, value):
     "func",
     ["sum", "mean", "min", "max", "median", "std", "var", "first", "last", "cumsum", "array", "sort"],
 )
-def test_the_input_arrays_are_not_touched(impl, rng, func):
+def test_input_arrays_are_not_touched(impl, rng, func):
     """No implementation may write into the data it aggregates.
 
     The data belongs to the caller, and a write into it would change the
@@ -303,7 +303,7 @@ def test_custom_callable(impl, rng):
     np.testing.assert_allclose(actual, expected)
 
 
-def test_a_callable_of_the_caller_runs_as_it_is(impl):
+def test_callable_of_caller_runs_as_is(impl):
     """A callable of the caller is called, whatever its name is.
 
     A func that is no key of the table of the aliases is the callable of the
@@ -322,7 +322,7 @@ def test_a_callable_of_the_caller_runs_as_it_is(impl):
     assert np.asarray(res)[0] == 42.0
 
 
-def test_custom_callable_gets_the_values_in_the_order_of_the_input(impl):
+def test_custom_callable_gets_values_in_order_of_input(impl):
     """The values of a group reach the callable in the order they appear in
     the input - the backends group them in different ways (the numba one
     counts them into blocks, the numpy ones sort them), and the order has to
@@ -361,7 +361,7 @@ class _spread_object:
         return float(np.max(x) - np.min(x))
 
 
-def test_a_callable_that_cannot_be_a_key(impl):
+def test_unhashable_callable(impl):
     # not being a key of the dispatch table is no mistake of the func, it is what
     # makes it one of the caller's own: numpy and pure python run it, and numba,
     # which compiles its func, says which kind of func it compiles instead
@@ -375,7 +375,7 @@ def test_a_callable_that_cannot_be_a_key(impl):
         np.testing.assert_allclose(res, [2.0, 5.0])
 
 
-def test_a_callable_that_cannot_be_a_key_along_an_axis(impl):
+def test_unhashable_callable_along_axis(impl):
     # the axis path names the function it validates against, and a func that
     # names no function is the caller's own there as anywhere else
     group_idx = np.array([0, 0, 1, 1])
@@ -388,7 +388,7 @@ def test_a_callable_that_cannot_be_a_key_along_an_axis(impl):
         np.testing.assert_allclose(res, [2.0, 5.0])
 
 
-def test_a_callable_object_is_still_no_function_for_numba(impl):
+def test_callable_object_is_no_function_for_numba(impl):
     # what ran before keeps running in numpy and pure python, and numba refuses
     # the hashable object as it refused the other one - in its own words, which
     # name the object it was handed rather than the table that could not hold it
@@ -407,7 +407,7 @@ def test_a_callable_object_is_still_no_function_for_numba(impl):
     [42, "no_such_function", [1, 2], {"a": 1}, np.array([1.0])],
     ids=["int", "unknown name", "list", "dict", "array"],
 )
-def test_a_func_that_names_nothing_says_the_same_everywhere(impl, func):
+def test_func_named_nothing_says_same_everywhere(impl, func):
     # whether a func cannot be a key of the dispatch table or only is no key of
     # it makes no difference to the answer: the table is no mistake the caller
     # made, and no implementation is entitled to report it as one
@@ -535,7 +535,7 @@ _VALIDATION_CASES = [
     _VALIDATION_CASES,
     ids=[case[0] for case in _VALIDATION_CASES],
 )
-def test_a_refused_input_is_refused_in_the_words_of_the_package(impl, name, group_idx, a, kwargs, error, message):
+def test_refused_input_is_refused_in_words_of_package(impl, name, group_idx, a, kwargs, error, message):
     """The validation of the input says the same thing in every path.
 
     The words are the ones of ``numpy_groupies.validation`` - the negative
@@ -551,7 +551,7 @@ def test_a_refused_input_is_refused_in_the_words_of_the_package(impl, name, grou
     [{"0": 1, "1": 2}, {1, 2}, frozenset({1, 2}), iter([1, 2]), (x for x in (1, 2))],
     ids=["dict", "set", "frozenset", "iterator", "generator"],
 )
-def test_the_pure_python_path_refuses_what_is_no_sequence_of_values(values):
+def test_pure_python_path_refuses_non_sequence_values(values):
     """The values of a call are a sequence of values.
 
     A mapping and a set are no such sequence: iterating over them yields
@@ -564,7 +564,7 @@ def test_the_pure_python_path_refuses_what_is_no_sequence_of_values(values):
         npg_purepy.aggregate(np.array([0, 1]), values, func="sum", size=2)
 
 
-def test_the_out_argument_is_the_one_of_the_numba_backend(impl):
+def test_out_argument_is_of_numba_backend(impl):
     """``out=`` is the numba business, and the others say so.
 
     The protocol of the public ``aggregate`` promises it: only the numba
@@ -601,7 +601,7 @@ _FILL_CASES = [
     _FILL_CASES,
     ids=[f"{func}-{fill}" for func, fill in _FILL_CASES],
 )
-def test_the_fill_value_matches_the_group_loop(impl, func, fill_value, block):
+def test_fill_value_matches_group_loop(impl, func, fill_value, block):
     """what an absent group is filled with, and which fill value is refused.
 
     Only the calls the default does not answer anyway are collected here:
@@ -622,7 +622,7 @@ def test_the_fill_value_matches_the_group_loop(impl, func, fill_value, block):
         assert_same_result(impl.aggregate(labels, a, **kwargs), want, func)
 
 
-def test_a_callable_of_the_caller_fills_the_absent_group_like_its_result(impl):
+def test_callable_of_caller_fills_absent_group_like_result(impl):
     """the fill of a callable of the caller's own follows the dtype of the
     result, and that one is the same in every backend.
 
@@ -649,7 +649,7 @@ def test_a_callable_of_the_caller_fills_the_absent_group_like_its_result(impl):
         assert res[1] == 0
 
 
-def test_the_arg_reductions_name_a_position_in_the_input(impl):
+def test_arg_reductions_name_position_in_input(impl):
     """the position an arg reduction reports is one in the input, not in an
     array the backend had to build on the way to it, and a group holding a nan
     has no extreme to point at - so it names no position at all and takes the

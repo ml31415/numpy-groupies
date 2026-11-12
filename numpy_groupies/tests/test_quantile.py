@@ -24,24 +24,24 @@ def _compare(impl, block, func, **kwargs):
 
 @pytest.mark.parametrize("q", _QUANTILES)
 @pytest.mark.parametrize("method", _METHODS)
-def test_the_quantile_of_every_group_is_the_one_numpy_gives(impl, block, q, method):
+def test_answers_like_numpy(impl, block, q, method):
     """Every group answers with the quantile of its values, interpolated as numpy does."""
     _compare(impl, block, "quantile", q=q, method=method)
 
 
 @pytest.mark.parametrize("q", _QUANTILES)
-def test_the_percentile_of_every_group_is_the_one_numpy_gives(impl, block, q):
+def test_percentile_answers_like_numpy(impl, block, q):
     """The percentile is the quantile in percent."""
     _compare(impl, block, "percentile", q=q)
 
 
-def test_the_quantile_without_a_quantile_asked_for_is_the_median(impl, block):
+def test_without_q_asked_for_is_median(impl, block):
     """Without a quantile of its own the function answers the median."""
     _compare(impl, block, "quantile")
 
 
 @pytest.mark.parametrize("func", ["quantile", "percentile"])
-def test_the_plain_quantile_poisons_the_group_of_a_nan(impl, block, func):
+def test_nan_poisons_group(impl, block, func):
     """A nan in a group makes the whole group answer with a nan, like the median does."""
     kwargs = {"q": 0.5} if func == "quantile" else {"q": 50.0}
     got = impl.aggregate(block.group_idx, block.a_nans, func=func, size=block.size, **kwargs)
@@ -49,21 +49,21 @@ def test_the_plain_quantile_poisons_the_group_of_a_nan(impl, block, func):
     np.testing.assert_allclose(got, want, rtol=1e-12, equal_nan=True)
 
 
-def test_the_nanquantile_skips_the_nans(impl, block):
+def test_nan_variant_skips_nans(impl, block):
     """The nan variant leaves the nans out and answers for the values that are left."""
     got = impl.aggregate(block.group_idx, block.a_nans, func="nanquantile", q=0.5, size=block.size)
     want = aggregate_ref(block.group_idx, block.a_nans, func="nanquantile", q=0.5, size=block.size)
     np.testing.assert_allclose(got, want, rtol=1e-12, equal_nan=True)
 
 
-def test_the_nanpercentile_skips_the_nans(impl, block):
+def test_nan_percentile_skips_nans(impl, block):
     """The nan variant leaves the nans out and answers for the values that are left."""
     got = impl.aggregate(block.group_idx, block.a_nans, func="nanpercentile", q=25.0, size=block.size)
     want = aggregate_ref(block.group_idx, block.a_nans, func="nanpercentile", q=25.0, size=block.size)
     np.testing.assert_allclose(got, want, rtol=1e-12, equal_nan=True)
 
 
-def test_a_quantile_out_of_the_range_is_refused(impl, block):
+def test_q_out_of_range_is_refused(impl, block):
     """A quantile below 0 or above 1 is not a quantile."""
     with pytest.raises(ValueError, match="range"):
         impl.aggregate(block.group_idx, block.a, func="quantile", q=1.5, size=block.size)
@@ -71,13 +71,13 @@ def test_a_quantile_out_of_the_range_is_refused(impl, block):
         impl.aggregate(block.group_idx, block.a, func="percentile", q=-1.0, size=block.size)
 
 
-def test_an_unknown_interpolation_method_is_refused(impl, block):
+def test_unknown_interpolation_method_is_refused(impl, block):
     """A method numpy does not know is not one this package knows either."""
     with pytest.raises(ValueError, match="interpolation"):
         impl.aggregate(block.group_idx, block.a, func="quantile", q=0.5, method="cubic", size=block.size)
 
 
-def test_the_quantile_of_a_complex_group_keeps_the_complex_dtype(impl, block):
+def test_complex_group_keeps_complex_dtype(impl, block):
     """The complex groups are ordered lexicographically, like the median orders them.
 
     numpy's own quantile takes real values only, so the reference computes
@@ -89,7 +89,7 @@ def test_the_quantile_of_a_complex_group_keeps_the_complex_dtype(impl, block):
     np.testing.assert_allclose(got, want, rtol=1e-12, equal_nan=True)
 
 
-def test_the_quantile_of_integer_values_is_a_float(impl):
+def test_integer_values_answer_float(impl):
     """The quantile of integers is a float, as it is in numpy."""
     group_idx = np.array([0, 0, 0, 1, 1])
     a = np.array([1, 2, 3, 4, 5], dtype=np.int8)

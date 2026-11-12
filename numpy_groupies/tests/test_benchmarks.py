@@ -30,7 +30,7 @@ from numpy_groupies.benchmarks import (
 from numpy_groupies.npg_numba import mt as package_mt
 
 
-def test_the_function_names_are_the_ones_of_the_package():
+def test_function_names_of_package():
 
     assert select_funcs(None) == tuple(func_list)
     namen = [getattr(func, "__name__", func) for func in func_list]
@@ -39,7 +39,7 @@ def test_the_function_names_are_the_ones_of_the_package():
     assert [getattr(func, "__name__", func) for func in chosen] == ["min", "max"]
 
 
-def test_the_temporal_functions_are_split_by_the_dtype_of_their_data():
+def test_temporal_functions_are_split_by_dtype_of_their_data():
 
     by_type = select_temporal_funcs(None)
     datetime = [getattr(func, "__name__", func) for func in by_type["datetime64"]]
@@ -58,7 +58,7 @@ def test_the_temporal_functions_are_split_by_the_dtype_of_their_data():
         select_temporal_funcs("kurt")
 
 
-def test_the_temporal_data_is_suitable_for_the_kernels(rng):
+def test_temporal_data_is_suitable_for_kernels(rng):
     # a fifth of the values is the tick 0 (the falsy values of the boolean
     # functions), and nana holds a fifth of the rest as NaT - while the span
     # of every group stays inside the window the mean of the ticks sums
@@ -77,7 +77,7 @@ def test_the_temporal_data_is_suitable_for_the_kernels(rng):
             assert span * int(counts[grp]) < 2**63 - 1
 
 
-def test_a_participant_that_writes_into_the_data_is_undone(rng):
+def test_participant_writing_into_data_is_undone(rng):
     # the participants must not write into the data: one that does would
     # change the results of the runs that follow, silently.  The snapshot is
     # the bytes of the data as they were at the start of the run, and a change
@@ -90,7 +90,7 @@ def test_a_participant_that_writes_into_the_data_is_undone(rng):
     np.testing.assert_array_equal(values, np.frombuffer(snapshot[0], dtype=values.dtype))
 
 
-def test_the_pandas_column_does_not_copy_the_data(rng):
+def test_pandas_column_does_not_copy_data(rng):
     # the benchmark goes from the array to the array: a participant that
     # copies the data pays for the copy, and the pandas one does not have to
     # - its Series takes the buffer of the array.
@@ -102,7 +102,7 @@ def test_the_pandas_column_does_not_copy_the_data(rng):
 
 
 @pytest.mark.skipif(_numbagg is None, reason="numbagg is not installed")
-def test_the_numbagg_column_is_the_one_of_numbagg():
+def test_numbagg_column_exists_in_numbagg():
     # the benchmark does not hold numbagg at one thread and does not measure
     # it twice: the threads of the machine are numbagg's own business, and a
     # second column would only show the same numbers twice - on a
@@ -118,7 +118,7 @@ def test_the_numbagg_column_is_the_one_of_numbagg():
 
 
 @pytest.mark.skipif(_numbagg is None, reason="numbagg is not installed")
-def test_the_numbagg_column_reports_what_it_has_not():
+def test_numbagg_column_reports_missing_counterpart():
     # an operation without a numbagg counterpart is reported as "----", not as
     # an error
     with pytest.raises(NotImplementedError):
@@ -129,7 +129,7 @@ def test_the_numbagg_column_reports_what_it_has_not():
 # the calibration tool of the multithreaded kernels
 
 
-def test_a_pair_is_measured_in_the_same_round():
+def test_pair_is_measured_in_same_round():
     """The two calls of a pair are measured one after the other.
 
     A hitch of the machine then hits both of them and not only one of them,
@@ -149,7 +149,7 @@ def test_a_pair_is_measured_in_the_same_round():
     assert fast_second <= median_second
 
 
-def test_the_measurement_reports_the_spread():
+def test_measurement_reports_spread():
     """The fastest call and the median of the calls.
 
     The spread between them is the load of the machine - a machine that is
@@ -171,7 +171,7 @@ def test_the_measurement_reports_the_spread():
     assert median > 10 * fastest
 
 
-def test_the_crossover_is_where_the_parallel_path_wins():
+def test_crossover_is_where_parallel_path_wins():
     """The size from which the parallel path is faster, and the one before.
 
     The ratio is the median of the measurements of a size, and the crossover
@@ -190,7 +190,7 @@ def test_the_crossover_is_where_the_parallel_path_wins():
     assert below == 1000.0
 
 
-def test_a_crossover_the_grid_does_not_reach_is_no_number():
+def test_crossover_grid_does_not_reach_is_no_number():
     rows = [{"n_values": 1000, "seq_us": 100.0, "mt_us": 100.0}]
     cross, below = mt.crossover(rows, "seq_us", "mt_us", 0.8)
     assert cross == float("inf")
@@ -198,7 +198,7 @@ def test_a_crossover_the_grid_does_not_reach_is_no_number():
     assert "beyond the grid" in mt._values(cross)
 
 
-def test_the_decision_of_the_package_is_the_one_of_its_model():
+def test_decision_of_package_matches_model():
     """What the package decides for a measurement, and what its model says.
 
     The tool does not change the constants of the package - it says what
@@ -218,7 +218,7 @@ def test_the_decision_of_the_package_is_the_one_of_its_model():
     )
 
 
-def test_the_model_of_the_group_path_has_a_term_for_the_groups():
+def test_model_of_group_path_has_term_for_groups():
     """The cost of a value and the cost of a group are two different things.
 
     With many groups and few values the second is the larger of the two, and
@@ -235,7 +235,7 @@ def test_the_model_of_the_group_path_has_a_term_for_the_groups():
     assert model.kernel_mt_us(100_000, 100, 1, 5.0) == pytest.approx(model.kernel_seq_us(100_000, 100) + 15.0)
 
 
-def test_the_fit_of_the_group_path_finds_the_constants():
+def test_fit_of_group_path_finds_constants():
     """The fit finds the constants of a model that made the measurements."""
 
     truth = mt.GroupModel(18.0, 40.0, 0.3, 0.45, 12.0)
@@ -265,7 +265,7 @@ def test_the_fit_of_the_group_path_finds_the_constants():
     assert package_mt is not None
 
 
-def test_the_spread_of_the_measurements_is_reported():
+def test_spread_of_measurements_is_reported():
     """The quality of the measurements - the fastest against the median."""
     rows = [
         {"seq_us": 100.0, "mt_us": 50.0, "seq_median_us": 110.0, "mt_median_us": 60.0},

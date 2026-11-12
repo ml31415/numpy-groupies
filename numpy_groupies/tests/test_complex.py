@@ -132,7 +132,7 @@ def test_median(impl, a_dtype):
 
 @pytest.mark.parametrize("poisoned_part", ["real", "imag", "both"])
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
-def test_median_of_a_poisoned_group(impl, a_dtype, poisoned_part):
+def test_median_of_poisoned_group(impl, a_dtype, poisoned_part):
     """A group poisoned by one of its values answers a nan in every part.
 
     The nan sits in one part of one of the values, but the answer is about the
@@ -169,7 +169,7 @@ def test_sort(impl, a_dtype, reverse):
 
 @pytest.mark.parametrize("a_dtype", [np.complex64, np.complex128], ids=["complex64", "complex128"])
 @pytest.mark.parametrize("reverse", [False, True], ids=["ascending", "descending"])
-def test_sort_moves_the_incomparable_values_last(impl, a_dtype, reverse):
+def test_sort_moves_incomparable_values_last(impl, a_dtype, reverse):
     # numpy reaches a value with a nan in either part by no comparison at all -
     # also one whose real part differs from the others - and sorts it behind
     # every value it cannot be compared with, in either direction.  The pure
@@ -330,7 +330,7 @@ def test_accepts_complex_scalar_dtype_classes(impl, dtype, func, as_list):
         ("all", bool),
     ],
 )
-def test_accepts_the_real_result_dtypes(impl, func, dtype):
+def test_accepts_real_result_dtypes(impl, func, dtype):
     # var, std and sumofsquares measure a real squared magnitude, and the
     # counting and testing functions never were complex to begin with
     group_idx = np.array([0, 0, 1, 1, 2])
@@ -487,7 +487,7 @@ def test_order_functions_are_not_rejected_by_numba(func):
     np.testing.assert_array_equal(res, expected)
 
 
-def test_nan_in_one_part_of_the_order_functions(impl):
+def test_nan_in_one_part_of_order_functions(impl):
     # a nan in either part is a nan of the value, wherever it sits in it.  The
     # value is built with complex(): `np.nan * 1j` puts a nan in both parts
     group_idx = np.array([0, 0, 0, 0, 1, 1, 1, 1])
@@ -506,7 +506,7 @@ def test_nan_in_one_part_of_the_order_functions(impl):
     np.testing.assert_array_equal(np.asarray(impl.aggregate(group_idx, a, func="nanmax", size=2)), [4 + 5j, 7 + 8j])
 
 
-def test_order_functions_use_the_extreme_value_of_the_order():
+def test_order_functions_use_extreme_value_of_order():
     # the extreme of a complex dtype is inf+infj, not inf+0j: the reductions
     # seed with it, and the nan variants mask the nans with it
     group_idx = np.array([0, 1])
@@ -532,7 +532,7 @@ def test_order_functions_use_the_extreme_value_of_the_order():
 
 
 @pytest.mark.parametrize("func", ["min", "max"])
-def test_an_incomparable_value_poisons_the_extreme(impl, func):
+def test_incomparable_value_poisons_extreme(impl, func):
     """a group holding values that cannot be compared has no comparable extreme.
 
     All three backends name a value with a nan in it, but not the same one: this

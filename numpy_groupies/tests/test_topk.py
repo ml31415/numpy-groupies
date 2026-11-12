@@ -24,7 +24,7 @@ def _rows(answer):
     return np.asarray(answer)
 
 
-def test_the_topk_answers_the_largest_values_of_every_group(impl):
+def test_answers_largest_values_of_every_group(impl):
     group_idx = np.array([0, 0, 1, 1, 1, 2])
     a = np.array([5.0, 9.0, 1.0, 7.0, 3.0, 4.0])
     answer = _rows(impl.aggregate(group_idx, a, func="topk", k=2))
@@ -34,7 +34,7 @@ def test_the_topk_answers_the_largest_values_of_every_group(impl):
     np.testing.assert_array_equal(answer[2], [4.0, np.nan])
 
 
-def test_the_topk_answers_the_smallest_values_when_it_is_asked_to(impl):
+def test_answers_smallest_values_on_request(impl):
     group_idx = np.array([0, 0, 1, 1, 1, 2])
     a = np.array([5.0, 9.0, 1.0, 7.0, 3.0, 4.0])
     answer = _rows(impl.aggregate(group_idx, a, func="topk", k=2, largest=False))
@@ -43,7 +43,7 @@ def test_the_topk_answers_the_smallest_values_when_it_is_asked_to(impl):
     np.testing.assert_array_equal(answer[2], [4.0, np.nan])
 
 
-def test_a_group_with_too_few_values_fills_the_rest(impl):
+def test_group_with_too_few_values_fills_rest(impl):
     group_idx = np.array([0, 0, 1])
     a = np.array([5.0, 9.0, 4.0])
     answer = _rows(impl.aggregate(group_idx, a, func="topk", k=3))
@@ -51,7 +51,7 @@ def test_a_group_with_too_few_values_fills_the_rest(impl):
     np.testing.assert_array_equal(answer[1], [4.0, np.nan, np.nan])
 
 
-def test_a_group_that_holds_no_value_at_all_is_filled(impl):
+def test_group_without_values_is_filled(impl):
     group_idx = np.array([0, 0])
     a = np.array([5.0, 9.0])
     answer = _rows(impl.aggregate(group_idx, a, func="topk", k=2, size=3))
@@ -60,7 +60,7 @@ def test_a_group_that_holds_no_value_at_all_is_filled(impl):
     np.testing.assert_array_equal(answer[2], [np.nan, np.nan])
 
 
-def test_the_missing_values_are_in_no_selection(impl):
+def test_missing_values_are_in_no_selection(impl):
     """A nan is neither the largest nor the smallest value of a group.
 
     The sort of a group puts the missing values last, so they are in no
@@ -74,14 +74,14 @@ def test_the_missing_values_are_in_no_selection(impl):
     np.testing.assert_array_equal(answer[1], [np.nan, np.nan, np.nan])
 
 
-def test_k_of_zero_answers_no_value_at_all(impl):
+def test_k_of_zero_answers_no_value(impl):
     group_idx = np.array([0, 0, 1])
     a = np.array([5.0, 9.0, 4.0])
     answer = _rows(impl.aggregate(group_idx, a, func="topk", k=0))
     assert answer.shape == (2, 0)
 
 
-def test_a_negative_k_is_refused(impl):
+def test_negative_k_is_refused(impl):
     """No group answers a negative number of values, in the same words."""
     group_idx = np.array([0, 0, 1])
     a = np.array([5.0, 9.0, 4.0])
@@ -91,14 +91,14 @@ def test_a_negative_k_is_refused(impl):
         aggregate_ref(group_idx, a, func="topk", k=-1)
 
 
-def test_the_topk_keeps_the_dtype_of_the_values(impl):
+def test_keeps_dtype_of_values(impl):
     group_idx = np.array([0, 0, 1])
     a = np.array([5, 9, 4], dtype=np.int32)
     answer = _rows(impl.aggregate(group_idx, a, func="topk", k=1))
     np.testing.assert_array_equal(answer, [[9], [4]])
 
 
-def test_the_topk_of_an_integer_input_fills_with_zero(impl):
+def test_integer_input_fills_with_zero(impl):
     """An integer output holds no nan, so the places a group has none are
     filled with the zero the package fills an integer result with."""
     group_idx = np.array([0, 0, 1])
@@ -108,7 +108,7 @@ def test_the_topk_of_an_integer_input_fills_with_zero(impl):
     np.testing.assert_array_equal(answer[1], [4, 0, 0])
 
 
-def test_the_topk_of_the_temporal_values(impl):
+def test_orders_temporal_values(impl):
     """The temporal values are ordered like any other value, and their NaT is
     in no selection."""
     if is_purepy(impl):
@@ -121,7 +121,7 @@ def test_the_topk_of_the_temporal_values(impl):
     np.testing.assert_array_equal(answer[1], np.array(["2011-01-05", "NaT"], dtype="datetime64[s]"))
 
 
-def test_the_topk_needs_a_flat_group_index(impl):
+def test_axis_of_multidimensional_value_is_refused(impl):
     """A multidimensional group index has no place in a matrix of groups.
 
     Every backend says the very same words for the very same call, and it says
@@ -136,7 +136,7 @@ def test_the_topk_needs_a_flat_group_index(impl):
         impl.aggregate(np.array([0, 1]), a, func="topk", k=1, axis=-1)
 
 
-def test_the_axis_of_a_one_dimensional_value_is_in_no_way_special(impl):
+def test_axis_of_flat_value_changes_nothing(impl):
     """The labels of the only axis of a value are its plain labels.
 
     The axis of a one-dimensional value makes the group index neither deeper
@@ -151,7 +151,7 @@ def test_the_axis_of_a_one_dimensional_value_is_in_no_way_special(impl):
     np.testing.assert_array_equal(_rows(aggregate_ref_along_axis(group_idx, a, func="topk", axis=0, k=2)), plain)
 
 
-def test_the_topk_beyond_a_matrix_is_refused_by_the_reference():
+def test_more_than_matrix_is_refused_by_reference():
     """The reference measures the matrix of the topk and nothing above it.
 
     Labels of more than one dimension - and with them the sequence of sizes
@@ -185,7 +185,7 @@ _BAD_GROUP_IDX = (
 
 
 @pytest.mark.parametrize(("group_idx", "a", "kwargs"), _BAD_GROUP_IDX)
-def test_the_flat_group_index_rule_is_the_same_in_every_backend(impl, group_idx, a, kwargs):
+def test_flat_group_index_rule_is_same_in_every_backend(impl, group_idx, a, kwargs):
     """A call the matrix of the topk cannot answer is refused alike.
 
     Labels of more than one dimension - the ones an axis of a multi-dimensional
@@ -205,7 +205,7 @@ def test_the_flat_group_index_rule_is_the_same_in_every_backend(impl, group_idx,
     [1.5, True, "2", np.array([2]), [2]],
     ids=["fraction", "flag", "text", "array", "list"],
 )
-def test_a_k_that_names_no_count_is_refused_in_the_same_words(impl, k):
+def test_k_naming_no_count_is_refused_in_same_words(impl, k):
     """The count of the values is a whole number, in every backend.
 
     Before this was asked for itself, a fraction reached the numpy backend and
@@ -219,7 +219,7 @@ def test_a_k_that_names_no_count_is_refused_in_the_same_words(impl, k):
         aggregate_ref(np.array([0, 0, 1]), np.array([5.0, 9.0, 4.0]), func="topk", k=k)
 
 
-def test_the_topk_of_the_package_is_the_one_of_the_implementation(impl):
+def test_package_and_implementation_agree(impl):
     """The topk of the package - the one of the best implementation - is the
     topk of every implementation."""
     group_idx = np.array([0, 0, 1, 1, 1, 2])
@@ -227,7 +227,7 @@ def test_the_topk_of_the_package_is_the_one_of_the_implementation(impl):
     np.testing.assert_array_equal(npg.topk(group_idx, a, k=2), impl.topk(group_idx, a, k=2))
 
 
-def test_the_topk_of_the_function_answers_the_same_as_the_call(impl):
+def test_function_answers_same_as_call(impl):
     """The function of the implementation - the bare kernel of the numba one -
     and the call of the backend answer the same rows."""
     group_idx = np.array([0, 0, 1, 1, 1, 2])
@@ -235,7 +235,7 @@ def test_the_topk_of_the_function_answers_the_same_as_the_call(impl):
     np.testing.assert_array_equal(impl.topk(group_idx, a, k=2), impl.aggregate(group_idx, a, func="topk", k=2))
 
 
-def test_the_topk_of_the_ticks_answers_the_ticks():
+def test_tick_kernel_answers_ticks():
     """The bare kernel of the topk of the ticks works on the int64 ticks, and
     it leaves the NaT of a group out."""
 
@@ -247,7 +247,7 @@ def test_the_topk_of_the_ticks_answers_the_ticks():
     )
 
 
-def test_the_topk_of_a_temporal_input_can_be_asked_for_in_ticks(impl, skip_purepy):
+def test_temporal_input_can_be_asked_for_in_ticks(impl, skip_purepy):
     """The ticks of the temporal values are the int64 of the moments."""
     group_idx = np.array([0, 0, 1])
     a = np.array(["2011-01-03", "2011-01-01", "2011-01-05"], dtype="datetime64[s]")
@@ -255,7 +255,7 @@ def test_the_topk_of_a_temporal_input_can_be_asked_for_in_ticks(impl, skip_purep
     np.testing.assert_array_equal(ticks, np.array([[1294012800], [1294185600]]))
 
 
-def test_the_topk_of_the_numba_backend_goes_into_the_array_of_the_caller(impl):
+def test_out_argument_takes_matrix_of_caller(impl):
     """The out= of the numba backend takes the matrix of the topk."""
     if not is_numba(impl):
         pytest.skip("only the numba backend gathers into the array of the caller")
@@ -268,7 +268,7 @@ def test_the_topk_of_the_numba_backend_goes_into_the_array_of_the_caller(impl):
     np.testing.assert_array_equal(out[2], [4.0, np.nan])
 
 
-def test_the_topk_of_the_numba_backend_of_float16_runs_on_float32(impl):
+def test_float16_runs_on_float32(impl):
     """Numba has no float16, so the values run on float32 and the answer is
     rounded back - like the other operations of the backend."""
     if not is_numba(impl):
@@ -288,7 +288,7 @@ def test_the_topk_of_the_numba_backend_of_float16_runs_on_float32(impl):
     ],
     ids=["largest", "smallest"],
 )
-def test_the_values_at_the_border_are_the_ones_the_group_holds(impl, largest, k, expected):
+def test_border_values_come_from_group(impl, largest, k, expected):
     """The k-th value of the group is the border of the selection.
 
     A group whose values are equal at the border has as many of them as the
@@ -303,7 +303,7 @@ def test_the_values_at_the_border_are_the_ones_the_group_holds(impl, largest, k,
         np.testing.assert_array_equal(answer[group], row)
 
 
-def test_a_group_index_of_more_than_one_dimension_is_refused(impl):
+def test_group_index_of_more_than_one_dimension_is_refused(impl):
     """The answer of the topk is a matrix with a row per group - a group
     index of more than one dimension names its groups in more than one way,
     and has no place in it.

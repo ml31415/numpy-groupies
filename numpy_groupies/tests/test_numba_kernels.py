@@ -219,7 +219,7 @@ def _kernel_arguments(name, kwargs):
 # The arguments are the same; the return is not: the stub answers with the
 # result of the operation, the typing function with the implementation it
 # hands numba - which numba compiles and whose answer is the one of the stub.
-def test_the_python_and_the_jitted_signature_of_a_kernel_are_one():
+def test_python_and_jitted_signature_of_kernel_are_one():
     for name, typing_function in compose._TYPING_FUNCTIONS.items():
         stub = getattr(npg_numba, name, None)
         if stub is None:
@@ -235,14 +235,14 @@ def test_the_python_and_the_jitted_signature_of_a_kernel_are_one():
         assert signature(stub).parameters == signature(typing_function).parameters, name
 
 
-def test_a_kernel_carries_the_arguments_of_its_function_and_no_others():
+def test_kernel_carries_arguments_of_function_and_no_others():
     for name, typing_function in compose._TYPING_FUNCTIONS.items():
         extras = [extra for extra, _annotation, _default in func_extras(name)]
         expected = ["group_idx", "a", *extras, "size", "fill_value"]
         assert list(signature(typing_function).parameters) == expected, name
 
 
-def test_the_argument_of_a_kernel_is_the_one_of_its_function():
+def test_kernel_argument_matches_function_argument():
     """The argument an operation has of its own is the one of the function.
 
     Same name, same annotation and same default - the kernel is the function
@@ -348,7 +348,7 @@ def test_float_ops_match_layer2(name, kwargs):
 
 
 @pytest.mark.parametrize("name", ["percentile", "nanpercentile"])
-def test_the_percentile_is_the_quantile_in_percent(name):
+def test_percentile_is_quantile_in_percent(name):
     """The percentile is the quantile in percent - and it is a kernel of its own.
 
     The kernel of the percentile scales its argument down before it reaches
@@ -394,7 +394,7 @@ def test_collecting_kernel_matches_layer2():
         assert len(result[2]) == 0
 
 
-def test_collecting_kernel_refuses_a_fill_value():
+def test_collecting_kernel_refuses_fill_value():
     """The collecting kernel cannot place a fill value.
 
     An absent group holds an empty sequence, and the driver cannot put
@@ -423,7 +423,7 @@ def test_njit_composition():
     np.testing.assert_allclose(result, [-1.0, 1.0, -1.0, 1.0])
 
 
-def test_pure_python_call_refuses_a_fill_value_as_jitted_code_does():
+def test_pure_python_call_refuses_fill_value_as_jitted_code_does():
     """The refusal of the collecting kernel is the same sentence in both worlds.
 
     Jitted code is answered with a typing error, a python call with the plain
@@ -548,7 +548,7 @@ _TEMPORAL_TIMEDELTA_KERNELS = frozenset({"cumsum", "nancumsum", "nansum", "sum"}
 
 
 @pytest.mark.parametrize("kernel_name", _ALL_KERNELS)
-def test_every_kernel_refuses_the_empty_labels(kernel_name):
+def test_every_kernel_refuses_empty_labels(kernel_name):
     """Every kernel of the backend refuses the empty labels.
 
     The check is written in the stub of the operation, and every stub has it -
@@ -565,7 +565,7 @@ def test_every_kernel_refuses_the_empty_labels(kernel_name):
 @pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
 @pytest.mark.parametrize("kernel_name", _FAULT_KERNELS)
 @pytest.mark.parametrize("group_idx, values, size, kernel_words, call_words", _SAME_WORDS)
-def test_every_call_refuses_the_input_the_driver_cannot_read(
+def test_every_call_refuses_input_driver_cannot_read(
     kernel_name, style, group_idx, values, size, kernel_words, call_words
 ):
     """The value checks of a kernel call, in both worlds and through aggregate().
@@ -589,9 +589,7 @@ def test_every_call_refuses_the_input_the_driver_cannot_read(
 @pytest.mark.parametrize("style", [0, 1], ids=["python", "jitted"])
 @pytest.mark.parametrize("kernel_name", _FAULT_KERNELS)
 @pytest.mark.parametrize("group_idx, values, message, size, python_error", _STRICT_ONLY)
-def test_every_kernel_refuses_the_input_it_cannot_take(
-    kernel_name, style, group_idx, values, message, size, python_error
-):
+def test_every_kernel_refuses_unsupported_input(kernel_name, style, group_idx, values, message, size, python_error):
     call = _styles(kernel_name)[style]
     # the jitted style is answered before anything runs, by the typing function
     # of the kernel, which knows the shape and the dtype at compile time
@@ -602,7 +600,7 @@ def test_every_kernel_refuses_the_input_it_cannot_take(
 
 @pytest.mark.parametrize("style", [0, 1], ids=["python", "jitted"])
 @pytest.mark.parametrize("kernel_name", sorted(_ALL_KERNELS))
-def test_every_kernel_says_whether_it_takes_temporal_values(kernel_name, style):
+def test_every_kernel_says_whether_temporal_values_are_taken(kernel_name, style):
     """The temporal dtypes a kernel takes, and the ones it refuses.
 
     The comparisons of compiled code order datetime64 and timedelta64 values
@@ -643,7 +641,7 @@ _FILL_CASES = [
 
 @pytest.mark.parametrize("style", [0, 1, 2], ids=["python", "jitted", "aggregate()"])
 @pytest.mark.parametrize("kernel_name, values, fill_value, message", _FILL_CASES)
-def test_every_call_refuses_a_fill_value_the_output_cannot_hold(kernel_name, style, values, fill_value, message):
+def test_every_call_refuses_fill_value_output_cannot_hold(kernel_name, style, values, fill_value, message):
     """The fill value is checked like the python-level call checks it.
 
     A nan in an integer output is not a number the output can hold: numba
@@ -674,7 +672,7 @@ def test_every_call_refuses_a_fill_value_the_output_cannot_hold(kernel_name, sty
         call()
 
 
-def test_the_jitted_call_refuses_a_fill_value_that_is_no_number():
+def test_jitted_call_refuses_nonnumeric_fill_value():
     """The one check the jitted world can make before anything runs.
 
     The typing function of the kernel sees the type of the fill value, not its
@@ -690,7 +688,7 @@ def test_the_jitted_call_refuses_a_fill_value_that_is_no_number():
         caller(GROUP_IDX, INT_A, "x")
 
 
-def test_the_scalar_input_is_refused_with_its_own_words():
+def test_scalar_input_refused_in_own_words():
     """A scalar is one value, and a kernel takes one value per label.
 
     The python-level call repeats a scalar over every label; a kernel has
@@ -701,7 +699,7 @@ def test_the_scalar_input_is_refused_with_its_own_words():
         npg_numba.sum(GROUP_IDX, 3.0)
 
 
-def test_the_python_call_answers_in_the_dtype_of_the_jitted_one():
+def test_python_call_answers_in_dtype_of_jitted_one():
     """The python call resolves the dtype as the jitted one does.
 
     The values are compared against the python-level aggregate() by the tests
@@ -715,7 +713,7 @@ def test_the_python_call_answers_in_the_dtype_of_the_jitted_one():
         assert jitted.dtype == python.dtype, name
 
 
-def test_the_moments_answer_from_njit_like_the_reference():
+def test_moments_answer_from_njit_like_reference():
     # the skewness and the kurtosis are available inside jitted code as well
     @njit_stable
     def wrapped(group_idx, a):
@@ -728,7 +726,7 @@ def test_the_moments_answer_from_njit_like_the_reference():
     np.testing.assert_allclose(kurt, aggregate_ref(group_idx, a, func="kurt", size=2))
 
 
-def test_median_orders_complex_from_njit_like_the_reference():
+def test_median_orders_complex_from_njit_like_reference():
     # the median driver selects the middle of every group with the ordering
     # of the package, which for complex values is the lexicographic order
     # numpy uses - so the kernel compiles for them and answers like the
@@ -743,7 +741,7 @@ def test_median_orders_complex_from_njit_like_the_reference():
     np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="median", size=2))
 
 
-def test_quantile_orders_complex_from_njit_like_the_reference():
+def test_quantile_orders_complex_from_njit_like_reference():
     # the quantile driver selects the wanted quantile out of the block of every
     # group with the ordering of the package, which for complex values is the
     # lexicographic order numpy uses - so the kernel compiles for them and
@@ -757,7 +755,7 @@ def test_quantile_orders_complex_from_njit_like_the_reference():
     np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="quantile", q=0.5, size=2))
 
 
-def test_quantile_of_a_complex_group_with_a_nan_poisons_it_from_njit():
+def test_complex_group_nan_poisons_quantile_from_njit():
     # a nan in either part of a complex value makes the value incomparable, and
     # the whole group answers with a nan - the plain quantile is contagious
     @njit_stable
@@ -769,7 +767,7 @@ def test_quantile_of_a_complex_group_with_a_nan_poisons_it_from_njit():
     np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="quantile", q=0.5, size=2))
 
 
-def test_nunique_counts_the_distinct_values_from_njit_like_the_reference():
+def test_nunique_counts_distinct_values_from_njit_like_reference():
     # the driver of the distinct values orders the block of every group, so
     # that the values that differ from their predecessor are the distinct
     # ones - for complex values the order is the lexicographic one numpy
@@ -783,7 +781,7 @@ def test_nunique_counts_the_distinct_values_from_njit_like_the_reference():
     np.testing.assert_array_equal(wrapped(group_idx, a), aggregate_ref(group_idx, a, func="nunique", size=2))
 
 
-def test_nannunique_leaves_the_nans_out_from_njit_like_the_reference():
+def test_nannunique_leaves_nans_out_from_njit_like_reference():
     @njit_stable
     def wrapped(group_idx, a):
         return npg_numba.nannunique(group_idx, a)
@@ -890,7 +888,7 @@ def test_dtype_rules(kernel_name, values, expected_dtype):
     assert caller(GROUP_IDX, values).dtype == expected_dtype
 
 
-def test_a_float16_input_is_widened_from_python_and_refused_from_jit():
+def test_float16_input_is_widened_from_python_and_refused_from_jit():
     """The one dtype numba has no world for.
 
     The python entry of a kernel widens float16 values to float32 ahead of
@@ -914,7 +912,7 @@ def test_a_float16_input_is_widened_from_python_and_refused_from_jit():
         caller(GROUP_IDX, values)
 
 
-def test_layer1_layer2_share_the_driver():
+def test_layer1_layer2_share_driver():
     """The python-level aggregate() and the kernels use one compiled artifact
     - spot-check that both paths return bit-identical values."""
     name, values = "var", FLOAT_A
@@ -943,7 +941,7 @@ def _identity(function):
     return function.__module__, function.__qualname__, function.__code__.co_firstlineno
 
 
-def test_no_two_operations_share_a_compiled_identity():
+def test_no_two_operations_share_compiled_identity():
     """Numba mangles the symbol of a compiled function from module, qualname and
     signature - two operations that share those share one symbol, and the driver
     loaded from disk then binds its building blocks to the other operation's
@@ -959,7 +957,7 @@ def test_no_two_operations_share_a_compiled_identity():
     assert len(identities) > 24
 
 
-def test_the_plain_and_nan_variant_of_one_operation_are_distinct():
+def test_plain_and_nan_variant_of_one_operation_are_distinct():
     """The nan variant is a second compiled artifact of the same source block -
     the collision of ``last`` and ``nanlast`` came out of exactly that.
     """

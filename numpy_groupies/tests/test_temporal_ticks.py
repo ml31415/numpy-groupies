@@ -35,7 +35,7 @@ def _round_half_even(fr):
     return q
 
 
-def test_the_average_of_two_ticks_is_exact_over_the_whole_int64_range():
+def test_average_of_two_ticks_is_exact_over_whole_int64_range():
     # the mean of the two middles of an even group must not take the sum of
     # the two: pairs at the ends of the int64 range sum past it, and the
     # wraparound answers a tick of no value of the group.  The average is
@@ -147,7 +147,7 @@ def test_timedelta_mean_nat_semantics(impl):
     np.testing.assert_array_equal(impl.aggregate(group_idx, a, func="nanmean", size=2), np.array([1, 4], dtype=a.dtype))
 
 
-def test_mean_default_dtype_is_float_of_the_exact_quotient(impl):
+def test_mean_default_dtype_is_float_of_exact_quotient(impl):
     # an explicitly requested float64 holds the exact quotient, not the
     # rounded tick
     ticks = np.array([2**62, 2**62, 2**62 + 1], dtype=np.int64)
@@ -156,7 +156,7 @@ def test_mean_default_dtype_is_float_of_the_exact_quotient(impl):
     assert res[0] == float(Fraction(int(ticks.astype(object).sum()), 3))
 
 
-def test_mean_float_dtype_poisons_the_nat_groups(impl):
+def test_mean_float_dtype_poisons_nat_groups(impl):
     # the float answer of a group a NaT poisons is no quotient at all - nan
     ticks = np.array([2**62, 2**62 + 2, 0, 2**62], dtype=np.int64)
     a = ticks.view("M8[ns]")
@@ -167,7 +167,7 @@ def test_mean_float_dtype_poisons_the_nat_groups(impl):
     assert res[0] != res[0]  # nan
 
 
-def test_nanmean_float_dtype_leaves_the_nat_out(impl):
+def test_nanmean_float_dtype_leaves_nat_out(impl):
     # the nan variant of the float answer averages the values it has
     ticks = np.array([2**62, 2**62 + 4, 2**62 + 8, 2**62], dtype=np.int64)
     a = ticks.view("M8[ns]")
@@ -178,7 +178,7 @@ def test_nanmean_float_dtype_leaves_the_nat_out(impl):
     assert res[1] == float(ticks[3])
 
 
-def test_mean_of_a_spanning_group_with_nat_answers_nat(impl):
+def test_mean_of_spanning_group_with_nat_answers_nat(impl):
     # a NaT and a value of this epoch: the span of the ticks alone would
     # overflow the deviations of the kernel, and the limb sums take over -
     # the poison of the NaT survives the fallback
@@ -199,7 +199,7 @@ def test_mean_of_a_spanning_group_with_nat_answers_nat(impl):
 # reach too far apart for their sum to stay inside int64.
 
 
-def test_the_mean_of_the_ticks_is_exact_and_centered(impl):
+def test_mean_of_ticks_is_exact_and_centered(impl):
     # the values of a group are close to each other - their sum fits into
     # int64, and the mean of the ticks is the exact quotient of it
     group_idx = np.array([0, 0, 0, 1, 1, 1])
@@ -221,7 +221,7 @@ def test_the_mean_of_the_ticks_is_exact_and_centered(impl):
     )
 
 
-def test_the_mean_of_the_ticks_keeps_the_unit(impl):
+def test_mean_of_ticks_keeps_unit(impl):
     group_idx = np.array([0, 0, 0])
     a = np.array([1, 2, 4], dtype="m8[ns]")
     res = impl.aggregate(group_idx, a, func="mean", size=1)
@@ -230,7 +230,7 @@ def test_the_mean_of_the_ticks_keeps_the_unit(impl):
     np.testing.assert_array_equal(res, np.array([2], dtype="m8[ns]"))
 
 
-def test_the_parallel_path_of_the_mean_answers_the_same(impl):
+def test_parallel_path_of_mean_answers_same(impl):
     # the parallel path splits the data into chunks, and every chunk measures
     # its deviations from its own origin - the mean must not depend on the
     # origin, and the chunks of the data know their values by their place in
@@ -258,7 +258,7 @@ def test_the_parallel_path_of_the_mean_answers_the_same(impl):
             assert int(np.asarray(parallel).view(np.int64)[g]) == want
 
 
-def test_the_bare_tick_mean_poisons_the_nat_of_a_group():
+def test_bare_tick_mean_poisons_nat_of_group():
     # the kernel sees the ticks alone - the tick of the NaT is the smallest
     # one, and the plain kernel takes its group over with it, while the nan
     # kernel leaves it out
@@ -299,7 +299,7 @@ def test_timedelta_median_of_huge_ticks_is_exact(impl):
     np.testing.assert_array_equal(np.asarray(res_nan).view(np.int64), np.asarray(res_nan_ref).view(np.int64))
 
 
-def test_the_parallel_path_of_the_median_answers_the_same(impl):
+def test_parallel_path_of_median_answers_same(impl):
     # the groups are cut into ranges the threads work on alone - the answer
     # must not depend on where the cut falls.  The data is big enough for the
     # parallel path to run at all.
@@ -331,7 +331,7 @@ def test_the_parallel_path_of_the_median_answers_the_same(impl):
         np.testing.assert_array_equal(np.asarray(parallel_nan).view(np.int64), sequential_nan)
 
 
-def test_the_parallel_path_of_the_quantile_answers_the_same(impl):
+def test_parallel_path_of_quantile_answers_same(impl):
     # the groups are cut into ranges the threads work on alone - the answer
     # must not depend on where the cut falls.  The data is big enough for the
     # parallel path to run at all.
@@ -359,7 +359,7 @@ def test_the_parallel_path_of_the_quantile_answers_the_same(impl):
             assert np.array_equal(got, np.asarray(ref).view(np.int64))
 
 
-def test_the_bare_tick_median_poisons_the_nat_of_a_group():
+def test_bare_tick_median_poisons_nat_of_group():
     # the plain kernel takes the group over, the way the plain kernel of the
     # numbers takes the group of a nan over - the answer of a group that
     # holds a NaT is the NaT of the unit; the nan kernel leaves the NaT out

@@ -8,14 +8,14 @@ same implementations.
 import numpy_groupies
 
 
-def test_the_modules_of_the_implementations_carry_their_new_names():
+def test_modules_of_implementations_carry_their_new_names():
     """The modules of the implementations are the ones of the new names."""
     assert numpy_groupies.npg_numpy.__name__ == "numpy_groupies.npg_numpy"
     assert numpy_groupies.npg_numba.__name__ == "numpy_groupies.npg_numba"
     assert numpy_groupies.npg_purepy.__name__ == "numpy_groupies.npg_purepy"
 
 
-def test_the_old_paths_of_the_modules_reach_the_implementations():
+def test_old_paths_of_modules_reach_implementations():
     """The old paths of the modules reach the implementations.
 
     The modules are in sys.modules under their old names, so that the path of
@@ -28,7 +28,7 @@ def test_the_old_paths_of_the_modules_reach_the_implementations():
     assert aggregate_of_purepy is numpy_groupies.npg_purepy.aggregate
 
 
-def test_the_old_names_of_the_modules_reach_the_implementations():
+def test_old_names_of_modules_reach_implementations():
     """The old names of the modules are the modules of the implementations."""
     from numpy_groupies import (
         aggregate_numba,
