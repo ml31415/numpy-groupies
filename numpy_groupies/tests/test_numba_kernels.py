@@ -265,15 +265,13 @@ def _make_jitted_caller(kernel, name):
     """A jitted caller of one kernel, with the name the kernel has.
 
     A caller that reaches a kernel from jitted code is a dispatcher of its
-    own, and a dispatcher compiles the first time it is called.  The callers
-    are therefore built once per kernel and shared by the tests - built per
-    test, every test would compile its own copy of the very same wrapper,
-    which is the most expensive thing the suite does.
-
-    Every caller carries the name of the kernel it calls: two callers that
-    differ only in their closure share the symbol numba mangles their code
-    into, and one of them may bind the calls of the other - the same types
-    and the wrong kernel.
+    own and compiles the first time it is called, so the callers are built
+    once per kernel and shared by the tests - per test, every test would
+    compile its own copy of the very same wrapper, the most expensive thing
+    the suite does.  Every caller carries the name of the kernel it calls:
+    two callers that differ only in their closure share the symbol numba
+    mangles their code into, and one of them may bind the calls of the
+    other - the same types and the wrong kernel.
     """
 
     def caller(group_idx, values, size):
@@ -570,15 +568,12 @@ def test_every_call_refuses_input_driver_cannot_read(
 ):
     """The value checks of a kernel call, in both worlds and through aggregate().
 
-    The drivers take one value per label and numba never looks at the bounds of
-    what it reads: a short ``a`` is answered with the values behind the end of
-    the array, an empty one with nothing at all.  The entry points of the kernel
-    therefore ask the two lengths and the bounds of the labels before the driver
-    runs - the same questions ``input_validation`` asks the python-level call.
-
-    The words of the complaint are the ones of ``numpy_groupies.validation``,
-    and every way of calling a kernel says the very same ones - the python
-    call of the kernel, the jitted one and the python-level aggregate() alike.
+    The drivers take one value per label and numba never looks at the bounds
+    of what it reads, so the entry points of the kernel ask the two lengths
+    and the bounds of the labels before the driver runs - the same questions
+    ``input_validation`` asks the python-level call.  The words of the
+    complaint are the ones of ``numpy_groupies.validation``, and every way
+    of calling a kernel says the very same ones.
     """
     call = _styles(kernel_name)[style]
     with pytest.raises(ValueError) as excinfo:
@@ -892,11 +887,11 @@ def test_float16_input_is_widened_from_python_and_refused_from_jit():
     """The one dtype numba has no world for.
 
     The python entry of a kernel widens float16 values to float32 ahead of
-    the driver and rounds an inexact result back - the values survive the
-    widening exactly, and the float32 plan is the one ``aggregate()`` runs
-    them on as well.  From jitted code a float16 never arrives at a kernel,
-    and the typing function says so: numba answers the one numeric dtype it
-    cannot place with a NotImplementedError of its own.
+    the driver and rounds an inexact result back - the float32 plan is the
+    one ``aggregate()`` runs them on as well.  From jitted code a float16
+    never arrives at a kernel, and the typing function says so: numba
+    answers the one numeric dtype it cannot place with a NotImplementedError
+    of its own.
     """
     values = FLOAT_A.astype(np.float16)
     result = npg_numba.mean(GROUP_IDX, values)

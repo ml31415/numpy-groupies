@@ -199,9 +199,8 @@ def test_wide_integer_grouped_sum(impl, func, dtype, fill_value, explicit_output
     numpy backend routes wide-integer groups through an exact accumulation
     in the resolved output dtype; the test runs the same expectation across
     every backend so each impl proves it has not regressed to float64
-    partial sums. The parametrize covers int64/uint64 input and output
-    dtypes, with and without an explicit dtype request, and two fill
-    values for untouched groups.
+    partial sums - over int64/uint64 input and output dtypes, with and
+    without an explicit dtype request, and two fill values.
     """
     groups = np.array([0, 2, 0, 2])
     values = np.array([2**60 + 1, 2**53 + 1, 2**60 + 2, 2**53 + 2], dtype=dtype)
@@ -454,13 +453,11 @@ def test_dtype_policy_of_running_values_and_products(dtype):
     climb the ladder of the sums (the same rung for the same values), the
     products land in the accumulator of the input's own sign, and the
     functions that hand the values of the group out keep the dtype of the
-    values.
-
-    The ladder is the policy of the package - it is numpy's accumulator
-    (int64 for the signed values and bool, uint64 for the unsigned ones)
-    with a 32-bit rung in the middle, and the widening never crosses the
-    sign: an unsigned input never lands in a signed dtype, where half of
-    its range would read as negative.
+    values.  The ladder is numpy's accumulator (int64 for the signed values
+    and bool, uint64 for the unsigned ones) with a 32-bit rung in the
+    middle, and the widening never crosses the sign: an unsigned input
+    never lands in a signed dtype, where half of its range would read as
+    negative.
     """
     a_dtype = np.dtype(dtype)
     n = 1000

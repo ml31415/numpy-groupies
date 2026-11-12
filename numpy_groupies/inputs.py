@@ -1,9 +1,6 @@
-"""The shapes of the answers and the validation of the input of a call.
-
-The group index and the values arrive as the caller wrote them - lists, duck
-arrays, scalars - and the validation narrows them down to the arrays the
-signatures of the package name, and answers the questions the shape of the
-answer asks.
+"""The shapes of the answers and the validation of the input of a call:
+lists, duck arrays and scalars are narrowed to the arrays the signatures
+of the package name.
 """
 
 from collections.abc import Callable
@@ -30,11 +27,8 @@ def check_nton_shape(
     size: int | tuple[int, ...] | npt.NDArray[np.integer],
     func: str | Callable[..., AScalar],
 ) -> None:
-    """Complain early when a one-out-per-in function has to fill a hole.
-
-    ``sort`` and the ``cum``-functions emit exactly one value per input item,
-    so a group without items leaves the output too short for the requested
-    shape - which numpy would otherwise report as a plain reshape error.
+    """Complain early when a one-out-per-in function would have to fill a hole
+    (``sort``, ``cumulative``) - otherwise numpy reports a plain reshape error.
     """
     # np.prod takes an int as it is, a tuple or an array of ints
     prod = int(np.prod(size))
@@ -64,9 +58,7 @@ def _ravel_group_idx(
     method: str = "ravel",
 ) -> tuple[Any, Any]:
     ndim_a = a.ndim
-    # Create the broadcast-ready multidimensional indexing.
-    # Note the user could do this themselves, so this is
-    # very much just a convenience.
+    # broadcast-ready multidimensional indexing - purely a convenience
     size_in = int(np.max(group_idx)) + 1 if size is None else size
     group_idx_in = group_idx
     # the labels are collected per input dimension before ravel_multi_index folds them
@@ -90,8 +82,7 @@ def _ravel_group_idx(
                 ii_idx = np.arange(s).reshape(ii_shape)
             labels.append(ii_idx)
         size.append(size_in if ii == axis else s)
-    # Use the indexing, and return. It's a bit simpler than
-    # using trying to keep all the logic below happy
+    # ravel or offset the labels, and return
     if ravel:
         group_idx = np.ravel_multi_index(labels, size, order=order, mode="raise")
     elif method == "offset":
@@ -102,11 +93,9 @@ def _ravel_group_idx(
 def offset_labels(
     group_idx: npt.NDArray[np.integer], inshape: tuple[int, ...], axis: int, order: RavelOrder, size: int
 ) -> npt.NDArray[np.integer]:
-    """
-    Offset group labels by dimension. This is used when we reduce over a subset of the dimensions of
-    group_idx. It assumes that the reductions dimensions have been flattened in the last dimension
-    Copied from
-    https://stackoverflow.com/questions/46256279/bin-elements-per-row-vectorized-2d-bincount-for-numpy
+    """Offset group labels by dimension, for reductions over a subset of the
+    dimensions of group_idx (reduction dimensions flattened into the last one).
+    From https://stackoverflow.com/questions/46256279
     """
 
     group_idx = np.broadcast_to(group_idx, inshape)
@@ -121,10 +110,7 @@ def offset_labels(
 
 
 def input_validation(
-    # the unvalidated user input - this function is exactly what narrows it,
-    # down to the integer array the signatures of the package ask for, and it
-    # still admits what those do not name: lists, duck arrays and the python
-    # scalar that stands for one value repeated over every label
+    # the unvalidated user input, narrowed down by this function
     group_idx: Any,
     a: Any,
     size: Any = None,
@@ -134,14 +120,11 @@ def input_validation(
     check_bounds: bool = True,
     func_name: str | None = None,
 ) -> ValidatedInput:
-    """
-    Do some fairly extensive checking of group_idx and a, trying to give the user as much help as
-    possible with what is wrong. Also, convert ndim-indexing to 1d indexing.
+    """Extensive checking of group_idx and a; convert ndim-indexing to 1d.
 
-    ``func_name`` is the name the function of the call resolves to - whether
-    it is an ``arg``-reduction, which names a position in the input, or one of
-    the one-out-per-input-item answers (``cum`` and ``sort``).  A function that
-    resolves to no name is neither, which is what a custom callable is.
+    ``func_name`` is the resolved name of the function - ``arg``-reductions
+    and the one-out-per-item answers (``cumulative``, ``sort``) are special-cased;
+    no name (a custom callable) is neither.
     """
     if not isinstance(a, (int, float, complex)) and not is_duck_array(a):
         a = np.asanyarray(a)
@@ -162,8 +145,7 @@ def input_validation(
     ndim_idx = group_idx.ndim
     ndim_a = getattr(a, "ndim", 0)
 
-    # Deal with the axis arg: if present, then turn 1d indexing into
-    # multi-dimensional indexing along the specified axis.
+    # axis arg: turn 1d indexing into multidimensional indexing along the axis
     if axis is None:
         if ndim_a > 1:
             raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten. Alternatively specify axis.")
@@ -172,9 +154,8 @@ def input_validation(
             raise ValueError("axis arg too large for np.ndim(a)")
         axis = axis if axis >= 0 else ndim_a + axis  # negative indexing
         if ndim_idx > 1:
-            # multidimensional group labels - e.g. separate group labels for
-            # each row - broadcast across the non-axis dimensions of a
-            # (issue #74)
+            # multidimensional group labels, e.g. per row - broadcast across
+            # the non-axis dimensions of a (issue #74)
             if ndim_idx != ndim_a:
                 raise ValueError("when using axis arg, group_idx must be 1d, or of the same dimensionality as a")
             try:
@@ -214,7 +195,7 @@ def input_validation(
         else:
             if not np.isscalar(size):
                 raise ValueError(OUTPUT_SIZE_NOT_SCALAR)
-            # a scalar size, which the comparison below needs as a number
+            # the comparison below needs a number
             scalar_size = cast("int | float | np.number", size)
             if check_bounds and np.any(group_idx > scalar_size - 1):
                 raise ValueError(TOO_LARGE_FOR_SIZE.format(size=scalar_size))

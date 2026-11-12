@@ -312,17 +312,12 @@ def test_fault_of_indices_is_complained_about(rng):
 
 @pytest.mark.parametrize("func", CHUNKABLE)
 def test_fewer_threads_than_pool_has_do_not_lose_chunk(func, data):
-    # the number of the threads a call asks for and the number of the threads
-    # the pool has are two numbers: a call for two threads on a machine whose
-    # pool has six still hands its chunks to those six, and a state per thread
-    # indexed by the id of the thread that took a chunk is then read out of
-    # its range - silently, because the read is inside a compiled function.
-    # The chunks that fall off the end of the states are lost, and the result
-    # is a sum over less than the values of the group.
-    #
-    # The state belongs to the chunk and not to the thread, so the number of
-    # the states is the number of the chunks and the number of the threads
-    # does not matter.  The test says that the result does not depend on it.
+    # a call for two threads on a pool of six still hands its chunks to those
+    # six, and a state per thread indexed by the id of the thread that took a
+    # chunk is then read out of its range - silently, inside the compiled
+    # function - and the result is a sum over less than the values of the
+    # group.  The state belongs to the chunk, so the test says the result
+    # does not depend on the number of the threads.
     group_idx, values = data
     if nb.config.NUMBA_NUM_THREADS < 2:
         pytest.skip("the machine has no second thread to compare against")
@@ -525,18 +520,13 @@ def test_group_path_complains_about_fault_of_indices(func, group_data):
 # ---------------------------------------------------------------------------
 # the moments: the skewness and the kurtosis
 #
-# Their state is the running central moment of Welford, and two states of
-# two chunks of the data cannot be added up like the sums of the mean can:
-# the moments of a chunk are the moments about the mean of that chunk, and
-# the merge of Chan et al. is what puts the two together.
-#
-# The merge is not the same arithmetic as the accumulation of one value at a
-# time, so the result of the parallel path is not the one of the sequential
-# path bit for bit - it is the one of the sequential path to the last bits of
-# the moments.  The kurtosis is a ratio of two moments and the skewness a
-# ratio of a moment and a power of another one, and a ratio of two nearly
-# equal numbers is where the difference shows: the tests below compare the
-# two results with a tolerance and not with the last bits.
+# Their state is the running central moment of Welford, and the merge of
+# Chan et al. is what puts two chunk states together.  That merge is not the
+# same arithmetic as the accumulation of one value at a time, so the result
+# of the parallel path is not the one of the sequential path bit for bit -
+# and since moments are ratios of nearly equal numbers, the difference shows
+# in the last bits: the tests below compare with a tolerance and not with
+# the last bits.
 
 MOMENTS = ["skew", "kurt", "nanskew", "nankurt"]
 
@@ -689,16 +679,11 @@ def test_moments_refuse_complex_input(func, rng):
 # ---------------------------------------------------------------------------
 # the first and the last: the values that depend on the order of the input
 #
-# They cannot be reduced in chunks the way the sums are: the value of a
-# group is the one that comes first (or last) in the input.  Their parallel
+# They cannot be reduced in chunks the way the sums are.  Their parallel
 # path splits the data into chunks, lets every chunk look for the value of
 # its own and folds the chunks in the order of their index - the first chunk
 # that has a value for a group wins for the first, the last one for the
-# last.
-#
-# The result is the one of the sequential path bit for bit: every chunk looks
-# at its own values in the order they come, and the fold picks the value of
-# the chunk that comes first (or last) in the input.
+# last, so the result is the one of the sequential path bit for bit.
 
 ORDERED = ["first", "last", "nanfirst", "nanlast"]
 
@@ -797,14 +782,12 @@ def test_ordered_values_complain_about_fault_of_indices(func, data):
 # the callable of the caller: the generic aggregation loop
 #
 # The loop applies the callable of the caller to the values of every group.
-# The counting sort that places the values of a group together stays single
-# threaded - the values have to be together where the callable is called on
-# them - and the loop over the groups, which is the expensive part, is cut
-# into ranges the threads work on one after another.
-#
-# Every group belongs to exactly one range and is worked on by one thread,
-# with the same code the sequential loop runs - so the result is the one of
-# the sequential loop bit for bit.
+# The counting sort stays single threaded - the values have to be together
+# where the callable is called on them - and the loop over the groups, the
+# expensive part, is cut into ranges the threads work on.  Every group
+# belongs to exactly one range and one thread, with the same code the
+# sequential loop runs - so the result is the one of the sequential loop
+# bit for bit.
 
 CUSTOM = [
     lambda x: x.sum(),
@@ -891,15 +874,12 @@ def test_number_of_threads_does_not_change_result_of_callable(func, group_data):
 # ---------------------------------------------------------------------------
 # the argmax and the argmin: the index of the best value of every group
 #
-# They cannot be reduced in chunks the way the sums are: the value of a
-# group is the one that wins, and the winner of two chunks is not the sum of
-# the two.  Their parallel path splits the data into chunks, lets every
-# chunk look for the best value of every group, and folds the chunks in the
-# order of their index - the chunk with the better value wins, and a tie is
-# won by the chunk that comes first, the way the sequential kernel keeps the
-# first of two equal values.
-#
-# The result is the one of the sequential path bit for bit.
+# They cannot be reduced in chunks the way the sums are.  Their parallel
+# path splits the data into chunks, lets every chunk look for the best value
+# of every group, and folds the chunks in the order of their index - the
+# chunk with the better value wins, and a tie is won by the chunk that comes
+# first, the way the sequential kernel keeps the first of two equal values,
+# so the result is the one of the sequential path bit for bit.
 
 ARGUMENTS = ["argmax", "argmin", "nanargmax", "nanargmin"]
 

@@ -135,13 +135,12 @@ def test_median(impl, a_dtype):
 def test_median_of_poisoned_group(impl, a_dtype, poisoned_part):
     """A group poisoned by one of its values answers a nan in every part.
 
-    The nan sits in one part of one of the values, but the answer is about the
-    group: the part the nan never touched is not a zero the group claimed, and a
-    plain nan (which the implementations used to answer with) drops that part
-    altogether - purepy dropped it so completely that the whole answer came back
-    as a float.  ``median`` is not in ``complex_funcs`` for exactly these cases:
-    the reference cannot decide them, since ``np.median`` selects the middle of a
-    partition and over incomparable values partition and sort disagree.
+    The answer is about the group: a plain nan (which the implementations used
+    to answer with) drops the part the nan never touched - purepy dropped it
+    so completely that the whole answer came back as a float.  ``median`` is
+    not in ``complex_funcs`` for exactly these cases: the reference cannot
+    decide them, since ``np.median`` selects the middle of a partition and
+    over incomparable values partition and sort disagree.
     """
     group_idx = np.zeros(3, dtype=int)
     real = np.array([1.0, 5.0, np.nan if poisoned_part in ("real", "both") else 3.0])

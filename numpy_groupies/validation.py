@@ -1,14 +1,8 @@
-"""The input checks of the package, in one place.
+"""The input checks of the package, in one place: shared messages and checks.
 
-Every path into a computation checks its input and says the same words about
-what is wrong with it: the python-level ``aggregate()``, the pure python one
-and the compiled kernels of the numba backend share the messages below and the
-checks that go with them.  The checks that need numpy live in ``numpy_groupies``,
-the ones that have to run inside compiled code are written where they are
-compiled - but they speak the words of this module.
-
-This module must not import numpy: the pure python implementation is loaded
-before numpy is known to be available, and has to work without it.
+Checks needing numpy live in ``numpy_groupies``, those compiled live where
+they are compiled - both use these messages.  This module must not import
+numpy: the pure python implementation loads before numpy is known to exist.
 """
 
 from __future__ import annotations
@@ -33,8 +27,7 @@ NON_INTEGER_GROUP_IDX = "group_idx must be of integer type"
 NEGATIVE_INDICES = "negative indices not supported"
 TOO_LARGE = "one or more indices are too large"
 TOO_LARGE_FOR_SIZE = f"{TOO_LARGE} for size {{size}}"
-# the same sentence for the compiled code, which cannot format a string:
-# numba knows no ``str.format``, but it concatenates and it knows ``str()``
+# the same sentence for the compiled code, which can only concatenate and call ``str()``
 TOO_LARGE_SIZE_PREFIX = f"{TOO_LARGE} for size "
 
 # the values of a call
@@ -46,11 +39,9 @@ FILL_NOT_BOOLEAN = "Value not boolean"
 FILL_NOT_CONVERTIBLE = "fill_value must be convertible into {dtype}"
 MOMENTS_NOT_FOR_COMPLEX = "the skewness and the kurtosis are not defined for complex values"
 FILL_NOT_INTEGER = "fill_value must be convertible into an integer"
-# a size that is no number of groups - the sequence of the multidimensional
-# result, which only the flat rule of the topk refuses with its own words
+# a size that is no number of groups; only topk's flat rule refuses it otherwise
 OUTPUT_SIZE_NOT_SCALAR = "output size must be scalar or None"
-# the topk answers a matrix with a row per group, and a group index of more
-# than one dimension has no place in it
+# topk answers a matrix with a row per group
 TOPK_NEEDS_FLAT_GROUP_IDX = "the topk needs a flat group index, because its answer is a matrix with a row per group"
 # the count of the values the topk keeps: a whole number, and none below zero
 TOPK_K_NOT_WHOLE = "k must be a whole number of values, got {k!r}"
@@ -64,20 +55,14 @@ FILL_NONE_NOT_HELD = (
 INTEGER_KINDS = "iu"
 NUMERIC_KINDS = "iufcb"
 
-# the functions whose result holds a None: the object array of ``array`` -
-# every other result is a number, a flag, a count, a position or the values of
-# a group, and none of them holds a None
+# the functions whose result holds a None: only the object array of ``array``
 NONE_RESULT_FUNCTIONS = frozenset({"array"})
 
-# the bounds of the exactness of the reductions
-#
-# integers beyond this magnitude are not exactly representable in float64, so
-# once an exact integer sum can leave this window, a float64-accumulated mean
-# silently rounds (2**53 itself is still exact, hence the inclusive limit)
+# bounds of exact reductions: integers beyond these magnitudes round silently
+# in float64 (2**53 itself is still exact, hence the inclusive limit)
 EXACT_FLOAT64_INTEGER_LIMIT = 2**53
-# largest magnitude a two's-complement signed 64-bit deviation represents
-# exactly; integer variance centers each group on its first value and needs
-# every deviation to stay within this bound
+# largest magnitude int64 deviations represent exactly (variance centers on
+# each group's first value)
 INT64_DEVIATION_LIMIT = 2**63 - 1
 INT64_MIN = -(2**63)
 
@@ -85,9 +70,7 @@ INT64_MIN = -(2**63)
 # ---------------------------------------------------------------------------
 # the predicates that go with the words
 #
-# Every predicate of this module answers its question about a dtype in any of
-# its spellings: a numpy dtype (the kind of it is a one letter string), the
-# name of one or the python type behind it.
+# every predicate answers its question for numpy dtypes, dtype names and python types
 
 
 def _dtype_kind(dtype: Any) -> str | None:
@@ -96,11 +79,7 @@ def _dtype_kind(dtype: Any) -> str | None:
 
 
 def is_integer_dtype(dtype: Any) -> bool:
-    """Whether the labels of a call are of an integer dtype.
-
-    A bool is not an integer dtype here: the labels of a call index the
-    groups, and a bool is not an index.
-    """
+    """Whether the labels are of an integer dtype (a bool is not: labels index groups)."""
     kind = _dtype_kind(dtype)
     if kind is not None:
         return kind in INTEGER_KINDS
@@ -110,12 +89,8 @@ def is_integer_dtype(dtype: Any) -> bool:
 
 
 def is_numeric_dtype(dtype: Any) -> bool:
-    """Whether the values of a call are of a dtype the kernels can read.
-
-    The numeric ones: the complex drivers of the reductions, the median and
-    the quantile included - datetime, timedelta, text and structured dtypes
-    make numba refuse the call, which is a harder error to read than this
-    one.
+    """Whether the values are of a dtype the kernels can read (numba refuses
+    datetime, text and structured dtypes - a harder error than this one).
     """
     kind = _dtype_kind(dtype)
     if kind is not None:
@@ -152,11 +127,8 @@ def is_complex_dtype(dtype: Any) -> bool:
 def is_scalar_input(a: Any) -> bool:
     """Whether the aggregated data is a single value instead of a sequence.
 
-    Kept numpy free on purpose, since the pure python implementation uses it
-    too: a python number has no ``ndim`` at all, while a numpy scalar and a 0d
-    array both report 0 - ``isinstance(a, (int, float, complex))`` alone misses
-    every numpy scalar that is not a python number (``np.float32``, ``np.int64``,
-    ``np.bool_``, ``np.complex64``).
+    NumPy free on purpose; ``isinstance(a, (int, float, complex))`` alone
+    would miss non-python numpy scalars like ``np.float32``.
     """
     return getattr(a, "ndim", None) == 0 or isinstance(a, (int, float, complex))
 
@@ -164,9 +136,8 @@ def is_scalar_input(a: Any) -> bool:
 # ---------------------------------------------------------------------------
 # the checks of the fill value of a call
 #
-# A fill value is the one argument every function takes and every function
-# answers differently: the checks below say what the result of a function can
-# hold, without knowing the result itself.
+# A fill value is the one argument every function takes; these checks say what
+# a result can hold, without knowing the result itself.
 
 
 def check_boolean(x: AFillValue) -> None:
@@ -176,32 +147,18 @@ def check_boolean(x: AFillValue) -> None:
 
 
 def check_filling_with_none(key: str) -> None:
-    """Refuse to fill with ``None`` where no result can hold it.
+    """Refuse ``None`` as fill where no result can hold it (``DEFAULT_FILL_VALUE``
+    asks for a function's default; ``None`` is only the fill of ``func='array'``).
 
-    ``None`` is a value and not a request: the request for the default of a
-    function is made with ``DEFAULT_FILL_VALUE``, and ``None`` is what an object
-    result - the sequence of ``func='array'`` - is filled with, nothing else.  A
-    number, a flag, a count, a position and the values a sort returns cannot hold
-    a ``None``, and the three implementations answered the request three
-    different ways: the numpy one complained about an ``isnan`` of an object, the
-    numba one failed to type a kernel, and the pure python one wrote the ``None``
-    into a column of floats, which turned the result into an object array.
-
-    ``key`` is the name of the function in the table of the fill values -
-    the caller resolves it, this module knows nothing of the table.
+    ``key`` is the caller-resolved name in the fill value table.
     """
     if key not in NONE_RESULT_FUNCTIONS:
         raise TypeError(FILL_NONE_NOT_HELD)
 
 
 def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
-    """Refuse a ``fill_value`` that the result type of a function cannot hold.
-
-    This is the rule ``numpy_groupies.check_fill_value`` tells against a numpy
-    dtype, told without one: a boolean answer is filled with 0 or 1 - a nan
-    would pass for ``bool``, which is why the two values are asked for
-    themselves - and a count or a position with whatever turns into an integer,
-    which a nan does not.
+    """Refuse a ``fill_value`` the result type cannot hold, told without numpy:
+    booleans fill with 0 or 1, counts and positions with anything int()-able.
     """
     if target is bool:
         check_boolean(fill_value)
@@ -213,23 +170,16 @@ def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:
 
 
 def check_fill_value_for_dtype(fill_value: AFillValue, dtype: npt.DTypeLike) -> AScalar:
-    """The fill value as the output dtype holds it - the check of a kernel.
-
-    The rules are the ones ``check_fill_value`` applies to the python-level
-    call, without the function-specific part: a kernel knows its output dtype
-    and nothing else, so the value has to fit that dtype - a nan does not fit
-    an integer output, and a boolean output takes the two booleans only.
+    """The fill value as the output dtype holds it - a kernel's check, without
+    the function-specific part (a nan does not fit an integer output).
     """
-    # numpy is imported here and not at the top of the module: the module has
-    # to be importable without numpy - the pure python implementation is
-    # loaded before numpy is known to be available - but the dtype of the
-    # answer is one of numpy, so numpy is there when this is called
+    # numpy imported here, not at the top: the module must be importable
+    # without numpy, but a dtype is one of numpy's
     import numpy as np
 
     out_dtype: np.dtype = np.dtype(dtype)
     if issubclass(out_dtype.type, np.bool_) and not isinstance(fill_value, (list, tuple, np.ndarray)):
-        # a sequence is the fill of a group that holds a sequence (the sorting
-        # function) - it is not a boolean and does not have to be one
+        # a sequence fill (the sorting function) is no boolean and need not be one
         check_boolean(fill_value)
         return np.bool_(fill_value)
     try:
@@ -248,14 +198,7 @@ def check_fill_value(
 
 
 def check_fixed_fill_value(func: str | Callable[..., AScalar], fill_value: AFillValue) -> None:
-    """Refuse a ``fill_value`` that the result type of ``func`` cannot hold, for
-    those functions whose result type the function itself settles.
-
-    This is the rule ``check_fill_value`` tells against a numpy dtype, told
-    without one: a boolean answer is filled with 0 or 1 - a nan would pass for
-    ``bool``, which is why the two values are asked for themselves - and a count
-    or a position with whatever turns into an integer, which a nan does not.
-    """
+    """Refuse a ``fill_value`` the fixed result type of ``func`` cannot hold."""
     target = fixed_result_types.get(fill_value_key(func))
     if target is not None:
         check_fill_value_for_type(fill_value, target)
@@ -264,17 +207,13 @@ def check_fixed_fill_value(func: str | Callable[..., AScalar], fill_value: AFill
 # ---------------------------------------------------------------------------
 # the checks of the exactness of the reductions
 #
-# The mean and the variance of integers can be exact, and the ways to compute
-# them are not exact as well: the checks below refuse the inputs where a
-# float64 or an int64 would round silently.
+# The mean and variance of integers can be exact; these checks refuse the
+# inputs where float64 or int64 would round silently.
 
 
 def mean_overflow_message(count: int, bound: int) -> str:
-    """The complaint about an integer mean float64 cannot compute exactly.
-
-    Numba cannot call a python function, so the compiled twin of the check
-    below needs the text of the complaint as something it can build - and
-    this is it: a concatenation of strings and numbers, which numba knows.
+    """The complaint about an integer mean float64 cannot compute exactly,
+    built by concatenation so numba can build it too.
     """
     return (
         "cannot compute an exact mean of "
@@ -291,9 +230,8 @@ def mean_overflow_message(count: int, bound: int) -> str:
 def variance_span_overflow_message(low_text: str, high: int) -> str:
     """The complaint about an integer variance int64 cannot center exactly.
 
-    The lower bound comes as a text: numba's ``str()`` of the smallest
-    int64 wraps and fails to size the string buffer, so the compiled twin
-    spells that one value out.
+    ``low_text`` comes as text: numba's ``str()`` of the smallest int64 wraps
+    and fails to size the string buffer.
     """
     return (
         "cannot compute an exact variance: the integer values span ["
@@ -308,24 +246,15 @@ def variance_span_overflow_message(low_text: str, high: int) -> str:
 
 
 def check_integer_mean_overflow(count: int, bound: int) -> None:
-    """Refuse integer moments float64 cannot compute exactly.
-
-    The sums behind the third and the fourth central moment of ``count``
-    integers of magnitude up to ``bound`` are exact in float64 only while
-    they stay inside the window float64 represents exactly - the moments
-    have no exact integer fallback, so the inputs are refused.  The mean is
-    not among them any more: it is computed exactly instead.
+    """Refuse integer moments float64 cannot compute exactly (no exact integer
+    fallback exists; the mean is computed exactly instead).
     """
     if count * bound > EXACT_FLOAT64_INTEGER_LIMIT:
         raise OverflowError(mean_overflow_message(count, bound))
 
 
 def check_integer_variance_span_overflow(low: int, high: int) -> None:
-    """Refuse integer variances whose exact centering would overflow int64.
-
-    The deviations of the values of a group from its first value have to stay
-    inside the signed 64-bit range for the variance to be exact.
-    """
+    """Refuse integer variances whose exact centering would overflow int64."""
     if high - low > INT64_DEVIATION_LIMIT:
         raise OverflowError(variance_span_overflow_message(str(low), high))
 
@@ -339,9 +268,8 @@ def check_complex_dtype(
 ) -> None:
     """Complain when a non-complex ``dtype`` is requested for complex input.
 
-    ``resolve_output_dtype`` applies this for the backends that honour ``dtype``;
-    the pure python implementation needs it on its own, since python numbers
-    carry no dtype and it would otherwise silently ignore the request.
+    The pure python backend needs this itself, since python numbers carry
+    no dtype and would silently ignore the request.
     """
     if (
         dtype is not None
@@ -358,37 +286,21 @@ def check_complex_dtype(
 # ---------------------------------------------------------------------------
 # the rules of the topk
 #
-# The topk is the only function of the package that answers a row per group
-# instead of one value per group, and the only one that has no place for a
-# group index of more than one dimension.  The two backends run their own
-# entry points and never each other's, so the rules live here - one place
-# for both of them, and one place to change them in.
+# The topk answers a row per group and needs a flat index; both backends run
+# their own entry points, so the rules live in one place here.
 
 
 def check_topk_input(ndim_idx: int) -> None:
-    """The input the topk cannot take: a group index of more than one
-    dimension.
-
-    A group index of more than one dimension names its groups in more than
-    one way, and the answer of the topk is a matrix with a row per group -
-    the unravelling of such an index has no place in it.  A sequence of
-    sizes with flat labels is no business of this check: the validation of
-    the input refuses it before the rule of the topk is asked, with the
-    words it says to every function.
+    """Refuse a group index of more than one dimension: topk answers a matrix
+    with a row per group, leaving no place for such an index.
     """
     if ndim_idx > 1:
         raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX)
 
 
 def check_topk_k(k: Any) -> int:
-    """The count of the values the topk keeps: a whole number, and none
-    below zero - the whole number is the one it returns.
-
-    A fraction, a flag, a text and an array name no count of values: the
-    numpy based backends would read them as they please or complain in the
-    words of numpy, and the compiled kernels of the numba one would fail to
-    type them - so the count is asked for itself, before anything is
-    computed, and the three backends say the same thing about it.
+    """``k`` must be a whole, non-negative count of values, asked for itself so
+    all backends say the same thing before anything is computed.
     """
     if isinstance(k, bool):
         raise TypeError(TOPK_K_NOT_WHOLE.format(k=k))

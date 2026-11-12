@@ -89,9 +89,8 @@ def test_thread_count_is_within_pool():
 #
 # The order statistics cannot be reduced in chunks: the values of a group have
 # to be together where they are worked on.  They cut the *groups* into ranges
-# instead, and the decision is a model of its own - the counting sort that
-# places the values stays single threaded, and only the loop over the groups
-# is shared out.
+# instead - the counting sort stays single threaded, only the loop over the
+# groups is shared out.
 
 
 def test_one_thread_means_no_group_parallel_path():
@@ -157,8 +156,7 @@ def test_kernel_test_shape_reaches_parallel_path():
     # if the shape they use is a shape the model sends there - a threshold that
     # creeps above the test data would leave every one of them a test of the
     # sequential kernel, passing and empty.  The select is the cheapest of the
-    # operations that cut their groups into ranges, so what is enough for it is
-    # enough for all of them.
+    # operations that cut their groups into ranges.
 
     for n_groups in (100, 1000, 10_000):
         assert mt.should_use_group_mt(n_groups, 4, 200_000, specials._NS_PER_VALUE_SELECT)

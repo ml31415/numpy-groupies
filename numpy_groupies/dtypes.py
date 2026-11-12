@@ -1,12 +1,7 @@
-"""The dtypes: the ladders of the sums, the rules of the output, the fill
-values of the answer and the facts of the temporal ones.
+"""The dtypes: sum ladders, output dtype rules, result fill values, temporal facts.
 
-The dtype of the answer of a group is a rule of the package, and the rule
-depends on the dtype of the input, on the function and on the dtype the
-caller asked for.  The ladders are the steps the sums of the integers walk,
-the forced types are the dtypes of the functions whose answer has a dtype of
-its own, and the kinds of the temporal dtypes are the facts the backends ask
-before they work on the ticks.
+The result dtype of a group depends on the input dtype, the function and the
+requested dtype; the ladders are the steps integer sums climb.
 """
 
 from collections.abc import Callable, Mapping
@@ -20,10 +15,8 @@ from numpy_groupies.typing import AFillValue, AScalar, AValue
 from numpy_groupies.validation import check_complex_dtype, is_scalar_input
 
 _next_int_dtype = {
-    # the sign of the input stays: a sum of unsigned values does not become
-    # negative, and one of signed values may - numpy keeps it as well (it
-    # sums into int64 or uint64), and the 16 bit types are no steps of the
-    # ladder
+    # the sign of the input stays (numpy sums into int64/uint64 likewise); no
+    # 16-bit rungs
     "bool": np.int8,
     "uint8": np.uint32,
     "int8": np.int32,
@@ -44,29 +37,25 @@ TEMPORAL_KINDS = "Mm"
 
 
 def is_temporal_input(a: Any) -> bool:
-    """Whether the input carries datetime64 or timedelta64 values - an array
-    of them, or the one scalar standing for a value of every group.
+    """Whether the input carries datetime64 or timedelta64 values.
 
-    The kind of the dtype is asked, not the dtype itself: the check runs on
-    every call, and building a dtype out of a dtype is not free.
+    Asks the dtype kind, not the dtype itself: this runs on every call.
     """
     kind = getattr(getattr(a, "dtype", None), "kind", None)
     return kind is not None and kind in TEMPORAL_KINDS
 
 
 def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:
-    """
-    Returns the "most basic" dtype which represents `x` properly, which provides at least the same
-    value range as the specified dtype.
+    """Return the "most basic" dtype representing ``x`` properly, providing at
+    least the value range of ``dtype``.
     """
 
     def check_type(x: AFillValue, dtype: np.dtype) -> bool:
         try:
             with np.errstate(invalid="ignore"):
                 converted = np.array(x).astype(dtype)
-                # the comparison of a numpy scalar with a python integer that
-                # does not fit into it raises (numpy 2) - such a value does
-                # not fit into the dtype either, and that is what we say
+                # a numpy scalar compared to a python integer that does not fit
+                # raises (numpy 2); such a value does not fit the dtype either
                 return bool(converted == x) or (np.ndim(cast(np.generic, x)) == 0 and np.isnan(cast(np.generic, x)))
         except (ValueError, OverflowError):
             return False
@@ -90,10 +79,8 @@ def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.d
 
     if np.issubdtype(dtype, np.inexact):
         return type_loop(x, dtype, _next_float_dtype)
-    # the last step of the ladder: the value does not fit into any of the
-    # integer types - float64, and never float32, whose mantissa of 24
-    # bits is too coarse for the sums it would carry (numpy has no float
-    # here at all: it sums into int64 or uint64 and wraps)
+    # last rung of the ladder: the value fits no integer type - float64, and
+    # never float32 (24-bit mantissa is too coarse); numpy itself wraps here
     return type_loop(x, dtype, _next_int_dtype, default=np.float64)
 
 
@@ -104,13 +91,8 @@ def minimum_dtype_scalar(x: AFillValue, dtype: npt.DTypeLike | None, a: AValue) 
 
 
 def scalar_dtype(a: Any) -> np.dtype:
-    """The dtype of scalar input data.
-
-    A python number carries no dtype, so its type stands in for one, while a
-    numpy scalar and a 0d array both carry the dtype of their value.  Asking
-    ``type(a)`` is not an option here: for the numpy scalar and for the 0d
-    array that is ``numpy.float32``/``numpy.ndarray``, and
-    ``np.dtype(np.ndarray)`` is the object dtype.
+    """The dtype of scalar input data: a python number stands in for its type
+    (``np.dtype(np.ndarray)`` would be object for the 0d-array case).
     """
     dtype = getattr(a, "dtype", None)
     return np.dtype(type(a)) if dtype is None else np.dtype(dtype)
@@ -143,14 +125,10 @@ _forced_same_type = {
     "nanmax",
     "nanfirst",
     "nanlast",
-    # the topk hands out the values of the group themselves, so their dtype
-    # is the dtype of the result
+    # the topk, mode, sort and running extrema hand out the values of the
+    # group themselves: their dtype is the input dtype, not a widened one
     "topk",
-    # the mode answers one of the values of the group as well
     "mode",
-    # the sorted values and the running extrema hand out the values of the
-    # group themselves, like min and max do - their dtype is the dtype of
-    # the values, not a widened one
     "sort",
     "cummin",
     "cummax",
@@ -162,9 +140,7 @@ _forced_same_type = {
 def check_dtype(
     dtype: npt.DTypeLike | None,
     func_str: str | Callable[..., AScalar],
-    # an array of any dtype the operation may meet, or the one python scalar
-    # that stands for it - is_scalar_input below is what tells the two apart
-    a: Any,
+    a: Any,  # an array of any dtype, or the one python scalar standing for it
     n: int | tuple[int, ...] | None,
 ) -> np.dtype:
     if is_scalar_input(a):
@@ -183,14 +159,11 @@ def resolve_output_dtype(
     a_dtype: np.dtype,
     n: int | tuple[int, ...] | None,
 ) -> np.dtype:
-    """The dtype resolution of ``check_dtype`` given the input dtype directly.
-
-    ``a_dtype`` is the dtype of the input data and ``n`` the number of values
-    to be aggregated (only needed by the ``sum`` overflow guesses).
+    """The dtype resolution of ``check_dtype`` given the input dtype directly
+    (``n`` is the number of values, needed by the ``sum`` overflow guesses).
     """
     if dtype is not None:
-        # dtype set by the user
-        # Careful here: np.bool != np.bool_ !
+        # dtype set by the user (careful: np.bool != np.bool_)
         if np.issubdtype(dtype, np.bool_) and not (
             isinstance(func_str, str) and ("all" in func_str or "any" in func_str)
         ):
@@ -206,15 +179,14 @@ def resolve_output_dtype(
         return np.dtype(dtype)
 
     try:
-        # a callable of the caller's own names no function - the lookup
-        # misses, like a name the table does not hold
+        # a caller callable names no function and misses the lookup
         return np.dtype(_forced_types[func_str if isinstance(func_str, str) else ""])
     except KeyError:
         pass
 
     if func_str in forced_float_types:
         if np.issubdtype(a_dtype, np.inexact):
-            # floating input keeps its dtype, complex input stays complex
+            # floating input keeps its dtype, complex stays complex
             return a_dtype
         return np.dtype(np.float64)
 
@@ -225,29 +197,23 @@ def resolve_output_dtype(
             # the real counterpart of the complex dtype (complex64 -> float32)
             return np.dtype(a_dtype.char.lower())
         if func_str in ("sumofsquares", "nansumofsquares"):
-            # exact squares of integers - and the square of an unsigned value
-            # is unsigned again, so the unsigned ones keep theirs (the squares
-            # of uint32 leave int64, and a negative sum of squares is no
-            # answer at all)
+            # exact squares of integers; unsigned input keeps unsigned so its
+            # squares stay unsigned (uint32 squares leave int64)
             return np.dtype(np.uint64) if a_dtype.kind == "u" else np.dtype(np.int64)
         return np.dtype(np.float64)
 
     if func_str in ("sum", "nansum", "cumsum", "nancumsum"):
-        # the running sums climb the same ladder the sums do - their growth
-        # is linear, and the number of the values is known
+        # running sums climb the same ladder (linear growth, count known)
         if a_dtype.kind in TEMPORAL_KINDS:
-            # the sum of durations is a duration - numpy answers
-            # in the unit of the input, and there is no integer
-            # size to guess for
+            # the sum of durations is a duration, in the input's unit
             return a_dtype
         # Try to guess the minimally required int size
         if a_dtype in (np.dtype(np.int64), np.dtype(np.uint64)):
-            # It's not getting bigger anymore
-            # TODO: strictly speaking it might need float
+            # already the widest (TODO: strictly speaking it might need float)
             return a_dtype
         if np.issubdtype(a_dtype, np.integer):
-            # the summing path arrives with a flat count, the one-out
-            # per-in path never reaches this branch
+            # summing path arrives with a flat count, one-out-per-in never
+            # reaches this branch
             maxval = np.iinfo(a_dtype).max * cast("int", n)
             return minimum_dtype(maxval, a_dtype)
         if np.issubdtype(a_dtype, np.bool_):
@@ -256,11 +222,9 @@ def resolve_output_dtype(
         return a_dtype
 
     if func_str in ("prod", "nanprod", "cumprod", "nancumprod"):
-        # the accumulator of numpy: the products grow exponentially, so no
-        # rung of the ladder can promise them an exact rung - the wide
-        # accumulator of the input's own sign is the floor (numpy widens its
-        # sums and products the same way, signed in int64, unsigned in
-        # uint64), and a duration keeps its unit
+        # no exact rung exists (products grow exponentially); the wide
+        # accumulator of the input's own sign is the floor (numpy widens
+        # likewise), and a duration keeps its unit
         if a_dtype.kind in TEMPORAL_KINDS:
             return a_dtype
         if a_dtype.kind in "iub":
@@ -270,16 +234,14 @@ def resolve_output_dtype(
     if func_str in _forced_same_type:
         return a_dtype
 
-    # the temporal values run on their ticks, and their answer is a temporal
-    # value again - the wide integer below would take the unit away
+    # temporal values answer temporally - the wide integer below would take
+    # the unit away
     if a_dtype.kind in TEMPORAL_KINDS:
         return a_dtype
 
     # any other integer answer widens to the accumulator of the input's own
-    # sign - a product or a running value in the dtype of narrow values wraps
-    # silently, and the wide accumulator is the floor of the ladder.  The
-    # unsigned 64 is the widest there is, and a signed one could not hold its
-    # half of the range
+    # sign: the wide accumulator is the floor (int64 is the widest signed,
+    # and could not hold uint64's half of the range)
     if a_dtype != np.dtype(np.uint64) and np.issubdtype(a_dtype, np.integer):
         return np.dtype(np.int64)
     return a_dtype
@@ -311,23 +273,18 @@ def iscomplexobj(x: Any) -> bool:
 
 
 def minval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
-    """The smallest value the dtype of the answer holds.
-
-    The dtype is widened to hold the fill value the caller asked for as well,
-    and the smallest value of it is the seed of a reduction and the stand-in
-    of a nan - a nan of a float is not the smallest value of it.
+    """The smallest value the dtype of the answer holds (widened to hold the
+    fill value); the seed of a reduction and the stand-in of a nan.
     """
     dtype = minimum_dtype(fill_value, dtype)
     if issubclass(dtype.type, np.bool_):
-        # a bool has no nan to mask, but the mask value has to be one of the
-        # dtype - np.finfo knows no bool
+        # a bool has no nan, but the mask value must be one of the dtype
         return cast("AScalar", np.False_)
     if issubclass(dtype.type, np.floating):
         return -np.inf
     if issubclass(dtype.type, np.complexfloating):
-        # numpy orders complex values lexicographically, so -inf+0j is *larger*
-        # than -inf-infj: the extreme of a single part is not the extreme value,
-        # both parts have to sit at the same end of the order
+        # numpy orders complex values lexicographically, so both parts have
+        # to sit at the same end of the order
         return complex(-np.inf, -np.inf)
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).min
@@ -343,8 +300,7 @@ def maxval(fill_value: AFillValue, dtype: np.dtype | None) -> AScalar:
     if issubclass(dtype.type, np.floating):
         return cast("AScalar", np.inf)
     if issubclass(dtype.type, np.complexfloating):
-        # see minval: the seed of the reduction has to be the largest value of
-        # numpy's order, which is inf+infj and not inf+0j
+        # see minval: both parts of the seed at the same end of the order
         return cast("AScalar", complex(np.inf, np.inf))
     if issubclass(dtype.type, np.integer):
         return np.iinfo(dtype).max

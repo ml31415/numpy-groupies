@@ -1,14 +1,10 @@
 """The properties of the functions of the package, and the entry points a
 backend offers for them.
 
-Every function of the package has a name and a set of aliases - the registry
-knows them - and properties besides: the value that fills a group the
-function never saw, the type of its answer, the dtype it answers with, and
-the arguments it has of its own.  The properties live here, so that the
-implementations can ask for them without knowing of each other.
-
-The binding of the names to the aggregate of a backend lives here as well,
-with the documentation of the arguments that the aggregate takes.
+Per function: the aliases (via the registry), the default fill value, the
+result type and dtype, and its own arguments - kept here so implementations
+can ask for them without knowing of each other.  Also the binding of names
+to the aggregate of a backend.
 
 This module must not import numpy: the pure python implementation is loaded
 before numpy is known to be available, and has to work without it.
@@ -27,10 +23,9 @@ if TYPE_CHECKING:
 
 nan = float("nan")  # nan is just this float
 
-
-# The value an absent group gets, per aggregation function, following the
-# convention that it is whatever numpy returns for an empty slice - where the
-# output datatype can represent it (see ``numpy_groupies.fills``).
+# the value an absent group gets, per function - whatever numpy returns for
+# an empty slice, where the output dtype can represent it
+# (see ``numpy_groupies.fills``)
 default_fill_values: dict[str, AFillValue] = {
     "sum": 0,
     "prod": 1,
@@ -61,24 +56,18 @@ default_fill_values: dict[str, AFillValue] = {
     "cumprod": 1,
     "cummax": 0,
     "cummin": 0,
-    # 'array' and 'sort' ask for an empty sequence, which their implementations
-    # interpret as 'leave the empty group as it is' - a fresh list per call is
-    # handed out below so that callers cannot alias each other's results.
+    # a fresh list per call so callers cannot alias each other's results
     "array": [],
     "sort": [],
-    # the topk fills the places a group does not have values for with the
-    # default of the output dtype - a nan where the output can hold one, and
-    # a zero where it cannot
+    # fills with the dtype default: nan where the output can hold one, else 0
     "topk": nan,
-    # the mode answers one of the values of the group; a group it never saw,
-    # and one that holds nothing but missing values, has no mode and takes
-    # the default of the output dtype
+    # a group never seen, or holding only missing values, has no mode
     "mode": nan,
 }
 
 
-# the functions that answer with a float dtype, whatever the dtype of their
-# input: the averaging and the dispersion ones
+# functions answering with a float dtype whatever the input: averaging and
+# dispersion
 forced_float_types = {
     "mean",
     "median",
@@ -96,8 +85,8 @@ forced_float_types = {
     "nantrapezoid",
 }
 
-# var/std (and sumofsquares) measure the squared magnitude of the deviations,
-# which is real even for complex input - like np.var returning a real dtype
+# var/std (and sumofsquares) measure squared magnitudes, real even for
+# complex input - like np.var returning a real dtype
 forced_real_float_types = {
     "var",
     "std",
@@ -108,11 +97,9 @@ forced_real_float_types = {
 }
 
 
-# functions whose result type the function settles rather than taking it from
-# the values aggregated: a boolean answer, a count, a position, and the object
-# array of ``array``.  The python counterpart of each result type is here, where
-# no numpy is imported; the numpy dtypes of them in ``numpy_groupies.dtypes``,
-# which also knows how wide a count is on the platform it runs on
+# functions whose result type the function settles rather than taking it
+# from the input values.  Python types here (no numpy is imported); the
+# numpy dtypes live in ``numpy_groupies.dtypes``
 fixed_result_types: dict[str, type] = {
     "array": object,
     "all": bool,
@@ -132,12 +119,9 @@ fixed_result_types: dict[str, type] = {
 }
 
 
-# functions whose result is not complex even for complex input - only these may
-# be asked for a non-complex dtype, everything else would throw the imaginary
-# part of the values away
-# the names of the dtype table in ``numpy_groupies.dtypes`` (which holds the
-# numpy dtypes themselves) - everything here may aggregate complex input into
-# a non-complex dtype without throwing the imaginary part away
+# functions whose result is not complex even for complex input - only these
+# may be asked for a non-complex dtype without throwing the imaginary part
+# away; the dtype tables themselves live in ``numpy_groupies.dtypes``
 complex_real_result = (
     frozenset(
         [
@@ -160,10 +144,8 @@ complex_real_result = (
 )
 
 
-# the arguments a function has of its own, beyond the size and the fill value
-# that every function takes: the name it carries in the signature, the
-# annotation and the default.  The njit kernels and the python entry points
-# of a backend take the same arguments, so both read them from here.
+# a function's own arguments beyond size and fill value: name, annotation,
+# default.  The njit kernels and the python entry points read them from here.
 FUNC_EXTRAS: dict[str, tuple[tuple[str, str, Any], ...]] = {
     "std": (("ddof", "int", 0),),
     "var": (("ddof", "int", 0),),
@@ -171,27 +153,19 @@ FUNC_EXTRAS: dict[str, tuple[tuple[str, str, Any], ...]] = {
     "percentile": (("q", "float", 50.0), ("method", "str", "linear")),
     "trapezoid": (("dx", "float", 1.0),),
     "sort": (("reverse", "bool", False),),
-    # the topk: how many values of every group it keeps, and whether it keeps
-    # the largest ones or the smallest
+    # how many values per group, largest or smallest
     "topk": (("k", "int", 5), ("largest", "bool", True)),
-    # the bare kernel of the topk of the ticks - the topk of a temporal
-    # input, on the int64 ticks of its values.  It is no function of the
-    # package - it is the kernel behind its temporal answer - but it takes
-    # the arguments of the topk the same way.
+    # the bare temporal topk kernel on the int64 ticks - no package function,
+    # but it takes the topk arguments the same way
     "tick_topk": (("k", "int", 5), ("largest", "bool", True)),
-    # the bare kernel of the quantile of the ticks - the quantile of a
-    # temporal input, on the int64 ticks of its values.  It is no function
-    # of the package - it is the kernel behind its temporal answer - but it
-    # takes the quantile and the method the same way the quantile of the
-    # package does.
+    # the bare temporal quantile kernel on the int64 ticks - no package
+    # function, but it takes q and method the same way
     "tick_quantile": (("q", "float", 0.5), ("method", "str", "linear")),
 }
 
 
-# the ways a quantile interpolates between the two values it falls between -
-# the names numpy uses for them.  The backends share the list: the numpy one
-# computes the quantile of the numbers and of the ticks with it, the numba one
-# the quantile of the ticks.
+# how a quantile interpolates between its neighbours - numpy's method names;
+# shared by the backends
 QUANTILE_METHODS = frozenset({"linear", "lower", "higher", "midpoint", "nearest"})
 
 
@@ -199,8 +173,8 @@ def fill_value_key(func: str | Callable[..., AScalar]) -> str:
     """Map a function (name, alias or callable) onto a ``default_fill_values`` key."""
     name = resolve_name(func)
     if name is None:
-        # a custom callable is keyed by the name it carries, which it usually
-        # does not carry at all (a lambda, a bound method of one's own)
+        # a custom callable is keyed by its __name__ (often absent: a lambda,
+        # a bound method)
         name = getattr(func, "__name__", "")
     if name not in default_fill_values and str(name).startswith("nan"):
         # nan-variants fill like their plain counterparts
@@ -209,21 +183,13 @@ def fill_value_key(func: str | Callable[..., AScalar]) -> str:
 
 
 def func_extras(name: str) -> tuple[tuple[str, str, Any], ...]:
-    """The arguments the function has of its own.
-
-    The nan-skipping variant of a function has the same arguments as the
-    plain one, so the name is stripped of its prefix before the lookup.
-    """
+    """The function's own arguments; nan variants share the plain form's."""
     return FUNC_EXTRAS.get(name.removeprefix("nan"), ())
 
 
 def func_argument_default(func: str, argument: str) -> Any:
-    """The default of one argument of a function - the table holds them.
-
-    The table is the one place that knows the arguments a function has of
-    its own and their defaults, so a caller that needs one of them asks
-    there instead of writing the number down a second time.
-    """
+    """The default of one of the function's own arguments, from the table
+    that is the single place knowing them."""
     for name, _annotation, default in func_extras(func):
         if name == argument:
             return default
@@ -340,24 +306,15 @@ def bind_functions(
     names: Iterable[str],
     doc: str | None = None,
 ) -> dict[str, Callable[..., Any]]:
-    """One entry point per function name, with the function in the name.
-
-    The entry points call the backend's ``aggregate`` with the name of their
-    function, and pass on the arguments they are given - the ``ddof`` of the
-    variance, the ``q`` of the quantile, the ``dx`` of the trapezoid, the
-    ``reverse`` of the sort.
-    """
+    """One entry point per function name, calling the backend's ``aggregate``
+    with the name baked in and passing on the function's own arguments
+    (``ddof``, ``q``, ``dx``, ``reverse``, ...)."""
     return {name: _bind_one(func, name, doc) for name in names}
 
 
 def _bind_one(func: Callable[..., Any], name: str, doc: str | None) -> Callable[..., Any]:
-    """The entry point of one function of a backend.
-
-    It is the aggregate of the backend with the name of the function in it:
-    the entry point of the quantile is the aggregate with ``func="quantile"``.
-    The arguments behind the values are keyword arguments - the ones of the
-    function itself among them.
-    """
+    """The entry point of one function: the aggregate with ``func=name``
+    baked in; the arguments behind the values are keyword arguments."""
 
     def entry_point(group_idx: Any, a: Any, **kwargs: Any) -> Any:
         return func(group_idx, a, func=name, **kwargs)
@@ -366,33 +323,23 @@ def _bind_one(func: Callable[..., Any], name: str, doc: str | None) -> Callable[
     entry_point.__qualname__ = name
     entry_point.__module__ = getattr(func, "__module__", __name__)
     entry_point.__doc__ = doc or f"The {name} of every group - see the documentation of the package."
-    # the signature of the entry point: the aggregate's, without the name of
-    # the function and with the arguments the function has of its own - so
-    # that the help of the entry point says what it takes
+    # the signature of the aggregate, without ``func`` and with the
+    # function's own arguments, so the help says what it takes
     vars(entry_point)["__signature__"] = _signature_of(func, name)
     return entry_point
 
 
 def _signature_of(func: Callable[..., Any], name: str) -> inspect.Signature:
-    """The signature an entry point shows.
-
-    It is the signature of the aggregate, without the name of the function -
-    that is what the entry point carries - and with the arguments the
-    function has of its own, which the entry point takes as keyword
-    arguments.
-    """
+    """The aggregate's signature without ``func`` and with the function's
+    own arguments added as keyword-only."""
     signature = inspect.signature(func)
     parameters: list[inspect.Parameter] = []
     behind_the_values = False
     for parameter in signature.parameters.values():
         if parameter.name == "func":
-            # the name of the function is in the entry point, not in a
-            # parameter of it
             continue
         if parameter.name == "cache":
-            # the cache is the policy of the compiled loop of a callable of
-            # the caller - a named function has a kernel of its own and no
-            # loop to cache
+            # a named callable has a kernel of its own and no loop to cache
             continue
         if parameter.kind is inspect.Parameter.VAR_KEYWORD:
             parameters.append(parameter)
@@ -406,7 +353,6 @@ def _signature_of(func: Callable[..., Any], name: str) -> inspect.Signature:
             )
             continue
         if behind_the_values:
-            # everything behind the values is a keyword argument
             parameters.append(parameter.replace(kind=inspect.Parameter.KEYWORD_ONLY))
         else:
             parameters.append(parameter)

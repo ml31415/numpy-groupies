@@ -183,12 +183,10 @@ def _std_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer], ddof:
 def _nunique_ref(values: npt.NDArray[np.number], pos: npt.NDArray[np.integer]) -> int:
     """the number of distinct values of one group.
 
-    The values that are equal count once - a zero and a minus zero are one
-    value, an integer and the float of the same number are one value.  The
-    nans count once among themselves: a nan in either part of a complex value
-    is a nan, and the nans of a group are one value of their own (pandas
-    counts them that way, and so does polars, which counts the nan as a
-    value).
+    Equal values count once (zero and minus zero are one value, an integer and
+    the float of the same number are one value).  The nans count once among
+    themselves - a nan in either part of a complex value is a nan - as pandas
+    and polars count them.
     """
     if values.dtype.kind in "fc":
         nans = np.isnan(values)
@@ -206,15 +204,11 @@ def _deviations(values: npt.NDArray[np.number]) -> npt.NDArray[np.floating]:
     """the deviations of the values of a group from their mean.
 
     The group is centered on its first value first - the same centering the
-    package does for the variance of integers: the deviations of a group
-    whose values are all the same are then exactly zero, and the spread of
-    such a group is zero - and the mean of those deviations is taken off as
-    well, which is the mean of the group.
-
-    The subtraction runs in float64, like numpy's own var and std of integer
-    values do - in the dtype of the values the deviations of an unsigned one
-    would wrap (a 0 against an origin of 3 is a 253 there), and the moments
-    are floats anyway.
+    package does for the variance of integers, so the deviations of a group
+    of equal values are exactly zero - and the mean of those deviations is
+    taken off as well.  The subtraction runs in float64, like numpy's own var
+    and std of integer values do: in the dtype of the values the deviations
+    of an unsigned one would wrap, and the moments are floats anyway.
     """
     values = values.astype(np.float64, copy=False)
     devs = values - values[0]
@@ -488,13 +482,11 @@ def reference_names() -> list[str]:
 def _refuse_a_topk_out_of_a_matrix(name: str | None, ndim_answer: int) -> None:
     """The topk answers a matrix, and the reference measures no answer of more.
 
-    The selection keeps k values of every group, so its answer holds two
-    dimensions: a row per group and k columns.  A call that would place the
-    rows over more than one dimension - labels of more than one dimension, a
-    sequence of sizes, an axis of a value of more than one dimension - asks
-    for an answer of more than two.  The package refuses those the same way,
-    so the reference refuses them too, instead of flattening the groups into
-    the rows of a matrix and measuring a shape nobody asked for.
+    A call that would place the rows over more than one dimension - labels of
+    more than one dimension, a sequence of sizes, an axis of a value of more
+    than one dimension - asks for an answer of more than the two dimensions
+    (a row per group, k columns) the selection answers with.  The package
+    refuses those, so the reference refuses them too.
     """
     if name in _REF_TOPK and ndim_answer > 2:
         raise NotImplementedError(f"the topk answers a matrix of groups by values, not {ndim_answer} dimensions")
@@ -560,14 +552,11 @@ def aggregate_ref(
     def _group_values(index: npt.NDArray[np.integer]) -> npt.NDArray[np.number]:
         """the values of one group, the arithmetic of the integers widened.
 
-        The functions that compute with the values - the sums, the products,
-        the running ones - would wrap in the dtype of narrow values, and
-        numpy widens its own sums and products the same way: the values of a
-        group of narrow integers are carried in the accumulator of their own
-        sign here, int64 for the signed ones, uint64 for the unsigned ones,
-        whose wide dtype stays.  The functions that only compare or hand the
-        values out (the extrema, the first and the last, the sorted and
-        collected ones) answer the very same values either way.
+        The sums, products and running functions would wrap in the dtype of
+        narrow values, and numpy widens its own the same way: narrow integers
+        are carried in the accumulator of their own sign (int64/uint64).
+        The functions that only compare or hand the values out answer the
+        very same values either way.
         """
         values = a[index]
         if values.dtype.kind == "i" and values.dtype.itemsize < 8:
@@ -669,19 +658,12 @@ def aggregate_ref_along_axis(
 ) -> npt.NDArray[np.number]:
     """``aggregate`` along an axis, computed one slice at a time.
 
-    The labels address the entries of the axis; every slice beside the axis
-    is a group of its own, and the values of the slice are grouped by the
-    labels of the axis - so the answer of a slice is the one the group loop
-    gives for the labels of the axis.
-
-    The shape of the answer follows the shape of the input: the dimension of
-    the axis holds the groups, the other ones the slices beside it.  The
-    functions that answer one value per input item keep the dimension of the
-    axis as it is - they have no group to fill.
-
-    The topk answers a row per group, so it asks for a one-dimensional input:
-    along an axis of a value of more dimensions its rows would be one
-    dimension deeper than the matrix the selection answers with.
+    Every slice beside the axis is a group of its own, and the values of the
+    slice are grouped by the labels of the axis.  The shape of the answer
+    follows the shape of the input: the dimension of the axis holds the
+    groups, the other ones the slices beside it.  The functions that answer
+    one value per input item keep the dimension of the axis as it is.  The
+    topk answers a row per group, so it asks for a one-dimensional input.
     """
     labels = np.asarray(group_idx).ravel()
     a = np.asarray(a)

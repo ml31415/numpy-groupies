@@ -400,8 +400,7 @@ def test_collecting_refuses_index_beyond_size():
 # other, which is only observable under contention - so this is the one place
 # the suite writes one cache from several flows of control at once.  Threads
 # rather than processes: ``flock`` excludes separate open file descriptions,
-# which is what a writer holds, and the interpreter of a pytest worker is not a
-# safe thing to fork.
+# which is what a writer holds, and a pytest worker is not safe to fork.
 
 _workers = min(4, os.cpu_count())
 _per_worker = 25
@@ -438,11 +437,11 @@ def test_every_key_of_contended_cache_names_machine(tmp_path):
 # The identity of the on-disk cache.  Numba keys its cache index by the
 # signature, the machine and two hashes: of the bytecode and of the
 # cloudpickled closure of the compiled function.  A dispatcher that reaches
-# into such a closure with a uuid drawn fresh in every process therefore
-# moves the key of an already cached signature in every process - and the
-# cache gains one duplicate of every signature of every parallel kernel per
-# run, without bound.  What pins the uuid is ``njit_stable``; the tests
-# below keep the pinning from decaying one module at a time.
+# into such a closure with a uuid drawn fresh in every process moves the key
+# of an already cached signature in every process - the cache gains one
+# duplicate per signature and parallel kernel per run, without bound.
+# What pins the uuid is ``njit_stable``; the tests below keep the pinning
+# from decaying one module at a time.
 
 _uuid4 = re.compile(rb"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _pinned = re.compile(r"\A[0-9a-f]{16}\Z")
@@ -545,14 +544,12 @@ def test_identity_of_dispatcher_is_same_in_every_process(tmp_path):
     """The identity of a dispatcher decides the name of its cache file.
 
     The identity covers the contents of the closure of the dispatcher, and
-    the description of a cell has to be the same in every process: a python
-    function carries its memory address, which differs from process to
-    process.  The cache file would get a new name in every run, the cache
-    would never hit, and every process would compile every kernel again -
-    at the cost of the memory and the time of a compilation.
+    its description has to be the same in every process: a python function
+    carries its memory address, which differs from process to process - the
+    cache file would get a new name in every run, the cache would never hit.
 
-    The dispatcher is built from a file, in this process and in another
-    one: the fingerprint covers the source of the function as well, and the
+    The dispatcher is built from a file, in this process and in another one:
+    the fingerprint covers the source of the function as well, and the
     source of a function given on the command line cannot be read.
     """
     script = tmp_path / "probe_identity.py"
