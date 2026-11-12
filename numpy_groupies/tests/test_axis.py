@@ -75,17 +75,18 @@ def test_arg_alias_axis_coordinates(impl, rng, func, axis, order):
 # The expected answer comes from the group loop of the reference, applied to
 # the slices of the axis - so every function of the package is asked for, and
 # not a hand-written list of the answers of the ones that were thought of.
-_AXIS_FUNCS = tuple(fn for fn in func_list if fn not in ("topk",))
-
-# the topk answers a matrix with a row per group, and a group index of more
-# than one dimension has no place in it - the topk refuses the axis, so it is
-# not among the cases of the axis
+#
+# The topk answers a row per group: the axis of a one-dimensional value leaves
+# the labels flat and the answer a matrix, so it is among the cases of those
+# values.  Along an axis of a value of more dimensions its rows would sit in
+# more than one dimension, which the package and the reference both refuse, so
+# it is among the cases of none of them.
 _AXIS_FUNCS_NO_TOPK = tuple(fn for fn in func_list if fn != "topk")
 
 _AXIS_CASES = (
-    [pytest.param((12,), 0, func, id=f"{func}-(12,)-ax0") for func in _AXIS_FUNCS_NO_TOPK]
+    [pytest.param((12,), 0, func, id=f"{func}-(12,)-ax0") for func in func_list]
     + [pytest.param((12, 5), 1, func, id=f"{func}-(12,5)-ax1") for func in _AXIS_FUNCS_NO_TOPK]
-    + [pytest.param((12, 5), 0, func, id=f"{func}-(12,5)-ax0") for func in _AXIS_FUNCS]
+    + [pytest.param((12, 5), 0, func, id=f"{func}-(12,5)-ax0") for func in _AXIS_FUNCS_NO_TOPK]
 )
 
 
@@ -110,7 +111,9 @@ def test_along_axis(impl, rng, func, size, axis):
 
     # no fill_value needed - the function specific defaults match numpy
     actual = impl.aggregate(group_idx, a, axis=axis, func=func)
-    assert actual.ndim == a.ndim
+    # the topk adds the column of its values to the row of every group, the
+    # rest answers one value per group, in the shape of the slices beside it
+    assert actual.ndim == a.ndim + (1 if func == "topk" else 0)
 
     expected = aggregate_ref_along_axis(group_idx, a, func=func, axis=axis)
     assert_same_result(actual, expected, func)

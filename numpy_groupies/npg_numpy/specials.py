@@ -214,8 +214,6 @@ def _topk(
     leaves the k wanted ones at the end of the block - one partition per
     group, the same work the median does.
     """
-    if k < 0:
-        raise ValueError(f"k must not be negative, got {k}")
     out_dtype = np.dtype(dtype) if dtype is not None else a.dtype
     out = np.full((size, k), fill_value, dtype=out_dtype)
     if k == 0 or a.size == 0:

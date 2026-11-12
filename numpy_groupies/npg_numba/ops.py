@@ -56,9 +56,9 @@ from numpy_groupies.registry import (
 from numpy_groupies.temporal import build_temporal_op
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import (
-    TOPK_NEEDS_FLAT_GROUP_IDX,
     check_fill_value,
     check_topk_input,
+    check_topk_k,
     check_topk_shape,
     is_scalar_input,
 )
@@ -410,13 +410,14 @@ def build_aggregate_op(func: str, handle: KernelHandle) -> Callable[..., AResult
         )
         group_idx, a, flat_size, ndim_idx, size, unravel_shape = iv
         if func == "topk":
-            # the topk answers a matrix with a row per group - a group index
-            # of more than one dimension has no place in it
-            check_topk_input(ndim_idx, size)
-            if axis is not None:
-                # the numpy backend catches the axis by the size it makes of
-                # it, and says the very same words
-                raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX)
+            # the topk answers a matrix with a row per group, so the rule of
+            # the call is the rule of that matrix and nothing else: the axis
+            # of a one-dimensional value leaves the labels flat and the answer
+            # at its (size, k), and is granted; a group index of more than one
+            # dimension - the labels of a value of more dimensions among them -
+            # is refused.  The check is the one of the numpy backend, so the
+            # two backends grant and refuse the very same calls
+            check_topk_input(ndim_idx)
 
         # TODO: The typecheck should be done by the wrapper itself, not by check_dtype
         scalar = is_scalar_input(a)
@@ -739,8 +740,10 @@ def _topk_arguments(op: Callable[..., AResult]) -> Callable[..., AResult]:
         k: int = 5,
         largest: bool = True,
     ) -> AResult:
-        if k < 0:
-            raise ValueError(f"k must not be negative, got {k}")
+        # the count of the values is a whole number, and none below zero,
+        # before anything is read: a fraction would reach the compiled driver
+        # and fail to type there, which says nothing a caller can act on
+        k = check_topk_k(k)
         # the arguments travel twice: in the slots of the signature, which is
         # how the compiled driver takes them, and under their own names, which
         # is how the fallback of the backend takes them

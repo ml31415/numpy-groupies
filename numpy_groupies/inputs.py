@@ -19,6 +19,7 @@ from numpy_groupies.validation import (
     LENGTH_MISMATCH_OR_SCALAR,
     NEGATIVE_INDICES,
     NON_INTEGER_GROUP_IDX,
+    OUTPUT_SIZE_NOT_SCALAR,
     TOO_LARGE_FOR_SIZE,
     is_integer_dtype,
 )
@@ -212,7 +213,7 @@ def input_validation(
             size = int(np.max(group_idx)) + 1
         else:
             if not np.isscalar(size):
-                raise ValueError("output size must be scalar or None")
+                raise ValueError(OUTPUT_SIZE_NOT_SCALAR)
             # a scalar size, which the comparison below needs as a number
             scalar_size = cast("int | float | np.number", size)
             if check_bounds and np.any(group_idx > scalar_size - 1):

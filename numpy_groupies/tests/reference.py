@@ -29,7 +29,7 @@ from numpy_groupies.fills import (
     DEFAULT_FILL_VALUE,
     default_fill_value,
 )
-from numpy_groupies.validation import check_fill_value
+from numpy_groupies.validation import check_fill_value, check_topk_k
 
 
 def trapezoid_ref(*args: Any, **kwargs: Any) -> Any:
@@ -485,6 +485,21 @@ def reference_names() -> list[str]:
     return sorted(_REF_FUNCS)
 
 
+def _refuse_a_topk_out_of_a_matrix(name: str | None, ndim_answer: int) -> None:
+    """The topk answers a matrix, and the reference measures no answer of more.
+
+    The selection keeps k values of every group, so its answer holds two
+    dimensions: a row per group and k columns.  A call that would place the
+    rows over more than one dimension - labels of more than one dimension, a
+    sequence of sizes, an axis of a value of more than one dimension - asks
+    for an answer of more than two.  The package refuses those the same way,
+    so the reference refuses them too, instead of flattening the groups into
+    the rows of a matrix and measuring a shape nobody asked for.
+    """
+    if name in _REF_TOPK and ndim_answer > 2:
+        raise NotImplementedError(f"the topk answers a matrix of groups by values, not {ndim_answer} dimensions")
+
+
 def aggregate_ref(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
@@ -527,6 +542,18 @@ def aggregate_ref(
     labels = group_idx if group_idx.ndim <= 1 else np.ravel_multi_index(group_idx, out_shape)
     if labels.size and int(labels.max()) >= n_groups:
         raise ValueError("a group index is too large for the requested size")
+
+    # the rows of the topk are the groups of one dimension, and the shape of
+    # the answer adds the column of the k values to them
+    _refuse_a_topk_out_of_a_matrix(name, len(out_shape) + 1)
+
+    # the count of the values is a whole number, and none below zero - the
+    # rule of the package, said the way the package says it, and said before
+    # a single group is computed.  The default of k is written down here on
+    # purpose: the reference measures the package and must not import the
+    # policy it judges
+    if name in _REF_TOPK:
+        k = check_topk_k(kwargs.get("k", 5))
 
     call = _REF_FUNCS[name]
 
@@ -603,9 +630,6 @@ def aggregate_ref(
         else:
             check_fill_value(fill_value, out_dtype, name)
             fill = fill_value
-        # the default of k is written down here on purpose: the reference
-        # measures the package and must not import the policy it judges
-        k = int(kwargs.get("k", 5))
         ret = np.full((n_groups, k), fill, dtype=out_dtype)
         for group, value in results.items():
             ret[group, :] = value
@@ -654,9 +678,17 @@ def aggregate_ref_along_axis(
     the axis holds the groups, the other ones the slices beside it.  The
     functions that answer one value per input item keep the dimension of the
     axis as it is - they have no group to fill.
+
+    The topk answers a row per group, so it asks for a one-dimensional input:
+    along an axis of a value of more dimensions its rows would be one
+    dimension deeper than the matrix the selection answers with.
     """
     labels = np.asarray(group_idx).ravel()
     a = np.asarray(a)
+    name = func if isinstance(func, str) else getattr(func, "__name__", None)
+    # the rows of the topk are the groups of the axis, the columns its values:
+    # the slices beside the axis are the dimensions the answer gains over it
+    _refuse_a_topk_out_of_a_matrix(name, a.ndim + 1)
     axis = axis % a.ndim
     moved = np.moveaxis(a, axis, -1)
     n_groups = int(labels.max()) + 1 if size is None else int(size)
@@ -668,4 +700,8 @@ def aggregate_ref_along_axis(
     ret = np.empty(moved.shape[:-1] + first.shape, dtype=first.dtype)
     for index, values in zip(np.ndindex(*moved.shape[:-1]), results):
         ret[index] = values
+    if a.ndim == 1:
+        # no slice beside the axis: the answer is the one the group loop gives,
+        # and the columns of the topk follow the rows they belong to
+        return ret
     return np.moveaxis(ret, -1, axis)

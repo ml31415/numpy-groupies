@@ -13,6 +13,7 @@ before numpy is known to be available, and has to work without it.
 
 from __future__ import annotations
 
+import operator
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
@@ -45,9 +46,15 @@ FILL_NOT_BOOLEAN = "Value not boolean"
 FILL_NOT_CONVERTIBLE = "fill_value must be convertible into {dtype}"
 MOMENTS_NOT_FOR_COMPLEX = "the skewness and the kurtosis are not defined for complex values"
 FILL_NOT_INTEGER = "fill_value must be convertible into an integer"
+# a size that is no number of groups - the sequence of the multidimensional
+# result, which only the flat rule of the topk refuses with its own words
+OUTPUT_SIZE_NOT_SCALAR = "output size must be scalar or None"
 # the topk answers a matrix with a row per group, and a group index of more
 # than one dimension has no place in it
-TOPK_NEEDS_FLAT_GROUP_IDX = "the topk needs a flat group index and a size that is a number"
+TOPK_NEEDS_FLAT_GROUP_IDX = "the topk needs a flat group index, because its answer is a matrix with a row per group"
+# the count of the values the topk keeps: a whole number, and none below zero
+TOPK_K_NOT_WHOLE = "k must be a whole number of values, got {k!r}"
+TOPK_K_NEGATIVE = "k must not be negative, got {k}"
 FILL_NONE_NOT_HELD = (
     "fill_value=None fills an object result, which is what func='array' returns and no other function does "
     "(the default of a function is asked for with DEFAULT_FILL_VALUE)"
@@ -358,16 +365,40 @@ def check_complex_dtype(
 # for both of them, and one place to change them in.
 
 
-def check_topk_input(ndim_idx: int, size: Any) -> None:
+def check_topk_input(ndim_idx: int) -> None:
     """The input the topk cannot take: a group index of more than one
-    dimension, and a size that is a sequence.
+    dimension.
 
     A group index of more than one dimension names its groups in more than
     one way, and the answer of the topk is a matrix with a row per group -
-    the unravelling of such an index has no place in it.
+    the unravelling of such an index has no place in it.  A sequence of
+    sizes with flat labels is no business of this check: the validation of
+    the input refuses it before the rule of the topk is asked, with the
+    words it says to every function.
     """
-    if ndim_idx > 1 or isinstance(size, tuple):
+    if ndim_idx > 1:
         raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX)
+
+
+def check_topk_k(k: Any) -> int:
+    """The count of the values the topk keeps: a whole number, and none
+    below zero - the whole number is the one it returns.
+
+    A fraction, a flag, a text and an array name no count of values: the
+    numpy based backends would read them as they please or complain in the
+    words of numpy, and the compiled kernels of the numba one would fail to
+    type them - so the count is asked for itself, before anything is
+    computed, and the three backends say the same thing about it.
+    """
+    if isinstance(k, bool):
+        raise TypeError(TOPK_K_NOT_WHOLE.format(k=k))
+    try:
+        whole = operator.index(k)
+    except TypeError:
+        raise TypeError(TOPK_K_NOT_WHOLE.format(k=k)) from None
+    if whole < 0:
+        raise ValueError(TOPK_K_NEGATIVE.format(k=k))
+    return whole
 
 
 def check_topk_shape(ret: Any, size: int, k: int) -> None:

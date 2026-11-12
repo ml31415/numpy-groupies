@@ -36,10 +36,13 @@ from numpy_groupies.validation import (
     LENGTH_MISMATCH,
     NEGATIVE_INDICES,
     NON_INTEGER_GROUP_IDX,
+    OUTPUT_SIZE_NOT_SCALAR,
     TOO_LARGE_FOR_SIZE,
+    TOPK_NEEDS_FLAT_GROUP_IDX,
     check_complex_dtype,
     check_fixed_fill_value,
     check_integer_variance_span_overflow,
+    check_topk_k,
     is_integer_dtype,
     is_scalar_input,
 )
@@ -336,8 +339,6 @@ def _topk(x: Sequence[Any], k: int, largest: bool, fill_value: Any) -> list[Any]
     neither the largest nor the smallest value of the group.  A group with
     fewer than k values fills the places it has none with the fill value.
     """
-    if k < 0:
-        raise ValueError(f"k must not be negative, got {k}")
     values = [val for val in x if val == val]
     ordered = sorted(values)
     if largest:
@@ -718,19 +719,59 @@ def aggregate(
     if not is_scalar_input(vals) and not _is_flat(vals):
         raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten. Alternatively specify axis.")
 
+    # the function of the call is resolved before anything is measured of the
+    # labels or the sizes: a call the function of the package refuses - the
+    # topk and its flat group index, for one - says so in the words of the
+    # package, and not in the words of what this implementation happened to
+    # measure first.  The lookup is the one plain subscript of the table, the
+    # same one every backend pays - a func that misses it is a callable, and
+    # runs as it is
+    try:
+        funcname, op, _temporal_op = _dispatch[func]
+    except TypeError:
+        # a func that cannot be a key of the table at all: it names no known
+        # function either, so the registry answers it as a callable of the
+        # caller's own
+        funcname, op, _temporal_op = _dispatch.custom(func)
+    if op is None:
+        # a function that is known but not implemented here - the registry
+        # answers that too, and says it before a single group is aggregated
+        raise missing_impl_error(funcname)
+
     # Check for 2d group_idx
     if size is None:
         try:
             size = 1 + int(max(idx))
         except (TypeError, ValueError):
+            if op is _topk:
+                # the matrix of the topk is the rule of every backend, and it
+                # is a rule of the call and not of this implementation alone
+                raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX) from None
             raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
     else:
         if isinstance(size, Sequence):
+            if op is _topk:
+                if getattr(idx, "ndim", 1) <= 1 and not hasattr(idx[0], "__len__"):
+                    # flat labels with a sequence of sizes: no function of the
+                    # package takes one, and the package says so in the words
+                    # it says to every function
+                    raise ValueError(OUTPUT_SIZE_NOT_SCALAR)
+                # nested labels name the groups of more than one dimension,
+                # and the matrix of the topk refuses them - a rule of the
+                # call, and not of this implementation alone
+                raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX)
             # a sequence of sizes is a multidimensional result, which this
             # implementation does not do
             raise NotImplementedError("pure python implementation doesn't accept a sequence of sizes.")
         # a size is a number of groups - anything that counts is one
         size = operator.index(size)
+
+    if op is _topk:
+        # the count of the values is a whole number, and none below zero -
+        # said before anything about the labels, the way the other backends
+        # say it
+        k = check_topk_k(kwargs.get("k", 5))
+        largest = kwargs.get("largest", True)
 
     # the labels of a call index the groups - a label that is no index is
     # refused in the words of the package, like every other path refuses it
@@ -742,6 +783,10 @@ def aggregate(
         try:
             i = int(value)
         except (TypeError, ValueError):
+            if op is _topk:
+                # a label the matrix of the topk cannot take is refused in
+                # the words of the package, like the flat rule asks it
+                raise ValueError(TOPK_NEEDS_FLAT_GROUP_IDX) from None
             if isinstance(value, (list, tuple)):
                 raise NotImplementedError("pure python implementation doesn't accept ndim idx input.")
             else:
@@ -763,19 +808,6 @@ def aggregate(
             if i >= size:
                 raise ValueError(TOO_LARGE_FOR_SIZE.format(size=size))
 
-    # the lookup of the func is the one plain subscript of the table: a func
-    # that misses it is a callable, and runs as it is
-    try:
-        funcname, op, _temporal_op = _dispatch[func]
-    except TypeError:
-        # a func that cannot be a key of the table at all: it names no known
-        # function either, so the registry answers it as a callable of the
-        # caller's own
-        funcname, op, _temporal_op = _dispatch.custom(func)
-    if op is None:
-        # a function that is known but not implemented here - the registry
-        # answers that too, and says it before a single group is aggregated
-        raise missing_impl_error(funcname)
     if is_scalar_input(vals):
         if funcname not in ("sum", "prod", "len"):
             raise ValueError("scalar inputs are supported only for 'sum', 'prod' and 'len'")
@@ -855,9 +887,8 @@ def aggregate(
     if op is _topk:
         # the topk answers k values per group: a list per group, the way the
         # collecting function answers its sequences - the pure python
-        # implementation has no arrays to hold a matrix
-        k = kwargs.get("k", 5)
-        largest = kwargs.get("largest", True)
+        # implementation has no arrays to hold a matrix.  The count of the
+        # values was checked and settled before the labels were read
         topk_ret: list[Any] = [[fill_value] * k for _ in range(size)]
         topk_data = sorted(zip(idx, vals), key=operator.itemgetter(0))
         for ix, group in itertools.groupby(topk_data, key=operator.itemgetter(0)):

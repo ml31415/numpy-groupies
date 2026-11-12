@@ -35,6 +35,7 @@ from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrd
 from numpy_groupies.validation import (
     check_fill_value,
     check_topk_input,
+    check_topk_k,
     check_topk_shape,
     is_scalar_input,
 )
@@ -171,6 +172,17 @@ def _aggregate_wrap(
         # asked
         raise missing_impl_error(funcname)
 
+    if funcname == "topk":
+        # the topk hands out k values per group: its result is a matrix with
+        # a row per group, and the unravelling of a multidimensional group
+        # index has no place in that.  The rules are asked before the
+        # operation runs, so that a call the backend cannot answer says so
+        # before any other complaint about the values it was given, and so
+        # that the temporal path answers them the same way the numeric one
+        # does
+        kwargs["k"] = check_topk_k(kwargs.get("k", func_argument_default("topk", "k")))
+        check_topk_input(ndim_idx)
+
     # datetime64 and timedelta64 run on their int64 ticks - the temporal
     # operation of the function takes the input apart, refuses what numpy
     # refuses, and answers with a temporal value.  Only the functions of the
@@ -213,12 +225,6 @@ def _aggregate_wrap(
         check_fill_value(fill_value, dtype, func=funcname)
         ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
 
-    if funcname == "topk":
-        # the topk hands out k values per group: its result is a matrix with
-        # a row per group, and the unravelling of a multidimensional group
-        # index has no place in that
-        check_topk_input(ndim_idx, size)
-
     # deal with ndimensional indexing
     if ndim_idx > 1:
         if unravel_shape is not None:
@@ -237,5 +243,5 @@ def _aggregate_wrap(
     if funcname == "topk":
         # the topk gives k values per group, so its shape is (size, k) - the
         # check of the shape of a one-out-per-in function does not apply to it
-        check_topk_shape(ret, flat_size, int(kwargs.get("k", func_argument_default("topk", "k"))))
+        check_topk_shape(ret, flat_size, kwargs["k"])
     return cast(AResult, ret)
