@@ -27,13 +27,11 @@ from numpy_groupies.validation import NEGATIVE_INDICES
 
 
 class ReductionState(NamedTuple):
-    """The state of the streaming reductions that fold every value into a
-    per-group accumulator: ``out`` accumulates the reduction and doubles as
-    the result, ``untouched`` marks the groups that have not received a value
-    yet (a custom fill value is applied to them after the loop) and ``track``
-    says whether that bookkeeping runs at all - only a fill value differing
-    from the forced default needs it, the default keeps the per-element loop
-    free of the extra store (measured ~0.1ms per 500k values)."""
+    """The state of the streaming reductions: ``out`` accumulates and doubles
+    as the result, ``untouched`` marks the groups without a value (a custom
+    fill value is applied after the loop), and ``track`` says whether that
+    bookkeeping runs - only a non-default fill needs it (the default saves a
+    store per element, ~0.1ms per 500k)."""
 
     out: npt.NDArray[np.number]
     untouched: npt.NDArray[np.bool_]
@@ -41,17 +39,15 @@ class ReductionState(NamedTuple):
 
 
 class SelectionState(NamedTuple):
-    """The state of the select-form reductions (min, max): ``out``
-    holds the selected value or the running best and doubles as the result,
-    ``pending`` marks the groups that have not seen a value yet - their first
-    value always wins, a nan poisons the group."""
+    """The state of min/max: ``out`` holds the running best, ``pending`` the
+    groups without a value - the first value wins, a nan poisons."""
 
     out: npt.NDArray[np.number]
     pending: npt.NDArray[np.bool_]
 
 
-# the building blocks of this file are jitted: numba compiles them from the
-# argument types and ignores these annotations, the type checker needs them
+# jitted building blocks: numba ignores these annotations, the type checker
+# needs them
 def _sum_init(
     size: int,
     n_input: int,
@@ -61,8 +57,8 @@ def _sum_init(
     fill_value: float,
     forced_fill: float,
 ) -> ReductionState:
-    # the accumulation starts at 0 (the forced default) - a custom fill value
-    # is applied to the untouched groups after the loop
+    # the accumulation starts at 0 - a custom fill value is applied after
+    # the loop
     track = _fill_differs(fill_value, forced_fill)
     untouched = np.ones(size, np.bool_) if track else np.empty(0, np.bool_)
     return ReductionState(np.zeros(size, out_dtype), untouched, track)
@@ -77,25 +73,22 @@ def _sum_update(st: ReductionState, ri: int, i: int, val: float, fill_value: flo
 def _sum_update_nan(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # branchless select-form twin of _sum_update - nans contribute nothing
     # and do not ready their group for a custom fill value; the guarded
-    # equivalent turns the loop scalar and compiles ~3x slower
-    # the tuple has to name the 32 bit numpy scalars explicitly - numba
-    # maps python float/complex to the 64 bit variants only, and a float32
-    # or complex64 nan taking the plain path would poison the accumulator
+    # equivalent turns the loop scalar and compiles ~3x slower.  The 32 bit
+    # numpy scalars are named explicitly: numba maps python float/complex to
+    # the 64 bit variants only, and a float32/complex64 nan on the plain path
+    # would poison the accumulator
     valid = val == val
     if st.track:
         st.untouched[ri] = st.untouched[ri] & (val != val)
     if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.out[ri] += val if valid else 0.0
     elif isinstance(val, (np.datetime64, np.timedelta64)):
-        # temporal input: NaT contributes nothing (the nan variant skips it
-        # like a nan), and its additive zero is the running value minus
-        # itself - NaT minus NaT is NaT and not zero.  The plain variant
-        # adds the NaT, which the addition propagates like numpy does
+        # temporal: NaT contributes nothing (NaT - NaT is NaT, not zero) -
+        # the plain variant adds it, which the addition propagates like numpy
         st.out[ri] += val if valid else st.out[ri] - st.out[ri]
     else:
-        # integer and bool input have no nan - the plain path keeps wide
-        # uint64 exact (a python literal 0 would unify uint64 with int64
-        # into float64)
+        # integer/bool have no nan - the plain path keeps wide uint64 exact
+        # (a literal 0 would unify uint64 with int64 into float64)
         st.out[ri] += val
 
 
@@ -105,19 +98,14 @@ def _sum_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
 
 @njit_stable
 def _combine_untouched(acc: ReductionState, other: ReductionState) -> None:
-    """The groups that neither of the two chunks touched stay untouched.
-
-    A group that one of the chunks put a value into is not untouched any
-    more - the flag of the state of the first chunk says so.
-    """
+    """The groups that neither chunk touched stay untouched."""
     if acc.track:
         untouched: np.ndarray = acc.untouched
         untouched &= other.untouched
 
 
 def _sum_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one: the sums add up,
-    and a group that neither of the chunks touched stays untouched."""
+    """Two chunk states folded into one: the sums add up."""
     out: np.ndarray = acc.out
     out += other.out
     _combine_untouched(acc, other)
@@ -173,8 +161,7 @@ def _prod_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
 
 
 def _prod_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one: the products
-    multiply, and a group that neither of the chunks touched stays untouched."""
+    """Two chunk states folded into one: the products multiply."""
     out: np.ndarray = acc.out
     out *= other.out
     _combine_untouched(acc, other)
@@ -226,8 +213,7 @@ def _len_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
 
 
 def _len_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one: the counts add
-    up, and a group that neither of the chunks touched stays untouched."""
+    """Two chunk states folded into one: the counts add up."""
     out: np.ndarray = acc.out
     out += other.out
     _combine_untouched(acc, other)
@@ -278,8 +264,8 @@ def _all_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
 
 
 def _all_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one: a group is true
-    only if it is true in both of the chunks."""
+    """Two chunk states folded into one: a group is true only if it is true
+    in both chunks."""
     out: np.ndarray = acc.out
     out &= other.out
     _combine_untouched(acc, other)
@@ -331,8 +317,8 @@ def _any_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
 
 
 def _any_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one: a group is true
-    if it is true in one of the chunks."""
+    """Two chunk states folded into one: a group is true if it is true in one
+    of the chunks."""
     out: np.ndarray = acc.out
     out |= other.out
     _combine_untouched(acc, other)
@@ -352,53 +338,28 @@ any = build_kernel(
 )
 
 
-# The state of the parallel path of the first and the last: the value of
-# every group and the groups that have one.  The two operations cannot be
-# reduced in chunks the way the sums are - the value of a group depends on
-# the order of the values - so the chunks are folded in the order of their
-# index: the first chunk that has a value for a group wins for the first,
-# the last one for the last.
-#
-# The result is the one of the sequential path bit for bit: every chunk
-# looks at its own values in the order they come, and the fold picks the
-# value of the chunk that comes first (or last) in the input.
-#
-# The state of a chunk holds one array of the size of the groups and one
-# flag per group - the same shape as the state of the sum, and the same
-# weight for the cost model.
+# The parallel path of first/last: the chunks are folded in index order (the
+# first chunk with a value wins for the first, the last for the last), so the
+# result is the sequential one bit for bit.  A chunk state is one value array
+# and one flag per group - the weight of the sum's state in the cost model.
 _MT_STATE_SIZE = 1
 
 
-# The scan and the driver of the first and the last
-#
-# Neither of the two reaches build_kernel: the per-element update call of
-# the composed driver costs more than these bodies save (measured 1.06ms
-# against 0.60ms on numba 0.68), so the loop lives here - but in a function
-# of its own, with the state arrays passed in: allocating them in the
-# looping function itself measures ~25% slower, numba reloads the data
-# pointers around every store instead of keeping them in registers.
-#
-# ONE scan serves both paths: the sequential driver runs it over the whole
-# input, the parallel path runs the very same scan over every chunk of the
-# data and folds the states of the chunks afterwards.  The two paths cannot
-# drift apart then - the direction of the scan and the handling of the nans
-# are the delicate parts of it, and they are written down once.
-#
-# The state of the scan: the value of every group and the groups that have
-# one.  The state of a chunk is one such state per chunk - two arrays of the
-# size of the groups - and the cost model counts them against the two of the
-# sum (its value and its flag).
+# The scan and the driver of the first and the last: neither reaches
+# build_kernel (the per-element update call costs more than the bodies save,
+# 1.06ms against 0.60ms on numba 0.68), and the loop lives in a function of
+# its own with the state arrays passed in - allocating them inside measures
+# ~25% slower, numba reloads the data pointers around every store.  ONE scan
+# serves both paths, so the scan direction and the nan handling are written
+# down once; the state is the value of every group and the groups that have
+# one.
 _MT_STATE_SIZE = 1
 
 
 @functools.lru_cache(maxsize=4)
 def _ordered_scan(nans: bool, last: bool) -> Callable[..., int]:
-    """The scan that finds the first (or the last) value of every group.
-
-    ``nans`` says whether the nans are left out (the nan variants) or
-    whether they take the group over (the plain ones); ``last`` says
-    whether the scan looks for the last value of a group or for the first.
-    """
+    """The scan that finds the first (or last) value of every group; ``nans``
+    left out or taking the group over, ``last`` the direction."""
 
     if last:
 
@@ -411,12 +372,9 @@ def _ordered_scan(nans: bool, last: bool) -> Callable[..., int]:
         ) -> int:
             """The last value of every group, and the fault of the indices.
 
-            The scan walks the data backwards: the last value of a group is
-            the first one it meets when it walks from the end.  A scan that
-            walks it forwards would write the value of every value it meets
-            - a scatter write that the threads cannot keep apart is a write
-            the threads do one after another, and it is slower besides
-            (measured 813us against 564us per million values).
+            Walked backwards: a forward walk would scatter-write every value,
+            which serializes the threads and is slower besides (813us against
+            564us per million values).
             """
             fault = 0
             for i in range(group_idx.shape[0] - 1, -1, -1):
@@ -428,7 +386,7 @@ def _ordered_scan(nans: bool, last: bool) -> Callable[..., int]:
                     val = a[i]
                     if nans and val != val:
                         # a nan does not take the group over: the last valid
-                        # value is the one that is wanted
+                        # value is wanted
                         continue
                     seen[ri] = True
                     out[ri] = val
@@ -443,14 +401,9 @@ def _ordered_scan(nans: bool, last: bool) -> Callable[..., int]:
             out: npt.NDArray[np.number],
             seen: npt.NDArray[np.bool_],
         ) -> int:
-            """The first value of every group, and the fault of the indices.
-
-            The scan walks the data forwards: the first value of a group is
-            the first one it meets, and the groups it has seen are left
-            alone - the load of the flag short-circuits the rest, so the
-            value is only read while the groups are still pending (folded
-            away for the plain one).
-            """
+            """The first value of every group, and the fault of the indices -
+            walked forwards, the seen flag short-circuiting the rest (the
+            value is only read while the group is still pending)."""
             fault = 0
             for i in range(group_idx.shape[0]):
                 ri = group_idx[i]
@@ -461,7 +414,7 @@ def _ordered_scan(nans: bool, last: bool) -> Callable[..., int]:
                     val = a[i]
                     if nans and val != val:
                         # a nan does not take the group over: the first
-                        # valid value is the one that is wanted
+                        # valid value is wanted
                         continue
                     seen[ri] = True
                     out[ri] = val
@@ -471,12 +424,9 @@ def _ordered_scan(nans: bool, last: bool) -> Callable[..., int]:
 
 
 def _ordered_driver_factory(nans: bool, last: bool) -> Callable[..., npt.NDArray[np.number]]:
-    """The compiled driver of the first (or the last) value of every group.
-
-    The driver is a thin wrapper around the scan: it allocates the state,
-    runs the scan over the whole input and raises the complaint of a fault
-    of the indices - a complaint the parallel path cannot raise itself.
-    """
+    """The compiled driver of the first (or the last): allocates the state,
+    runs the scan, raises the fault complaint the parallel path cannot raise
+    itself."""
     scan = _ordered_scan(nans, last)
     name = "last" if last else "first"
 
@@ -490,10 +440,9 @@ def _ordered_driver_factory(nans: bool, last: bool) -> Callable[..., npt.NDArray
     ) -> npt.NDArray[np.number]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
-        # the state of the scan is allocated here and not in the scan itself:
-        # allocating it in the looping function measures ~25% slower, numba
-        # reloads the data pointers around every store instead of keeping
-        # them in registers
+        # the state is allocated here, not in the scan itself: inside the
+        # looping function it measures ~25% slower (numba reloads the data
+        # pointers around every store)
         seen = np.zeros(size, np.bool_)
         fault = scan(group_idx, a, out, seen)
         if fault:
@@ -504,14 +453,9 @@ def _ordered_driver_factory(nans: bool, last: bool) -> Callable[..., npt.NDArray
 
 
 def _ordered_mt_factory(last: bool) -> Callable[[bool, Callable[..., Any]], Any]:
-    """The parallel passes of the first (or the last).
-
-    The data is split into chunks, and the very same scan that the
-    sequential path runs is run over every chunk of them - the states of the
-    chunks are folded afterwards, in the order of their index: the first
-    chunk that has a value for a group wins for the first, the last one for
-    the last.
-    """
+    """The parallel passes of the first (or the last): the same scan per chunk
+    of the data, the chunk states folded in index order (first wins for
+    first, last for last)."""
 
     def factory(nans: bool, driver: Callable[..., npt.NDArray[np.number]]) -> Callable[..., npt.NDArray[np.number]]:
         scan = _ordered_scan(nans, last)
@@ -540,8 +484,8 @@ def _ordered_mt_factory(last: bool) -> Callable[[bool, Callable[..., Any]], Any]
                         if other_flag[g] and not acc_flag[g]:
                             acc[g] = outs[c][g]
                             acc_flag[g] = True
-            # the states of the chunks are released with the array they live
-            # in - the result is a copy of the row of the first chunk
+            # the result is a copy of the first chunk's row - the chunk
+            # states are released with the array they live in
             return acc.copy()
 
         def mt_passes(
@@ -557,16 +501,14 @@ def _ordered_mt_factory(last: bool) -> Callable[[bool, Callable[..., Any]], Any]
             size = output_size(group_idx, size_arg)
             n_values = group_idx.shape[0]
             if not should_use_mt(size, n_threads, n_values, _MT_STATE_SIZE):
-                # not worth it, or only one thread to do it with: the
-                # sequential driver, with its result bit for bit
+                # not worth it, or one thread only: the sequential driver,
+                # with its result bit for bit
                 return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
             n_chunks = chunk_count(n_threads, n_values)
             chunk = (n_values + n_chunks - 1) // n_chunks
-            # The state of every chunk: the value of every group and the
-            # groups that have one.  The states are the rows of two arrays
-            # and not a list of arrays: a list of them inside the parallel
-            # region costs more than the region saves (measured 160us
-            # against 96us per 200k values on four threads).
+            # the chunk states are the rows of two arrays, not a list of
+            # arrays - a list inside the parallel region costs more than the
+            # region saves (160us against 96us per 200k values on four threads)
             outs = np.full((n_chunks, size), fill_value, out_dtype)
             seen = np.zeros((n_chunks, size), np.bool_)
             # the fault of the indices of every chunk
@@ -631,8 +573,8 @@ def _allnan_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
 
 
 def _allnan_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one: a group holds
-    only nans if it holds them in both of the chunks."""
+    """Two chunk states folded into one: a group is all-nan only if both
+    chunks say so."""
     out: np.ndarray = acc.out
     out &= other.out
     _combine_untouched(acc, other)
@@ -677,8 +619,8 @@ def _anynan_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
 
 
 def _anynan_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one: a group holds a
-    nan if it holds one in one of the chunks."""
+    """Two chunk states folded into one: a group holds a nan if one of the
+    chunks holds one."""
     out: np.ndarray = acc.out
     out |= other.out
     _combine_untouched(acc, other)
@@ -712,35 +654,25 @@ def _max_init(
 
 def _max_update(st: SelectionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form on purpose: the branchy equivalent compiles ~15x slower
-    # under numba >= 0.66 when reached as a separate njit call.  Note: out[ri]
-    # must be read into a local first - repeating the subscript expression
-    # keeps the slow codegen (aliasing).  val != val has to be tested
-    # explicitly - a nan compares neither smaller nor greater, in numpy's
-    # order for complex values as well as for floats, so complex_less alone
-    # would leave a group whose nan arrives after its first value at the
-    # finite value, unlike np.max (and unlike the arg kernels, which report
-    # such a group as invalid).  The nan variants are unaffected, they filter
-    # the nans out before the kernel runs; they use their own select-form bodies instead (see
-    # _max_update_nan).  The extra comparison is the
-    # cheapest way to get there: np.maximum in the non-first branch (which
-    # propagates nans on its own, but does not order complex values the way
-    # numpy does) and the branchy form both measured ~45% slower, while for
-    # integer dtypes LLVM folds the test away entirely.
+    # under numba >= 0.66 as a separate njit call, and out[ri] must be read
+    # into a local first (repeating the subscript keeps the slow codegen).
+    # val != val is tested explicitly: a nan compares neither smaller nor
+    # greater, so complex_less alone would leave a group whose nan arrives
+    # late at the finite value, unlike np.max.  The nan variants run their
+    # own twin body instead (see _max_update_nan).  The extra comparison is
+    # the cheapest way: np.maximum (no numpy complex ordering) and the
+    # branchy form both measured ~45% slower, and LLVM folds it away for
+    # the integer dtypes
     first = st.pending[ri]
     st.pending[ri] = False
     cur = st.out[ri]
-    # the comparison is resolved into a local before the select
-    # expression - reaching it as a call defeats the branchless
-    # form (measured 2.5ms against 0.8ms per 500k values)
+    # the comparison becomes a local before the select - a call defeats the
+    # branchless form (2.5ms against 0.8ms per 500k values)
     best = complex_less(cur, val)
-    # temporal input: NaT is a value that takes its group over, and once it
-    # is the running value no later value wins - the comparison orders NaT
-    # as the smallest tick, so the guard is what keeps it.  The NaT of a
-    # temporal value is the one that is not equal to itself.
-    # the condition is put together without a short circuit: the or of
-    # python is a branch, and a branch that a fifth of the values take
-    # mispredicts - the values of a temporal input carry their NaT at
-    # random places
+    # temporal: NaT takes its group over (ordered as the smallest tick, kept
+    # by the guard), and it is the value that is not equal to itself.  The
+    # condition is built without a short circuit: a branch that a fifth of
+    # the values take mispredicts
     st.out[ri] = val if (first | (val != val) | (best & (cur == cur))) else cur
 
 
@@ -751,22 +683,17 @@ def _max_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value:
     first = st.pending[ri]
     st.pending[ri] = first & (val != val)
     cur = st.out[ri]
-    # the comparison is resolved into a local before the select
-    # expression - reaching it as a call defeats the branchless
-    # form (measured 2.5ms against 0.8ms per 500k values)
+    # the comparison becomes a local before the select - a call defeats the
+    # branchless form (2.5ms against 0.8ms per 500k values)
     best = complex_less(cur, val)
     st.out[ri] = val if (valid & (first | best)) else cur
 
 
 def _max_combine(acc: SelectionState, other: SelectionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one.
-
-    The value of the other chunk is put into the state of the first one the
-    way the kernel would have done it - the chunks are folded in the order of
-    the data, so the result is the one of the sequential kernel, bit for bit.
-    The body repeats the select of ``_max_update`` instead of calling it: the
-    call would defeat the branchless form the update is written for.
-    """
+    """The states of two chunks, folded in the order of the data - the result
+    of the sequential kernel, bit for bit.  The body repeats the select of
+    ``_max_update`` instead of calling it: a call defeats the branchless
+    form."""
     out: np.ndarray = acc.out
     pending = acc.pending
     other_out: np.ndarray = other.out
@@ -785,9 +712,8 @@ def _max_combine(acc: SelectionState, other: SelectionState, fill_value: float, 
 
 
 def _max_combine_nan(acc: SelectionState, other: SelectionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one - the twin of
-    ``_max_combine`` for the nan variant, whose nans neither win nor clear
-    the pending flag."""
+    """The twin of ``_max_combine`` for the nan variant - nans neither win nor
+    clear the pending flag."""
     out: np.ndarray = acc.out
     pending = acc.pending
     other_out: np.ndarray = other.out
@@ -802,8 +728,7 @@ def _max_combine_nan(acc: SelectionState, other: SelectionState, fill_value: flo
 
 
 def _min_combine(acc: SelectionState, other: SelectionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one - the twin of
-    ``_max_combine`` for the minimum."""
+    """The twin of ``_max_combine`` for the minimum."""
     out: np.ndarray = acc.out
     pending = acc.pending
     other_out: np.ndarray = other.out
@@ -820,8 +745,7 @@ def _min_combine(acc: SelectionState, other: SelectionState, fill_value: float, 
 
 
 def _min_combine_nan(acc: SelectionState, other: SelectionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one - the twin of
-    ``_max_combine_nan`` for the minimum."""
+    """The twin of ``_max_combine_nan`` for the minimum."""
     for g in range(acc.out.size):
         if not other.pending[g]:
             if acc.pending[g]:
@@ -857,14 +781,13 @@ def _min_init(
 
 
 def _min_update(st: SelectionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
-    # select-form on purpose, see _max_update (including why val != val is
-    # part of the condition and what it costs)
+    # select-form on purpose, see _max_update (why val != val is part of the
+    # condition and what it costs)
     first = st.pending[ri]
     st.pending[ri] = False
     cur = st.out[ri]
-    # the comparison is resolved into a local before the select
-    # expression - reaching it as a call defeats the branchless
-    # form (measured 2.5ms against 0.8ms per 500k values)
+    # the comparison becomes a local before the select - a call defeats the
+    # branchless form (2.5ms against 0.8ms per 500k values)
     best = complex_less(val, cur)
     st.out[ri] = val if (first or val != val or best) else cur
 
@@ -875,9 +798,8 @@ def _min_update_nan(st: SelectionState, ri: int, i: int, val: float, fill_value:
     first = st.pending[ri]
     st.pending[ri] = first & (val != val)
     cur = st.out[ri]
-    # the comparison is resolved into a local before the select
-    # expression - reaching it as a call defeats the branchless
-    # form (measured 2.5ms against 0.8ms per 500k values)
+    # the comparison becomes a local before the select - a call defeats the
+    # branchless form (2.5ms against 0.8ms per 500k values)
     best = complex_less(val, cur)
     st.out[ri] = val if (valid & (first | best)) else cur
 
@@ -912,8 +834,7 @@ def _sumofsquares_init(
 def _sumofsquares_update(st: ReductionState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     if st.track:
         st.untouched[ri] = False
-    # the squared magnitude of val - complex values give a real, sqrt-free
-    # result like np.var; bool has no .real in numba and keeps the plain
+    # squared magnitude - real for complex like np.var; bool keeps the plain
     # val * val product (isinstance resolves at compile time per dtype)
     if isinstance(val, bool):
         st.out[ri] += val * val
@@ -939,8 +860,8 @@ def _sumofsquares_untouched(st: ReductionState) -> npt.NDArray[np.bool_]:
 
 
 def _sumofsquares_combine(acc: ReductionState, other: ReductionState, fill_value: float, extra: Any) -> None:
-    """The states of two chunks of the data, folded into one: the sums of the
-    squared magnitudes add up."""
+    """Two chunk states folded into one: the sums of the squared magnitudes
+    add up."""
     out: np.ndarray = acc.out
     out += other.out
     _combine_untouched(acc, other)

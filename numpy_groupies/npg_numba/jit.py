@@ -1,10 +1,9 @@
 """JIT plumbing: an njit wrapper with a deterministic on-disk cache identity.
 
-Numba draws a dispatcher's uuid lazily from ``uuid.uuid4()`` and embeds it in
-the cloudpickle representation of the dispatcher, so closures over dispatchers
-hash to new bytes in every interpreter process and the on-disk cache of the
-enclosing function never hits (numba #6522).  Every jitted callable of this
-package therefore goes through ``njit_stable``.
+Numba draws a dispatcher's uuid lazily from ``uuid.uuid4()`` and embeds it in its
+cloudpickle representation, so closures over dispatchers hash to new bytes in
+every process and the on-disk cache of the enclosing function never hits
+(numba #6522).  Every jitted callable of this package goes through ``njit_stable``.
 """
 
 import contextlib
@@ -19,23 +18,18 @@ from numba.core import caching
 
 from numpy_groupies.cache import numba_cache_dir
 
-# The overload implementations of the package, keyed by the function they
-# overload.  Numba compiles the implementation into the caller - the body of
-# the implementation is what ends up in the machine code - and the source of
-# the caller says nothing about it.  The identity of a dispatcher (and with it
-# the key of its on-disk cache) would therefore not change when only the
-# implementation changes, and the stale artifact would be served: a
-# correctly typed, silently wrong kernel.  The registry lets the fingerprint
-# of a dispatcher cover the implementations it may reach.
+# Overload implementations, keyed by the function they overload.  Numba compiles
+# the implementation body into the caller, so a dispatcher's identity (and cache
+# key) would not change when only the implementation does - the stale, correctly
+# typed but wrong kernel would be served.  The registry lets the fingerprint of
+# a dispatcher cover the implementations it may reach.
 _OVERLOADS: dict[Any, Any] = {}
 
-# the decorated function is a dispatcher that keeps the signature of its
-# python function - the overloads below hand that signature through
-# ``njit_stable`` for the type checker, the way ``nb.njit`` does
+# the decorated function is a dispatcher keeping the python signature - the
+# overloads below hand it through ``njit_stable``, like ``nb.njit`` does
 _FuncT = TypeVar("_FuncT", bound=Callable[..., Any])
 
-# windows has no flock - the name is an Optional so the no-op fallback below is
-# an honest annotation and not a type error
+# windows has no flock - Optional so the no-op fallback below is an honest annotation
 flock: Callable[[int, int], None] | None
 
 try:
@@ -43,24 +37,17 @@ try:
 except ImportError:  # pragma: no cover - windows
     flock = None
 
-# Cache revision of this package - folded into the on-disk cache file names
-# below.  Numba keys its cache files by module and qualname of the compiled
-# function and pickles the index payload (which embeds the compiled-over
-# signatures and their types) BEFORE checking the source stamp - renaming a
-# class that appears in a signature therefore crashes the cache read with an
-# AttributeError on the dangling global.  Bumping the revision renames every
-# cache file of this package, orphaning the stale indexes (they keep lying
-# around, numba never reads them again).
+# Cache revision, folded into the on-disk cache file names below.  Numba pickles
+# the index payload (embedding the compiled-over types) BEFORE checking the
+# source stamp, so renaming a class in a signature crashes the cache read on the
+# dangling global - bumping the revision renames every cache file, orphaning the
+# stale indexes (numba never reads them again).
 _cache_revision = "10"
 
 
 @contextlib.contextmanager
 def _advisory_lock(path: str, shared: bool) -> Generator[None, None, None]:
-    """An advisory whole-file lock on *path*, held for the duration of the block.
-
-    Without ``fcntl`` (windows) this is a no-op: the platform has no ``flock``
-    and numba's own cache is not safe there either.
-    """
+    """An advisory whole-file lock on *path*; a no-op without ``fcntl`` (windows)."""
     if flock is None:  # pragma: no cover - windows
         yield
         return
@@ -76,35 +63,26 @@ def _advisory_lock(path: str, shared: bool) -> Generator[None, None, None]:
 class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
     """Numba's index-and-data cache file with the writers of one machine excluded.
 
-    ``IndexDataCacheFile.save`` reloads the index, takes the first data file
-    number the reloaded index does not mention, writes the index announcing
-    that number and only then writes the data file it announces.  Two
-    processes that miss the same signature therefore both pick number 1, both
-    write an index mapping their own key onto it, and both write their machine
-    code into ``.1.nbc``: whichever index write came last names a key whose
-    data file now holds the *other* process' machine.  Loading that is a
-    correctly typed, silently wrong kernel - it showed up as one or two
-    mismatching cells in the numba column of the test suite, and as an
-    exception when the machine did not fit the arguments at all.
-
-    The lock covers the whole of ``save`` so index and data file are written
-    as one transaction, and ``load`` shared so no writer can recycle a data
-    file number (a source edit empties the index and makes every number look
-    free) while a reader is still reading it.
+    ``IndexDataCacheFile.save`` writes the index announcing a data file number
+    and only then the data file, so two processes missing the same signature
+    both pick number 1, and whichever index write came last names a key whose
+    ``.1.nbc`` holds the *other* process' machine - a correctly typed, silently
+    wrong kernel (it showed up as one or two mismatching cells in the numba
+    column of the test suite).  The lock covers all of ``save`` so index and
+    data are written as one transaction, and ``load`` shared so no writer
+    recycles a data file number (a source edit empties the index and makes
+    every number look free) while a reader is still reading it.
     """
 
     def _lock_path(self) -> str:
         return os.path.join(self._cache_path, f"{self._index_name}.lock")
 
     def save(self, key: Any, data: Any) -> None:
-        # The directory of the cache may be gone: ``purge_cache()`` removes it, and
-        # a process that compiles while the purge runs would write into a
-        # directory that is not there any more.
+        # the cache dir may be gone: ``purge_cache()`` removes it while another
+        # process is still compiling into it
         os.makedirs(self._cache_path, exist_ok=True)
         with _advisory_lock(self._lock_path(), shared=False):
-            # the caching of numba is not annotated, so the checker knows no
-            # type of the answer of the superclass - it saves and returns
-            # nothing, and the call is made for its effect
+            # numba's caching is not annotated: the call is made for its effect
             super().save(key, data)
 
     def load(self, key: Any) -> Any:
@@ -120,13 +98,10 @@ class _ProcessSafeCacheFile(caching.IndexDataCacheFile):
 def register_overload(func: Any) -> Callable[[Any], Any]:
     """``nb.extending.overload``, with the implementation remembered.
 
-    The registration itself is numba's - the decorator returns the
-    implementation, and numba binds the overloaded function to a template
-    that carries it.  The package remembers the implementation as well, so
-    that the identity of the dispatchers that may reach it covers its body:
-    without that, a change of the implementation alone leaves the on-disk
-    cache key of every dispatcher that uses it untouched, and the stale
-    artifact is served (see :data:`_OVERLOADS`).
+    The registration itself is numba's; the package keeps the implementation so
+    the identity of the dispatchers that may reach it covers its body - without
+    that, a change of the implementation alone leaves the cache key untouched
+    and the stale artifact is served (see :data:`_OVERLOADS`).
     """
 
     def register(implementation: Any) -> Any:
@@ -139,17 +114,11 @@ def register_overload(func: Any) -> Callable[[Any], Any]:
 def _stable_content(content: Any) -> str:
     """A description of a closure cell that is the same in every process.
 
-    The fingerprint of a dispatcher covers the contents of its closure, and
-    the fingerprint decides the name of the on-disk cache file.  ``repr`` of a
-    python function carries its memory address, which differs in every
-    process: the fingerprint would differ, the cache file would get a new
-    name in every run and the cache would never hit - the dispatcher would
-    be compiled again and again, in every process, at the cost of the time
-    and the memory of a compilation.
-
-    A dispatcher contributes its pinned uuid, a python function its module,
-    its qualified name and the hash of its source (a change of the body must
-    invalidate the cache), and everything else its repr.
+    ``repr`` of a python function carries its memory address, so the fingerprint
+    would differ per process, the cache file would get a new name in every run
+    and never hit.  A dispatcher contributes its pinned uuid, a python function
+    its module, qualname and source hash (a body change must invalidate), and
+    everything else its repr.
     """
 
     uuid = getattr(content, "_uuid", None)
@@ -170,18 +139,11 @@ def _stable_content(content: Any) -> str:
 def _overload_sources(func: Callable[..., Any]) -> list[str]:
     """The sources of the overload implementations the function may reach.
 
-    A jitted function reaches an overloaded function through its global name
-    or through a closure cell - and the implementation of the overload is
-    what numba compiles into it.  The closure is walked one level down into
-    the python function of a dispatcher, since that is where the name of the
-    overloaded function is looked up.
-
-    An implementation of its own may reach an overloaded function as well -
-    numba inlines that one into the very same machine code, so the walk
-    follows the implementations it finds (the accumulate of the dispersion
-    tracks the extrema of the group through an overload of its own).  The
-    walk stops at every function it has already seen, so a cycle cannot
-    spin it forever.
+    Reached through global names or closure cells (walked one level down into a
+    dispatcher's python function, where the names are looked up), and followed
+    into the implementations themselves - numba inlines them into the same
+    machine code (the dispersion accumulate reaches an overload of its own).
+    Functions already seen stop the walk, so a cycle cannot spin it forever.
     """
     found: dict[str, str] = {}
     pending = [func]
@@ -191,12 +153,9 @@ def _overload_sources(func: Callable[..., Any]) -> list[str]:
         if id(current) in seen:
             continue
         seen.add(id(current))
-        # The names the one at hand calls through its globals - and the ones
-        # the functions inside it call: the branches of an overload template,
-        # the bodies an implementation picks between, sit in the constants of
-        # the enclosing function, one code object per def.  A name is looked
-        # up in the globals of the enclosing one, which is where numba looks
-        # when it compiles the body.
+        # the names the current function calls through its globals, including
+        # the nested code objects (one per def, in co_consts) - a name is looked
+        # up in the globals of the enclosing function, which is where numba looks
         names: set[str] = set()
         pending_codes = [current.__code__]
         seen_codes: set[int] = set()
@@ -217,9 +176,8 @@ def _overload_sources(func: Callable[..., Any]) -> list[str]:
                 content = cell.cell_contents
             except ValueError:  # pragma: no cover - empty cell
                 continue
-            # a dispatcher in the closure contributes the name of its python
-            # function - the overload it reaches is looked up in the globals
-            # of that function
+            # a dispatcher contributes its python function's name - the overload
+            # it reaches is looked up in that function's globals
             py_func = getattr(content, "py_func", None)
             if py_func is not None:
                 pending.append(py_func)
@@ -235,8 +193,8 @@ def _overload_sources(func: Callable[..., Any]) -> list[str]:
                     found[name] = inspect.getsource(implementation)
                 except (OSError, TypeError):  # pragma: no cover - a source that cannot be read
                     found[name] = ""
-                # the body of the implementation may reach an overload of its
-                # own - numba inlines it, so it belongs to the identity too
+                # the body may reach an overload of its own - numba inlines it,
+                # so it belongs to the identity too
                 pending.append(implementation)
     return [found[name] for name in sorted(found)]
 
@@ -255,44 +213,31 @@ def njit_stable(
 ) -> Any:
     """``nb.njit`` plus a deterministic dispatcher identity.
 
-    Numba draws a dispatcher's uuid lazily from ``uuid.uuid4()`` and embeds
-    it in the cloudpickle representation of the dispatcher.  Closures over
-    dispatchers therefore hash to new bytes in every interpreter process,
-    so numba's on-disk cache key of the enclosing function never hits and
-    every run appends a new cache file instead (see numba #6522).  Pinning
-    a content-derived uuid keeps the closure hash stable across processes,
-    which makes the on-disk cache effective for the factory-nested loops
-    of this module.  Measured against numba 0.68: the cache index of a
-    cached *caller* now survives unpinned closures, but the dispatcher-level
-    keys do not (direct driver calls recompile in every process) and the
-    cache directory keeps growing with duplicate entries - the pinning is
-    still required everywhere in a closure chain.
+    A pinned content-derived uuid keeps closures over dispatchers hashing to the
+    same bytes in every process, so the on-disk cache of the enclosing function
+    hits instead of growing with duplicate entries (numba #6522; measured against
+    numba 0.68: a cached caller's index survives unpinned closures, but the
+    dispatcher-level keys do not - direct driver calls recompile in every
+    process).  The fingerprint covers module, qualname, source, options and
+    closure contents, so dispatchers from the same factory lines for different
+    operations get distinct identities, while the unnamed no-ops of
+    ``compose.build_kernel`` share one.  Usable as ``njit_stable(func,
+    **options)`` or ``@njit_stable`` / ``@njit_stable(**options)``; disk caching
+    on by default (``cache=True``), which is the point of this wrapper.
 
-    The fingerprint covers module, qualname, source, options and the
-    closure contents (dispatchers contribute their already pinned uuid),
-    so dispatchers compiled from the same factory lines for different
-    operations receive distinct identities - a block that is one and the same
-    function in every operation shares one identity instead, which is the
-    point of the unnamed no-ops of ``compose.build_kernel``.  Usable as
-    ``njit_stable(func, **options)`` or ``@njit_stable`` /
-    ``@njit_stable(**options)``.  Disk caching is enabled by default
-    (``cache=True``), which is the main point of this wrapper.
-
-    A ``name`` keyword is not passed on to numba: it becomes the qualname of
-    the function, before it is fingerprinted and before numba mangles its
-    symbol.  Numba mangles that symbol from module, qualname and argument
-    signature, so two functions that differ only in their closure share a
-    symbol - and a dispatcher loaded from the on-disk cache then binds its
-    calls into the environment of the other function, which is correct types
-    and wrong results.  Blocks that differ from operation to operation
-    therefore pass the name of their operation; ``compose.build_kernel`` tells
-    the case in full.
+    A ``name`` keyword is not passed on to numba - it becomes the qualname,
+    before fingerprinting and before numba mangles the symbol from module,
+    qualname and signature.  Two functions that differ only in their closure
+    share a symbol, and a dispatcher loaded from the on-disk cache would then
+    bind its calls into the environment of the other - correct types, wrong
+    results.  Blocks that differ per operation pass their name; see
+    ``compose.build_kernel``.
     """
 
     def wrap(func: Callable[..., Any]) -> Any:
         if name is not None:
-            # both the fingerprint and the mangled symbol read the qualname,
-            # so the rename has to happen before nb.njit is reached
+            # both fingerprint and mangled symbol read the qualname - the rename
+            # has to happen before nb.njit is reached
             func.__qualname__ = func.__name__ = name
         disp: Any = nb.njit(func, cache=cache, **options)
         try:
@@ -303,8 +248,8 @@ def njit_stable(
                         content = cell.cell_contents
                     except ValueError:  # pragma: no cover - empty cell
                         content = "<empty cell>"
-                    # dispatchers were wrapped earlier and already carry
-                    # their pinned uuid, closures are created in order
+                    # dispatchers were wrapped earlier and carry their pinned
+                    # uuid, closures are created in order
                     cells.append(_stable_content(content))
             fingerprint = "\n".join(
                 [
@@ -318,23 +263,19 @@ def njit_stable(
             )
             uuid = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
             disp._set_uuid(uuid)
-            # move the on-disk cache of this dispatcher to revisioned file
-            # names - the numba defaults key by module and qualname only, so
-            # refactoring signature-relevant globals would crash the read of
-            # the stale index (see the comment on _cache_revision).  The uuid
-            # additionally separates same-named functions whose sources
-            # changed: numba's own index key only covers the bytecode and the
-            # closure bytes, and module-level functions have no closure - two
-            # versions of one function differing only in a constant (which
-            # lives in co_consts, not co_code) would otherwise share an index
-            # and could load each other's compiled artifacts.
+            # revisioned cache file names: the numba defaults key by module and
+            # qualname only, so refactoring signature-relevant globals would
+            # crash the read of the stale index (see _cache_revision).  The uuid
+            # also separates same-named functions whose sources changed - the
+            # index key only covers the bytecode and closure bytes, and two
+            # versions differing only in a constant (which lives in co_consts,
+            # not co_code) would otherwise share an index and load each other's
+            # compiled artifacts.
             cache_impl = disp._cache._impl
             cache_impl._filename_base = f"{cache_impl._filename_base}-r{_cache_revision}-{uuid}"
-            # The cache of the kernel does not live next to its source but in
-            # a directory of the package: the cache of numba is never cleaned
-            # up, and the one of an installed package sits in the installation
-            # directory - where it survives the uninstallation and leaves a
-            # broken installation behind (numba #9312).
+            # the cache lives in a package directory, not next to the source:
+            # numba never cleans its cache up, and beside an installed package
+            # it would survive uninstallation and break it (numba #9312).
             cache_path = numba_cache_dir()
             cache_path.mkdir(parents=True, exist_ok=True)
             disp._cache._cache_path = cache_path
@@ -344,10 +285,8 @@ def njit_stable(
                 source_stamp=cache_impl.locator.get_source_stamp(),
             )
         except Exception:  # noqa: BLE001 - any numba internals change must degrade to no caching
-            # numba internals changed: without a stable uuid the closure
-            # hash differs in every process, the cache could never hit and
-            # would grow without bound - disable caching for this
-            # dispatcher instead of polluting the disk (numba #6522)
+            # without a stable uuid the closure hash differs in every process,
+            # the cache could never hit and would grow unboundedly (numba #6522)
             disp._cache = caching.NullCache()
         return disp
 

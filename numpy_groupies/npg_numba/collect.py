@@ -1,14 +1,8 @@
 """Collecting the values of every group - the ``array`` function.
 
-``array`` is the one function of this backend whose result is no plain
-number per group: it hands out the values of every group, one sequence per
-group.  A compiled driver cannot produce an array of sequences - numba has no
-object arrays - but it can produce a *list* of them, which is what the driver
-of this module returns: a reflected list of the arrays of the groups.
-
-The python-level ``aggregate()`` collects that list in an object array, the
-same way the numpy implementation collects the blocks of its own sort, so that
-the two hand out the very same object.
+One sequence of values per group, returned as a reflected list of arrays (numba
+has no object arrays); the python-level ``aggregate()`` assembles that list into
+an object array, so it matches the numpy implementation's result exactly.
 """
 
 from collections.abc import Callable
@@ -22,14 +16,11 @@ from numpy_groupies.npg_numba.fallback import FALLBACK
 from numpy_groupies.npg_numba.jit import njit_stable
 from numpy_groupies.npg_numba.steps import group_count, group_place, group_starts
 
-# the dtypes the compiled driver can place - the numeric ones the drivers of
-# the other operations take as well.  The list is no duplication of what numba
-# can type: the other operations let numba refuse a dtype it cannot take (a
-# clean NumbaNotImplementedError), while this one has to hand the values over
-# to the numpy implementation - and the driver would refuse a float128 in the
-# middle of the frontend, with its own source in the traceback.  A float16 is
-# out as well: numba has none, and this operation is the one that hands the
-# values out unchanged.
+# the dtypes the compiled driver can place: the other operations let numba
+# refuse a dtype it cannot take (a clean NumbaNotImplementedError), while this
+# one hands the values to the numpy implementation - the driver would refuse a
+# float128 mid-frontend, with its own source in the traceback.  No float16:
+# numba has none, and this operation hands the values out unchanged.
 _PLACEABLE = frozenset(
     map(
         np.dtype,
@@ -47,10 +38,9 @@ _PLACEABLE = frozenset(
 
 
 def _placeable(dtype: np.dtype | None) -> bool:
-    """Whether the compiled driver can place the values of this dtype.
+    """Whether the compiled driver can place this dtype.
 
-    Numba has no float16 - the numpy implementation copies the values of that
-    dtype around, which keeps them exactly as they are.
+    No float16 - the numpy implementation copies those values around unchanged.
     """
     return dtype in _PLACEABLE
 
@@ -58,18 +48,14 @@ def _placeable(dtype: np.dtype | None) -> bool:
 def _array_driver_factory(nan_variant: bool) -> Callable[..., list[npt.NDArray[np.generic]]]:
     """The compiled driver of the collecting function.
 
-    The values of a group are placed in a contiguous block, in the order they
-    appear in the input, so that the sequence of a group is a slice of one
-    array.  The blocks are handed out as a list of arrays - the reflected list
-    numba can hold where it cannot hold an object array.
-
-    A group without values holds an empty array: the fill value of the
-    function is an empty sequence, and a custom one (a scalar or ``None``) is
-    applied by the post hook, which knows the groups that received no value.
+    A group's values are placed in a contiguous block, in input order, so the
+    sequence of a group is a slice of one array; handed out as a list of arrays
+    - the reflected list numba holds where it cannot hold an object array.  An
+    absent group holds an empty array: a custom fill value is applied by the
+    post hook, which knows the groups that received no value.
     """
-    # every operation builds its own copies of the shared helpers - the
-    # compiled specialization of one must not reach into the other (see
-    # compose.build_kernel)
+    # every operation builds its own copies of the shared helpers - one compiled
+    # specialization must not reach into another (see compose.build_kernel)
     _count = njit_stable(group_count)
     _starts = njit_stable(group_starts)
     _place = njit_stable(group_place)
@@ -82,8 +68,8 @@ def _array_driver_factory(nan_variant: bool) -> Callable[..., list[npt.NDArray[n
         aux_dtype: np.dtype,
         fill_value: float,
     ) -> list[npt.NDArray[np.generic]]:
-        # the fill value is of no use here, and the dtypes neither - the
-        # sequences carry the dtype of the values
+        # the fill value and the dtypes are of no use - the sequences carry the
+        # dtype of the values
         size = output_size(group_idx, size_arg)
         counts = _count(group_idx, size)
         starts = _starts(counts)
@@ -91,9 +77,9 @@ def _array_driver_factory(nan_variant: bool) -> Callable[..., list[npt.NDArray[n
         _place(group_idx, a, starts.copy(), values)
         return [values[s : s + c] for s, c in zip(starts, counts)]
 
-    # the name carries the variant: numba mangles the symbol of a compiled
-    # function from module, qualname and signature, so the plain and the nan
-    # variant of one operation must not share it (see compose.build_kernel)
+    # the name carries the variant: numba mangles the symbol from module,
+    # qualname and signature, so the plain and nan variants of one operation
+    # must not share it (see compose.build_kernel)
     return njit_stable(driver, name=f"{'nan' if nan_variant else ''}array_driver")
 
 
@@ -104,14 +90,13 @@ array = build_custom_kernel(
     fill_default=0,
     nans=False,
     fallback=FALLBACK.as_operation(),
-    # the dtypes the driver can take, and the assembly of its result into the
-    # object array the caller expects
+    # the placeable dtypes, and the assembly of the result into the caller's
+    # object array
     placeable=_placeable,
     post=blocks_to_object_array,
     assembles=True,
-    # the driver hands out the values of the groups and cannot place a fill
-    # value in an absent one - the kernel says so instead of ignoring the
-    # argument
+    # an absent group holds an empty sequence - the kernel says so instead of
+    # ignoring the fill argument
     reject_fill=True,
     doc="The values of every group, one sequence per group",
 )

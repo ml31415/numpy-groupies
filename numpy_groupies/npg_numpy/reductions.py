@@ -1,8 +1,5 @@
-"""The streaming reductions of the numpy implementation.
-
-Every function of this module reduces the values of a group to a single
-number, without needing the values of the group in any particular order.
-"""
+"""The streaming reductions of the numpy implementation: one number per group,
+without the values in any particular order."""
 
 from typing import cast
 
@@ -48,13 +45,13 @@ def _sum(
             ret.real = np.bincount(group_idx, weights=a.real, minlength=size)
             ret.imag = np.bincount(group_idx, weights=a.imag, minlength=size)
         elif exact_integer:
-            # bincount converts weights to float64. Keep integer accumulation
-            # when its partial sums are not guaranteed exactly representable.
+            # bincount converts weights to float64 - keep integer accumulation
+            # while the partial sums are not exactly representable there
             ret = np.zeros(size, dtype=dtype)
             np.add.at(ret, group_idx, a.astype(dtype, copy=False))
         else:
-            # integer input, the kind test above guarantees it, the stubs want
-            # the union of all bincount-legal dtypes
+            # integer input, per the kind test above; the stubs want the union
+            # of all bincount-legal dtypes
             ret = np.bincount(group_idx, weights=cast("npt.NDArray[np.integer]", a), minlength=size).astype(
                 dtype, copy=False
             )
@@ -87,7 +84,6 @@ def _len(
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.int64]:
     # _sum folds a scalar column of ones into its ndim-0 branch
-    # _sum folds a scalar column of ones into its ndim-0 branch
     return cast(
         "npt.NDArray[np.int64]",
         _sum(group_idx, cast("npt.NDArray[np.number]", 1), size, fill_value, dtype=int),
@@ -103,9 +99,8 @@ def _last(
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
     ret = np.full(size, fill_value, dtype=dtype)
-    # repeated indexing gives last value, see:
-    # the phrase "leaving behind the last value"  on this page:
-    # http://wiki.scipy.org/Tentative_NumPy_Tutorial
+    # repeated indexing leaves behind the last value (numpy tutorial,
+    # wiki.scipy.org)
     ret[group_idx] = a
     return ret
 
@@ -152,7 +147,7 @@ def _any(
     # convert to bool explicitly - ndarray.compress on a float mask is slow
     mask = np.asarray(a, dtype=bool)
     # numpy quirk: compress wins for sparse masks, fancy indexing for dense
-    # ones (up to ~3x either way) - so pick based on mask density
+    # ones (up to ~3x either way) - pick by mask density
     if np.count_nonzero(mask) < mask.size / 2:
         ret[group_idx.compress(mask)] = True
     else:

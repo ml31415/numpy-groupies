@@ -1,24 +1,13 @@
 """The handover of the numba backend to the numpy implementation.
 
-Three operations of the numba backend cannot do what the caller asks of
-them in compiled code, and they hand the call over to the numpy
-implementation instead:
-
-- the median of a complex input cannot be partitioned - numba has no
-  ordering for complex values,
-- the quantile of a method other than the linear one is an interpolation
-  that numpy does in its own way,
-- the collecting function cannot place a float16 or an object array, which
-  numba has no dtype for.
-
-The quantile of a temporal input is no part of it: the compiled kernel of
-this backend holds all five methods of numpy.
-
-The numpy implementation is the module of another backend, and the numba
-backend imports it in one place only - its ``__init__`` - which hands the
-callables to the modules that need them.  That keeps the dependency of the
-backend on the other one in a single spot, where it can be seen and where
-it can go away with the operations that need it.
+Three calls cannot be served in compiled code and go to the numpy
+implementation instead: the median of complex input (numba has no ordering to
+partition it), the quantile of a method other than the linear one (numpy's own
+interpolation), and the collecting function on float16 or object arrays (no
+numba dtype).  The quantile of a temporal input is not part of it: the compiled
+kernel holds all five methods of numpy.  The numpy implementation is the module
+of another backend, imported in one place only - this backend's ``__init__``,
+which hands the callables to the modules that need them.
 """
 
 from collections.abc import Callable
@@ -33,26 +22,16 @@ from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
 class NumpyFallback:
     """The calls of the numba backend that the numpy implementation answers.
 
-    The instance is the one of this module - the modules that need it take
-    it from here - and the ``__init__`` of the numba backend hands it the
-    numpy implementation, which it imports.  Every call of it is a call of
-    the numpy implementation of the package.
-
-    The implementation is set after the fact and not at the build of the
-    object, because the modules that hold the kernels are imported before
-    the ``__init__`` gets to the numpy implementation - and a call of the
-    fallback happens only at the call of a kernel, long after that.
+    The implementation is set after import by the backend's ``__init__`` - the
+    modules holding the kernels are imported before it gets there - and every
+    call of it is a call of the numpy implementation of the package.
     """
 
     def __init__(self) -> None:
         self._aggregate: Callable[..., AResult] | None = None
 
     def set_implementation(self, aggregate: Callable[..., AResult]) -> None:
-        """The entry of the numpy implementation.
-
-        The quantile of a temporal input is no part of it: the compiled
-        kernel of this backend holds all five methods of numpy.
-        """
+        """The entry of the numpy implementation."""
         self._aggregate = aggregate
 
     def aggregate(
@@ -83,10 +62,8 @@ class NumpyFallback:
         )
 
     def as_operation(self) -> Callable[..., AResult]:
-        """The fallback of a kernel: the same call behind the signature the
-        kernel hands it over with - the arguments of the operation come
-        first, then the ones of the kernel.
-        """
+        """The fallback of a kernel: the operation arguments first, then the
+        kernel's own - the signature the kernel hands it over with."""
 
         def fallback(
             group_idx: npt.NDArray[np.integer],

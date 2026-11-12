@@ -1,7 +1,5 @@
-"""The cumulative operations of the numpy implementation.
-
-The cumulative sum of every group, and its nan-skipping variant.
-"""
+"""The cumulative operations of the numpy implementation: the cumsum of every
+group, and its nan-skipping variant."""
 
 import numpy as np
 import numpy.typing as npt
@@ -13,18 +11,15 @@ from numpy_groupies.typing import AScalar
 def _group_cumsum_sorted(
     group_idx_srt: npt.NDArray[np.integer], a_srt: npt.NDArray[np.number], dtype: npt.DTypeLike | None = None
 ) -> npt.NDArray[np.number]:
-    """
-    Cumsum within each contiguous group, with independent accumulators.
-
-    Subtracting offsets from a global cumsum loses small increments after
-    large groups, and nonfinite values contaminate subsequent groups.
-    """
+    """Cumsum within each contiguous group, with independent accumulators -
+    subtracting offsets from a global cumsum loses small increments after
+    large groups, and nonfinite values contaminate subsequent groups."""
     starts, counts = group_bounds(group_idx_srt)
     # Match cumsum's default integer promotion, including for singleton groups.
     result_dtype = np.cumsum(a_srt[:0], dtype=dtype).dtype
     a_srt_cumsum = a_srt.astype(result_dtype, copy=True)
-    # Batch equal-length groups into rows, keeping every accumulator separate
-    # without a Python call for each short group. Singleton groups are done.
+    # batch equal-length groups into rows, one accumulator each, without a
+    # python call per short group - singleton groups are done
     for count in np.unique(counts[counts > 1]):
         selected = starts[counts == count]
         if selected.size == starts.size:
@@ -48,9 +43,8 @@ def _cumsum(
     """
     N to N aggregate operation of cumsum. Perform cumulative sum for each group.
 
-    NaNs propagate within their own group only - entries of other groups as
-    well as entries preceding the first NaN of the same group are unaffected
-    (issue #91).
+    NaNs propagate within their own group only (issue #91): entries of other
+    groups and entries before the group's first NaN are unaffected.
 
     group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
     a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])

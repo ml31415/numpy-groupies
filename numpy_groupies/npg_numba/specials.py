@@ -1,20 +1,17 @@
 """Operations with fully custom pass structures.
 
-``median`` is an order statistic: values are placed group by group via a
-counting sort (O(n)) and the middle of each group is then *selected* (O(n) on
-average) instead of sorting within the groups.
-``sort`` uses the same counting-sort placement, but orders every group-block -
-by insertion sort while the block is small, by ``np.sort`` beyond that - and
+``median`` places the values group by group via a counting sort (O(n)) and
+then *selects* the middle of each group (O(n) on average) instead of sorting
+within the groups.  ``sort`` uses the same placement, orders every group-block
+- by insertion sort while the block is small, by ``np.sort`` beyond that - and
 scatters the blocks back to the positions their group occupies in the input.
 ``trapezoid`` integrates consecutive sample pairs within each group in a
-single pass - it composes like the streaming reductions and takes the sample
-spacing ``dx`` as the argument of its own.
+single pass and takes the sample spacing ``dx`` as the argument of its own.
 
-The types of the answers are the ones of the input - a number of the dtype of
-the values, an integer tick - and the type checker is told so where the stubs
-of numpy know no type: the element of an array is ``Any`` there, and
-``typing.cast`` is not compiled in nopython mode, so the few places that read
-such an element state the type of the local variable instead.
+The answers have the dtype of the input - a number of the values' dtype, an
+integer tick - and where the stubs of numpy know no element type (the element
+is ``Any`` there, and ``typing.cast`` is not compiled in nopython mode) the
+few places that read such an element state the type of the local instead.
 """
 
 import functools
@@ -54,11 +51,10 @@ def _group_valid_plain(
 ) -> int:
     """the number of usable values of group g, 0 if a nan poisons the group.
 
-    The values stay where they are: the block of the group is contiguous
-    already, and the selection that follows copies it anyway - copying it
-    here as well would write every value twice (measured 1.6ms per 500k
-    values).  The nans are looked for in a loop instead of with a temporary
-    array, which would have to be allocated and filled for every group.
+    The values stay where they are - the block is contiguous already and the
+    selection copies it anyway (copying here as well would write every value
+    twice, 1.6ms per 500k); the nans are looked for in a loop, not with a
+    temporary array per group.
     """
     begin: int = starts[g]
     size_g: int = counts[g]
@@ -71,14 +67,12 @@ def _group_valid_plain(
 
 @functools.lru_cache(maxsize=2)
 def _valid_nan_scan(ticks: bool) -> Callable[..., int]:
-    """copy the usable values of group g into buf, returning their number -
-    the missing values are filtered out, so the group keeps its usable values.
+    """copy the usable values of group g into buf, returning their number.
 
-    The missing value of the numbers is the nan - the value that is not equal
-    to itself - and the missing value of a temporal input is the NaT tick
-    ``-2**63``, which is an ordinary int64 among the other ticks.  The flag
-    is a constant of the closure, so numba compiles the two branches apart
-    and the one that does not belong to the call is not even typed.
+    The missing value of the numbers is the nan (not equal to itself), of a
+    temporal input the NaT tick -2**63, an ordinary int64 among the others.
+    The flag is a constant of the closure, so numba compiles the two branches
+    apart and the one that does not belong to the call is not even typed.
     """
 
     @njit_stable(name=f"{'tick_' if ticks else ''}valid_nan")
@@ -107,10 +101,9 @@ def _valid_nan_scan(ticks: bool) -> Callable[..., int]:
     return valid_nan
 
 
-# The number of partition passes a selection may make per power of two of the
-# length of the block it works on, before it orders the block instead: a
-# quickselect is O(n) on average, and the fallback keeps the worst case at
-# O(n log n).
+# partition passes per power of two of the block length, before the block is
+# ordered instead - the quickselect is O(n) on average, the fallback keeps
+# the worst case at O(n log n)
 _SELECT_PASSES = 8
 
 
@@ -122,25 +115,19 @@ def _select_kth(
 ) -> np.number:
     """The k-th smallest of ``arr[lo:hi]``, the block reordered in place.
 
-    A quickselect: the block is partitioned around a pivot until the position
-    of the wanted element is settled.  The pivot is the median of the first,
-    the middle and the last element of the range, which keeps the number of
-    passes logarithmic for the blocks a group is made of - sorted, reversed
-    and constant blocks alike.  A block that needs more passes than the limit
-    allows is ordered instead, so that the worst case stays at O(n log n).
+    A quickselect: partitioned around a pivot until the position of the wanted
+    element settles; the pivot is the median of the first, the middle and the
+    last element, which keeps the passes logarithmic for sorted, reversed and
+    constant blocks alike.  A block past the pass limit is ordered instead, so
+    the worst case stays at O(n log n).  ``k`` is an index into ``arr``.
 
-    ``k`` is an index into ``arr``, not an offset into the range.
+    Numba's ``np.partition`` would copy every block it is given and hand the
+    copy back (9.2ms against 1.2ms over 500k values in 1000 groups) - the
+    copy is not needed here, the block is a temporary.
 
-    Numba's ``np.partition`` would do the same job, but it copies every block
-    it is given and hands the copy back (measured 9.2ms against 1.2ms for
-    this, over 500k values in 1000 groups) - and the copy is not even needed,
-    since the block is a temporary that the median does not care about.
-
-    The values are compared with ``complex_less``, the ordering every other
-    kernel of this package compares with: numpy orders complex values
-    lexicographically, and the median of a complex group is the middle of that
-    order.  For the real dtypes the call is the plain comparison - the branch
-    on the dtype is settled when the kernel is compiled.
+    The values compare with ``complex_less``, the lexicographic order numpy
+    uses for complex values; for the real dtypes the call is the plain
+    comparison - the branch settles when the kernel is compiled.
     """
     limit = _SELECT_PASSES
     span = hi - lo
@@ -151,16 +138,14 @@ def _select_kth(
     while span > 1:
         limit -= 1
         if limit <= 0:
-            # the fallback: order the range and take the element from there
+            # the fallback: order the range, take the element from there
             arr[lo:hi].sort()
             # the value of the block
             ordered: np.number = arr[k]
             return ordered
         mid = lo + span // 2
-        # the pivot: the median of the first, the middle and the last value of
-        # the range, with the ordering of the package - for the real dtypes
-        # that is the plain comparison, for complex values it is the
-        # lexicographic order numpy uses
+        # the pivot: the median of the first, the middle and the last value,
+        # with the ordering of the package
         x = arr[lo]
         y = arr[mid]
         z = arr[hi - 1]
@@ -186,9 +171,8 @@ def _select_kth(
             if i >= j:
                 break
             arr[i], arr[j] = arr[j], arr[i]
-        # everything in arr[lo..j] is at most the pivot and everything in
-        # arr[j+1..hi-1] is at least it, so the wanted element is in one of
-        # the two halves
+        # arr[lo..j] is at most the pivot, arr[j+1..hi-1] at least it - the
+        # wanted element is in one of the two halves
         if k <= j:
             hi = j + 1
         else:
@@ -200,17 +184,14 @@ def _select_kth(
 
 
 # ---------------------------------------------------------------------------
-# the work one group of the placed values needs, at the module level
-#
-# The sequential driver of an order statistic and its parallel driver call the
-# ONE compiled body below: what a group costs is written once, and the parallel
-# path runs the very code the sequential one runs.  A jitted function of its
-# own, disk cached and shared by its callers is what ``complex_less`` is for the
-# comparisons of the reductions - and the note there says why it has to be
-# cached: numba cannot resolve an uncached callee from cached caller code.
+# the work one group of the placed values needs, at the module level - the
+# sequential driver of an order statistic and its parallel driver call the
+# ONE compiled body below.  Jitted, disk cached and shared by its callers,
+# like ``complex_less``: numba cannot resolve an uncached callee from cached
+# caller code.
 
-# the same helpers serve the median and the quantile - the same source, the same
-# signature, the same specializations: one compiled artifact serves both
+# the same helpers serve the median and the quantile - one compiled artifact
+# for both
 _valid_plain = njit_stable(_group_valid_plain)
 
 
@@ -218,12 +199,7 @@ _valid_plain = njit_stable(_group_valid_plain)
 # NaT tick as the missing value (see ``_valid_nan_scan``)
 @njit_stable(name="tick_holds_nat")
 def _holds_nat_tick(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> bool:
-    """Whether the block of the ticks holds the NaT tick.
-
-    The NaT tick is the smallest of them all, so it is the first one of the
-    block - but the block is not ordered, and the scan is the price of the
-    answer.
-    """
+    """Whether the block holds the NaT tick - the block is not ordered, so it is scanned."""
     for i in range(begin, begin + m):
         if a_sorted[i] == NAT_TICK:
             return True
@@ -231,8 +207,8 @@ def _holds_nat_tick(a_sorted: npt.NDArray[np.number], begin: int, m: int) -> boo
 
 
 _valid_nan = _valid_nan_scan(False)
-# the selection: the same block for every operation that selects, so one
-# compiled artifact serves the median and the quantile and both of their variants
+# the selection: one compiled artifact for the median, the quantile and both
+# of their variants
 _select = njit_stable(_select_kth)
 
 
@@ -240,19 +216,16 @@ _select = njit_stable(_select_kth)
 def _middle_of(ticks: bool) -> Callable[..., np.number | int]:
     """the middle value(s) of the block at ``a_sorted[begin:begin+m]``.
 
-    No sorting needed: the wanted element is selected in place, and the block is
-    left in the order the selection put it in - the median does not care about
-    the order of the values it looks at.
+    No sorting: the wanted element is selected in place, the median does not
+    care about the order the selection leaves.
 
-    The two flavours differ in the mean of the two middles of an even group:
-    the numbers promote it to float64, just like np.median promotes before
-    averaging - summing the two middles in their own dtype overflows (int64
-    2**62 + 2**62) and adds bool as a logical or - while the ticks keep it an
-    exact int64, where a pair around the epoch carries more bits than the 53
-    of a float64 mantissa holds and the promotion would round the answer off
-    the tick grid.  The flag is a constant of the closure, so numba compiles
-    the two branches apart and the one that does not belong to the call is
-    not even typed.
+    An even group takes the mean of the two middles, and the two flavours
+    differ in it: the numbers promote to float64, like np.median promotes
+    before averaging (summing in their own dtype overflows - int64
+    2**62 + 2**62 - and adds bool as a logical or), the ticks keep an exact
+    int64 mean, where a pair around the epoch carries more bits than the 53
+    of a float64 mantissa.  The flag is a constant of the closure, so the
+    branch that does not belong to the call is not even typed.
     """
 
     @njit_stable(name=f"{'tick_' if ticks else ''}median_middle")
@@ -261,8 +234,8 @@ def _middle_of(ticks: bool) -> Callable[..., np.number | int]:
         upper = _select(a_sorted, begin, begin + m, begin + k)
         if m % 2 == 1:
             return upper
-        # the lower middle is the largest of the left half, which the selection left
-        # in place
+        # the lower middle is the largest of the left half, which the
+        # selection left in place
         lower = a_sorted[begin]
         for i in range(begin + 1, begin + k):
             if complex_less(lower, a_sorted[i]):
@@ -283,28 +256,17 @@ _middle = _middle_of(False)
 def _tick_pair_average(lower: int, upper: int) -> int:
     """The exact mean of two ticks, rounded half to even.
 
-    The sum of the two is not taken: two ticks of one end of the int64
-    range sum past it, and the wraparound would answer a tick that belongs
-    to no value of the group.  The mean is taken from the bits instead -
-
-    - ``a & b`` are the bits the two share: they are in the mean once,
-    whatever the other one carries there,
-    - ``a ^ b`` are the bits they differ in: the mean of those is half of
-    them, and the shift of a negative number floors - which is the floor
-    the mean asks for,
-
-    so ``q = (a & b) + ((a ^ b) >> 1)`` is ``floor((a + b) / 2)`` for the
-    whole int64 range.  An odd sum leaves a remainder of a half, and half
-    to even hands the answer to the even of the two neighbours one apart:
-    the low bit of ``a ^ b`` is the parity of the sum, the low bit of ``q``
-    the one of the floor - when both are set, the floor is the odd one and
-    the neighbour above is taken.
-
-    Measured against a python ``Fraction`` over the pairs of the corners
-    of the int64 range, and the ties at zero and the smallest tick
-    (test_temporal, the bare kernel of the tick median) - the wraparound
-    of the plain sum and the rounding of the float64 promotion both stay
-    out of it.
+    No plain sum: two ticks of one end of the int64 range sum past it, the
+    wraparound would answer a tick of no value of the group.  From the bits
+    instead - ``a & b`` are the shared bits (in the mean once), ``a ^ b`` the
+    differing ones (halved, and the shift of a negative number floors like
+    the mean asks) - so ``q = (a & b) + ((a ^ b) >> 1)`` is
+    ``floor((a + b) / 2)`` over the whole int64 range.  An odd sum leaves a
+    half, and half to even takes the even neighbour: the low bit of ``a ^ b``
+    is the sum's parity, the low bit of ``q`` the floor's - when both are
+    set, the floor is odd and the neighbour above is taken.  Measured against
+    a python ``Fraction`` over the corners of int64 and the ties
+    (test_temporal, the bare kernel of the tick median).
     """
     q = (lower & upper) + ((lower ^ upper) >> 1)
     if (lower ^ upper) & 1 and q & 1:
@@ -319,24 +281,13 @@ _tick_pair_average = njit_stable(_tick_pair_average, name="tick_pair_average")
 def _median_group(ticks: bool, nans: bool) -> Callable[..., None]:
     """the median of one group of the placed values.
 
-    The two flavours of the operation - the numbers and the ticks of a
-    temporal input - and the two of the variants - the plain one, where a
-    missing value poisons the group, and the nan one, where it is left out -
-    are one body with two flags.  The flags are constants of the closure, so
-    numba compiles the four combinations apart and the branches that do not
-    belong to the call are not even typed.
-
-    The difference between the flavours is the middle of the block (the exact
-    mean of the two middles for the ticks, the float64 promotion for the
-    numbers) and the missing value (the NaT tick for the temporal input, the
-    nan for the numbers).  The difference between the variants is what a
-    missing value does to the group: it takes it over, or it is left out.
-
-    ``buf`` and ``fill_value`` are the two arguments the nan variant of the
-    very same step needs and the plain one does not: an empty buffer is
-    handed over, and the poisoned cell is shaped out of the output itself.
-    The two bodies share the signature so that the drivers of the two
-    variants are the same loop.
+    One body with two closure flags - the flavours (numbers/ticks) and the
+    variants (plain/nan) - compiled into the four combinations, the branches
+    that do not belong to the call not even typed.  The flavours differ in
+    the middle of the block and in the missing value, the variants in what a
+    missing value does to the group.  ``buf`` and ``fill_value`` are the two
+    arguments the nan variant needs and the plain one does not; the shared
+    signature keeps the drivers of the two variants the same loop.
     """
     middle = _middle_of(ticks)
     valid_nan = _valid_nan_scan(ticks)
@@ -354,29 +305,25 @@ def _median_group(ticks: bool, nans: bool) -> Callable[..., None]:
         if counts[g] == 0:
             return  # untouched group, keeps the fill value
         if nans:
-            # the nan variant: the missing values are left out, and the group
-            # that holds nothing but them keeps the fill value
+            # the nan variant: the missing values are left out, a group of
+            # nothing but them keeps the fill value
             m = valid_nan(g, a_sorted, counts, starts, buf)
             if m == 0:
                 out[g] = fill_value
             else:
                 out[g] = middle(buf, 0, m)
         elif ticks:
-            # the plain variant of the ticks: a NaT tick takes the group
-            # over, the way a nan takes the group of the numbers over - the
-            # answer of such a group is the NaT of the unit
+            # the plain variant of the ticks: a NaT tick takes the group over,
+            # the answer of such a group is the NaT of the unit
             if _holds_nat_tick(a_sorted, starts[g], counts[g]):
                 out[g] = NAT_TICK
             else:
                 out[g] = middle(a_sorted, starts[g], counts[g])
         else:
-            # the plain variant of the numbers: a nan poisons the group (where
-            # any nan is contagious) - the poison is shaped like the output,
-            # since a plain nan written into a complex column leaves its
-            # imaginary part at a zero the group never claimed to have.  The
-            # cell still holds the fill value, which is of the output dtype,
-            # and a nan times a value of that dtype is a nan in every part it
-            # has (for a real dtype: the plain nan)
+            # the plain variant of the numbers: a nan poisons the group - the
+            # poison is shaped like the output (a plain nan in a complex
+            # column would leave its imaginary part at zero), so the cell's
+            # fill value of the output dtype is multiplied by nan
             m = _valid_plain(g, a_sorted, counts, starts)
             if m == 0:
                 out[g] = out[g] * np.nan
@@ -395,12 +342,10 @@ _tick_median_group_nan = _median_group(True, True)
 def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float, method: str) -> np.number:
     """the quantile q of the block at ``a_sorted[begin:begin+m]``.
 
-    The quantile names a position between two of the values of the group: the
-    virtual index q * (m - 1) says how far between the smallest and the largest
-    value it lies, and the two values it falls between are interpolated the way
-    numpy interpolates them.  All five methods of numpy run here - the branch
-    on the method happens once per group, and a group costs far more than the
-    branch.
+    The virtual index q * (m - 1) names the position between two of the
+    values, the two around it are interpolated the way numpy does.  All five
+    methods of numpy run here - the branch on the method happens once per
+    group, and a group costs far more than the branch.
     """
     pos = q * (m - 1)
     if method == "lower":
@@ -417,16 +362,15 @@ def _quantile_at(a_sorted: npt.NDArray[np.number], begin: int, m: int, q: float,
         # the quantile is one of the values of the group
         return upper
     # the value below: the largest of the elements the selection left in
-    # front of the one it picked - they are the ones below it
+    # front of the one it picked - the ones below it
     lower = a_sorted[begin]
     for i in range(begin + 1, begin + lower_index + 1):
         if complex_less(lower, a_sorted[i]):
             lower = a_sorted[i]
-    # the two branches of numpy's own ``_lerp``: below a half the answer
-    # grows from the lower value, from a half on it shrinks from the upper
-    # one.  The 1.0 promotes integral input to float64, just like np.quantile
-    # promotes before interpolating - the subtraction in its own dtype
-    # overflows (int8 100 - (-100)) and bool addition is a logical or
+    # numpy's own ``_lerp`` branches: below a half the answer grows from the
+    # lower value, from a half on it shrinks from the upper one.  The 1.0
+    # promotes integral input to float64, like np.quantile promotes - the
+    # subtraction in its own dtype overflows (int8 100 - (-100))
     diff = upper * 1.0 - lower * 1.0
     if method == "midpoint":
         gamma = 0.5
@@ -447,24 +391,15 @@ _quantile_at = njit_stable(_quantile_at, name="quantile_quantile_at")
 def _quantile_at_ticks(a_sorted: npt.NDArray[np.int64], begin: int, m: int, q: float, method: str) -> int:
     """The quantile q of the ticks of the block at ``a_sorted[begin:begin+m]``.
 
-    The rule is numpy's own one for a temporal value: the quantile names a
-    position between two of the ticks of the group, the difference of the two
-    is a duration, and its product with the fraction of the way is truncated
-    towards zero - the answer is a tick again.  The two branches are the ones
-    of numpy's interpolation: below a half the answer grows from the lower
-    neighbour, from a half on it shrinks from the upper one.
-
-    The product is taken in float64, like numpy takes it - the difference of
-    the two ticks leaves the window a float64 holds exactly only for the
-    small ones, and numpy rounds it there.  The truncation is towards zero,
-    like the truncation of numpy's multiplication of a duration and a float.
-
-    The other methods of numpy name the neighbours of the quantile in their
-    own way: ``lower`` takes the one below the position, ``higher`` the one
-    above it, ``nearest`` the one nearest to it (numpy rounds the position
-    to the nearest element, halves to even) - and the ``midpoint`` takes the
-    mean of the two neighbours, which is the rule of the interpolation with a
-    fraction of a half.
+    numpy's own rule for a temporal value: the difference of the two ticks
+    around the position is a duration, its product with the fraction of the
+    way is truncated towards zero, the answer a tick again - below a half it
+    grows from the lower neighbour, from a half on it shrinks from the upper
+    one.  The product is taken in float64, like numpy takes it (the
+    difference of the two ticks leaves the exactly-representable float64
+    window early, and numpy rounds there).  ``lower``, ``higher``,
+    ``nearest`` (halves to even) and ``midpoint`` name the neighbours in
+    numpy's way.
     """
     pos = q * (m - 1)
     if method == "lower":
@@ -480,7 +415,7 @@ def _quantile_at_ticks(a_sorted: npt.NDArray[np.int64], begin: int, m: int, q: f
         # the quantile is one of the ticks of the group
         return upper
     # the tick below: the largest of the elements the selection left in
-    # front of the one it picked - they are the ones below it
+    # front of the one it picked
     lower = int(a_sorted[begin])
     for i in range(begin + 1, begin + lower_index + 1):
         lower = max(lower, int(a_sorted[i]))
@@ -505,21 +440,18 @@ def _quantile_group_plain(
     q: float,
     method: str,
 ) -> None:
-    """the quantile of one group of the placed values
+    """the quantile of one group of the placed values.
 
     The arguments of the nan variant it does not use are there for the reason
-    stated at ``_median_group_plain``.
+    stated at ``_median_group``.
     """
     if counts[g] == 0:
         return  # untouched group, keeps the fill value
     m = _valid_plain(g, a_sorted, counts, starts)
     if m == 0:
-        # a nan-poisoned group (where any nan is contagious) - the poison is
-        # shaped like the output, since a plain nan written into a complex
-        # column leaves its imaginary part at a zero the group never claimed to
-        # have.  The cell still holds the fill value, which is of the output
-        # dtype, and a nan times a value of that dtype is a nan in every part it
-        # has (for a real dtype: the plain nan)
+        # a nan-poisoned group - the poison is shaped like the output: the
+        # cell's fill value of the output dtype, times nan (a plain nan in a
+        # complex column would leave its imaginary part at zero)
         out[g] = out[g] * np.nan
     else:
         out[g] = _quantile_at(a_sorted, starts[g], m, q, method)
@@ -554,10 +486,9 @@ _quantile_group_nan = njit_stable(_quantile_group_nan, name="nanquantile_group")
 def _tick_quantile_group(nans: bool) -> Callable[..., None]:
     """The quantile of one group of the ticks, the way numpy computes it.
 
-    The plain variant takes the group over, the way the plain variant of the
-    numbers takes the group of a nan over: the answer of a group that holds
-    a NaT is the NaT of the unit.  The nan variant leaves the NaT tick out,
-    as every nan variant leaves the nan out.
+    The plain variant takes the group over like the plain variant of the
+    numbers takes the group of a nan over; the nan variant leaves the NaT
+    tick out, as every nan variant leaves the nan out.
     """
     valid_nan = _valid_nan_scan(True)
 
@@ -582,9 +513,8 @@ def _tick_quantile_group(nans: bool) -> Callable[..., None]:
             else:
                 out[g] = _quantile_at_ticks(buf, 0, m, q, method)
         else:
-            # the plain variant of the ticks: a NaT tick takes the group
-            # over, the way a nan takes the group of the numbers over - the
-            # answer of such a group is the NaT of the unit
+            # plain ticks: a NaT tick takes the group over, the answer of
+            # such a group is the NaT of the unit
             if _holds_nat_tick(a_sorted, starts[g], counts[g]):
                 out[g] = NAT_TICK
             else:
@@ -594,14 +524,12 @@ def _tick_quantile_group(nans: bool) -> Callable[..., None]:
 
 
 # ---------------------------------------------------------------------------
-# the counting sort and the range cut, at the module level
-#
-# The four blocks below have no closure of their own - the same source, the
-# same signature, the same specializations for every operation that uses them
-# - so ONE compiled artifact serves them all.  Per-operation copies buy
-# nothing here: the identity of ``njit_stable`` covers the source and the
-# closure, and neither differs from operation to operation (the note at
-# ``compose.build_kernel`` is about the blocks whose closures do).
+# the counting sort and the range cut, at the module level - the four blocks
+# below have no closure of their own (same source, same signature, same
+# specializations), so ONE compiled artifact serves every operation that uses
+# them; per-operation copies buy nothing (``njit_stable`` keys on source and
+# closure, and neither differs here - the note at ``compose.build_kernel`` is
+# about the blocks whose closures do)
 
 _count = njit_stable(group_count)
 _starts = njit_stable(group_starts)
@@ -613,16 +541,12 @@ _ranges = njit_stable(group_ranges)
 def _place_values(
     group_idx: npt.NDArray[np.integer], a: npt.NDArray[np.number], size: int
 ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[np.number]]:
-    """The counting sort that places the values of every group in a block.
-
-    It hands back the number of the values of every group, where the block
-    of every group starts, and the values themselves in that order - the
-    order they appear in the input (the same order a stable argsort would
-    give them, at a fraction of the cost).
-
-    The four blocks it is built of have no closure of their own, so ONE
-    compiled artifact serves every operation that uses them - and so does
-    this one, which is the only place where they are put together.
+    """The counting sort that places the values of every group in a block: the
+    counts, the block starts, and the values in input order (a stable
+    argsort's order, at a fraction of the cost).  The blocks it is built of
+    have no closure of their own, so one compiled artifact serves every
+    operation that uses them - and this one, the only place where they are
+    put together.
     """
     counts = _count(group_idx, size)
     starts = _starts(counts)
@@ -632,13 +556,9 @@ def _place_values(
 
 
 class GroupMTSetup(NamedTuple):
-    """what the shared setup of the parallel passes that cut the GROUPS into ranges
-
-    Numba compiles a named tuple to the very native struct a plain tuple
-    becomes, and the field access of it is resolved when the caller is
-    compiled - the names cost nothing at run time.
-
-    """
+    """The shared setup of the parallel passes that cut the GROUPS into ranges -
+    numba compiles the named tuple to the native struct a plain tuple becomes,
+    the field access resolves when the caller is compiled."""
 
     counts: npt.NDArray[np.int64]  # the number of the values of every group
     starts: npt.NDArray[np.int64]  # where the block of every group starts
@@ -654,22 +574,16 @@ def _group_mt_setup(
     ns_per_value: float,
     n_threads: int,
 ) -> GroupMTSetup | None:
-    """the shared setup of the parallel passes that cut the GROUPS into ranges
+    """the shared setup of the parallel passes that cut the GROUPS into ranges.
 
-    The gate of the cost model, the counting sort that places the values and
-    the cut of the ranges are the same for every operation of this shape, so
-    one compiled body does all three: it returns the ``GroupMTSetup`` of the
-    call, or None when the model keeps the call on the sequential path.
-
-    None is safe here, because the callers unpack the setup before their
-    prange loop and use plain variables in it: numba casts an Optional of a
-    named tuple to its payload with a runtime check that fires inside prange
-    bodies even when the value is valid (the crash of the benchmarks) - the
-    cast belongs outside of the loop.
-
+    Cost-model gate, counting sort and range cut in one body for every
+    operation of this shape; None keeps the call on the sequential path.
+    None is safe because the callers unpack the setup before their prange
+    loop and use plain variables in it: numba casts an Optional of a named
+    tuple to its payload with a runtime check that fires inside prange bodies
+    even when the value is valid - the cast belongs outside of the loop.
     Jitted and disk cached like everything a compiled caller reaches into:
-    numba cannot resolve an uncached callee from cached caller code (see the
-    note at the top of the module).
+    numba cannot resolve an uncached callee from cached caller code.
     """
     size = output_size(group_idx, size_arg)
     n_values = group_idx.size
@@ -684,33 +598,26 @@ def _group_mt_setup(
 _group_mt_setup = njit_stable(_group_mt_setup)
 
 
-# the cost of a value of the operation in the sequential kernel, measured on
-# the machine of ``docs/benchmarks.md``.  The select is the cheapest of the
-# operations that cut their groups into ranges and the sort the most
-# expensive; all of them cost orders of magnitude more per value than the sum
-# the cost model was fitted on, so the fixed cost of a parallel region is a
-# far smaller share of their time.
+# the cost per value of the sequential kernels, measured on the machine of
+# ``docs/benchmarks.md`` - all of them cost orders of magnitude more than the
+# sum the cost model was fitted on, so the fixed cost of a parallel region is
+# a far smaller share of their time
 _NS_PER_VALUE_SELECT = 18.0
-# the distinct count and the mode count their values in a hash table, which
-# needs no ordering of them - 12.3 and 14.0 ns a value, measured with the
-# tool of the benchmarks
+# the distinct count and the mode count their values in a hash table, no
+# ordering needed
 _NS_PER_VALUE_NUNIQUE = 13.0
 _NS_PER_VALUE_SORT = 68.0
-# the selection of the topk, with the gathering of the values that are
-# better than the border - the work of the median and a sweep over the block
+# the topk's selection, with the gathering of the values better than the
+# border
 _NS_PER_VALUE_TOPK = 24.0
-# the mode: the hash table of the distinct count, the counts kept and the
-# best value tracked besides.  Measured with the tool of the benchmarks:
-# 14.0 ns a value, against the 12.3 of the distinct count - the same table,
-# with the counter and the tie-break besides.
+# the distinct count's table, with the counter and the tie-break besides
 _NS_PER_VALUE_MODE = 14.0
 
 
 def _median_driver_factory(nans: bool, ticks: bool = False) -> Callable[..., npt.NDArray[np.number]]:
-    # the block of the group is what the two drivers work on - the plain one
-    # and the parallel one reach the ONE compiled body of it (see the note
-    # above ``_median_group``); the counting sort is the shared one of
-    # the module (see the note at ``_count``)
+    # both drivers work on the ONE compiled body of the block of a group (see
+    # ``_median_group``); the counting sort is the shared one of the module
+    # (see the note at ``_count``)
     group = _median_group(ticks, nans)
 
     def driver(
@@ -728,7 +635,7 @@ def _median_driver_factory(nans: bool, ticks: bool = False) -> Callable[..., npt
         # within a block is arbitrary, which the median ignores)
         counts, starts, a_sorted = _place_values(group_idx, a, size)
         # the nan variant filters the nans out into a buffer of its own, the
-        # plain one leaves the values where they are and needs none
+        # plain one needs none
         buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
         for g in range(size):
             group(g, a_sorted, counts, starts, buf, out, fill_value)
@@ -742,12 +649,10 @@ def _median_mt_factory(
 ) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the median: the groups cut into ranges.
 
-    The gate, the counting sort that places the values and the cut of the
-    ranges are the shared setup of ``_group_mt_setup``.  Every group belongs
-    to exactly one range, so no two threads ever touch the same block, the
-    buffer of a range is written by the thread that works on it and nothing
-    has to be folded afterwards - the result is the one of the sequential
-    driver bit for bit, whatever the number of the threads and of the ranges.
+    Gate, counting sort and range cut are the shared setup of
+    ``_group_mt_setup``; every group belongs to exactly one range, so no two
+    threads touch one block, nothing is folded afterwards and the result is
+    the sequential driver's bit for bit.
     """
     group = _median_group(ticks, nans)
 
@@ -763,18 +668,17 @@ def _median_mt_factory(
     ) -> npt.NDArray[np.number]:
         setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
         if setup is None:
-            # not worth a parallel region: the sequential driver, with its
-            # result bit for bit
+            # not worth a parallel region: the sequential driver, bit for bit
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
-        # the tuple is unpacked into locals before the prange - a tuple that
-        # crosses the border of a parallel region trips the gufunc creation
-        # of numba (parfor_lowering reads a .loc of it that is not there)
+        # unpacked before the prange - a tuple that crosses the parallel
+        # border trips numba's gufunc creation (parfor_lowering reads a .loc
+        # of it that is not there)
         counts, starts, a_sorted, edges, largest = setup
-        # the groups that receive no values keep this seeding - the same one
-        # the sequential driver gives them
+        # the same seeding of the empty groups as the sequential driver gives
+        # them
         out = np.full(counts.size, fill_value, out_dtype)
-        # the buffer of a range is sized after the largest block of that range:
-        # summed over the ranges that is at most the number of the values, so
+        # the buffer of a range is sized after the largest block of that
+        # range - summed over the ranges at most the number of the values, so
         # the parallel path holds no more scratch than the sequential one
         bufs = [np.empty(k, a.dtype) for k in largest] if nans else [np.empty(0, a.dtype)] * largest.size
         for c in nb.prange(largest.size):
@@ -790,9 +694,8 @@ def _median_mt_factory(
 
 def _tick_quantile_driver_factory(nans: bool) -> Callable[..., npt.NDArray[np.number]]:
     """The driver of the quantile of the ticks - the same counting sort and
-    the same selection the median uses, and numpy's rule of the interpolation
-    on the ticks of the values.
-    """
+    selection the median uses, and numpy's rule of the interpolation on the
+    ticks of the values."""
     group = _tick_quantile_group(nans)
 
     def driver(
@@ -811,7 +714,7 @@ def _tick_quantile_driver_factory(nans: bool) -> Callable[..., npt.NDArray[np.nu
         # within a block is arbitrary, which the quantile ignores)
         counts, starts, a_sorted = _place_values(group_idx, a, size)
         # the nan variant filters the NaT ticks out into a buffer of its own,
-        # the plain one leaves the values where they are and needs none
+        # the plain one needs none
         buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
         for g in range(size):
             group(g, a_sorted, counts, starts, buf, out, fill_value, q, method)
@@ -824,9 +727,8 @@ def _tick_quantile_mt_factory(
     nans: bool, driver: Callable[..., npt.NDArray[np.int64]]
 ) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the quantile of the ticks: the groups cut into
-    ranges, every group belonging to exactly one of them - so the result is
-    the one of the sequential driver bit for bit.
-    """
+    ranges, every group in exactly one of them - the result of the sequential
+    driver bit for bit."""
     group = _tick_quantile_group(nans)
 
     def mt_passes(
@@ -841,8 +743,7 @@ def _tick_quantile_mt_factory(
     ) -> npt.NDArray[np.int64]:
         setup = _group_mt_setup(group_idx, a, size_arg, _NS_PER_VALUE_SELECT, n_threads)
         if setup is None:
-            # not worth a parallel region: the sequential driver, with its
-            # result bit for bit
+            # not worth a parallel region: the sequential driver, bit for bit
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra[0], extra[1])
         counts, starts, a_sorted, edges, largest = setup
         out = np.full(counts.size, fill_value, out_dtype)
@@ -858,10 +759,9 @@ def _tick_quantile_mt_factory(
 
 tick_median = build_custom_kernel(
     "tick_median",
-    # the same driver and the same parallel passes as the numeric median,
-    # with the tick bodies: the exact int64 middle, and the NaT tick as the
-    # missing value of the nan variant.  The answer stays on the tick grid -
-    # an int64 output, where the numeric kernel promotes to float64.
+    # the numeric median's driver and parallel passes with the tick bodies:
+    # the exact int64 middle, and the NaT tick as the missing value - the
+    # answer stays on the tick grid
     driver_factory=lambda nans: _median_driver_factory(nans, True),
     mt_driver_factory=lambda nans, driver: _median_mt_factory(nans, driver, True),
     rule=rule_int64,
@@ -890,13 +790,10 @@ def _quantile_driver_factory(
 ) -> Callable[..., npt.NDArray[np.number]]:
     """The driver of the quantile - the median is the quantile 0.5.
 
-    The quantile is an order statistic, so it groups the data the same way the
-    median does: a counting sort places the values of every group in a
-    contiguous block, and the wanted quantile is then selected out of the block
-    (O(n) on average) instead of sorting it.
-
-    The percentile is the quantile in percent: its driver is the one of the
-    quantile with the argument scaled down before it reaches the selection.
+    It groups the data the way the median does: a counting sort places the
+    values of every group in a contiguous block, the wanted quantile is
+    selected out of it.  The percentile's driver scales its percent argument
+    down before it reaches the selection.
     """
     op_name = ("nan" if nans else "") + name
     group = _quantile_group_nan if nans else _quantile_group_plain
@@ -918,7 +815,7 @@ def _quantile_driver_factory(
         # within a block is arbitrary, which the quantile ignores)
         counts, starts, a_sorted = _place_values(group_idx, a, size)
         # the nan variant filters the nans out into a buffer of its own, the
-        # plain one leaves the values where they are and needs none
+        # plain one needs none
         buf = np.empty(group_idx.size, a.dtype) if nans else np.empty(0, a.dtype)
         # the percentile takes its argument in percent
         fraction = q * scale
@@ -932,10 +829,8 @@ def _quantile_driver_factory(
 def _quantile_mt_factory(
     nans: bool, driver: Callable[..., npt.NDArray[np.number]], scale: float = 1.0, name: str = "quantile"
 ) -> Callable[..., npt.NDArray[np.number]]:
-    """The parallel passes of the quantile, the groups cut into ranges.
-
-    The same shape as ``_median_mt_factory``, for the same reasons.
-    """
+    """The parallel passes of the quantile, the groups cut into ranges - the
+    same shape as ``_median_mt_factory``, for the same reasons."""
     op_name = ("nan" if nans else "") + name
     group = _quantile_group_nan if nans else _quantile_group_plain
 
@@ -970,12 +865,9 @@ def _quantile_mt_factory(
 
 tick_quantile = build_custom_kernel(
     "tick_quantile",
-    # the same counting sort and the same selection as the median, with
-    # numpy's rule of the interpolation on the ticks: the difference of the
-    # two ticks it falls between is a duration, its product with the fraction
-    # is truncated towards zero, and the answer is a tick again.  All five
-    # methods of numpy run in the kernel - the branch on the method happens
-    # once per group.
+    # the median's counting sort and selection, with numpy's rule of the
+    # interpolation on the ticks - the branch on the method happens once per
+    # group
     driver_factory=_tick_quantile_driver_factory,
     mt_driver_factory=_tick_quantile_mt_factory,
     rule=rule_int64,
@@ -1004,9 +896,7 @@ quantile = build_custom_kernel(
 percentile = build_custom_kernel(
     "percentile",
     # the driver and the parallel passes of the quantile, with the argument
-    # scaled down: the percentile is the quantile in percent.  The five
-    # methods of numpy run in the kernel, the same way they run in the
-    # kernel of the quantile.
+    # scaled down: the percentile is the quantile in percent
     driver_factory=partial(_quantile_driver_factory, scale=0.01, name="percentile"),
     mt_driver_factory=partial(_quantile_mt_factory, scale=0.01, name="percentile"),
     rule=rule_float,
@@ -1021,15 +911,14 @@ percentile = build_custom_kernel(
 )
 
 
-# Blocks this small are ordered by insertion sort in the flat array, the larger
-# ones by ``np.sort``: the array view that ``arr.sort()`` has to build per group
-# costs more than the ordering does once the groups are tiny.  Measured with
-# numba 0.68 on 500,000 float64 values ordered group by group, insertion sort
-# is eleven times faster at one value per group, five times at five, and still a
-# tenth ahead at fifty; from a hundred values upwards the library sort wins, by
-# half at a hundred and by six times at a thousand.  The limit stays well below
-# that crossover, so groups of very different sizes cannot push many of them
-# across it.
+# blocks this small are ordered by insertion sort in the flat array, larger
+# ones by ``np.sort``: the array view ``arr.sort()`` builds per group costs
+# more than the ordering does once the groups are tiny.  Measured with numba
+# 0.68 on 500k float64 values ordered group by group: insertion sort is
+# eleven times faster at one value per group, five times at five, still a
+# tenth ahead at fifty; from a hundred values upwards the library sort wins,
+# by half at a hundred, six times at a thousand - the limit stays well below
+# that crossover
 _INSERTION_SORT_LIMIT = 32
 
 
@@ -1037,25 +926,19 @@ _INSERTION_SORT_LIMIT = 32
 def _order_block(a_sorted: npt.NDArray[np.number], begin: int, size_g: int, reverse: bool) -> npt.NDArray[np.number]:
     """order one group-block of the flat array, descending if ``reverse``.
 
-    ``size_g`` is at least two, the caller leaves a block of a single value
-    alone.  While a block is small its values walk into place where they are,
-    beyond that ``np.sort`` of a view is the cheaper of the two - see the note at
-    ``_INSERTION_SORT_LIMIT``.
-
-    Both passes order ascending and leave a nan last: the library sort because
-    that is what numpy does, the insertion pass because it shifts a nan right by
-    every other value and stops only in front of another nan, which keeps the
-    nans in the order of the input.  Complex values never take the insertion
-    pass, since numpy compares them partially - a value with a nan in either
-    part is neither smaller nor greater, and a pass that has to decide every
+    ``size_g`` is at least two.  Small blocks walk into place where they are,
+    beyond that ``np.sort`` of a view is the cheaper of the two (see
+    ``_INSERTION_SORT_LIMIT``).  Both passes order ascending and leave a nan
+    last: the library sort because that is what numpy does, the insertion pass
+    because it shifts a nan right and stops only in front of another nan,
+    keeping the nans in input order.  Complex values never take the insertion
+    pass - numpy compares them partially, a pass that has to decide every
     pair cannot order that.
 
-    ``reverse`` therefore cannot turn the whole block around, the nan tail has to
-    stay last, so only the ordered prefix is flipped.  Flipping it rather than
-    ordering on a negated key is what keeps the descending order exact: negation
-    is not order reversing for the integral dtypes (whose minimum survives it as
-    itself, and whose zero of an unsigned dtype stays the smallest key), which is
-    why the python twins invert bitwise or flip the group's run instead.
+    ``reverse`` therefore cannot turn the whole block around - only the
+    ordered prefix is flipped, which keeps the descending order exact:
+    negation is not order reversing for the integral dtypes, which is why the
+    python twins invert bitwise or flip the group's run instead.
     """
     if size_g <= _INSERTION_SORT_LIMIT and not isinstance(a_sorted[begin], (complex, np.complex64)):
         for i in range(1, size_g):
@@ -1096,12 +979,11 @@ def _sort_blocks(
     starts: npt.NDArray[np.int64],
     reverse: bool,
 ) -> None:
-    """order the values inside every group-block, the singletons left alone
+    """order the values inside every group-block, the singletons left alone.
 
-    ``_order_block`` of one group does not look at the block of another one, so
-    the parallel driver of the sort walks the ranges of ``group_ranges`` over
-    this instead of walking the groups, and needs no fold and no lock - the
-    blocks it writes are disjoint by construction.
+    ``_order_block`` of one group does not look at the block of another one,
+    so the parallel driver of the sort walks the ranges over this - no fold,
+    no lock, the blocks it writes are disjoint by construction.
     """
     for g in range(len(counts)):
         if counts[g] > 1:
@@ -1114,8 +996,8 @@ def _sort_scatter(
     starts: npt.NDArray[np.int64],
     out: npt.NDArray[np.number],
 ) -> None:
-    """write the ordered blocks back to the positions their group occupies
-    in the input - the j-th value of a group goes to its j-th appearance"""
+    """write the ordered blocks back to the positions their group occupies in
+    the input - the j-th value of a group goes to its j-th appearance"""
     cursor = starts.copy()
     for i in range(len(group_idx)):
         g = group_idx[i]
@@ -1125,7 +1007,7 @@ def _sort_scatter(
 
 def _sort_driver_factory(nans: bool) -> Callable[..., npt.NDArray[np.number]]:
     # the ordering and the scatter are the sort's own blocks - the counting
-    # sort is the shared one of the module (see the note at ``_count``)
+    # sort is the shared one of the module
     _blocks = njit_stable(_sort_blocks)
     _scatter = njit_stable(_sort_scatter)
 
@@ -1208,35 +1090,24 @@ sort = build_custom_kernel(
 # ---------------------------------------------------------------------------
 # the k largest (or the k smallest) values of every group
 #
-# The values of a group are selected, not ordered: the k wanted ones are
-# found with the quickselect of the module - the same one the median and the
-# quantile use - and the values that are better than the border it names are
-# gathered.  The order of the k is set afterwards, over the few values that
-# are left.
-#
-# The values that are missing are in no selection: the nans of the numbers
-# and the NaT of the ticks are neither the largest nor the smallest value of
-# a group, and the sort of a group puts them last.  They are therefore
-# pushed to the end of the block before the selection runs - the comparisons
-# of a nan with a value answer neither way, and a selection that ran over
-# them would name a border that is no border at all.
+# Selected, not ordered: the quickselect of the module names a border, the
+# values better than it are gathered, the order of the few that are left is
+# set afterwards.  The missing values are in no selection - the nan and the
+# NaT tick compare neither way, so they are pushed to the end of the block
+# before the selection runs; a selection over them would name a border that
+# is no border at all.
 # ---------------------------------------------------------------------------
 
 
 @functools.lru_cache(maxsize=2)
 def _compact_valid_of(ticks: bool) -> Callable[..., int]:
-    """The values of the block that are no missing value, pushed to its front.
+    """The values of the block that are no missing value, pushed to its front;
+    their number handed back.  The write index never runs ahead of the read
+    index, so no unread value is overwritten.
 
-    The number of them is handed back; the block is shorter from there on.
-    The write index never runs ahead of the read index, so no value that is
-    not read yet is overwritten.
-
-    The two kinds of values need two bodies: the missing value of the
-    numbers is the nan, the only value that is not equal to itself, and the
-    missing value of the ticks is the NaT, the smallest tick of all - a
-    comparison of a tick with a number is no comparison numba has.  The flag
-    is settled when the body is compiled, so the branch that does not belong
-    to the call is not even typed.
+    Numbers and ticks need two bodies: a comparison of a tick with a number
+    is no comparison numba has; the closure flag is a compile-time constant,
+    so the branch that does not belong to the call is not even typed.
     """
 
     if ticks:
@@ -1268,19 +1139,16 @@ def _compact_valid_of(ticks: bool) -> Callable[..., int]:
 
 @njit_stable
 def _rank_order(values: npt.NDArray[np.number], g: int, k: int, largest: int) -> None:
-    """The k values of the row in the order of their rank.
-
-    The largest one comes first when ``largest`` is true, the smallest one
-    otherwise - the order a reader of the row expects.  The few values are
-    ordered in place; a row of a hundred values and more goes through the
-    library sort, which is the cheaper of the two there.
+    """The k values of the row in the order of their rank - largest first when
+    ``largest`` is true, smallest otherwise.  The few values are ordered in
+    place; a row of a hundred values and more goes through the library sort.
     """
     if k < 2:
         return
     if k > _INSERTION_SORT_LIMIT:
-        # the library sort of a row of a matrix is a sort of a copy - the
-        # slice of a two dimensional array is a copy in numba - so the values
-        # are copied into a buffer of their own and sorted there
+        # the library sort of a matrix row is a sort of a copy - the slice of
+        # a two dimensional array is a copy in numba - so the values are
+        # sorted in a buffer of their own
         row = np.empty(k, values.dtype)
         row[:] = values[g, :k]
         row.sort()
@@ -1320,12 +1188,11 @@ def _topk_group(
 ) -> None:
     """The k largest (or smallest) values of the block, into the row ``g``.
 
-    The border of the selection is the k-th value of the group in the order
-    of the rank: the (m-k)-th one when the largest values are wanted, the
-    (k-1)-th one when the smallest are.  The values that are better than the
-    border are the ones the answer holds, and the places they leave are
-    filled with the border itself - the group holds enough of them, since
-    the border is the k-th of the group.
+    The border of the selection is the k-th value of the group in rank order:
+    the (m-k)-th one when the largest are wanted, the (k-1)-th when the
+    smallest are.  The values better than the border are the answer, the
+    places they leave are filled with the border itself - the group holds
+    enough, the border being its k-th value.
     """
     if m == 0:
         return
@@ -1350,8 +1217,7 @@ def _topk_group(
         if better:
             out[g, found] = v
             found += 1
-    # the places the better values leave: the border itself, which the group
-    # holds often enough
+    # the places the better values leave: the border itself
     i = found
     while i < k:
         out[g, i] = border
@@ -1360,12 +1226,9 @@ def _topk_group(
 
 
 def _topk_driver_factory(ticks: bool) -> Callable[..., npt.NDArray[np.number]]:
-    """The compiled driver of the topk.
-
-    The values of every group are placed in their blocks, the missing values
-    of a block are pushed to its end, and the k wanted values of every group
-    are selected out of what is left.
-    """
+    """The compiled driver of the topk: the values placed in their blocks, the
+    missing values pushed to the block's end, the k wanted ones selected out
+    of what is left."""
 
     compact = _compact_valid_of(ticks)
 
@@ -1398,12 +1261,9 @@ def _topk_driver_factory(ticks: bool) -> Callable[..., npt.NDArray[np.number]]:
 def _topk_mt_factory(
     ticks: bool, driver: Callable[..., npt.NDArray[np.number]]
 ) -> Callable[..., npt.NDArray[np.number]]:
-    """The parallel passes of the topk: the blocks cut into ranges.
-
-    The block of a group belongs to that group alone, and the threads work
-    on the groups of a range each - so the ranges need neither a fold nor a
-    lock, and the answer is the one of the sequential path bit for bit.
-    """
+    """The parallel passes of the topk: the blocks cut into ranges, one group
+    per range - no fold, no lock, the answer of the sequential path bit for
+    bit."""
 
     compact = _compact_valid_of(ticks)
 
@@ -1428,8 +1288,8 @@ def _topk_mt_factory(
             return out
         for c in nb.prange(edges.size - 1):
             for g in range(edges[c], edges[c + 1]):
-                # the same step the sequential loop runs, on the block of a
-                # group no other thread has touched
+                # the sequential loop's step, on the block of a group no
+                # other thread has touched
                 if counts[g] > 0:
                     m = compact(a_sorted, starts[g], counts[g])
                     if m > 0:
@@ -1466,15 +1326,11 @@ tick_topk = build_custom_kernel(
 
 @njit_stable
 def _mix_bits(x: np.uint64) -> np.uint64:
-    """the finalizer of splitmix64: a bijection of the 64 bits.
-
-    Every bit of the input reaches every bit of the output, and two
-    different inputs have two different outputs - the property a hash
-    table needs of its hash, and the reason the counts of the distinct
-    count and of the mode are right.
-
-    The arithmetic of the unsigned integers wraps around, which is what a
-    hash wants: the bits of the word are the whole state.
+    """the finalizer of splitmix64: a bijection of the 64 bits - every bit of
+    the input reaches every bit of the output, two different inputs have two
+    different outputs, which is why the counts come out right.  The
+    wraparound of the unsigned arithmetic is what a hash wants: the bits of
+    the word are the whole state.
     """
     x = (x ^ (x >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
     x = (x ^ (x >> np.uint64(27))) * np.uint64(0x94D049BB61D108B)
@@ -1487,17 +1343,11 @@ _ZERO_BITS = np.int64(-9223372036854775808)
 
 @njit_stable
 def _hash_float(v: float | np.floating[Any]) -> np.uint64:
-    """the hash of a floating point value - over its bits.
-
-    The bits of a double name the value: no two different values have the
-    same bits, and the two zeros - the same value - are the one exception,
-    so they are put on the same hash here.
-
-    The bits are cheaper to get than the mantissa and the exponent of the
-    value: the frexp of it is a call into the floating point library, and
-    the two of them together cost more than the whole rest of the hash -
-    measured 2.0ms against 0.3ms per 500k values, which is more than
-    half of the time the mode spends on its data.
+    """the hash of a floating point value - over its bits, which name the
+    value; the two zeros are the one exception, the same value on one hash.
+    The bits beat the frexp of the mantissa and the exponent: 2.0ms against
+    0.3ms per 500k values, more than half of the time the mode spends on its
+    data.
     """
     bits = np.float64(v).view(np.int64)
     if bits == _ZERO_BITS:
@@ -1508,11 +1358,8 @@ def _hash_float(v: float | np.floating[Any]) -> np.uint64:
 
 @njit_stable
 def _hash_value(v: Any) -> np.uint64:
-    """the hash of a value - the values that are equal have the same hash.
-
-    A complex value mixes the hashes of its two parts, a floating point one
-    has a hash of its own, an integer its own value.
-    """
+    """the hash of a value - the values that are equal have the same hash; a
+    complex value mixes the hashes of its two parts."""
     if isinstance(v, (complex, np.complex64, np.complex128)):
         return _mix_bits(_hash_float(v.real) ^ (_hash_float(v.imag) * np.uint64(0x9E3779B97F4A7C15)))
     if isinstance(v, (float, np.float32, np.float64)):
@@ -1532,13 +1379,10 @@ def _count_distinct(
 ) -> tuple[int, bool]:
     """the number of distinct values of the block, and whether it holds a nan.
 
-    The values are counted in a hash table with open addressing: a slot that
-    holds the value already is a value seen before, a free one makes it a new
-    one.  The generation of the group says which of the slots are in use, so
-    that the table needs no clearing between the groups.
-
-    The nans are not counted at all - they are one value among themselves,
-    which the caller adds.
+    Counted in a hash table with open addressing: a slot that holds the value
+    already is a value seen before; the group's generation marks the slots in
+    use, so the table needs no clearing between groups.  The nans are not
+    counted - one value among themselves, added by the caller.
     """
     distinct = 0
     has_nan = False
@@ -1575,18 +1419,17 @@ def _nunique_group(
     gens: npt.NDArray[np.int32],
     count_nans: bool,
 ) -> None:
-    """the number of the distinct values of one group of the placed values
+    """the number of the distinct values of one group of the placed values.
 
-    ``slots`` and ``gens`` are the hash table of the caller - the table of the
-    range of the parallel driver, of which one thread writes into its own and
-    none of another.  The generation of a group is its index, so a table needs no
-    clearing between the groups of its range.
+    ``slots``/``gens`` are the caller's hash table, one per parallel range -
+    one thread writes into its own, none of another; the group index is the
+    generation, so no clearing between groups.
     """
     n = counts[g]
     if n == 0:
         return  # untouched group, keeps the fill value
-    # the table of this group holds only as many slots as the group needs - the
-    # slots of the other groups are not touched
+    # this group's table holds only as many slots as it needs - the slots of
+    # the other groups are not touched
     mask = 1
     while mask < 2 * n:
         mask *= 2
@@ -1599,9 +1442,8 @@ def _nunique_group(
 
 
 def _table_capacity(n: int) -> int:
-    """the slots of the table of a block of ``n`` values: two for every value, so
-    that the table is never more than half full and the probing stays short.
-    """
+    """the slots for a block of ``n`` values - two per value, so the table is
+    never more than half full and the probing stays short."""
     capacity = 1
     while capacity < 2 * n:
         capacity *= 2
@@ -1612,13 +1454,9 @@ _table_capacity = njit_stable(_table_capacity)
 
 
 def _nunique_driver_factory(nans: bool) -> Callable[..., npt.NDArray[np.number]]:
-    """The driver of the number of distinct values of every group.
-
-    The values are placed group by group with a counting sort, and the
-    distinct ones of every group are then counted in a hash table - which
-    needs no ordering of the values and so is linear in the number of them.
-    The nans are one value among themselves: the plain variant counts them
-    as one, the nan variant leaves them out.
+    """The driver of the distinct count: counting-sort placement, then a hash
+    table per group - no ordering of the values needed.  The plain variant
+    counts the nans as one value, the nan variant leaves them out.
     """
     op_name = "nannunique" if nans else "nunique"
     capacity_of = _table_capacity
@@ -1655,14 +1493,10 @@ def _nunique_mt_factory(
 ) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the distinct count: the groups cut into ranges.
 
-    The one thing the shape needs that the median does not is a hash table of
-    its own per range - the table is scratch that every group of the range
-    clears by its generation, which two ranges cannot do in one table.  Sized
-    after the largest block of the range and not after the largest group of
-    the whole call: summed over the ranges that is at most twice the number
-    of the values, where a table per range after the global maximum would be
-    twice the number of the values per thread (the largest group of a
-    lopsided call can be most of the call).
+    A hash table of its own per range - scratch that every group clears by
+    its generation, which two ranges cannot do in one table.  Sized after the
+    range's largest block: summed over the ranges at most twice the number of
+    the values, where a table per the global maximum would be that per thread.
     """
     capacity_of = _table_capacity
 
@@ -1703,23 +1537,13 @@ nunique = build_custom_kernel(
 
 
 # ---------------------------------------------------------------------------
-# the most frequent value of every group
-#
-# The values of a group are counted, not ordered: a hash table with open
-# addressing holds one slot per distinct value of the group, and the counts
-# are read off the slots - the same table the distinct count runs, with the
-# counts kept and the best value tracked besides.  A tie hands the answer to
-# the smallest of the values that share the highest count, the way
-# ``scipy.stats.mode`` breaks one: the value is taken over only when its
-# count is strictly higher, or it compares smaller than the one that is held.
-#
-# The values that are missing are in no selection, like the ones of the
-# topk: a nan is never the most frequent value of a group - the check of the
-# hash table would refuse it anyway, a nan being not equal to itself - and a
-# group that holds nothing but them has no mode at all, so it keeps the fill
-# value.  A temporal value reaches the kernel as it is, the NaT tick included:
-# ``val != val`` detects it like a nan, and the temporal input is what the
-# kernel was given, so the answer is a value of the input.
+# the most frequent value of every group - counted, not ordered: the
+# distinct count's hash table with the counts kept and the best value tracked
+# besides.  A tie hands the answer to the smallest of the highest-count
+# values, the way ``scipy.stats.mode`` breaks one.  The missing values (nan,
+# NaT, detected by ``val != val``) are in no selection; a group of nothing
+# but them has no mode and keeps the fill value, and a temporal answer is a
+# value of the input as given.
 # ---------------------------------------------------------------------------
 
 
@@ -1736,12 +1560,9 @@ def _mode_group(
 ) -> None:
     """The most frequent value of one group of the placed values, into row ``g``.
 
-    ``slots``, ``gens`` and ``slot_counts`` are the hash table of the caller -
-    the table of the range of the parallel driver, of which one thread writes
-    into its own and none of another.  The generation of a group is its index,
-    so a table needs no clearing between the groups of its range: the slots
-    whose generation is behind hold counts of a group that is gone, and the
-    first touch of a value in this generation overwrites them.
+    ``slots``/``gens``/``slot_counts`` are the caller's table, one per
+    parallel range; the group index is the generation, so no clearing between
+    groups - a stale slot is overwritten at the first touch.
     """
     n = counts[g]
     if n == 0:
@@ -1776,14 +1597,11 @@ def _mode_group(
                 seen = slot_counts[h]
                 break
             h = (h + 1) & mask
-        # the value takes the answer over when it is more frequent than the
-        # one that holds it, and a count that is even with a smaller value
-        # takes it as well - the smallest of the most frequent ones wins.
-        # A value that is equal to the one that holds the answer leaves it
-        # alone: the answer is the first of the equal values, so a zero
-        # keeps the sign it came with - the numpy backend orders the values
-        # of the group and takes the first of the longest run, and the two
-        # have to agree on the sign of a zero as well.
+        # a higher count takes over, an even count only for the smaller value
+        # - the smallest of the most frequent ones wins.  An equal value
+        # leaves the answer alone, so it stays the first of the equal ones
+        # and a zero keeps its sign - the numpy backend's first of the
+        # longest run agrees on that
         if seen > best_count:
             best_count = seen
             if v != best_value:
@@ -1795,10 +1613,9 @@ def _mode_group(
 
 
 def _mode_driver_factory() -> Callable[..., npt.NDArray[np.number]]:
-    """The driver of the mode: the values are placed group by group with the
-    counting sort, and the most frequent value of every block is counted in a
-    hash table - which needs no ordering of the values and so is linear in
-    their number, like the distinct count is."""
+    """The driver of the mode: counting-sort placement, then the hash table
+    count of every block - no ordering of the values needed, like the
+    distinct count."""
     capacity_of = _table_capacity
 
     def driver(
@@ -1831,11 +1648,8 @@ def _mode_driver_factory() -> Callable[..., npt.NDArray[np.number]]:
 def _mode_mt_factory(driver: Callable[..., npt.NDArray[np.number]]) -> Callable[..., npt.NDArray[np.number]]:
     """The parallel passes of the mode: the groups cut into ranges.
 
-    The one thing the shape needs that the median does not is a hash table of
-    its own per range - the table is scratch that every group of the range
-    clears by its generation, which two ranges cannot do in one table.  Sized
-    after the largest block of the range and not after the largest group of
-    the whole call, like the table of the distinct count is.
+    A hash table of its own per range, sized after the range's largest block,
+    like the table of the distinct count is.
     """
     capacity_of = _table_capacity
 
@@ -1940,10 +1754,8 @@ trapezoid = build_kernel(
     forced_fill=0,
     fill_default=0,
     rule=rule_float,
-    # the sample spacing is the argument of the operation, and the default of
-    # the kernel is the integer 1: a float in that slot compiles the kernel of
-    # the trapezoid a few percent slower than the integer it used to carry -
-    # the nan variant of the trapezoid measured ~3% slower with it
+    # the kernel's default is the integer 1: a float in that slot compiles
+    # the trapezoid kernel a few percent slower
     variant="dx",
     doc="Trapezoidal integration of the samples of every group",
 )

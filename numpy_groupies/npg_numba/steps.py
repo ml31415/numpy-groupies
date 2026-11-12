@@ -1,10 +1,8 @@
 """Jitted group-boundary utilities, shared with the other implementations.
 
-The first two functions are the public ``step_count`` and ``step_indices``;
-the three below are the building blocks of the counting sort that places the
-values of a group in a contiguous block - the operations that need it (median,
-sort and the collecting function) each compile their own copies of them, so
-that the compiled artifacts of one operation never reach into another.
+``step_count`` and ``step_indices`` are public; the counting-sort helpers below
+place each group's values in a contiguous block, compiled per operation so the
+artifacts of one never reach into another.
 """
 
 import numpy as np
@@ -15,7 +13,7 @@ from numpy_groupies.validation import NEGATIVE_INDICES, TOO_LARGE
 
 
 # the annotations of the jitted functions below are documentation only - numba
-# compiles from the argument types and ignores them, the type checker needs them
+# compiles from the argument types, the type checker needs them anyway
 @njit_stable
 def step_count(group_idx: npt.NDArray[np.integer]) -> int:
     """Return the amount of index changes within group_idx."""
@@ -47,11 +45,10 @@ def step_indices(group_idx: npt.NDArray[np.integer]) -> npt.NDArray[np.intp]:
     return indices
 
 
-# The four functions below are the counting sort: they place the values of
-# every group in a contiguous block, in the order they appear in the input, and
-# they cut that block-sequence into ranges of about equal value count for the
-# parallel path.  They are plain functions - every operation compiles its own
-# copies of them, with a name of its own (see the note in ``compose.build_kernel``).
+# the counting sort: every group's values in a contiguous block, in input
+# order, cut into ranges of about equal value count for the parallel path.
+# Plain functions - every operation compiles its own named copies (see the
+# note in ``compose.build_kernel``).
 
 
 def group_count(group_idx: npt.NDArray[np.integer], size: int) -> npt.NDArray[np.int64]:
@@ -91,31 +88,17 @@ def group_ranges(
 ) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.int64]]:
     """cut the groups into ``n_ranges`` consecutive ranges of about equal *value* count
 
-    Returns the ``n_ranges + 1`` group boundaries (the first at 0, the last at
-    the number of groups, monotone, so every group belongs to exactly one
-    range) and the number of the largest block of every range.
-
-    The ranges are equal in values and not in groups: a loop over the groups of
-    a range is work proportional to the values of those groups, and the
-    schedule of the pool hands the iterations out once, at the start.  Cutting
-    ``size`` iterations in as many pieces as there are threads therefore leaves
-    the thread that drew the heavy half of the groups waiting for the others -
-    on a zipf-like distribution the call then takes a multiple of the
-    sequential time, where the ranges of equal value count below stay close
-    to it.
-
-    The walk cuts a new range whenever the values it has seen pass the next
-    multiple of ``total / n_ranges``.  A group bigger than the target cannot be
-    split - it stays the single group of its range and that range is the heavy
-    one - and it cannot be avoided either, since every work split of a block
-    that selects or orders within the group has to keep the block whole.
-
-    The number of the largest block is what the scratch of a range is sized
-    after (the buffer the nan variants filter into, the hash table of the
-    distinct count).  Summed over the ranges it is at most the number of the
-    values - every range takes its scratch out of its own values - so the
-    parallel path does not hold more scratch than the sequential one, whatever
-    the number of the ranges.
+    Returns the ``n_ranges + 1`` monotone group boundaries (first at 0, last at
+    the group count) and the largest block of every range.  Equal in values,
+    not in groups: the pool hands the iterations out once, at the start, so
+    ranges of equal group count leave the thread that drew the heavy half
+    waiting - on a zipf-like distribution the call takes a multiple of the
+    sequential time.  A group bigger than the target cannot be split - it stays
+    the single group of its range, which a block that selects or orders within
+    the group requires anyway.  The largest-block counts size the per-range
+    scratch (the nan variants' filter buffer, the distinct-count hash table);
+    summed they stay within the values, so the parallel path holds no more
+    scratch than the sequential one.
     """
     size = counts.size
     edges = np.zeros(n_ranges + 1, np.intp)
@@ -130,8 +113,8 @@ def group_ranges(
             # the group that passed the target still belongs to the range before
             edges[part] = g + 1
             part += 1
-    # the ranges the walk never reached - the values of one big group cannot
-    # fill every target - hold no groups at all
+    # ranges the walk never reached - one big group cannot fill every target -
+    # hold no groups at all
     for part in range(1, n_ranges):
         if edges[part] == 0:
             edges[part] = size

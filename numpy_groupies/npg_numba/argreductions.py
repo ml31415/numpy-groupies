@@ -18,47 +18,30 @@ from numpy_groupies.npg_numba.jit import njit_stable
 from numpy_groupies.npg_numba.mt import chunk_count, should_use_mt
 from numpy_groupies.validation import NEGATIVE_INDICES
 
-# The state of the scan: the index of the best value of every group, the
-# value itself and the groups that have not seen a value yet.  The state of
-# a chunk is one such state per chunk - three arrays of the size of the
-# groups - and the cost model counts them against the two of the sum.
+# the scan state per chunk: the best index, the value, the pending groups -
+# three arrays of the size of the groups, counted against the sum's two
 _MT_STATE_SIZE = 2
 
 
-# The scan and the driver of the argmax and the argmin
-#
-# Neither of the two bodies reaches build_kernel: the per-element update
-# call of the composed driver costs more than these bodies save (measured
-# 1.06ms against 0.60ms on numba 0.68), so the loop lives here - but in a
-# function of its own, with the state arrays passed in: allocating them in
-# the looping function itself measures ~25% slower, numba reloads the data
-# pointers around every store instead of keeping them in registers.
-#
-# ONE scan serves both paths: the sequential driver runs it over the whole
-# input, the parallel path runs the very same scan over every chunk of the
-# data and folds the states of the chunks afterwards.  The two paths cannot
-# drift apart then - the tie-break (the first of two equal values wins) and
-# the poisoning of a group by a nan are the delicate parts of it, and they
-# are written down once.
+# The scan and the driver of the argmax and the argmin: neither body reaches
+# build_kernel (the per-element update call costs more than the bodies save,
+# 1.06ms against 0.60ms on numba 0.68), and the loop lives in a function of
+# its own with the state arrays passed in - allocating them inside measures
+# ~25% slower, numba reloads the data pointers around every store.  ONE scan
+# serves both paths, so the tie-break (first of two equal values wins) and
+# the nan poisoning are written down once.
 
 
 @functools.lru_cache(maxsize=4)
 def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
-    """The scan that finds the best value of every group.
+    """The scan that finds the best value of every group; ``nans`` left out
+    or poisoning, ``greater`` the direction.
 
-    ``nans`` says whether the nans are left out (the nan variants) or
-    whether they poison their group (the plain ones); ``greater`` says
-    whether the best value is the largest (the argmax) or the smallest (the
-    argmin) one.
-
-    The scan is branchy on purpose: it writes only when the group actually
-    changes, and with a data dependent index the select-form store could not
-    vectorize anyway - the scan of a 500k input with 1000 groups settles
-    after a few thousand values, so the branches predict perfectly.  The
-    select-form spelling of the nan variants measured ~30% slower
-    (2.19ms against 3.14ms per million values) - the branchless form writes
-    the value of every group at every value, and the stores it does not have
-    to do cost more than the branches it saves.
+    Branchy on purpose: it writes only when a group changes, and with a data
+    dependent index the select form could not vectorize anyway - the groups
+    settle after a few thousand values, so the branches predict perfectly
+    (the select-form nan variant measured ~30% slower: the pointless stores
+    cost more than the branches save).
     """
 
     @njit_stable(name=f"{'nan' if nans else ''}{'argmax' if greater else 'argmin'}_scan")
@@ -73,20 +56,12 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
     ) -> int:
         """The index of the best value of every group, and the fault of the indices.
 
-        ``out`` carries the index of the best value of every group, in the
-        index of the whole input - ``start`` is the offset of the chunk the
-        scan runs over.  ``running`` carries the value itself, and
-        ``pending`` marks the groups that have not seen a value yet.
-
-        A group that a nan poisoned says so in its ``running``: the nan
-        stands there, and a nan compares neither smaller nor greater - so
-        nothing wins the group any more.  A flag of its own would be a
-        fourth array in the state of every chunk - and the nan says the same
-        thing for free.
-
-        The fault of the indices travels as a number and not as a flag in an
-        array: an exception cannot leave the parallel region, so the
-        complaint is made after it.
+        ``out`` is in whole-input coordinates (``start`` is the chunk
+        offset), ``running`` carries the value, ``pending`` marks the unseen
+        groups.  A nan-poisoned group says so in ``running`` - the nan
+        compares neither way, so nothing wins it any more, no fourth flag
+        array needed.  The fault travels as a number: an exception cannot
+        leave the parallel region, the complaint is made after it.
         """
         fault = 0
         for i in range(group_idx.shape[0]):
@@ -96,20 +71,11 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
                 continue
             val = a[i]
             cur = running[ri]
-            # The comparison is resolved into a local before the branch:
-            # reaching the expression as a call costs more than the loop
-            # around it.  It is computed before the branch and not in it -
-            # the comparison of a value that does not win the group is
-            # cheap, and the loop is faster with it out of the way
-            # (measured 872us against 1004us per million values).
-            #
-            # The direction of the comparison is the one of the operation:
-            # the greater value wins for the argmax, the smaller one for
-            # the argmin.
-            # temporal input: a NaT in the running value poisons its group -
-            # numpy answers no position behind the first NaT - which the
-            # guard keeps from letting a later value win.  The NaT of a
-            # temporal value is the one that is not equal to itself.
+            # resolved into a local before the branch, computed before it -
+            # a call costs more than the loop around it (872us against 1004us
+            # per million values).  NaT in the running value poisons its
+            # group (numpy answers no position behind the first NaT), and it
+            # is the value that is not equal to itself.
             live = cur == cur
             if greater:
                 best = live and complex_less(cur, val)
@@ -120,27 +86,19 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
                     pending[ri] = False
                     running[ri] = val
                     if isinstance(val, (np.datetime64, np.timedelta64)):
-                        # temporal input: NaT is a value, not a missing one -
-                        # numpy answers the position of its first occurrence
-                        # for both argreductions, and the comparison of no
-                        # later value can beat the smallest tick
+                        # temporal: NaT is a value, not missing - numpy
+                        # answers the position of its first occurrence, and
+                        # no tick beats the smallest
                         out[ri] = start + i
                     else:
-                        # a nan poisons its group: it wins outright and the
-                        # result falls back to the fill value
+                        # a nan poisons its group: it wins, the result
+                        # falls back to the fill value
                         out[ri] = fill_value
-                # the nan variant leaves the nans out - the NaT of a temporal
-                # input with them, deliberately unlike numpy: np.nanargmin and
-                # np.nanargmax do not skip a NaT of datetime64, they answer
-                # its position like the plain forms, while np.nanmin and
-                # np.nanmax do skip it.  numpy closed the report of that
-                # (numpy/numpy#5222) as fixed - the plain forms and the nan
-                # min/max were repaired (numpy/numpy#14717) - while its own
-                # closing output still shows the nanarg forms answering the
-                # NaT position where the float nanarg skips, unaddressed;
-                # now reported upstream as numpy/numpy#33207.  The nan forms
-                # of the package skip the missing value of every dtype, as
-                # their contract says.
+                # the nan variant skips the NaT too, deliberately unlike
+                # np.nanargmin/nanargmax, which answer the NaT position where
+                # np.nanmin/nanmax skip it (numpy/numpy#5222, #14717, now
+                # #33207) - the nan forms of the package skip the missing
+                # value of every dtype, as their contract says
                 continue
             if pending[ri] or best:
                 # the first value of a group wins a tie
@@ -153,12 +111,9 @@ def _arg_scan(nans: bool, greater: bool) -> Callable[..., int]:
 
 
 def _arg_driver_factory(nans: bool, greater: bool) -> Callable[..., npt.NDArray[np.int64]]:
-    """The compiled driver of the argmax (the greater one) and the argmin.
-
-    The driver is a thin wrapper around the scan: it allocates the state,
-    runs the scan over the whole input and raises the complaint of a fault
-    of the indices - a complaint the parallel path cannot raise itself.
-    """
+    """The compiled driver of the argmax (the greater one) and the argmin:
+    allocates the state, runs the scan, raises the fault complaint the
+    parallel path cannot raise itself."""
     scan = _arg_scan(nans, greater)
     name = "argmax" if greater else "argmin"
 
@@ -172,10 +127,9 @@ def _arg_driver_factory(nans: bool, greater: bool) -> Callable[..., npt.NDArray[
     ) -> npt.NDArray[np.int64]:
         size = output_size(group_idx, size_arg)
         out = np.full(size, fill_value, out_dtype)
-        # the state of the scan is allocated here and not in the scan itself:
-        # allocating it in the looping function measures ~25% slower, numba
-        # reloads the data pointers around every store instead of keeping
-        # them in registers
+        # the state is allocated here, not in the scan itself: inside the
+        # looping function it measures ~25% slower (numba reloads the data
+        # pointers around every store)
         running = np.empty(size, a.dtype)
         pending = np.ones(size, np.bool_)
         fault = scan(group_idx, a, out, running, pending, fill_value, 0)
@@ -187,17 +141,9 @@ def _arg_driver_factory(nans: bool, greater: bool) -> Callable[..., npt.NDArray[
 
 
 # ---------------------------------------------------------------------------
-# the parallel path
-#
-# The argmax and the argmin cannot be reduced in chunks the way the sums
-# are: the value of a group is the one that wins, and the winner of two
-# chunks is not the sum of the two.  Their parallel path splits the data
-# into chunks and runs the very same scan over every chunk of them - the
-# states of the chunks are folded afterwards, in the order of their index:
-# the chunk with the better value wins, and a tie is won by the chunk that
-# comes first, the way the scan keeps the first of two equal values.
-#
-# The result is therefore the one of the sequential path bit for bit.
+# the parallel path - the same scan per chunk of the data, the chunk states
+# folded in index order (the better value wins, a tie the earlier chunk),
+# so the result is the sequential one bit for bit
 
 
 def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
@@ -213,14 +159,9 @@ def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
             runs: npt.NDArray[np.number],
             pends: npt.NDArray[np.bool_],
         ) -> npt.NDArray[np.int64]:
-            """The states of the chunks, folded in the order of their index.
-
-            Every chunk holds the index of the best value of every group and
-            the value itself; the chunk with the better value wins, and a tie
-            is won by the chunk that comes first.  A nan in the value of a
-            chunk says that the group is poisoned - the fill value the chunk
-            wrote for it stands, and nothing wins the group any more.
-            """
+            """The chunk states, folded in index order: the better value
+            wins, a tie the earlier chunk; a nan says the group is poisoned -
+            the fill value it wrote stands, nothing wins it any more."""
             acc_out: npt.NDArray[np.int64] = outs[0]
             acc_run = runs[0]
             acc_pend = pends[0]
@@ -233,15 +174,15 @@ def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
                         # the other chunk has no value for this group
                         continue
                     if acc_pend[g]:
-                        # the accumulator has no value yet: the one of the
-                        # other chunk is the one of the group
+                        # the accumulator has no value yet: the other
+                        # chunk's value is the group's
                         acc_out[g] = other_out[g]
                         acc_run[g] = other_run[g]
                         acc_pend[g] = False
                         continue
                     if other_run[g] != other_run[g]:
-                        # a nan of the other chunk poisons the group - the
-                        # fill value it wrote for it stands
+                        # a nan of the other chunk poisons the group - its
+                        # fill value stands
                         acc_out[g] = other_out[g]
                         acc_run[g] = other_run[g]
                         continue
@@ -257,8 +198,8 @@ def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
                         if complex_less(other_run[g], acc_run[g]):
                             acc_out[g] = other_out[g]
                             acc_run[g] = other_run[g]
-            # the states of the chunks are released with the array they live
-            # in - the result is a copy of the row of the first chunk
+            # the result is a copy of the first chunk's row - the chunk
+            # states are released with the array they live in
             return acc_out.copy()
 
         def mt_passes(
@@ -274,17 +215,14 @@ def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
             size = output_size(group_idx, size_arg)
             n_values = group_idx.shape[0]
             if not should_use_mt(size, n_threads, n_values, _MT_STATE_SIZE):
-                # not worth it, or only one thread to do it with: the
-                # sequential driver, with its result bit for bit
+                # not worth it, or one thread only: the sequential driver,
+                # with its result bit for bit
                 return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
             n_chunks = chunk_count(n_threads, n_values)
             chunk = (n_values + n_chunks - 1) // n_chunks
-            # The state of every chunk: the index of the best value, the
-            # value itself, the groups that have not seen a value yet and
-            # the groups a nan poisoned.  The states are the rows of four
-            # arrays and not a list of arrays: a list of them inside the
-            # parallel region costs more than the region saves (measured
-            # 160us against 96us per 200k values on four threads).
+            # the chunk states are the rows of four arrays, not a list of
+            # arrays - a list inside the parallel region costs more than the
+            # region saves (160us against 96us per 200k values on four threads)
             outs = np.full((n_chunks, size), fill_value, out_dtype)
             runs = np.empty((n_chunks, size), a.dtype)
             pends = np.ones((n_chunks, size), np.bool_)

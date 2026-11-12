@@ -1,9 +1,5 @@
-"""The averaging operations of the numpy implementation.
-
-The mean, the variance, the standard deviation and the trapezoidal
-integration - the operations that combine the values of a group into a single
-number of their own.
-"""
+"""The averaging operations of the numpy implementation: the mean, the variance,
+the standard deviation and the trapezoidal integration."""
 
 from typing import cast
 
@@ -33,10 +29,9 @@ def _mean(
     if is_scalar_input(a):
         raise ValueError("cannot take mean with scalar a")
     if a.dtype.kind in "iu" and a.size:
-        # the sums are accumulated in float64; once the exact integer sums can
-        # leave the +/-2**53 window, the float64 accumulation would round -
-        # the limb sums of the values answer the mean exactly instead, in the
-        # dtype the caller asks for
+        # the sums go through float64, which rounds once the integer sums
+        # leave the +/-2**53 window - the limb sums answer the mean exactly
+        # instead, in the dtype the caller asks for
         bound = max(int(a.max()), -int(a.min()))
         if a.size * bound > EXACT_FLOAT64_INTEGER_LIMIT:
             return cast(
@@ -51,11 +46,9 @@ def _mean(
             )
     counts = np.bincount(group_idx, minlength=size)
     if iscomplexobj(a):
-        # np.bincount does not take complex weights - accumulate the real and
-        # imaginary parts separately
+        # np.bincount takes no complex weights - the floating views of the real
+        # and imaginary parts are accumulated separately instead
         sums = np.empty(size, dtype=dtype)
-        # the parts of a complex column are floating views, which is what
-        # bincount takes as weights - the signature only says generic
         sums.real = np.bincount(group_idx, weights=cast("npt.NDArray[np.floating]", a.real), minlength=size)
         sums.imag = np.bincount(group_idx, weights=cast("npt.NDArray[np.floating]", a.imag), minlength=size)
     else:
@@ -83,15 +76,9 @@ def _trapezoid(
     """
     Trapezoidal integration of each group, keeping the order of the input.
 
-    With the constant sample spacing dx, the integral of a group of n
-    samples collapses to its sum minus the half weighted endpoints:
-
-        sum_{k=1..n-1} dx / 2 * (y[k-1] + y[k])
-        = dx * (sum(y) - (y[0] + y[n-1]) / 2)
-
-    which spares both the grouping sort and the pairwise products - the
-    order sensitive endpoints are exactly what the order sensitive "first"
-    and "last" reductions deliver.
+    With the constant sample spacing dx, the integral of a group collapses to
+    dx * (sum(y) - (y[0] + y[n-1]) / 2), which spares the grouping sort and
+    the pairwise products - the endpoints come from "first" and "last".
 
     group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
     a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
@@ -100,9 +87,8 @@ def _trapezoid(
     """
     # complex samples integrate to complex values, real ones stay float64
     dtype = dtype or (a.dtype if iscomplexobj(a) else np.float64)
-    # the helpers answer with the numeric dtype of their own signature, which
-    # is all the arithmetic here needs - the policy above decides between the
-    # complex dtype of the samples and float64, this function promises number
+    # the helpers answer in the dtype of their own signature - the policy
+    # above decides between the complex dtype of the samples and float64
     total = _sum(group_idx, a, size, 0, dtype=dtype)
     first = _first(group_idx, a, size, 0, dtype=dtype)
     last = _last(group_idx, a, size, 0, dtype=dtype)
@@ -110,8 +96,7 @@ def _trapezoid(
 
     counts = np.bincount(group_idx, minlength=size)
     if np.any(counts < 2):
-        # without a whole pair there is no extent to integrate over, so the
-        # group integrates to zero rather than to whatever sum - y - y is
+        # without a whole pair there is no extent, the group integrates to zero
         ret[counts < 2] = 0.0
     if np.any(counts == 0):
         ret[counts == 0] = fill_value
@@ -128,23 +113,19 @@ def _sum_of_squres(
     if np.issubdtype(a.dtype, np.integer):
         a = a.astype(dtype, copy=False)
     if iscomplexobj(a):
-        # the squared magnitude |a|^2 - the power of complex values, giving
-        # a real result like np.var, instead of the complex a*a
+        # the squared magnitude |a|^2 - a real result like np.var, not the
+        # complex a*a; a square is real, so bincount takes it as weight
         sq = a.real**2
         sq += a.imag**2
-        # the square of a real or complex value is real, bincount takes it
         ret = np.bincount(group_idx, weights=sq, minlength=size)
     elif np.dtype(dtype).kind in "iu":
-        # the exact squares of integers are integral, and the answer is
-        # carried in the integral accumulator the dtype resolution chose -
-        # the float64 accumulation of the bincount would round a large
-        # square away and wrap on the way back into the integer
+        # the squares accumulate in the integral dtype the resolution chose -
+        # the float64 weights of bincount would round and wrap on the way back
         ret = np.zeros(size, dtype=np.dtype(dtype))
         np.add.at(ret, group_idx, a.astype(np.dtype(dtype)) ** 2)
     else:
         # the square of the values, in the dtype of the input itself
         sq = a * a
-        # the square of a real value is real, bincount takes it
         ret = np.bincount(group_idx, weights=cast("npt.NDArray[np.floating]", sq), minlength=size)
     if fill_value != 0:
         counts = np.bincount(group_idx, minlength=size)
@@ -158,21 +139,15 @@ def _central_moments(
     size: int,
 ) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.floating], npt.NDArray[np.floating], npt.NDArray[np.floating]]:
     """The counts and the sums of the squared, cubed and fourth powers of the
-    deviations of the values of every group from their mean.
-
-    The group is centered on its first value first - the same centering the
-    variance of the integers uses: the deviations of a group whose values are
-    all the same are then exactly zero, and the spread of such a group is
-    zero - and the mean of those deviations is taken off as well, which is
-    the mean of the group.  The moments of the raw values would cancel each
-    other out.
+    deviations of every group from their mean, centered on the group's first
+    value and re-centered on the mean - the moments of the raw values would
+    cancel each other out.
     """
     counts = np.bincount(group_idx, minlength=size)
     origins = _first(group_idx, a, size, 0, dtype=a.dtype)
-    # the deviations of the values of a narrow integer wrap in their dtype
-    # (a 0 against an origin of 3 is a 253 there) - the moments are floats,
-    # so the arithmetic is carried in float64, where no value of the input
-    # can lose its sign
+    # narrow-integer deviations wrap in their dtype (0 against an origin of
+    # 3 is a 253 there) - the arithmetic runs in float64, where no value of
+    # the input can lose its sign
     devs = a.astype(np.float64, copy=False) - origins[group_idx].astype(np.float64, copy=False)
     with np.errstate(divide="ignore", invalid="ignore"):
         means = (
@@ -184,10 +159,8 @@ def _central_moments(
             / counts
         )
     devs = devs - means[group_idx]
-    # bincount takes the weights as floats - the signature says generic.  The
-    # casts say so as well: numpy 2.4 types the result of a bincount with
-    # weights as an integer array, numpy 2.5 as a float one - the array holds
-    # floats either way.
+    # bincount takes floats as weights, the signature only says generic -
+    # numpy 2.4 types the result int, 2.5 float; floats either way.
     s2 = cast(
         "npt.NDArray[np.floating]",
         np.bincount(
@@ -220,21 +193,13 @@ def _skew(
     fill_value: AScalar,
     dtype: npt.DTypeLike | None = np.dtype(np.float64),
 ) -> npt.NDArray[np.floating]:
-    """The skewness of the values of every group.
-
-    The skewness is the third central moment over the second one to the
-    three-halves power, corrected for the size of the group the way pandas
-    corrects it: a group of fewer than three values has no skewness, and a
-    group whose values are all the same has none either - its spread is zero,
-    and the answer is zero as well.
-    """
+    """The skewness of the values of every group, pandas-corrected for size."""
     if iscomplexobj(a):
-        # the skewness of a complex value is not defined - the moments of the
-        # deviations would be complex, and their ratio meaningless
+        # the moments of the complex deviations are complex, their ratio
+        # meaningless
         raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
     if a.dtype.kind in "iu" and a.size:
-        # the cubes of the deviations leave the window float64 represents
-        # exactly - refuse instead of answering an inexact number
+        # the cubes leave the exact float64 window - refuse, not round
         bound = max(int(a.max()), -int(a.min()))
         check_integer_mean_overflow(a.size, bound)
     counts, s2, s3, _ = _central_moments(group_idx, a, size)
@@ -243,8 +208,7 @@ def _skew(
     with np.errstate(divide="ignore", invalid="ignore"):
         n = counts.astype(np.float64)
         values = n * np.sqrt(n - 1) / (n - 2) * s3 / s2**1.5
-    # a group without spread has no skewness to speak of - pandas answers
-    # zero for it, and so do we
+    # a group without spread answers zero, pandas-corrected
     values = np.where(enough & (s2 == 0), 0.0, values)
     values = np.where(enough, values, np.nan)
     ret = np.full(size, fill_value, dtype=np.float64)
@@ -259,14 +223,7 @@ def _kurt(
     fill_value: AScalar,
     dtype: npt.DTypeLike | None = np.dtype(np.float64),
 ) -> npt.NDArray[np.floating]:
-    """The excess kurtosis of the values of every group.
-
-    The kurtosis is the fourth central moment over the square of the second
-    one, minus three - the excess over the three of a normal distribution -
-    corrected for the size of the group the way pandas corrects it: a group
-    of fewer than four values has no kurtosis, and a group whose values are
-    all the same has none either.
-    """
+    """The excess kurtosis of the values of every group, pandas-corrected."""
     if iscomplexobj(a):
         raise TypeError(MOMENTS_NOT_FOR_COMPLEX)
     if a.dtype.kind in "iu" and a.size:
@@ -297,27 +254,24 @@ def _var(
     if is_scalar_input(a):
         raise ValueError("cannot take variance with scalar a")
     if a.dtype.kind in "iu" and a.size:
-        # center each group on its first value: the deviations stay exact in
-        # int64 arithmetic, so a large common offset can no longer erase small
-        # deviations after the conversion to float64
+        # centered on the first value, the deviations stay exact in int64 -
+        # a large common offset cannot erase small ones after the float64 cast
         low = int(a.min())
         high = int(a.max())
         if a.size * max(high, -low) > EXACT_FLOAT64_INTEGER_LIMIT:
             check_integer_variance_span_overflow(low, high)
             origins = _first(group_idx, a, size, 0, dtype=a.dtype)
             if a.dtype == np.dtype(np.uint64):
-                # uint64 subtraction wraps modulo 2**64, which is the exact
-                # two's-complement deviation while |deviation| stays below
-                # 2**63 (guaranteed by the span check above) - reinterpret the
-                # bit pattern instead of letting a cast round the values
+                # uint64 subtraction wraps modulo 2**64, the exact two's
+                # complement deviation while |deviation| < 2**63 (the span
+                # check above) - reinterpret the bits instead of a rounding cast
                 a = (a - origins[group_idx]).astype(np.int64)
             else:
                 a = a.astype(np.int64) - origins.astype(np.int64)[group_idx]
     counts = np.bincount(group_idx, minlength=size)
     if iscomplexobj(a):
-        # np.bincount does not take complex weights - accumulate the real and
-        # imaginary parts separately
-        # the parts of a complex column are floating views, what bincount takes
+        # np.bincount takes no complex weights - the floating views of the
+        # real and imaginary parts are accumulated separately
         sums = np.bincount(group_idx, weights=cast("npt.NDArray[np.floating]", a.real), minlength=size)
         sums = sums + 1j * np.bincount(group_idx, weights=cast("npt.NDArray[np.floating]", a.imag), minlength=size)
     else:
@@ -326,16 +280,15 @@ def _var(
             weights=cast("npt.NDArray[np.integer] | npt.NDArray[np.floating] | npt.NDArray[np.bool_]", a),
             minlength=size,
         )
-    # a group without degrees of freedom has no answer: it takes the fill
-    # value, like a group that the nan of one of its values poisoned
+    # no degrees of freedom - the group takes the fill value, like a
+    # nan-poisoned one
     answerable = (counts > 0) & (counts > ddof)
     with np.errstate(divide="ignore", invalid="ignore"):
         means = sums / counts
         counts = np.where(answerable, counts - ddof, 0)
         devs = a - means[group_idx]
         if iscomplexobj(a):
-            # the magnitude squared of the complex deviation is real, so
-            # like np.var the result is real
+            # |dev|^2 is real, so the result is real like np.var
             devs_sq = devs.real**2
             devs_sq += devs.imag**2
         else:
@@ -344,10 +297,9 @@ def _var(
         ret = np.bincount(group_idx, devs_sq, minlength=size) / counts
     if sqrt:
         ret = np.sqrt(ret)  # this is now std not var
-    # the groups without degrees of freedom take the fill value - the
-    # division above leaves an infinity or a nan behind, and neither of them
-    # is an answer the package gives; the fill is set after the square root,
-    # which would turn a negative one into a nan
+    # no degrees of freedom: the division leaves an inf or nan behind, and
+    # the fill is set after the square root, which would turn a negative one
+    # into a nan
     ret[~answerable] = fill_value
     return ret.astype(dtype, copy=False)
 

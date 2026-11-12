@@ -12,7 +12,7 @@ from numpy_groupies.typing import AResult
 
 
 # the annotations of the jitted functions below are documentation only - numba
-# compiles from the argument types and ignores them, the type checker needs them
+# compiles from the argument types, the type checker needs them anyway
 @njit_stable
 def _gather_chunk(
     ret: npt.NDArray[np.generic],
@@ -43,11 +43,9 @@ def _gather_1d_mt(
 ) -> npt.NDArray[np.generic]:
     """The gather across the values, in the chunks of the threads.
 
-    Every value writes its own position of ``out``, so the loop needs no
-    state at all: the chunks are cut after the number of the values, the
-    thread that is given a chunk writes exactly the positions of that chunk,
-    and the result does not depend on which thread got which of them - not
-    even in the last bits.
+    Every value writes its own position of ``out``, so the loop needs no state
+    at all: the result is the same whichever thread got which chunk, not even
+    in the last bits.
     """
     n_values = group_idx.size
     chunks = mt.chunk_count(n_threads, n_values)
@@ -60,14 +58,9 @@ def _gather_1d_mt(
 
 
 def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> AResult:
-    """The gather of a result: the result of the group of every value.
-
-    The jitted loop gathers into an array of its own; ``unpack_into`` gathers
-    into one the caller provides.
-    """
+    """The gather of a result: the result of the group of every value."""
     if not isinstance(ret, np.ndarray):
-        # the result of the pure python implementation is a list - it is
-        # gathered like any other sequence of values
+        # a pure python result is a list - gathered like any other sequence
         ret = np.asarray(ret)
     group_idx = np.asanyarray(group_idx)
     out = np.empty(group_idx.shape + ret.shape[1:], dtype=ret.dtype)
@@ -79,10 +72,9 @@ def unpack_into(
 ) -> npt.NDArray[np.generic]:
     """Like ``unpack``, but gathers into a caller-provided array.
 
-    ``out`` must match the shape of ``ret[group_idx]`` and the dtype of
-    ``ret``.  Contiguous 1d inputs are gathered by a jitted loop (noticeably
-    faster than fancy indexing at large sizes), anything else falls back to
-    fancy indexing assignment.
+    ``out`` must match the shape of ``ret[group_idx]`` and the dtype of ``ret``.
+    Contiguous 1d inputs use the jitted loop (faster than fancy indexing at
+    large sizes), anything else falls back to fancy indexing.
     """
     group_idx = np.asanyarray(group_idx)
     shape = group_idx.shape + ret.shape[1:]
@@ -92,9 +84,8 @@ def unpack_into(
         raise TypeError(f"out dtype {out.dtype} does not match the result dtype {ret.dtype}")
     if group_idx.ndim == 1 and ret.ndim == 1 and group_idx.flags.c_contiguous and out.flags.c_contiguous:
         n_threads = mt.mt_thread_count()
-        # a copy of one value per value: nothing to accumulate, nothing to
-        # fold, and the parallel region pays for itself from the size on that
-        # the cost model of the reductions names
+        # one copy per value - nothing to accumulate, nothing to fold, and the
+        # parallel region pays for itself from the size the reduction model names
         if (
             n_threads > 1
             and group_idx.size >= mt.GATHER_MT_MIN_VALUES
