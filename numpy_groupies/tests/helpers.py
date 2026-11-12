@@ -55,19 +55,11 @@ def random_values(rng, size):
 def is_supported(impl, func):
     """True if the backend runs ``func``.
 
-    The dispatch table of the backend answers it: a function the table does
-    not hold, or one it holds without an implementation behind it, is a
-    function this backend does not have.
-
-    The answer is a lookup and nothing else.  Asking the backend to run the
-    function would be the same question with a price: the numba backend would
-    compile the kernel of the function, and the collection of the suite would
-    compile a kernel per function in every worker of the parallel run - which
-    is where the minutes of a cold run went.
-
-    A func that names no function of the package is the caller's own and is
-    never deselected.
-
+    The dispatch table of the backend answers it; the answer is a lookup and
+    nothing else - asking the backend to run the function would make the numba
+    backend compile a kernel per function in every worker of the parallel run,
+    which is where the minutes of a cold run went.  A func that names no
+    function of the package is the caller's own and is never deselected.
     Accepts a backend module or its ``_BackendProxy``, and a function name
     or callable.
     """

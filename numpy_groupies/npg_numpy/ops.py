@@ -1,9 +1,5 @@
-"""The registry of the numpy implementation.
-
-Every operation the package knows is here, under the names it answers to -
-and the dispatch that resolves a name (or a callable of the caller) to the
-operation behind it.
-"""
+"""The registry of the numpy implementation: every operation under the name it
+answers to, and the dispatch behind a name or a callable of the caller."""
 
 from collections.abc import Callable
 from typing import Any
@@ -91,12 +87,8 @@ _op_dict["nancumsum"] = _nancumsum
 
 
 def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
-    """The operation of a callable of the caller's own.
-
-    The callable is applied to the values of every group, which are collected
-    first.  The operation is the same for every callable - only the callable
-    differs - so the registry holds one of them per caller's callable.
-    """
+    """The operation of a callable of the caller's own: the callable is applied
+    to every collected group - one operation per caller's callable."""
     callable_ = custom_callable(func)
 
     def op(
@@ -112,9 +104,8 @@ def _custom_operation(func: Callable[..., AScalar]) -> Resolved:
     return Resolved(callable_, op)
 
 
-# the temporal operations of the backend: the operation of every function
-# for the datetime64 and the timedelta64 input, built like the numeric ones
-# and put into the registry beside them.
+# the temporal operations of the backend: one per function for the datetime64
+# and timedelta64 input, built like the numeric ones and registered beside them
 _temporal_ops = build_temporal_ops(_op_dict)
 
 _dispatch = Registry(_op_dict, aliasing, _custom_operation, _temporal_ops)

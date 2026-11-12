@@ -1,8 +1,5 @@
-"""The collecting operation of the numpy implementation.
-
-The members of every group, as an array of sequences - and the callable of
-the caller, which sees the members of a group at a time.
-"""
+"""The collecting operation of the numpy implementation: the members of every
+group, and the callable of the caller, which sees one group at a time."""
 
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -38,8 +35,7 @@ def _generic_callable(
     func: Callable[..., AScalar] = lambda g: g,
     **kwargs: Any,
 ) -> npt.NDArray[np.number]:
-    """groups a by inds, and then applies foo to each group in turn, placing
-    the results in an array."""
+    """groups a by inds and applies func to each group in turn, into an array."""
     groups = _array(group_idx, a, size, ())
     ret = np.full(size, fill_value, dtype=dtype or np.float64)
 

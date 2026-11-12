@@ -1,15 +1,10 @@
-"""The driver of the numpy based backends, and the names of the functions of
-numpy they resolve.
+"""The driver of the numpy based backends, and the aliases resolving numpy
+functions to the names of the package.
 
-The names come first: the functions of numpy carry the names of the
-functions of the package, and the table of the aliases is what a name
-resolves against.
-
-One call for all the numpy based backends: the validation of the input, the
-resolution of the operation and of the output dtype, the answer of the
-operation - and the shape of the answer.  What differs from one backend to
-the next is the table of its operations and the meaning of the nan lengths,
-and that is what the caller feeds in.
+One call for all the numpy based backends: input validation, resolution of
+the operation and output dtype, the answer and its shape. What differs per
+backend is its table of operations and the nan lengths - which the caller
+feeds in.
 """
 
 from collections.abc import Callable, Sequence
@@ -85,8 +80,8 @@ if hasattr(np, "trapezoid"):
     # np.trapezoid replaced np.trapz in numpy 2.0
     _alias_numpy[np.trapezoid] = "trapezoid"
 
-# the table of the aliases with the numpy functions in it: they name the
-# functions of the package as well - np.sum is the sum
+# the aliases with the numpy functions in it: they name the functions of
+# the package as well - np.sum is the sum
 aliasing = get_aliasing(_alias_numpy)
 
 
@@ -98,9 +93,7 @@ def _drop_nans(
     len_counts_values: bool,
 ) -> tuple[AValue, npt.NDArray[np.integer]]:
     """The input of a known nan function without its nan values.
-
-    The cumulative nan variants keep every row, the rest drops the nan
-    values - a is not needed for len, nanlen.
+    The cumulative variants keep every row, the rest drops the nans.
     """
     if is_scalar_input(a):
         raise ValueError("nan-version not supported for scalar input.")
@@ -131,17 +124,13 @@ def _aggregate_wrap(
     len_counts_values: bool = False,
     **kwargs: Any,
 ) -> AResult:
-    """The answer of one call of a numpy based backend, and the fill value it
-    resolved."""
-    # the argument the numba implementation honours and the numpy based ones
-    # do not: there is no compiled loop here to write into an array of the
-    # caller - the argument is taken, so that the signature of every backend
-    # is the same, and it says what it cannot do
+    """The answer of one call of a numpy based backend."""
+    # taken only so every backend's signature is the same; there is no
+    # compiled loop here to write into
     if out is not None:
         raise NotImplementedError("out= is only supported by the numba implementation")
 
-    # the name the function of the call resolves to - the validation of the
-    # input asks for it, and the table of the aliases is the one of numpy
+    # the name the function resolves to; the aliases are the ones of numpy
     iv = input_validation(
         group_idx,
         a,
@@ -159,39 +148,21 @@ def _aggregate_wrap(
     try:
         funcname, op, temporal_op = dispatch[func]
     except TypeError:
-        # a func that cannot be a key of the table at all (a dict asks its keys
-        # for a hash, which an object defining __eq__ without __hash__ does not
-        # have): it names no known function either, so the registry answers it
-        # as a callable of the caller's own
+        # unhashable func: no known name, so answer it as a custom callable
         funcname, op, temporal_op = dispatch.custom(func)
 
     if op is None:
-        # a function that is known but not implemented here - one the backend
-        # cannot do at all cannot refuse itself for a dtype either, so the
-        # missing implementation is the answer before any temporal policy is
-        # asked
+        # known but not implemented by this backend
         raise missing_impl_error(funcname)
 
     if funcname == "topk":
-        # the topk hands out k values per group: its result is a matrix with
-        # a row per group, and the unravelling of a multidimensional group
-        # index has no place in that.  The rules are asked before the
-        # operation runs, so that a call the backend cannot answer says so
-        # before any other complaint about the values it was given, and so
-        # that the temporal path answers them the same way the numeric one
-        # does
+        # checked before the operation runs, so an unanswerable call says so
+        # before other complaints, and the temporal path matches the numeric one
         kwargs["k"] = check_topk_k(kwargs.get("k", func_argument_default("topk", "k")))
         check_topk_input(ndim_idx)
 
-    # datetime64 and timedelta64 run on their int64 ticks - the temporal
-    # operation of the function takes the input apart, refuses what numpy
-    # refuses, and answers with a temporal value.  Only the functions of the
-    # package go through it: a callable of the caller's own defines its own
-    # semantics and sees the values as they are.  The numpy functions that
-    # mean the same thing are aliases of the functions of the package, so
-    # np.mean is the mean of the package and gets its answer.  The temporal
-    # operation is the other half of the operation of the function, and the
-    # registry holds it beside the numeric one.
+    # temporal dtypes run on their int64 ticks; only the package's own
+    # functions go through the temporal op, not a caller's callable
     if temporal_op is not None and is_temporal_input(a):
         ret, fill_value = temporal_op(
             group_idx,
@@ -204,12 +175,9 @@ def _aggregate_wrap(
             **kwargs,
         )
     elif not isinstance(funcname, str):
-        # a callable of the caller's own: it sees the values as they are, and
-        # its result is a number of its own making - the dtype it asked for is
-        # the one it gets.  Without one, the fill assumes a floating result,
-        # like the callable path itself does - the dtype of the *values* says
-        # nothing about the dtype of the answer, and a nan default resolved
-        # against integer values would come out as a 0 in the float result.
+        # a caller's callable: the requested dtype is the one it gets; the
+        # fill assumes a floating result without one, so a nan default does
+        # not come out as a 0
         fill_value = resolve_fill_value(funcname, fill_value, dtype)
         ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
     else:
@@ -217,9 +185,8 @@ def _aggregate_wrap(
         if funcname.startswith("nan"):
             a, group_idx = _drop_nans(funcname, a, group_idx, kwargs, len_counts_values)
 
-        # the sum overflow guess needs the maximum number of values that can
-        # be summed into a single group, i.e. the (nan-filtered) input length
-        # - flat_size counts output groups and can be arbitrarily smaller
+        # the overflow guess needs the (nan-filtered) input length;
+        # flat_size counts output groups and can be much smaller
         dtype = check_dtype(dtype, funcname, a, len(group_idx))
         fill_value = resolve_fill_value(funcname, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=funcname)
@@ -228,7 +195,7 @@ def _aggregate_wrap(
     # deal with ndimensional indexing
     if ndim_idx > 1:
         if unravel_shape is not None:
-            # A negative fill_value cannot, and should not, be unraveled.
+            # a negative fill_value cannot, and should not, be unraveled
             mask = ret == fill_value
             ret[mask] = 0
             # the axis is not None whenever the shape to unravel to is known
@@ -241,7 +208,6 @@ def _aggregate_wrap(
         check_nton_shape(ret, size, funcname)
         return cast(AResult, ret.reshape(size, order=order))
     if funcname == "topk":
-        # the topk gives k values per group, so its shape is (size, k) - the
-        # check of the shape of a one-out-per-in function does not apply to it
+        # shape is (size, k), not one-out-per-in
         check_topk_shape(ret, flat_size, kwargs["k"])
     return cast(AResult, ret)

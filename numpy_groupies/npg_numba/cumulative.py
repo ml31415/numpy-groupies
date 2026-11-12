@@ -1,8 +1,8 @@
 """Cumulative (N-to-N) operations: every input position gets an output.
 
-The running value lives in ``running``, ``record`` copies it to the output
-position of the value that just arrived - one pass over the data in input
-order (these operations are order-sensitive, unlike the reductions).
+``running`` accumulates per group, ``record`` copies it to the output position
+of the value that just arrived - one pass in input order, hence order-sensitive
+(unlike the reductions).
 """
 
 from typing import Any, NamedTuple
@@ -14,8 +14,7 @@ from numpy_groupies.npg_numba.compose import build_kernel, complex_less, rule_sa
 
 
 class CumulativeState(NamedTuple):
-    """``running`` accumulates per group, ``out`` records the running value
-    at every input position."""
+    """``running`` accumulates per group, ``out`` records it at every input position."""
 
     running: npt.NDArray[np.number]
     out: npt.NDArray[np.number]
@@ -40,9 +39,8 @@ def _cumsum_update(st: CumulativeState, ri: int, i: int, val: float, fill_value:
 
 def _cumsum_update_nan(st: CumulativeState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
     # select-form twin of _cumsum_update - a nan leaves the running value
-    # unchanged, the position still records it.  integer input has no nan
-    # and keeps the plain path (a python literal 0 would unify uint64 with
-    # int64 into float64)
+    # unchanged, the position still records it; integer input has no nan and
+    # keeps the plain path (a literal 0 would unify uint64 and int64 into float64)
     if isinstance(val, (float, complex, np.float32, np.complex64)):
         st.running[ri] += val if val == val else 0.0
     else:
@@ -109,12 +107,10 @@ cumprod = build_kernel(
 
 
 class CumExtremaState(NamedTuple):
-    """The state of the running extrema: ``running`` holds the best value
-    seen so far per group, ``out`` records it at every input position and
-    ``pending`` marks the groups that have not seen a value yet (their first
-    value always wins, a nan poisons the group).
-
-    Kept flat instead of extending ``CumulativeState`` - numba cannot type
+    """The running extrema: ``running`` the best value seen so far per group,
+    ``out`` its record at every input position, ``pending`` the groups that have
+    not seen a value yet (their first value always wins, a nan poisons the
+    group).  Flat, not extending ``CumulativeState`` - numba cannot type
     inherited NamedTuples."""
 
     running: npt.NDArray[np.number]
@@ -143,32 +139,26 @@ def _cummax_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value:
     first = st.pending[ri]
     st.pending[ri] = False
     cur = st.running[ri]
-    # the comparison is resolved into a local before the select
-    # expression - reaching it as a call defeats the branchless
-    # form (measured 2.5ms against 0.8ms per 500k values)
+    # the comparison is resolved into a local before the select expression -
+    # reaching it as a call defeats the branchless form (2.5ms vs 0.8ms per 500k)
     best = complex_less(cur, val)
     # temporal input: a NaT poisons the rest of its group (numpy carries it
-    # through the running maximum), which the guard below keeps - the
-    # comparison alone would order NaT as the smallest tick and let the next
-    # value win.  The NaT of a temporal value is the one that is not equal
-    # to itself.
-    # the condition is put together without a short circuit: the or of
-    # python is a branch, and a branch that a fifth of the values take
-    # mispredicts - the values of a temporal input carry their NaT at
-    # random places
+    # through the running maximum) - the comparison alone would order NaT as
+    # the smallest tick and let the next value win; a NaT is the value not
+    # equal to itself
+    # no short circuit: python's or is a branch, and a branch a fifth of the
+    # values take mispredicts (temporal NaTs sit at random places)
     st.running[ri] = val if (first | (val != val) | (best & (cur == cur))) else cur
 
 
 def _cummax_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_value: float, extra: Any) -> None:
-    # select-form twin of _cummax_update - nans neither win nor clear the
-    # pending flag
+    # select-form twin of _cummax_update - nans neither win nor clear pending
     valid = val == val
     first = st.pending[ri]
     st.pending[ri] = first & (val != val)
     cur = st.running[ri]
-    # the comparison is resolved into a local before the select
-    # expression - reaching it as a call defeats the branchless
-    # form (measured 2.5ms against 0.8ms per 500k values)
+    # the comparison is resolved into a local before the select expression -
+    # reaching it as a call defeats the branchless form (2.5ms vs 0.8ms per 500k)
     best = complex_less(cur, val)
     st.running[ri] = val if (valid & (first | best)) else cur
 
@@ -211,14 +201,12 @@ def _cummin_update(st: CumExtremaState, ri: int, i: int, val: float, fill_value:
     first = st.pending[ri]
     st.pending[ri] = False
     cur = st.running[ri]
-    # the comparison is resolved into a local before the select
-    # expression - reaching it as a call defeats the branchless
-    # form (measured 2.5ms against 0.8ms per 500k values)
+    # the comparison is resolved into a local before the select expression -
+    # reaching it as a call defeats the branchless form (2.5ms vs 0.8ms per 500k)
     best = complex_less(val, cur)
-    # the short circuit stays here: the condition without one is a third
-    # slower in this kernel (measured 2.0ms against 3.0ms per million
-    # values) - the branch that it saves is the one of the comparison of a
-    # value that does not win the group
+    # the short circuit stays: without it this kernel is a third slower
+    # (2.0ms vs 3.0ms per million values) - it saves the comparison branch of
+    # a value that does not win the group
     st.running[ri] = val if (first or val != val or best) else cur
 
 
@@ -227,9 +215,8 @@ def _cummin_update_nan(st: CumExtremaState, ri: int, i: int, val: float, fill_va
     first = st.pending[ri]
     st.pending[ri] = first & (val != val)
     cur = st.running[ri]
-    # the comparison is resolved into a local before the select
-    # expression - reaching it as a call defeats the branchless
-    # form (measured 2.5ms against 0.8ms per 500k values)
+    # the comparison is resolved into a local before the select expression -
+    # reaching it as a call defeats the branchless form (2.5ms vs 0.8ms per 500k)
     best = complex_less(val, cur)
     st.running[ri] = val if (valid & (first | best)) else cur
 

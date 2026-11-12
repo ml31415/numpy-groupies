@@ -1,32 +1,22 @@
 """The decision whether a kernel runs multithreaded.
 
-The cost model is fitted to measurements of the sum kernel on the machine
-documented in ``docs/benchmarks.md`` (AMD EPYC, OpenMP).  The constants are
-deliberately on the pessimistic side: they were scaled down (the bandwidth)
-and up (the costs of the groups) after the fit, so that the model errs
-towards the sequential path.  The margin of ``MT_MAX_RATIO`` adds to that:
-the parallel path is only used when the model promises it a clear gain.
-
-The times are in microseconds, the constants in nanoseconds or bytes per
-second.
+The cost model is fitted to measurements of the sum kernel on the machine of
+``docs/benchmarks.md`` (AMD EPYC, OpenMP); the constants are deliberately on
+the pessimistic side - scaled down (the bandwidth) and up (the group costs) -
+so the model errs towards the sequential path, and the ``MT_MAX_RATIO`` margin
+adds to that.  The times are in microseconds, the constants in nanoseconds or
+bytes per second::
 
     sequential:  n_values * bytes / BW(n_values, 1)  +  n_groups * cg_seq
     parallel:    n_values * bytes / BW(n_values, n_threads)
                  +  n_groups * cg_mt  +  n_threads * n_groups * c_part
                  +  overhead
 
-The bandwidth saturates at the machine, not at the number of threads: a
-core delivers its share and the machine about twice that - the constants
-below say how much.  The model does not divide the time by the number of
-threads, but by the bandwidth the threads use together.
-
-The parallel path pays twice for the groups: once for the partial matrix it
-accumulates into, and once for reducing it.  That is why the number of
-groups enters the decision at all - with as many groups as values the
-partial matrix costs more than the data.
-
-Nothing is measured at run time: the decision must be able to run without
-knowing anything about the machine it runs on.
+The bandwidth saturates at the machine, not at the number of threads: a core
+delivers its share and the machine about twice that - the model divides by the
+bandwidth the threads use together, not by the thread count.  The parallel path
+pays twice for the groups (the partial matrix and its fold), which is why the
+group count enters the decision at all.  Nothing is measured at run time.
 """
 
 import os
@@ -47,100 +37,64 @@ _C_PART = 0.16679  # nanoseconds per element of the partial matrix
 # the fixed cost of the parallel path, measured directly (an empty prange
 # loop costs a few microseconds)
 #
-# The cost of the region is the cost of waking the threads of the pool up -
-# the threading layer of numba (OpenMP by default) keeps them asleep between
-# the calls, and every region wakes them up again.  The layer spins the
-# threads for a moment after a region and sleeps them afterwards: an empty
+# The cost of the region is the cost of waking the pool's threads up - the
+# threading layer of numba (OpenMP by default) spins them for a moment after a
+# region and sleeps them afterwards (the pause in the milliseconds): an empty
 # region costs a few microseconds with the threads awake and orders of
-# magnitude more with them asleep, and the pause that puts them to sleep is
-# in the milliseconds.  On a machine whose threads spin (and the layer of
-# OpenMP can be told to), the cost of the region is what decides whether a
-# parallel path is worth it at all, and it is the reason the thresholds of
-# this module are measured and not guessed.  A call that does not pay for
-# the region does not make one - the sequential path is a few microseconds
-# away and it is exact.
-#
-# The floors below are fitted on the *warm* cost - the state of a workload
-# that is called in a loop.  The cold cost (the pool asleep, which is what a
-# program that calls a kernel once pays) is many times the warm one, and it
-# is paid once by the first call of a workload: the calls after it find the
-# threads awake.  A floor fitted on the cold cost would keep a whole band of
-# workloads out of the parallel path for good - and a workload that is
-# called in a loop would never get there, because it would never make the
-# region that wakes the threads up.
+# magnitude more with them asleep.  That cost decides whether a parallel path
+# is worth it at all - the reason the thresholds of this module are measured
+# and not guessed.  The floors below are fitted on the *warm* cost of a
+# workload called in a loop; the cold cost (first call, pool asleep) is many
+# times the warm one and paid once - a floor fitted on it would keep such
+# workloads out of the parallel path for good.
 _OVERHEAD_US = 5.0
 
-# below this many values the parallel path cannot pay for itself, whatever
-# the number of groups: its fixed cost alone is a few percent of the
-# sequential time, and the machines that run it are not exactly this one
+# below this many values the parallel path cannot pay for itself, whatever the
+# number of groups: its fixed cost alone is a few percent of the sequential time
 MT_MIN_VALUES = 100_000
 
-# the parallel path must be this much faster than the sequential one before
-# it is used - the margin absorbs the error of the model and of the
-# measurement, and the error goes in the conservative direction
+# the parallel path must be this much faster before it is used - the margin
+# absorbs the error of model and measurement, in the conservative direction
 MT_MAX_RATIO = 0.8
 
-# The chunks are not one per thread but several: the threads of the pool take
-# the chunks from a queue, so a thread whose core is busy with something else
-# does not hold up the whole call - the threads that are done with their
-# chunks take the ones that are left.  With one chunk per thread there is
-# nothing to take, and the call waits for the slowest core (measured: one
-# slow chunk held up a call by more than all its other chunks together were
-# worth).
-#
-# The states are one per thread, and the thread is what the state belongs to:
-# the state of a thread is written by that thread alone, so the states need no
-# lock - and the memory is one state per thread, which is what
-# ``should_use_mt`` counts as the partial matrix.
-#
-# The number of the threads is the number of the threads of the pool of numba,
-# and the number a thread reports for itself is bounded by it: a thread of
-# the pool is one of the threads the call counted.
+# several chunks per thread: the pool's threads take the chunks from a queue,
+# so a busy core delays its own chunk and not the whole call - one chunk per
+# thread would wait for the slowest core (measured: one slow chunk held up a
+# call by more than all its other chunks together were worth).  The states are
+# one per thread, written by that thread alone - no lock needed, and that is
+# the memory ``should_use_mt`` counts as the partial matrix.  A pool thread's
+# own id is bounded by the thread count of the pool.
 MT_CHUNKS_PER_THREAD = 2
 
 
 # --- the operations that parallelize over the GROUPS instead of the values ---
 #
-# The order statistics (the median, the quantile, the sort, the number of the
-# distinct values) cannot be reduced in chunks: the values of a group have to
-# be together where they are worked on.  They parallelize the other way round -
-# the counting sort that places the values stays single threaded, and the loop
-# over the groups, which is the expensive part, is cut into ranges that the
-# threads work on one after another.  Every group belongs to one range and is
-# worked on by one thread, so nothing is folded afterwards, no partial matrix
-# is accumulated and the result is the one of the sequential kernel bit for bit,
-# whatever the number of the threads.
-#
-# That shape is not the one the constants above were fitted on, so it is not
-# described by ``should_use_mt`` but by ``should_use_group_mt`` below.
+# The order statistics (median, quantile, sort, distinct count) cannot be
+# reduced in chunks: a group's values have to be together where they are
+# worked on.  The counting sort that places the values stays single threaded,
+# and the group loop - the expensive part - is cut into ranges of one thread
+# per group: nothing folded, no partial matrix, the sequential result bit for
+# bit.  That shape is not the one the constants above were fitted on, so it is
+# not described by ``should_use_mt`` but by ``should_use_group_mt`` below.
 
-# what one thread beyond the first brings to a loop over the groups.  Measured
-# with the full pool of the machine of ``docs/benchmarks.md``: the median, the
-# quantile, the sort and the distinct count run a few times faster than on one
-# thread, a fraction of a thread short of the linear share - the constant is
-# the measured one.  The work these loops do is arithmetic on the values and
-# not the memory, so it does not run into the bandwidth the model above is
-# built around.
+# what one thread beyond the first brings to a group loop, measured with the
+# full pool of the benchmarks machine: a fraction of a thread short of the
+# linear share.  These loops do arithmetic on the values, not memory work, so
+# they do not run into the bandwidth the model above is built around.
 _GROUP_PER_THREAD = 0.40
 
-# the share of these kernels that the parallel path cannot take: the counting
-# sort that places the values before the groups can be worked on.  Measured on
-# this machine, it takes about a third of the whole call, for the median as
-# for the sort - the constant is the pessimistic side of that.
+# the share of these kernels the parallel path cannot take: the counting sort
+# of the placement, measured at about a third of the whole call (median and
+# sort alike) - the constant is the pessimistic side of that.
 _GROUP_SERIAL_SHARE = 1.0 / 3.0
 
-# below this many values the loop over the groups is not worth a parallel
-# region.  The operations of this shape cost orders of magnitude more per
-# value than the sum the model above was fitted on, so the same overhead of
-# a few microseconds is a far smaller share of their time: the measured
-# break even sits far below the floor of ``MT_MIN_VALUES``, which would
-# keep these operations single threaded long past the point where the
-# region pays handsomely.  They get a floor of their own for that reason.
-#
-# The floor is fitted on the *warm* cost of the region (see the note at
-# ``_OVERHEAD_US``) - the cold one puts the break even higher, and the floor
-# below is the conservative side of both: a workload below it would not have
-# paid for the region even with the threads awake.
+# below this many values a group loop is not worth a parallel region.  These
+# operations cost orders of magnitude more per value than the sum kernel, so
+# the same overhead of a few microseconds is a far smaller share of their time:
+# the measured break even sits far below ``MT_MIN_VALUES``, which would keep
+# them single threaded long past the point where the region pays handsomely.
+# Fitted on the *warm* cost of the region (see ``_OVERHEAD_US``); the cold one
+# puts the break even higher, and the floor is the conservative side of both.
 GROUP_MT_MIN_VALUES = 20_000
 
 
@@ -149,34 +103,15 @@ GROUP_MT_CHUNKS_PER_THREAD = 2
 
 # --- the gather, which copies one value per value and holds no state ---
 #
-# The gather is the other shape of parallelism: it has no groups at all, and
-# every value writes the one position of its own.  There is nothing to fold
-# and nothing to accumulate - the loop over the values is cut into chunks and
-# the threads copy into their own, and the result is the one of the sequential
-# loop bit for bit, whatever the number of the threads and of the chunks.
-#
-# The gather is bound by the memory and not by the arithmetic, so the model
-# above is the one that fits it: the bandwidth of the machine and the fixed
-# cost of the parallel region.  The number of the groups is zero and the
-# state is empty, so what is left is the transfer of the values - and the
-# estimate of the chunked path, with the partial matrix out of it.
-#
-# Measured with ``python -m numpy_groupies.benchmarks.mt``, with the threads
-# of the pool asleep (a pause before every timed call - the case of a program
-# that calls the gather once) and with them awake (the case of a workload
-# that is called in a loop): the gather pays for the region from about the
-# size the chunked reductions do in the warm state, and from a few times
-# above it in the cold one.
-#
-# The floor is therefore the one of the chunked reductions: the workload
-# below it is one of a few hundred microseconds - the waking of the threads
-# costs about as much as the gather itself, and a workload that is called
-# once pays it without ever getting it back.
-#
-# A workload above the floor that is called once pays the waking of the
-# threads once, and every call after it is the warm one: that is the price
-# of the floor, and it is a price that a workload pays back after a few
-# calls.
+# The gather has no groups and no state: every value writes its own position,
+# the value loop is cut into chunks and the threads copy into their own - the
+# sequential result bit for bit.  Memory bound, so the model above fits it
+# (bandwidth plus the fixed cost of the region; the partial matrix drops out).
+# Measured with ``python -m numpy_groupies.benchmarks.mt``, threads asleep (a
+# single call) and awake (a workload in a loop): the region pays for itself
+# from about the size of the warm chunked reductions, a few times above it
+# cold - hence the same floor, whose one-off waking price a looping workload
+# pays back after a few calls.
 GATHER_MT_MIN_VALUES = MT_MIN_VALUES
 
 
@@ -190,14 +125,10 @@ def _parallel_parts(n_threads: int) -> float:
 def group_chunk_count(n_threads: int, n_groups: int) -> int:
     """The number of the ranges the groups are cut into.
 
-    More than the threads, for the same two reasons the chunks of the reductions
-    are: the threads take the ranges from the queue of the pool, so a core that
-    is busy with something else delays its own range and not the whole call, and
-    the ranges are the unit the balance is struck in - twice as many of them
-    halves the granularity of that balance as well.
-
-    Never more than there are groups: a range without a group is no work at all,
-    and with a single thread there is nothing to balance.
+    More than the threads, for the same two reasons the reduction chunks have:
+    a busy core delays its own range and not the whole call, and the ranges are
+    the unit the balance is struck in.  Never more than there are groups, and
+    a single thread is not split at all.
     """
     if n_threads < 2:
         return 1
@@ -206,21 +137,14 @@ def group_chunk_count(n_threads: int, n_groups: int) -> int:
 
 @njit_stable
 def estimate_group_mt_ratio(n_groups: int, n_threads: int, n_values: int, ns_per_value: float) -> float:
-    """The estimated time of the group parallel path as a multiple of the sequential
-    one, for an operation that works on the groups one after another.
+    """The group-parallel path's estimated time as a multiple of the sequential one.
 
-    ``ns_per_value`` is what one value of the operation costs *in total*, measured
-    on the sequential kernel of the operation, the counting sort of the
-    placement included - which is why the bandwidth and the groups do not
-    enter the estimate again: they are in that number.
-
-    The sequential time is then ``n_values * ns_per_value``; the parallel one
-    keeps the part that cannot be shared and divides the rest by the number of
-    the threads worth of work the pool gets through with.
-
-    The overhead of the region is the *warm* one (the threads of the pool
-    spinning): the estimate is what the path is worth in a loop, and the
-    floors of this module are what a single call is worth.
+    ``ns_per_value`` is the *total* sequential cost per value, counting sort of
+    the placement included - which is why bandwidth and groups do not enter the
+    estimate again.  The parallel time keeps the unshareable share and divides
+    the rest by the threads' worth of work; the region overhead is the *warm*
+    one - the estimate is what the path is worth in a loop, the floors what a
+    single call is worth.
     """
     seq_us = n_values * ns_per_value / 1e3
     par_us = seq_us * (_GROUP_SERIAL_SHARE + (1.0 - _GROUP_SERIAL_SHARE) / _parallel_parts(n_threads))
@@ -231,10 +155,8 @@ def estimate_group_mt_ratio(n_groups: int, n_threads: int, n_values: int, ns_per
 def should_use_group_mt(n_groups: int, n_threads: int, n_values: int, ns_per_value: float) -> bool:
     """Whether the loop over the groups of an operation is worth spreading.
 
-    The arguments are those of ``should_use_mt``, plus ``ns_per_value``, the
-    measured cost of one value of the operation.  ``n_groups`` is not in the
-    estimate - the loops these operations spread have no per-group cost of
-    their own - but a call with no groups to work on has no work at all.
+    The arguments of ``should_use_mt`` plus ``ns_per_value``; ``n_groups`` is
+    not in the estimate (no per-group cost of its own) but gates the call.
     """
     if n_threads < 2:
         return False
@@ -247,13 +169,9 @@ def should_use_group_mt(n_groups: int, n_threads: int, n_values: int, ns_per_val
 def chunk_count(n_threads: int, n_values: int) -> int:
     """The number of the chunks the data is split into.
 
-    Several per thread, so that the threads can take the chunks from the
-    queue of the pool and a busy core does not hold up the whole call.  Never
-    more than there are values: an empty chunk is no work at all.
-
-    With a single thread there is nothing to balance, and the data is not
-    split at all - the result is then the one of the sequential kernel, bit
-    for bit.
+    Several per thread, so a busy core delays its own chunk and not the whole
+    call.  Never more than there are values, and a single thread is not split
+    at all - the result is the sequential kernel's, bit for bit.
     """
     if n_threads < 2:
         return 1
@@ -263,11 +181,9 @@ def chunk_count(n_threads: int, n_values: int) -> int:
 
 @njit_stable
 def _bandwidth_bytes_per_s(n_values: int, n_threads: int) -> float:
-    """The bandwidth the threads use together for a working set of the given size.
-
-    A core delivers what it delivers; the machine delivers about twice that,
-    and the threads beyond the second bring little.
-    """
+    """The bandwidth the threads use together for a working set of the given size:
+    a core delivers its share, the machine about twice that, and the threads
+    beyond the second bring little."""
     megabytes: float = max(n_values * _BYTES_PER_ELEMENT / 1024 / 1024, 1e-6)
     core: float = max(0.5e9, _CORE_BYTES_PER_S * megabytes**_CORE_BYTES_PER_DECADE)
     return core * min(n_threads, _PEAK_CORES)
@@ -284,12 +200,9 @@ def estimate_seq_time_us(n_groups: int, n_values: int) -> float:
 def estimate_mt_time_us(n_groups: int, n_threads: int, n_values: int, state_size: int = 1) -> float:
     """The estimated time of the parallel path, in microseconds.
 
-    The chunks run in parallel, so the data arrives at the speed the threads
-    use together; the states have to be filled and folded again, and that
-    costs with the number of the groups.  ``state_size`` is the number of
-    the arrays the state of the operation holds, counted against the two of
-    the sum the constants were fitted on: a state of more arrays costs that
-    much more to fill and to fold.
+    The data arrives at the threads' joint bandwidth; the per-group cost of
+    filling and folding the states scales with ``state_size``, the number of
+    the state arrays against the two of the sum kernel.
     """
     data_us = n_values * _BYTES_PER_ELEMENT / _bandwidth_bytes_per_s(n_values, n_threads) * 1e6
     # the states are one per thread, and the threads are the ones of the pool
@@ -308,16 +221,10 @@ def estimate_mt_ratio(n_groups: int, n_threads: int, n_values: int, state_size: 
 def should_use_mt(n_groups: int, n_threads: int, n_values: int, state_size: int = 1) -> bool:
     """Whether the multithreaded variant of a kernel is worth using.
 
-    ``n_groups`` is the number of groups, ``n_threads`` the number of threads
-    the parallel path would use, ``n_values`` the number of values in the
-    input.  Note that ``n_values`` is not the ``size`` argument of
-    ``aggregate`` - that one is the number of groups.  ``state_size`` is the
-    number of the arrays the state of the operation holds, against the two
-    of the sum the constants were fitted on.
-
-    The answer is False whenever the parallel path could be slower than the
-    sequential one: with too few values, and whenever the estimate does not
-    promise a clear gain.
+    ``n_values`` is the input length, not the ``size`` argument of ``aggregate``
+    (that one is the number of groups); ``state_size`` counts the state arrays
+    against the two of the sum kernel.  False whenever the parallel path could
+    be slower - too few values, or no clear gain promised.
     """
     if n_threads < 2:
         return False
@@ -334,20 +241,10 @@ _physical_cores: int | None = None
 def mt_thread_count() -> int:
     """The number of the threads the parallel path uses.
 
-    The threads of the pool of numba are the ones that work on the chunks,
-    and numba decides how many they are: the environment variable
-    ``NUMBA_NUM_THREADS`` at the start of the process, ``numba.set_num_threads``
-    at any time.  This package asks no questions of its own - it uses what it
-    finds.
-
-    Read of every call and not once at the import: a number captured at the
-    import would be the number the process started with, whatever the caller
-    does with ``numba.set_num_threads`` afterwards.
-
-    The number cuts the data into chunks - twice as many, see
-    ``MT_CHUNKS_PER_THREAD`` - and the chunks are what the threads take from
-    the queue of the pool.  One thread is the sequential path: the call goes
-    the sequential way instead, with its result bit for bit.
+    The pool size of numba - ``NUMBA_NUM_THREADS`` at process start,
+    ``numba.set_num_threads`` at any time - read per call, since a number
+    captured at the import would go stale.  One thread means the sequential
+    path, with its result bit for bit.
     """
     return nb.get_num_threads()
 
@@ -355,21 +252,11 @@ def mt_thread_count() -> int:
 def physical_core_count() -> int:
     """The number of physical cores the process may run on.
 
-    Hardware threads that share a core are not counted twice: they share the
-    load and store units of the core and its share of the memory bandwidth,
-    so a second thread on the same core brings much less than a second core.
-    On the machines that were measured, the threads beyond the physical
-    cores brought between nothing and a third - and where they brought
-    nothing, they cost up to 40% of the bandwidth.
-
-    In a virtual machine the topology can be wrong (a guest sees the
-    threads of the host as siblings of a core that is not there).  The count
-    is then a guess - but a guess in the safe direction: the parallel path
-    gets fewer threads, not more.
-
-    The answer is read once and kept: the file behind it does not change
-    while the process runs, and reading it per call would cost more than
-    the kernel it decides about.
+    Hardware threads sharing a core are counted once - measured, they brought
+    between nothing and a third of a core, and where they brought nothing they
+    cost up to 40% of the bandwidth.  A wrong VM topology yields a guess, but
+    in the safe direction: fewer threads, not more.  Read once and kept; the
+    file behind it does not change while the process runs.
     """
     global _physical_cores
     if _physical_cores is not None:

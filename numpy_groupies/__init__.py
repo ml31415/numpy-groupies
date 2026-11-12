@@ -1,43 +1,23 @@
 """The public API of the package.
 
-The package offers the aggregate of the best implementation available at
-import time - numba, else numpy, else pure python - under the name
-``aggregate``.  Every function of the package is a name of its own as well:
-``npg.mean(group_idx, a)`` is the mean of every group, computed by the best
-implementation there is.
+``aggregate`` is the best implementation available at import time (numba,
+else numpy, else pure python); every function is also a name of its own
+(``npg.mean(group_idx, a)``).
 
-The implementations are reached in two ways, and both of them are kept:
+Implementations are reached in two ways, both kept:
 
-- the modules of the implementations: ``npg_numpy``, ``npg_numba``
-  and ``npg_purepy`` are the modules the implementations live in, and
-  they carry the functions of their implementation as their attributes -
-  ``import numpy_groupies.npg_numpy as npg`` gives a ``npg`` whose
-  ``aggregate`` is the aggregate of the numpy implementation and whose
-  ``mean`` is the mean of the numpy implementation.  A module is ``None``
-  where the package it needs is not installed.
-- the old names, which are the aggregates themselves: ``aggregate_np`` is the
-  aggregate of the numpy implementation, ``aggregate_nb`` the one of the numba
-  implementation and ``aggregate_py`` the one of the pure python
-  implementation.  An aggregate is ``None`` where its implementation is not
-  there, exactly like its module.  They are the names the readme of the
-  package documents.
-- the old names of the modules, ``aggregate_numpy``, ``aggregate_numba`` and
-  ``aggregate_purepy``: they are the modules of the implementations above under
-  the names they had before, and they stay, so that the callers that use them
-  keep working.  Like every name of an implementation they are ``None`` where
-  that implementation is not there.
+- their modules ``npg_numpy``, ``npg_numba``, ``npg_purepy``, carrying the
+  functions of the implementation as attributes; ``None`` where the needed
+  package is not installed.
+- the old names: ``aggregate_np``/``aggregate_nb``/``aggregate_py`` (the
+  aggregates themselves, documented in the readme) and
+  ``aggregate_numpy``/``aggregate_numba``/``aggregate_purepy`` (the modules
+  under their old names).
 
-The rule runs through the whole package: a name that belongs to an
-implementation - its module, its aggregate, its tools - is ``None`` where that
-implementation is not there.  The pure python implementation is always there,
-and so is the gather of a result, which every implementation has.
-
-The functions of the package itself are the ones of the best implementation
-available, and they behave like ``aggregate`` with the name of the function as
-the ``func`` argument: ``npg.mean(group_idx, a)`` is ``npg.aggregate(group_idx,
-a, func="mean")``.  The kernels of the numba implementation - the lean
-functions jitted code calls - are the attributes of the numba module, and are
-not what the package hands out here.
+Rule throughout: a name belonging to an implementation is ``None`` where that
+implementation is not there; pure python is always there.  The package's own
+functions behave like ``aggregate`` with the function name as ``func``;
+numba's kernels live only as attributes of the numba module.
 """
 
 from __future__ import annotations
@@ -61,14 +41,11 @@ if TYPE_CHECKING:
     from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 
     class Aggregate(Protocol):
-        """The canonical signature of the public ``aggregate``.
+        """The canonical signature of the public ``aggregate`` (bound to the best
+        implementation at import time).
 
-        The public name is bound to the best implementation available at
-        import time (numba, else numpy, else pure python) - they agree on
-        everything but the most restrictive ``size`` of the pure python
-        fallback, which does not take a sequence, and on the ``out`` keyword
-        argument, which only the numba implementation honours (the others
-        raise it).
+        Differences to the most restrictive one: the pure python fallback does
+        not take a sequence ``size``; only numba honours ``out``.
         """
 
         def __call__(
@@ -86,13 +63,9 @@ if TYPE_CHECKING:
         ) -> AResult: ...
 
     class EntryPoint(Protocol):
-        """The entry point of one function of the package.
-
-        It takes the arguments of ``aggregate`` and the arguments of its own
-        function - the ``ddof`` of the variance, the ``q`` of the quantile,
-        the ``dx`` of the trapezoid, the ``reverse`` of the sort.  Those are
-        the arguments between ``a`` and ``size`` at runtime, and they are not
-        spelled out here: one entry point covers them all.
+        """Entry point of one function of the package: the ``aggregate`` arguments
+        plus the function's own ones (``ddof``, ``q``, ``dx``, ``reverse``),
+        passed between ``a`` and ``size`` at runtime and not spelled out here.
         """
 
         def __call__(
@@ -108,13 +81,11 @@ if TYPE_CHECKING:
             **kwargs: Any,
         ) -> AResult: ...
 
-    # the gather of a result: the numpy and the numba backends gather into an
-    # array, the pure python one - the one that runs without numpy - into a
-    # list
+    # the gather of a result: numpy and numba gather into an array, pure
+    # python (without numpy) into a list
     def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> AResult | list[Any]: ...
 
-    # the tools that need a package the caller may not have: they are None
-    # where that package is not installed
+    # tools needing a package the caller may not have: None where absent
     unpack_into: Callable[[npt.NDArray[np.integer], AResult, AResult], AResult] | None
     step_count: Callable[[npt.NDArray[np.integer]], int] | None
     step_indices: Callable[[npt.NDArray[np.integer]], npt.NDArray[np.intp]] | None
@@ -128,39 +99,30 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # the backends
 #
-# A backend is the module of its implementation: it carries the aggregate of
-# the implementation and the entry point of every function of the package as
-# its attribute - ``npg_numpy.mean(group_idx, a)`` is the mean of every
-# group, with the function in the name.  The numba module carries its
-# kernels there, which jitted code can reach (a plain python object is no
-# numba type, a module attribute is).
+# A backend is the module of its implementation: aggregate and per-function
+# entry points as attributes (the numba kernels too, which jitted code can
+# reach; a plain python object is no numba type, a module attribute is).
 
-# the modules of the implementations - a module is None where the package it
-# needs is not installed
+# implementation modules - None where the needed package is not installed
 npg_numpy: ModuleType | None
 npg_numba: ModuleType | None
 
-# the aggregates of the implementations - the aggregate of an implementation is
-# None where the implementation is not there, exactly like its module
+# implementation aggregates - None where the implementation is absent
 aggregate: Aggregate
 aggregate_np: Aggregate | None
 aggregate_nb: Aggregate | None
-# the pure python one is always there, and it keeps its own type: it answers
-# with a list where the numpy based backends answer with an array
+# pure python is always there and keeps its own type: it answers with a list
+# where the numpy based backends answer with an array
 aggregate_py = npg_purepy.aggregate
-# the old name of the module of the implementation - it stays
 aggregate_purepy = npg_purepy
 
-# the old names of the modules are in sys.modules, so that the path of the
-# import stays: "from numpy_groupies.aggregate_purepy import aggregate" finds
-# the module of the implementation under its old name
+# old module name kept in sys.modules, so the import path stays
 sys.modules["numpy_groupies.aggregate_purepy"] = npg_purepy
 
 try:
     import numpy as np
 except ImportError:
-    # the numpy implementation needs numpy - without it there is none of it:
-    # neither its module nor its aggregate nor its tools
+    # no numpy, no numpy implementation: none of its names
     npg_numpy = None
     aggregate_np = None
     aggregate_numpy = None
@@ -169,19 +131,15 @@ except ImportError:
     default_fill_value = None
     step_count = step_indices = None
 
-    # the pure python backend is the only one there is: its aggregate answers
-    # with a list, where the protocol of the public aggregate describes the
-    # array of the numpy based backends, and its gather gathers a list
+    # pure python is the only backend: it answers with a list and gathers a list
     aggregate = cast("Aggregate", aggregate_py)
     from numpy_groupies.npg_purepy import unpack
 else:
-    # the module of the implementation - importing it sets it as the
-    # attribute of the package as well
+    # importing the module also sets it as the package attribute
     from numpy_groupies import npg_numpy
     from numpy_groupies.npg_numpy import aggregate, step_count, step_indices, unpack
 
     aggregate_np = aggregate
-    # the old name of the module of the implementation - it stays
     aggregate_numpy = npg_numpy
     if npg_numpy is not None:
         sys.modules["numpy_groupies.aggregate_numpy"] = npg_numpy
@@ -197,22 +155,18 @@ else:
 try:
     import numba
 except ImportError:
-    # no numba, no numba backend - the old name says so as well, and the
-    # benchmarks ask for it before they measure anything
+    # no numba, no numba backend (the benchmarks ask for the old name first)
     npg_numba = None
     aggregate_nb = None
     aggregate_numba = None
-    # the gather into an array of the caller is numba work
     unpack_into = None
 else:
-    # the module of the implementation - importing it sets it as the
-    # attribute of the package as well
+    # importing the module also sets it as the package attribute
     from numpy_groupies import npg_numba
     from numpy_groupies.npg_numba import aggregate, step_count, step_indices, unpack, unpack_into
 
-    # the numba implementation wins: the aggregate of the package is its one
+    # numba wins as the aggregate of the package
     aggregate_nb = aggregate
-    # the old name of the module of the implementation - it stays
     aggregate_numba = npg_numba
     if npg_numba is not None:
         sys.modules["numpy_groupies.aggregate_numba"] = npg_numba
@@ -256,18 +210,9 @@ def uaggregate(
 # ---------------------------------------------------------------------------
 # the functions of the package
 #
-# One entry point per function of the package, with the function in the name:
-# ``npg.mean(group_idx, a)`` is the mean of every group, computed by the best
-# implementation available.  They are the entry points of that implementation,
-# so they carry the arguments their function has of its own - the ``ddof`` of
-# the variance, the ``q`` of the quantile - and they behave like ``aggregate``
-# with the name of the function as its ``func`` argument.
-#
-# The names are built at runtime, out of the table of the entry points - so
-# that they cannot drift from it.  The type checker cannot see that table, so
-# the names are declared for it below; the test
-# ``test_every_function_of_the_package_is_declared_for_the_type_checker`` in
-# ``tests/test_registry.py`` keeps the two in step.
+# One entry point per function, with the function in the name; built at
+# runtime from the entry point table so they cannot drift.  Declared for the
+# type checker below; ``test_registry.py`` keeps the two in step.
 
 _functions = bind_functions(aggregate, function_names())
 globals().update(_functions)
@@ -333,10 +278,8 @@ if TYPE_CHECKING:
     nancummin: EntryPoint
 
 
-# ``purge_cache()`` removes the cached compiles of the package - it is the tool for
-# the cache of the numba backend, which lives in a directory of its own (see
-# ``numpy_groupies.cache.numba_cache_dir``) and which numba never cleans
-# up.
+# ``purge_cache()`` removes the cached compiles of the numba backend's cache
+# (see ``numpy_groupies.cache.numba_cache_dir``), which numba never cleans up.
 
 
 try:

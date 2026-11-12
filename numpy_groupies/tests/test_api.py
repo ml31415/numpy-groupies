@@ -24,7 +24,7 @@ from numpy_groupies.tests.helpers import (
 )
 from numpy_groupies.tests.reference import aggregate_ref
 
-# the one-out-per-item functions (cum*, sort) have nothing to fill an absent
+# the one-out-per-item functions (the cumulative ones, sort) have nothing to fill an absent
 # group with - see test_one_out_per_in_cannot_fill in test_axis.py
 # the topk answers a row per group, and the test below compares the row with
 # the fill value - one value against many - so the topk is measured by the
@@ -674,10 +674,10 @@ def test_none_is_refused_where_no_result_holds_it(impl, func):
     The sentinel that asks for the default of a function is ``DEFAULT_FILL_VALUE``
     and the suite pins ``None`` as the value of an empty sequence result
     (`test_fill_value`).  Asked of a number, a flag, a count, a position or the
-    values of a sort, the request used to be answered three different ways: the
-    numpy implementation complained about an ``isnan`` of an object, the numba one
-    failed to type a kernel, and the pure python one wrote the ``None`` into a
-    column of floats, which made the result an object array.
+    values of a sort, the request used to be answered three different ways:
+    ``isnan`` of an object (numpy), a kernel that failed to type (numba) and a
+    ``None`` written into a column of floats (purepy, making the result an
+    object array).
     """
     labels = np.array([0, 2])
     a = np.array([1.0, 2.0])  # group 1 is never named

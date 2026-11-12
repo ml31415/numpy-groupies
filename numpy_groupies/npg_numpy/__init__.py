@@ -1,12 +1,5 @@
 """The numpy implementation of aggregate: the vectorized operations, one per
-function, behind one dispatch.
-
-The entry point of the implementation is here - the driver it calls, the
-validation of the input, the resolution of the operation and of the output
-dtype, and the answer itself, is the one of ``numpy_groupies``, which both numpy
-based backends share.  The operations themselves live in the modules beside
-this one, one per function family.
-"""
+function, behind one dispatch shared with the other numpy based backend."""
 
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -71,20 +64,14 @@ aggregate.__doc__ = (
 # ---------------------------------------------------------------------------
 # the functions of the backend, by their name
 #
-# One entry point per function of the package, calling the implementation
-# above with the name of its function - the same thing the numba module
-# offers with its kernels, and the same thing the package itself offers with
-# the functions of the best implementation available.
+# one entry point per function of the package, calling the implementation
+# above with the name of its function
 
 _functions = bind_functions(aggregate, function_names())
 
 
 def __getattr__(name: str) -> Any:
-    """The function of the backend, by its name.
-
-    The names of the functions are not set one by one - they are looked up
-    in the table of the entry points, so that they cannot drift from it.
-    """
+    """The function of the backend, by its name."""
     try:
         return _functions[name]
     except KeyError:

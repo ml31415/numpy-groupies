@@ -68,19 +68,14 @@ def test_arg_alias_axis_coordinates(impl, rng, func, axis, order):
 
 
 # The axis of the aggregation is what the case is about, not the function: the
-# labels of a one-dimensional array and the labels of the last axis of a
-# two-dimensional one are asked for every function, the labels of the first
-# axis of a two-dimensional one for a representative set of them.
-#
-# The expected answer comes from the group loop of the reference, applied to
-# the slices of the axis - so every function of the package is asked for, and
-# not a hand-written list of the answers of the ones that were thought of.
-#
-# The topk answers a row per group: the axis of a one-dimensional value leaves
-# the labels flat and the answer a matrix, so it is among the cases of those
-# values.  Along an axis of a value of more dimensions its rows would sit in
-# more than one dimension, which the package and the reference both refuse, so
-# it is among the cases of none of them.
+# labels of a one-dimensional array and of the last axis of a two-dimensional
+# one are asked for every function, those of the first axis for a
+# representative set.  The expected answer comes from the group loop of the
+# reference, applied to the slices of the axis - not from a hand-written list.
+# The topk answers a row per group: flat labels leave the answer a matrix, so
+# it is among the cases of one-dimensional values; along an axis of more
+# dimensions both package and reference refuse it, so it is among the cases
+# of none of them.
 _AXIS_FUNCS_NO_TOPK = tuple(fn for fn in func_list if fn != "topk")
 
 _AXIS_CASES = (
@@ -253,7 +248,7 @@ def test_holes_in_multidim_size(impl):
 
 @pytest.mark.parametrize("func", ["sort", "cumsum", "cumprod"])
 def test_one_out_per_in_cannot_fill(impl, func):
-    # sort and the cum-functions emit one value per item, so they have
+    # sort and the cumulative functions emit one value per item, so they have
     # nothing to fill a hole with - but they need to say so clearly
     group_idx = np.array(list(itertools.product(range(3), range(4)))).T[:, :-1]
     with pytest.raises(ValueError, match="cannot fill"):

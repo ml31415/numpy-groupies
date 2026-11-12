@@ -23,13 +23,12 @@ class Block(typing.NamedTuple):
     """Labels and values for the comparisons against the group loop.
 
     ``group_idx`` labels ``a``; ``a_nans`` and ``a_complex`` are the same
-    positions with nans in them, the latter of a nan in one, in the other or in
-    both of its parts.  ``a_ints``, ``a_ints8`` and ``a_uints`` are integer
-    values of three dtypes - the wide signed one, the narrow signed one, whose
-    dtype the reductions that keep the values of the group preserve, and the
-    narrow unsigned one, whose sums and products the dtype ladder widens.
-    ``size`` names two groups more than the labels use, so that an absent group
-    is part of every comparison.
+    positions with nans (the complex one in one part, the other, or both).
+    ``a_ints``, ``a_ints8`` and ``a_uints`` carry three integer dtypes: the wide
+    signed one, the narrow signed one (kept by the reductions that preserve the
+    values of the group) and the narrow unsigned one (widened by the dtype
+    ladder).  ``size`` names two groups more than the labels use, so an absent
+    group is part of every comparison.
     """
 
     group_idx: npt.NDArray[np.integer]
@@ -46,24 +45,19 @@ class Block(typing.NamedTuple):
 def impl(request):
     """The current backend module under test, as a ``_BackendProxy``.
 
-    Tests use it like a module: ``impl.aggregate(...)``, ``impl.step_count(...)``
-    etc. ``NotImplementedError`` (missing functionality) and missing attributes
-    are translated into ``pytest.skip``. ``impl_name(impl)`` is the short backend
-    name ("purepy", "numpy", ...).
+    Tests use it like a module: ``impl.aggregate(...)`` etc.
+    ``NotImplementedError`` and missing attributes become ``pytest.skip``.
     """
     return _BackendProxy(request.param)
 
 
 @pytest.fixture
 def skip_purepy(impl):
-    """The pure python backend knows no datetime64 or timedelta64 values.
-
-    It computes with python numbers, and the temporal values are no python
-    numbers: the arithmetic of the durations and the moments of the
-    timestamps run on their ticks, and that is not what this backend does.
-    The temporal tests leave it out.  The fixture is not autouse: it would
-    ask for the backend of every test of the suite, and the tests that ask
-    for no backend at all would run three times over for nothing.
+    """The pure python backend knows no datetime64 or timedelta64 values:
+    its arithmetic runs on python numbers, not on the ticks of temporal
+    values.  The temporal tests leave it out.  Not autouse: it would ask
+    for the backend of every test of the suite, and the tests that ask for
+    no backend at all would run three times over for nothing.
     """
     if impl_name(impl) == "purepy":
         pytest.skip("the pure python backend knows no datetime64 or timedelta64 values")
@@ -73,10 +67,8 @@ def skip_purepy(impl):
 def rng(request):
     """Module-wide seeded random number generator.
 
-    Pass this to any test or fixture that generates random data, e.g. via
-    the ``random_group_idx``/``random_values`` helpers. Data is generated
-    once per module and reproducible for a given seed, independent of the
-    execution order of modules. The seed is configurable via ``--seed``.
+    Data is generated once per module, reproducible for the ``--seed``
+    and independent of the execution order of modules.
     """
     return np.random.default_rng(request.config.getoption("--seed"))
 
@@ -86,33 +78,24 @@ def block(request):
     """A small block of values, the awkward groups included - the comparisons
     against the group loop of :mod:`.reference` need cases, not statistics.
 
-    Twelve groups of uneven length carry them, and two further labels name no
-    value at all:
+    Twelve groups of uneven length carry them; labels 12 and 13 name no value
+    at all.  Groups 0 to 3 are the nan cases: nothing but nans, a single clean
+    value, a single nan, two values with exactly one nan; groups 4 to 11 hold
+    five to thirty two values, a third of them nans.  The labels are shuffled,
+    so the values of a group are no neighbours of each other.  ``a_complex``
+    carries the nan in a different part of the value per case - a nan in either
+    part makes the whole value incomparable, so which one carries it must not
+    change the answer - and one group holds nothing but such values.
 
-    - 0: a group of nothing but nans, an empty group for the nan functions
-    - 1: a single value, no nan with it
-    - 2: a single value, and that one a nan
-    - 3: two values, exactly one of them a nan
-    - 4 to 11: from five to thirty two values, a third of them nans
+    No infinity among them: numpy's own functions disagree there (``np.median``
+    selects with ``np.partition``, which does not order the values the way
+    ``np.sort`` does once infinities are mixed in), so no reference to offer.
 
-    The labels are shuffled, so the values of a group are no neighbours of each
-    other.  ``a_complex`` carries the nan in a different part of the value per case
-    - a nan in either part makes the whole value incomparable, so which one
-    carries it must not change the answer - one group of nothing but such values,
-    and one in which all three kinds sit beside plain ones.
-
-    No infinity among them: numpy's own functions disagree with each other there
-    (``np.median`` selects with ``np.partition``, which does not order the values
-    the way ``np.sort`` does once infinities are mixed in), so no answer to offer
-    as the reference of it.
-
-    The arrays are write protected, so a test that writes to one of them fails at
-    that place rather than in whatever test reads the block next.  It draws on a
-    generator of its own rather than on ``rng``, whose state depends on how much
-    randomness the tests of the module asked for before the fixture was made.
-
-    The block is the same in every module - the seed is the same and the
-    generator is drawn anew - so it is made once for the session.
+    The arrays are write protected, so a test that writes to one fails at that
+    place.  It draws on a generator of its own rather than on ``rng``, whose
+    state depends on how much randomness the tests asked for before.  The block
+    is the same in every module - the seed is the same and the generator is
+    drawn anew - so it is made once for the session.
     """
     rng = np.random.default_rng(request.config.getoption("--seed"))
     sizes = (3, 1, 1, 2, 5, 8, 13, 20, 32, 24, 16, 9)
@@ -173,10 +156,10 @@ def block(request):
 def n_values(request):
     """The number of values the data of the generic sweep holds.
 
-    The two sizes are the ones of :data:`.helpers.SWEEP_SIZES`: the small
-    one is below the floor of the parallel path of the numba backend, the
-    big one above it - so the sweep of the suite measures the sequential path
-    and the parallel one with the very same test.
+    The two sizes of :data:`.helpers.SWEEP_SIZES`: the small one below the
+    floor of the parallel path of the numba backend, the big one above it -
+    so the sweep measures the sequential path and the parallel one with the
+    very same test.
     """
     return request.param
 
@@ -187,12 +170,8 @@ def scaled_block(block, n_values):
 
     The values are repeated until the data is as big as the scale asks for:
     the groups keep their uneven sizes, and the nans and the complex values
-    with them - so the awkward groups are in the data of the parallel path
-    as well, and the group loop has the very same cases to measure.
-
-    The scope is the module, not the test: the data of a scale is the same
-    for every test that asks for it, and the big one is a few hundred
-    megabytes of arrays - built once per module, not once per test.
+    with them.  The scope is the module, not the test: the big scale is a few
+    hundred megabytes of arrays - built once per module, not once per test.
     """
     repeats = -(-n_values // block.group_idx.size)
     group_idx = np.tile(block.group_idx, repeats)[:n_values]
@@ -221,17 +200,11 @@ def pytest_collection_modifyitems(config, items):
     that backend has no such function - a missing function is not a test waiting
     to fail.  Everything else a backend cannot do signals with
     ``NotImplementedError``, which the ``impl`` proxy turns into a skip at
-    runtime, and a backend that deviates without raising is measured against the
-    group loop like any other and called out where it differs.
-
-    The data of the generic sweep comes in two sizes, and the pure python
-    implementation walks the data in a python loop: the big one is no data
-    it can answer in the time a suite can spend on it - and it has no
-    threads anyway, so the big size would measure the very same path twice.
-
-    The tests that ask for the same function are put into one group, so that
-    the workers of a parallel run share the compiled kernel of that function
-    (see :func:`_group_of`).
+    runtime.  The big sweep size is deselected for pure python: it walks the
+    data in a python loop and has no threads anyway, so the big size would
+    measure the very same path twice.  Tests that ask for the same function
+    are put into one group, so the workers of a parallel run share the compiled
+    kernel of that function (see :func:`_group_of`).
     """
     removed, kept = [], []
     for item in items:
@@ -264,15 +237,10 @@ _FUNCTION_PARAMS = ("func", "kernel_name", "name")
 def _group_of(item, params):
     """The group a test belongs to: the function it asks for.
 
-    The workers of a parallel run share one cache of the compiled kernels on
-    the disk, and they wait for each other: a worker that needs a kernel
-    another worker is compiling right now waits for it - or compiles it
-    itself, which is the same waste with more CPU.
-
-    A group is therefore the function a test asks for, over all the modules
-    that ask for it: the kernel of a function is compiled once in the whole
-    suite and not once per worker.  A test that asks for no function at all
-    is grouped by its module.
+    The workers of a parallel run share one disk cache of the compiled
+    kernels and wait for each other, so the kernel of a function is compiled
+    once in the whole suite and not once per worker.  A test that asks for
+    no function at all is grouped by its module.
     """
     module = item.module.__name__.rsplit(".", 1)[-1]
     for name in _FUNCTION_PARAMS:

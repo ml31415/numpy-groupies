@@ -9,13 +9,10 @@ from numpy_groupies.typing import AResult
 
 
 def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> AResult:
-    """
-    Take an aggregate packed array and uncompress it to the size of group_idx. This is equivalent to
-    ret[group_idx].
-    """
+    """Uncompress an aggregate to the size of group_idx, equivalent to
+    ret[group_idx]."""
     if not isinstance(ret, np.ndarray):
-        # the result of the pure python implementation is a list - it is
-        # gathered like any other sequence of values
+        # the pure python result is a list, gathered like any other sequence
         ret = np.asarray(ret)
     # fancy indexing is unannotated in numpy, the result is the same dtype as ret
     gathered: AResult = ret[group_idx]

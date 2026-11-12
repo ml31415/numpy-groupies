@@ -1,9 +1,6 @@
-"""The operations of the numpy implementation that work on ordered values.
-
-The median, the quantile, the percentile, the number of distinct values and
-the sort - the operations that need the values of a group in their order, and
-so gather them group by group first.
-"""
+"""The order statistics of the numpy implementation: the median, the quantile,
+the percentile, the number of distinct values, the sort - the operations that
+need the values of a group in their order, gathered group by group first."""
 
 from typing import Any, cast
 
@@ -16,7 +13,7 @@ from numpy_groupies.npg_numpy.steps import group_order, sort_key
 from numpy_groupies.temporal import NAT_TICK
 from numpy_groupies.typing import AResult, AScalar
 
-# the ways a quantile interpolates between the two values it falls between -
+# the quantile interpolations between the two values it falls between, under
 # the names numpy uses for them
 _QUANTILE_METHODS = QUANTILE_METHODS
 
@@ -31,10 +28,9 @@ def _median(
     """
     Aggregate operation of the median within each group.
 
-    The median is an order statistic, so unlike the streaming reductions it
-    works on group-ordered data: the values are gathered group by group and
-    the middle of each group is then *selected* via partition (O(n) on
-    average) instead of sorting the values within the groups.
+    An order statistic: the values are gathered group by group and the middle
+    of each group is *selected* via partition (O(n) on average) instead of
+    sorting the values within the groups.
 
     group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
     a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
@@ -43,24 +39,22 @@ def _median(
     """
     if group_idx.size == 0:
         return np.full(size, fill_value, dtype=dtype or np.result_type(a, np.float64))
-    # the values of every group in a contiguous block - any argsort kind
-    # works, the median is insensitive to the order of equal group labels
+    # every group's values in one contiguous block - any argsort kind works,
+    # the median is insensitive to the order of equal group labels
     order = group_order(group_idx, a)
     group_idx_srt, a_srt = order.group_idx, order.values
     starts, counts = order.starts, order.counts
     mids = counts // 2
     odd = counts % 2 == 1
 
-    # partition places the kth element at its sorted position while leaving
-    # the rest unsorted - one kth is enough: the lower middle of an even group
-    # is the largest of the elements before it, which the partition leaves
-    # there (np.partition orders complex values lexicographically, so the
-    # dtype is kept).  Two kths would make numpy select twice, nested into
-    # each other - measured 10.1ms against 3.6ms for the same 1000 groups
+    # one kth is enough: partition places the kth element at its sorted
+    # position and leaves the rest unsorted, so the lower middle of an even
+    # group is the max of the part before it (np.partition orders complex
+    # values lexicographically, so the dtype is kept); two kths nest the
+    # selections, 10.1ms against 3.6ms for 1000 groups
     vals = np.empty(starts.size, dtype=np.result_type(a_srt, np.float64))
-    # the mean of the two middles is taken in float64 for integral input -
-    # adding them in their own dtype overflows (int8 100 + 100) and bool
-    # addition is a logical or (True + True), while np.median promotes first
+    # the two middles add in float64 for integral input: their own dtype
+    # overflows (int8 100 + 100) and bool adds as or - np.median promotes first
     promote = np.issubdtype(a_srt.dtype, np.integer) or np.issubdtype(a_srt.dtype, np.bool_)
     for grp in range(starts.size):
         start, mid = starts[grp], mids[grp]
@@ -72,10 +66,9 @@ def _median(
         else:
             vals[grp] = (part[:mid].max() + part[mid]) / 2
     if np.issubdtype(a_srt.dtype, np.inexact):
-        # like np.median, any nan poisons its whole group - partition does
-        # not order nans, so they are detected with a per-group reduction, and
-        # the poison is shaped like the result rather than written in as a plain
-        # nan, which for a complex group would leave its other part at a zero
+        # like np.median, any nan poisons its whole group - partition does not
+        # order nans, so a per-group reduction finds them, and the poison is
+        # shaped like the result (a plain nan would leave a complex part at 0)
         nan_groups = np.logical_or.reduceat(np.isnan(a_srt), starts)
         vals[nan_groups] = nan_of(vals.dtype)
 
@@ -96,11 +89,10 @@ def _quantile(
     """
     The quantile of the values within each group.
 
-    The quantile is an order statistic, so it works on group-ordered data like
-    the median: the values are gathered group by group and the wanted
-    quantile is then *selected* via partition (O(n) on average) instead of
-    sorting the values within the groups.  The two values the quantile falls
-    between are interpolated as numpy does it.
+    An order statistic like the median: the values are gathered group by group
+    and the wanted quantile is *selected* via partition (O(n) on average)
+    instead of sorting the values within the groups, interpolated between its
+    two neighbours as numpy does it.
 
     group_idx = np.array([4, 3, 3, 4, 4, 1, 1, 1, 7, 8, 7, 4, 3, 3, 1, 1])
     a = np.array([3, 4, 1, 3, 9, 9, 6, 7, 7, 0, 8, 2, 1, 8, 9, 8])
@@ -113,35 +105,34 @@ def _quantile(
         raise ValueError("Quantiles must be in the range [0, 1]")
     if group_idx.size == 0:
         return np.full(size, fill_value, dtype=dtype or np.result_type(a, np.float64))
-    # the values of every group in a contiguous block - any argsort kind
-    # works, the quantile is insensitive to the order of equal group labels
+    # every group's values in one contiguous block - any argsort kind works,
+    # the quantile is insensitive to the order of equal group labels
     order = group_order(group_idx, a)
     group_idx_srt, a_srt = order.group_idx, order.values
     starts, counts = order.starts, order.counts
 
     vals = np.empty(starts.size, dtype=np.result_type(a_srt, np.float64))
-    # the mean of the two middles is taken in float64 for integral input -
-    # adding them in their own dtype overflows (int8 100 + 100) and bool
-    # addition is a logical or (True + True), while np.quantile promotes first
+    # the two middles add in float64 for integral input: their own dtype
+    # overflows (int8 100 + 100) and bool adds as or - np.quantile promotes
+    # first
     promote = np.issubdtype(a_srt.dtype, np.integer) or np.issubdtype(a_srt.dtype, np.bool_)
     for grp in range(starts.size):
         start, count = starts[grp], counts[grp]
-        # the virtual index of the quantile: the position it asks for in the
-        # sorted group, counted in fractions of the way from 0 to n - 1
+        # the virtual index of the quantile, in fractions of the way from
+        # 0 to n - 1 of the sorted group
         pos = q * (count - 1)
         if method == "nearest":
-            # numpy rounds the virtual index to the nearest element, halves to
-            # even (np.round), and takes that element as it is
+            # numpy rounds the index to the nearest element, halves to even
+            # (np.round), and takes that element as it is
             index = min(int(np.round(pos)), count - 1)
             part = np.partition(a_srt[start : start + count], index)
             vals[grp] = part[index]
             continue
         lower_index = int(np.floor(pos))
         upper_index = int(np.ceil(pos))
-        # the partition places the element at upper_index at its sorted
-        # position and leaves the elements before it in no particular order -
-        # their largest is the one below (np.partition orders complex values
-        # lexicographically, so the dtype is kept)
+        # the element at upper_index lands sorted, the ones before it stay
+        # unsorted - their max is the one below (np.partition orders complex
+        # values lexicographically, so the dtype is kept)
         part = np.partition(a_srt[start : start + count], upper_index)
         upper = part[upper_index]
         if lower_index == upper_index:
@@ -162,9 +153,8 @@ def _quantile(
             vals[grp] = lower + (upper - lower) * (pos - lower_index)
     if np.issubdtype(a_srt.dtype, np.inexact):
         # like np.quantile, any nan poisons its whole group - partition does
-        # not order nans, so they are detected with a per-group reduction, and
-        # the poison is shaped like the result rather than written in as a plain
-        # nan, which for a complex group would leave its other part at a zero
+        # not order nans, so a per-group reduction finds them, and the poison
+        # is shaped like the result (a plain nan would leave a complex part at 0)
         nan_groups = np.logical_or.reduceat(np.isnan(a_srt), starts)
         vals[nan_groups] = nan_of(vals.dtype)
 
@@ -197,22 +187,15 @@ def _topk(
     k: int = 5,
     largest: bool = True,
 ) -> npt.NDArray[np.generic]:
-    """The k largest (or the k smallest) values of every group.
+    """The k largest (or the k smallest) values of every group, one row per
+    group and k columns in the order of their rank - the largest first if
+    ``largest`` is true, the smallest first otherwise; a group with fewer
+    than k values fills the empty places with the fill value.
 
-    The result is a matrix with one row per group and k columns: the values
-    of the group in the order of their rank - the largest one first, if
-    ``largest`` is true, the smallest one first otherwise.  A group with
-    fewer than k values fills the places it has none with the fill value.
-
-    The values that are missing - the nans of the inexact dtypes, the NaT of
-    the temporal ones - are in no selection: they are neither the largest
-    nor the smallest value of a group, and the sort of a group puts them
-    last.  A group that holds nothing but missing values has no value to
-    name and answers the fill value in every column.
-
-    The values of a group are ordered with the partition of numpy, which
-    leaves the k wanted ones at the end of the block - one partition per
-    group, the same work the median does.
+    The missing values - the nans of the inexact dtypes, the NaT of the
+    temporal ones - are in no selection, and a group of nothing but them
+    answers the fill value in every column.  One numpy partition per group
+    leaves the k wanted ones at the end of the block.
     """
     out_dtype = np.dtype(dtype) if dtype is not None else a.dtype
     out = np.full((size, k), fill_value, dtype=out_dtype)
@@ -235,18 +218,14 @@ def _topk(
         if count <= k:
             chosen = np.sort(block)
         elif largest:
-            # the partition puts the k wanted values behind the k-th, and
-            # they are ordered afterwards - the partition leaves them in no
-            # order of their own
+            # the k wanted ones sit behind the k-th, in no order of their own
             chosen = np.sort(np.partition(block, count - k)[count - k :])
         else:
-            # the k smallest are in front of the k-th, which the partition
-            # puts in its place
+            # the k smallest sit in front of the k-th, which lands sorted
             chosen = np.sort(np.partition(block, k - 1)[:k])
         if largest:
             chosen = chosen[::-1]
-        # the row of the group is the row of its label - a group that holds
-        # no value at all has no block and keeps the fill value
+        # a group with no value has no block and keeps the fill value
         out[labels[starts[grp]], : min(count, k)] = chosen[:k]
     return out
 
@@ -258,13 +237,10 @@ def _nunique(
     fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.int64]:
-    """The number of distinct values of every group.
-
-    The values of a group are gathered and ordered, and the values that
-    differ from their predecessor are the distinct ones.  The nans are one
-    value among themselves - a nan in either part of a complex value makes
-    it one - so they are left out of the ordering and counted apart: the
-    plain function counts them, the nan variant never sees them.
+    """The number of distinct values of every group: the ordered values that
+    differ from their predecessor.  The nans are one value among themselves
+    (a nan in either part of a complex value makes it one), counted apart -
+    the plain function counts them, the nan variant never sees them.
     """
     if group_idx.size == 0:
         return np.full(size, fill_value, dtype=dtype or np.int64)
@@ -279,8 +255,8 @@ def _nunique(
         order = group_order(group_idx, a, good)
         group_idx_srt, a_srt = order.group_idx, order.values
         starts, counts = order.starts, order.counts
-        # the distinct values of every group: the values that differ from
-        # their predecessor in the ordered group
+        # distinct values: those that differ from their predecessor in the
+        # ordered group
         vals = np.empty(starts.size, dtype=np.int64)
         for grp in range(starts.size):
             start, count = starts[grp], counts[grp]
@@ -300,25 +276,18 @@ def _mode(
     fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.generic]:
-    """The most frequent value of every group - the smallest of them on a tie.
-
-    The values of a group are ordered, and the runs of equal values are the
-    candidates: the first run of the maximal length wins, which is the
-    smallest of the values that share the highest count - the way
-    ``scipy.stats.mode`` breaks a tie.
-
-    Like the topk, the mode has no nan variant: the missing values are in no
-    selection - a nan is never the most frequent value of a group - and a
-    group that holds nothing but them has no mode at all, so it keeps the
-    fill value, as does a group the labels never name.
+    """The most frequent value of every group, the smallest on a tie - the
+    way ``scipy.stats.mode`` breaks one: in the ordered group the first run
+    of maximal length wins.  Like the topk, the mode has no nan variant: the
+    missing values are in no selection, and a group of nothing but them
+    keeps the fill value, as does a group the labels never name.
     """
     out_dtype = np.dtype(dtype) if dtype is not None else a.dtype
     ret = np.full(size, fill_value, dtype=out_dtype)
     if group_idx.size == 0:
         return ret
-    # the missing values are left out before the groups are gathered - the
-    # nans of the inexact dtypes; a temporal input never reaches here, the
-    # wrapper of the temporal values hands the int64 ticks over without them
+    # the nans of the inexact dtypes are left out - a temporal input never
+    # reaches here, the wrapper hands the int64 ticks over without them
     good: npt.NDArray[np.bool_] | None = None
     if a.dtype.kind in "fc":
         good = ~np.isnan(a)
@@ -331,8 +300,8 @@ def _mode(
     for grp in range(starts.size):
         begin, count = starts[grp], counts[grp]
         block = np.sort(values[begin : begin + count])
-        # the runs of equal values are neighbours now; the first run of the
-        # maximal length is the smallest of the values that share the count
+        # runs of equal values are neighbours; the first maximal run is the
+        # smallest of the values that share the count
         bounds = np.flatnonzero(np.concatenate(([True], block[1:] != block[:-1])))
         lengths = np.diff(np.append(bounds, block.size))
         vals[grp] = block[bounds[int(np.argmax(lengths))]]
@@ -349,20 +318,19 @@ def _sort(
     reverse: bool = False,
 ) -> AResult:
     if reverse:
-        # the descending key.  Bitwise inversion reverses the order of the
-        # integral and boolean dtypes exactly, where negation does not: the
-        # smallest value of a signed dtype survives negation as itself, and a
-        # zero of an unsigned one stays the smallest key of all.  The inexact
-        # dtypes have no inversion and negate cleanly - a nan stays last
-        # either way, and -0.0 compares equal to 0.0.
+        # the descending key: bitwise inversion reverses the order of the
+        # integral and boolean dtypes exactly, where negation does not (the
+        # smallest value of a signed dtype survives negation as itself, a zero
+        # of an unsigned one stays the smallest key) - the inexact dtypes
+        # negate cleanly, a nan stays last either way
         key = cast("npt.NDArray[np.integer]", ~a) if a.dtype.kind in "iub" else cast("npt.NDArray[np.floating]", -a)
     else:
         key = a
     sort_group_idx = sort_key(group_idx)
     sortidx = np.lexsort((key, sort_group_idx))
-    # Unsort back into original order, but preserving the groupwise value
-    # sorting: scattering through the group-stable argsort is exactly the
-    # inverse permutation, avoiding the classic argsort-of-argsort.
+    # unsort back into the original order, keeping the groupwise value sort:
+    # scattering through the group-stable argsort is exactly the inverse
+    # permutation, avoiding the classic argsort-of-argsort
     gsort = np.argsort(sort_group_idx, kind="stable")
     ret = cast(AResult, np.empty_like(a))
     ret[gsort] = a[sortidx]
@@ -372,12 +340,10 @@ def _sort(
 # ---------------------------------------------------------------------------
 # the order statistics of the ticks of a temporal input
 #
-# The median and the quantile of a temporal input are computed on the int64
-# ticks of its values, and exactly: the middle of an even group averages its
-# two middles as python integers, where a float64 would round the answer off
-# the tick grid, and the quantile interpolates between two ticks, which
-# scales their difference by a fraction - a product no int64 arithmetic
-# holds.
+# computed on the int64 ticks, and exactly: the middle of an even group
+# averages its two middles as python integers, where a float64 would round
+# the answer off the tick grid, and the quantile scales a tick difference by
+# a fraction - a product no int64 arithmetic holds
 
 
 def _round_half_even(total: int, count: int) -> int:
@@ -396,20 +362,11 @@ def _temporal_group_quantile(
     q: float,
     method: str = "linear",
 ) -> npt.NDArray[np.int64]:
-    """The quantile of the ticks of every group, the way numpy computes it.
-
-    numpy computes the quantile of a temporal value by interpolating between
-    the two ticks it falls between - the difference of the two scaled by the
-    fraction of the way - and it does that in the arithmetic of the ticks:
-    the difference is a duration, the product of it and the fraction is
-    truncated towards zero, and the answer is a tick again.  The two
-    neighbours are taken from the sorted group, and the branch of the
-    interpolation depends on the fraction: below a half the answer grows
+    """The quantile of the ticks of every group, tick for tick like numpy:
+    the difference of the two neighbours scaled by the fraction, the product
+    truncated towards zero like numpy's multiplication of a duration and a
+    float (the two branches of its ``_lerp``) - below a half the answer grows
     from the lower neighbour, from a half on it shrinks from the upper one.
-
-    The two branches are the ones of numpy's own ``_lerp``, and the
-    truncation is the one of its multiplication of a duration and a float -
-    so the answers are the answers of numpy, tick for tick.
     """
     order = np.argsort(group_idx, kind="stable")
     values = ticks[order]
@@ -426,8 +383,7 @@ def _temporal_group_quantile(
         low = min(int(np.floor(position)), count - 1)
         high = min(int(np.ceil(position)), count - 1)
         if method == "nearest":
-            # numpy rounds the position to the nearest element, halves to
-            # even, and takes that element as it is
+            # numpy rounds the position half to even and takes that element
             index = min(int(np.round(position)), count - 1)
             ret[grp] = np.partition(block, index)[index]
             continue
@@ -437,21 +393,19 @@ def _temporal_group_quantile(
         if method == "higher":
             ret[grp] = np.partition(block, high)[high]
             continue
-        # the two neighbours it falls between: the midpoint takes their mean
-        # - numpy interpolates it with the fraction of a half
+        # the two neighbours it falls between: the midpoint takes their mean,
+        # the fraction of a half in numpy's interpolation
         gamma = 0.5 if method == "midpoint" else position - low
         if low == high:
             ret[grp] = np.partition(block, high)[high]
             continue
-        # the partition places the element at the upper index at its sorted
-        # position and leaves the ones before it in no particular order -
-        # their largest is the one below
+        # the element at the upper index lands sorted, the ones before it
+        # stay unsorted - their largest is the one below
         part = np.partition(block, high)
         difference = int(part[high]) - int(part[:high].max())
         if gamma < 0.5:
-            # the product of the difference and the fraction is truncated
-            # towards zero, like numpy's multiplication of a duration and a
-            # float truncates it
+            # the product truncates towards zero, like numpy's duration
+            # times float
             ret[grp] = int(part[:high].max()) + int(np.float64(difference) * np.float64(gamma))
         else:
             ret[grp] = int(part[high]) - int(np.float64(difference) * np.float64(1 - gamma))
@@ -465,13 +419,9 @@ def _temporal_group_median(
     size: int,
     fill_tick: int,
 ) -> npt.NDArray[np.int64]:
-    """The median of the ticks of every group, exact.
-
-    The values of a group are brought together by a stable argsort, a
-    partition finds the middle of the block, and the two middles of an even
-    group average to their exact mean rounded half to even - the two add up
-    as python integers, so even ticks at the edges of int64 cannot wrap the
-    sum.
+    """The median of the ticks of every group, exact: the two middles of an
+    even group add up as python integers and round half to even, so even
+    ticks at the edges of int64 cannot wrap the sum.
     """
     order = np.argsort(group_idx, kind="stable")
     values = ticks[order]
@@ -500,12 +450,9 @@ def _temporal_median(
     **kwargs: object,
 ) -> npt.NDArray[np.int64]:
     """The exact median of the ticks, behind the signature the temporal
-    wrapper calls the tick median of a backend with.
-
-    The nan form drops the rows of the NaT ticks before the selection - the
-    same work the nan median of the numba backend does inside its kernel.
-    The dtype of the caller and the arguments of no other function reach
-    the selection: the answer is a tick, and the median takes none.
+    wrapper calls with.  The nan form drops the rows of the NaT ticks before
+    the selection, like the nan median of the numba backend does inside its
+    kernel; the answer is a tick, and the median takes none.
     """
     fill_tick = NAT_TICK if fill_value is None else int(fill_value)
     if nan:
@@ -523,12 +470,9 @@ def _temporal_quantile(
     fraction: float,
     method: str = "linear",
 ) -> npt.NDArray[np.int64]:
-    """The quantile of the ticks, behind the signature the temporal
-    wrapper calls the tick quantile of a backend with.
-
-    The quantile interpolates between the two ticks it falls between, and
-    the difference of the two is scaled by the fraction - a product that no
-    int64 arithmetic holds, so the interpolation runs on the ticks the way
-    numpy runs it on the durations of the values.
+    """The quantile of the ticks, behind the signature the temporal wrapper
+    calls with - the interpolation scales a tick difference by a fraction, a
+    product no int64 arithmetic holds, the way numpy runs it on the durations
+    of the values.
     """
     return _temporal_group_quantile(group_idx, ticks, size, fill_tick, fraction, method)

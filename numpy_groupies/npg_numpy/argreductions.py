@@ -1,7 +1,5 @@
-"""The arg-reductions of the numpy implementation.
-
-The index of the largest and of the smallest value of every group.
-"""
+"""The arg-reductions of the numpy implementation: the index of the largest and
+of the smallest value of every group."""
 
 import numpy as np
 import numpy.typing as npt
@@ -22,9 +20,9 @@ def _argmax(
     dtype: npt.DTypeLike | None = int,
     _nansqueeze: bool = False,
 ) -> npt.NDArray[np.int64]:
-    # the mask value has to be the smallest value of numpy's order, which for a
-    # complex dtype is -inf-infj and not -inf+0j (see minval and maxval)
-    # Integer inputs have no NaNs; replacing them can promote uint64 to float64.
+    # the mask value is the smallest value of numpy's order, -inf-infj for a
+    # complex dtype (see minval/maxval); integer input has no nans, and
+    # replacing there could promote uint64 to float64
     a_ = np.where(np.isnan(a), minval(fill_value, a.dtype), a) if _nansqueeze and a.dtype.kind in "fc" else a
     group_max = _max(group_idx, a_, size, np.nan)
     # nan should never be maximum, so use a and not a_
@@ -44,9 +42,9 @@ def _argmin(
     dtype: npt.DTypeLike | None = int,
     _nansqueeze: bool = False,
 ) -> npt.NDArray[np.int64]:
-    # the mask value has to be the largest value of numpy's order, which for a
-    # complex dtype is inf+infj and not inf+0j (see minval and maxval)
-    # Integer inputs have no NaNs; replacing them can promote uint64 to float64.
+    # the mask value is the largest value of numpy's order, inf+infj for a
+    # complex dtype (see minval/maxval); integer input has no nans, and
+    # replacing there could promote uint64 to float64
     a_ = np.where(np.isnan(a), maxval(fill_value, a.dtype), a) if _nansqueeze and a.dtype.kind in "fc" else a
     group_min = _min(group_idx, a_, size, np.nan)
     # nan should never be minimum, so use a and not a_
