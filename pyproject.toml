@@ -109,7 +109,9 @@ numpy_groupies = ["py.typed"]
 write_to = "numpy_groupies/_version.py"
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
+# only the root package re-exports names for the callers of the package; the
+# backends declare theirs in __all__, so their imports are checked
+"numpy_groupies/__init__.py" = ["F401"]
 "numpy_groupies/benchmarks/*" = ["B023"] # closures are invoked immediately within the loop
 # the imports below are the ones the tests are about
 "numpy_groupies/tests/test_backend_names.py" = ["PLC0415"] # the old paths of the modules
