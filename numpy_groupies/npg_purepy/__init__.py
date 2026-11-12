@@ -62,7 +62,7 @@ if TYPE_CHECKING:
 __all__ = ["aggregate", "unpack"]
 
 
-def unpack(group_idx: npt.NDArray[np.integer], ret: AResult | list[Any]) -> list[Any]:
+def unpack(group_idx: npt.NDArray[np.integer] | Sequence[Any], ret: AResult | list[Any]) -> list[Any]:
     """The gather of a result: the result of the group of every value."""
     return [ret[int(ix)] for ix in group_idx]
 
@@ -113,8 +113,8 @@ def _is_flat(values: Sequence[Any]) -> bool:
 
 
 def aggregate(
-    group_idx: npt.NDArray[np.integer],
-    a: AValue,
+    group_idx: npt.NDArray[np.integer] | Sequence[Any],
+    a: AValue | Sequence[Any],
     func: FuncName | Callable[..., AScalar] = "sum",
     size: int | Sequence[int] | None = None,
     fill_value: AFillValue = DEFAULT_FILL_VALUE,
@@ -124,8 +124,9 @@ def aggregate(
     out: AResult | None = None,
     **kwargs: Any,
 ) -> list[Any]:
-    # both arguments are read purely as sized iterables of values; the scalar
-    # the signature of ``a`` also admits is refused below
+    # both arguments are read purely as sized iterables of values - an array
+    # or a plain sequence of them alike; the scalar that the signature of
+    # ``a`` also admits is refused below
     idx: Sequence[Any] = cast(Sequence[Any], group_idx)
     vals: Sequence[Any] = cast(Sequence[Any], a)
     if axis is not None:
