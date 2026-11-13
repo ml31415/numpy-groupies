@@ -109,6 +109,8 @@ func_list = (
     # the sums and the products
     np.sum,
     np.prod,
+    # the sum of the squares - the moment the variance is made of
+    "sumofsquares",
     # the extremes
     np.min,
     np.max,
@@ -145,6 +147,7 @@ func_list = (
     # the variant of
     np.nansum,
     np.nanprod,
+    "nansumofsquares",
     np.nanmin,
     np.nanmax,
     "nanlen",
@@ -396,7 +399,7 @@ def single_run(
     ``on_row(label, cells)`` is called after every function, so the caller can
     report the row as it is measured instead of waiting for the pass.  ``repeat``
     is the number of timed executions of a cell, capped per column by
-    ``MAX_REPEAT``.
+    ``MAX_REPEAT`` - the fastest of the executions is the one that counts.
 
     ``snapshot`` is the bytes of the data as they were at the start of the run.
     It is compared with the data after every function: a participant that wrote
@@ -436,12 +439,15 @@ def single_run(
                     # moment after their region and sleep afterwards, and the
                     # first call after that pays for the waking up - which
                     # would tell nothing about the work.  The timed calls
-                    # come in one block, so that they follow each other
-                    # without a pause and the threads stay awake.
+                    # follow each other without a pause, so that the threads
+                    # stay awake, and the fastest of them is the one that
+                    # counts: a call that the scheduler moves to another core
+                    # or that pays for the waking of a pool is slower than
+                    # the work itself and says nothing about it.
                     aggregate_fn(group_idx, used_a, func=func)
                     timer = timeit.Timer(lambda: aggregate_fn(group_idx, used_a, func=func))
                     number = min(repeat, MAX_REPEAT.get(name, repeat))
-                    t0 = min(timer.repeat(repeat=1, number=number)) / number
+                    t0 = min(timer.repeat(repeat=number, number=1))
                     cells.append(t0 * 1000)
         if snapshot is not None and _restore((group_idx, a, nana), snapshot):
             # a participant wrote into the data: the numbers of this row were
@@ -855,7 +861,7 @@ nothing, the whole array being the core of the kernel.""",
         type=int,
         default=5,
         help=(
-            "timed executions per cell (in one block, the fastest block counts), "
+            "timed executions per cell, the fastest of them counts, "
             "except for the pure-Python and "
             "the group-loop column (default: 5)"
         ),
