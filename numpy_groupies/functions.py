@@ -212,7 +212,8 @@ aggregate_common_doc = """
         the output, i.e. ``group_idx[i,j]`` gives the index into the ith
         dimension in the output
         for ``a[j]``.  Note that ``a`` should still be 1D (or scalar), with
-        length matching ``group_idx.shape[1]``.
+        length matching ``group_idx.shape[1]``, and that nothing deeper than
+        two dimensions names a group without an ``axis``.
     a:
         this is the array of values to be aggregated.  See above for a
         simple demonstration of what this means.  ``a`` will normally be a

@@ -29,7 +29,11 @@ from numpy_groupies.fills import (
     DEFAULT_FILL_VALUE,
     default_fill_value,
 )
-from numpy_groupies.validation import check_fill_value, check_topk_k
+from numpy_groupies.validation import (
+    GROUP_IDX_TOO_MANY_DIMS,
+    check_fill_value,
+    check_topk_k,
+)
 
 
 def trapezoid_ref(*args: Any, **kwargs: Any) -> Any:
@@ -518,6 +522,10 @@ def aggregate_ref(
     name = func if isinstance(func, str) else getattr(func, "__name__", None)
     if name not in _REF_FUNCS:
         raise NotImplementedError(f"aggregate_ref does not know {func!r}")
+    if group_idx.ndim > 2:
+        # labels as deep as these name no group; the package says so in its
+        # own words, and the loop that measures it says so in the same ones
+        raise ValueError(GROUP_IDX_TOO_MANY_DIMS)
     if group_idx.ndim > 1 and size is None:
         raise NotImplementedError("aggregate_ref needs a size for multi-dimensional labels")
 

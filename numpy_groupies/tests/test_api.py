@@ -487,6 +487,32 @@ _VALIDATION_CASES = [
         ValueError,
         "output dimensions specified",
     ),
+    # one row of labels per dimension of the answer is as deep as labels ever
+    # go - a dimension beyond that names no group in any backend
+    (
+        "labels of three dimensions",
+        np.zeros((2, 2, 3), dtype=int),
+        np.array([1.0, 2.0, 3.0]),
+        {},
+        ValueError,
+        "or 2-D with one row",
+    ),
+    (
+        "labels nested three deep in a list",
+        [[[0, 1]]],
+        np.array([1.0, 2.0]),
+        {},
+        ValueError,
+        "or 2-D with one row",
+    ),
+    (
+        "labels of three dimensions and the sizes they would ask for",
+        np.zeros((2, 2, 3), dtype=int),
+        np.array([1.0, 2.0, 3.0]),
+        {"size": (2, 2, 2)},
+        ValueError,
+        "or 2-D with one row",
+    ),
     (
         "labels that are no numbers",
         np.array([0.5, 1.0]),
