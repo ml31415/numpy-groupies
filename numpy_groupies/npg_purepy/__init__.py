@@ -39,6 +39,7 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
+    GROUP_IDX_TOO_MANY_DIMS,
     LENGTH_MISMATCH,
     NEGATIVE_INDICES,
     NON_INTEGER_GROUP_IDX,
@@ -49,6 +50,7 @@ from numpy_groupies.validation import (
     check_fixed_fill_value,
     check_integer_variance_span_overflow,
     check_topk_k,
+    count_dimensions,
     is_integer_dtype,
     is_scalar_input,
 )
@@ -137,6 +139,17 @@ def aggregate(
         raise ValueError(EMPTY_GROUP_IDX)
     if not is_scalar_input(vals) and not _is_flat(vals):
         raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten. Alternatively specify axis.")
+    # the shape of the labels is asked before what they are made of, as in every
+    # other path: labels of more than two dimensions name no group in any
+    # implementation, so this is the one complaint every backend says in the very
+    # same words, while the two-dimensional ones below are a gap of this
+    # implementation alone
+    if count_dimensions(idx) > 2:
+        raise ValueError(GROUP_IDX_TOO_MANY_DIMS)
+    # a label that is no index is refused in the words of the package
+    labels_dtype = getattr(idx, "dtype", None)
+    if labels_dtype is not None and not is_integer_dtype(labels_dtype):
+        raise TypeError(NON_INTEGER_GROUP_IDX)
 
     # the func is resolved before anything is measured of the labels or the
     # sizes, so a refused call speaks in the words of the package, not of
@@ -175,11 +188,6 @@ def aggregate(
     if op is _topk:
         k = check_topk_k(kwargs.get("k", 5))
         largest = kwargs.get("largest", True)
-
-    # a label that is no index is refused in the words of the package
-    labels_dtype = getattr(idx, "dtype", None)
-    if labels_dtype is not None and not is_integer_dtype(labels_dtype):
-        raise TypeError(NON_INTEGER_GROUP_IDX)
 
     for value in idx:
         try:

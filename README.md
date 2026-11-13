@@ -168,7 +168,7 @@ pd.Series(a).groupby(group_idx).sum().reindex(range(group_idx.max() + 1), fill_v
 
 ![Diagram of the five input forms](https://github.com/ml31415/numpy-groupies/raw/master/docs/diagrams/aggregate_dims.png)
 
-Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix it. Full parameter descriptions, plus notes on memory layout and performance, are in the [reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md).
+Output size defaults to `max(group_idx) + 1` per dimension; pass `size=` to fix it. Without an `axis`, a `group_idx` deeper than two dimensions names no group and is refused; `axis` beside a 2-D `group_idx` is form 3 rather than a deeper form 4: the rows are then broadcast labels, and the answer keeps the shape of `a` beside `axis`. Full parameter descriptions, plus notes on memory layout and performance, are in the [reference](https://github.com/ml31415/numpy-groupies/blob/master/docs/functions.md).
 
 ## Functions
 

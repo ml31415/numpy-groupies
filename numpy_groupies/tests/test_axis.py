@@ -22,6 +22,7 @@ from numpy_groupies.tests.reference import (
     aggregate_ref,
     aggregate_ref_along_axis,
 )
+from numpy_groupies.validation import GROUP_IDX_TOO_MANY_DIMS
 
 
 @pytest.mark.parametrize(
@@ -227,9 +228,57 @@ def test_ndim_indexing(impl, rng, ndim, order, outsize=10):
 
 
 @pytest.mark.parametrize("size", [None, (10, 2)])
-def test_ndim_group_idx(impl, size):
+@pytest.mark.parametrize("order", ["C", "F"])
+def test_ndim_group_idx(impl, size, order):
+    """A scalar value under labels of several rows counts the cells of the answer.
+
+    Without a size every row of the labels asks for a dimension of its own,
+    whose length is the highest label of that row plus one - the two rows here
+    reach ten and two, which the maximum over all of them (ten) would not
+    give.  The same answer has to come back from the size spelled out by the
+    caller, and a scalar value is the one value of every item, so the cell of
+    a group carries that value as often as the group has items.
+    """
     group_idx = np.vstack((np.repeat(np.arange(10), 10), np.repeat([0, 1], 50)))
-    impl.aggregate(group_idx, 1, size=size)
+
+    counted = impl.aggregate(group_idx, 1, size=size, order=order)
+    assert counted.shape == (10, 2)
+
+    # the coordinate a column of the labels names is the cell it fills
+    want = np.zeros((10, 2), dtype=int)
+    for col in range(group_idx.shape[1]):
+        want[group_idx[0, col], group_idx[1, col]] += 1
+    np.testing.assert_array_equal(counted, want)
+
+    summed = impl.aggregate(group_idx, 2.5, func="sum", size=size, order=order, fill_value=0.0)
+    np.testing.assert_allclose(summed, want * 2.5)
+
+
+def test_more_than_a_row_per_dimension_is_refused_in_one_sentence(impl):
+    """A label of three dimensions is refused in one sentence by every backend.
+
+    A row of labels per dimension of the answer is as deep as a label ever
+    goes, so a dimension beyond that names no group - a rule of the call and
+    not of one implementation.  Every backend states it in the sentence of
+    :mod:`numpy_groupies.validation` and no words of its own.  Asked of the
+    module behind the ``impl`` proxy: a refusal an implementation might mistake
+    for a gap of its own - a ``NotImplementedError``, which the proxy answers
+    with a skip - is a wrong answer here, and not a missing feature.
+    """
+    group_idx = np.zeros((2, 2, 3), dtype=int)
+    aggregate = impl._module.aggregate
+
+    for kwargs in ({}, {"size": (2, 2, 2)}):
+        with pytest.raises(ValueError) as excinfo:
+            aggregate(group_idx, np.ones(3), func="sum", **kwargs)
+        assert str(excinfo.value) == GROUP_IDX_TOO_MANY_DIMS
+
+
+def test_the_reference_refuses_more_than_a_row_per_dimension_in_the_same_sentence():
+    """The loop the backends are measured against states the rule just the same."""
+    with pytest.raises(ValueError) as excinfo:
+        aggregate_ref(np.zeros((2, 2, 3), dtype=int), np.ones(3), func="sum", size=(2, 2, 2))
+    assert str(excinfo.value) == GROUP_IDX_TOO_MANY_DIMS
 
 
 def test_holes_in_multidim_size(impl):

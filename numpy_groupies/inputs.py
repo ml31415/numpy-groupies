@@ -13,6 +13,7 @@ from numpy_groupies.dtypes import is_duck_array
 from numpy_groupies.typing import AScalar, RavelOrder, ValidatedInput
 from numpy_groupies.validation import (
     EMPTY_GROUP_IDX,
+    GROUP_IDX_TOO_MANY_DIMS,
     LENGTH_MISMATCH_OR_SCALAR,
     NEGATIVE_INDICES,
     NON_INTEGER_GROUP_IDX,
@@ -134,6 +135,20 @@ def input_validation(
     if not is_duck_array(group_idx):
         group_idx = np.asanyarray(group_idx)
 
+    ndim_idx = group_idx.ndim
+    ndim_a = getattr(a, "ndim", 0)
+
+    # the two shape questions of a call without an axis come before the questions
+    # of what the two arguments are made of, and in the same order in every
+    # backend: the values are one-dimensional, and the labels reach at most one
+    # row per dimension of the answer - a row per dimension is as deep as labels
+    # ever go, and a dimension beyond that names no group
+    if axis is None:
+        if ndim_a > 1:
+            raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten. Alternatively specify axis.")
+        if ndim_idx > 2:
+            raise ValueError(GROUP_IDX_TOO_MANY_DIMS)
+
     # equivalent to np.issubdtype(group_idx.dtype, np.integer), just cheaper
     if not is_integer_dtype(group_idx.dtype):
         raise TypeError(NON_INTEGER_GROUP_IDX)
@@ -142,14 +157,8 @@ def input_validation(
     if check_bounds and np.any(group_idx < 0):
         raise ValueError(NEGATIVE_INDICES)
 
-    ndim_idx = group_idx.ndim
-    ndim_a = getattr(a, "ndim", 0)
-
     # axis arg: turn 1d indexing into multidimensional indexing along the axis
-    if axis is None:
-        if ndim_a > 1:
-            raise ValueError("a must be scalar or 1 dimensional, use .ravel to flatten. Alternatively specify axis.")
-    else:
+    if axis is not None:
         if axis >= ndim_a or axis < -ndim_a:
             raise ValueError("axis arg too large for np.ndim(a)")
         axis = axis if axis >= 0 else ndim_a + axis  # negative indexing

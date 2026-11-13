@@ -21,7 +21,7 @@ aggregate(group_idx, a, func="sum", size=None, fill_value=DEFAULT_FILL_VALUE,
 
 | Parameter    | Description |
 | ------------ | ----------- |
-| `group_idx`  | Array of non-negative integers used as labels to group the values in `a`. Normally 1-D with the same length as `a`. It may also be 2-D (or nested sequences convertible to 2-D): then the size of the 0th dimension is the number of output dimensions, and `group_idx[i, j]` is the index into the *i*-th output dimension for `a[j]`. |
+| `group_idx`  | Array of non-negative integers used as labels to group the values in `a`. Normally 1-D with the same length as `a`. It may also be 2-D (or nested sequences convertible to 2-D): then the size of the 0th dimension is the number of output dimensions, and `group_idx[i, j]` is the index into the *i*-th output dimension for `a[j]`. Nothing deeper than that names a group without an `axis`. |
 | `a`          | Array of values to aggregate. Normally 1-D; can be a scalar in some cases (see [forms](#input-forms-in-detail)). |
 | `func`       | Aggregation function. Default `'sum'`. A name from [Available functions](#available-functions), an alias, a NumPy function or builtin (`np.max`, `max`, `len`, …), or any callable. The aliases are defined in `registry.py`. The NumPy and the pure Python implementation call whatever callable they are given; the Numba one compiles its `func`, and a callable *object* (a `functools.partial`, a class instance with a `__call__`) is no function to a compiler, so those go to the NumPy implementation. |
 | `size`       | Shape of the output. `None` means: the maximum of `group_idx` (plus one) determines the size. For multi-dimensional output, give the size of every dimension (or `None`). |
@@ -93,7 +93,7 @@ An input a kernel cannot take is refused before its driver runs, once per call a
    aggregate(np.array([3, 3, 7, 0, 0]), a.T, axis=0).shape  # (8, 3)
    ```
 
-4. **2-D / 1-D.** `a` is 1-D, `group_idx` is 2-D with shape `(d, n)` and `n == len(a)`. The output has `d` dimensions; `group_idx[:, 99]` gives the `(x, y, z)` position of `a[99]`.
+4. **2-D / 1-D.** `a` is 1-D, `group_idx` is 2-D with shape `(d, n)` and `n == len(a)`. The output has `d` dimensions; `group_idx[:, 99]` gives the `(x, y, z)` position of `a[99]`. A `group_idx` of more than two dimensions names no group without an `axis` and is refused. Passing `axis` beside such a `group_idx` does not deepen form 4: the rows are then the broadcast labels of form 3, and the answer keeps the shape of `a` beside `axis` instead of becoming `d`-dimensional.
 5. **2-D / scalar.** Form 4 with a scalar `a`. Mostly used for N-D histograms.
 
 **Performance and memory layout.** In form 4, columns of `group_idx` should be contiguous in memory (`group_idx[:, 99]` should be one contiguous chunk). In form 3 all the data in `a` that belongs to one `group_idx[i]` should be contiguous — for `axis=1` that means `a[:, 55]` should be contiguous.

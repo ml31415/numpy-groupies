@@ -8,7 +8,7 @@ numpy: the pure python implementation loads before numpy is known to exist.
 from __future__ import annotations
 
 import operator
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
 from numpy_groupies.functions import complex_real_result, fill_value_key, fixed_result_types
@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 # the labels of a call
 EMPTY_GROUP_IDX = "group_idx must not be empty"
 NON_INTEGER_GROUP_IDX = "group_idx must be of integer type"
+# the shape of the labels: the groups of one dimension, or a row of labels per
+# dimension of the answer - a dimension beyond that names no group
+GROUP_IDX_TOO_MANY_DIMS = "group_idx must be 1-D, or 2-D with one row of labels per output dimension"
 NEGATIVE_INDICES = "negative indices not supported"
 TOO_LARGE = "one or more indices are too large"
 TOO_LARGE_FOR_SIZE = f"{TOO_LARGE} for size {{size}}"
@@ -86,6 +89,23 @@ def is_integer_dtype(dtype: Any) -> bool:
     if isinstance(dtype, str):
         return dtype.startswith(("int", "uint"))
     return isinstance(dtype, type) and issubclass(dtype, int) and not issubclass(dtype, bool)
+
+
+def count_dimensions(values: Any) -> int:
+    """How deep a sequence of labels reaches: the ndim of an array, the nesting of lists.
+
+    The pure python path reads its labels as a python sequence and never makes
+    an array of them, so for it the depth of the nesting is what measures the
+    same thing an array's ndim measures.
+    """
+    ndim = getattr(values, "ndim", None)
+    if ndim is not None:
+        return int(ndim)
+    depth = 0
+    while isinstance(values, Sequence) and not isinstance(values, str) and len(values):
+        depth += 1
+        values = values[0]
+    return depth
 
 
 def is_numeric_dtype(dtype: Any) -> bool:
