@@ -7,7 +7,7 @@ Complete benchmark results for `aggregate`. A short summary is in the [README](.
 - 500,000 indices, uniformly drawn from `[0, 1000)`.
 - The values of `a` are uniform on `[0, 1)`, and everything above `0.8` is then set to `0`, so that there are falsy values for the boolean functions.
 - For the `nan…` functions, of the remaining values those below `0.2` are set to `nan` (about 20%), leaving the rest on the interval `[0.2, 0.8]`.
-- Times in **milliseconds**, the fastest of ten passes of the table (`--repeat=5 --runs=10` of `numpy_groupies.benchmarks`), every cell measured in one block of five executions. Lower is better. An untimed call precedes every block: the threads of a pool spin for a moment after their region and sleep afterwards, and the first call after that would measure the waking up instead of the work.
+- Times in **milliseconds**, the fastest of ten passes of the table (`--repeat=5 --runs=10` of `numpy_groupies.benchmarks`), every cell measured five times and the fastest of the five counts. Lower is better. An untimed call precedes every measurement: the threads of a pool spin for a moment after their region and sleep afterwards, and the first call after that would measure the waking up instead of the work. A single call can also be slower than the others - the threads of a pool wake up, the scheduler moves the work to another core - and the fastest of them is the one that measures the work and not the noise.
 - The `numpy` and `numba` columns are the two backends of this package - the pure numpy one and the compiled one. The `numba` one is optimized as far as we could get it: it uses the threads of the machine where that pays for itself, and it falls back to a single thread where it does not. The other columns are the group-by machinery of the libraries of the same name and numpy's own `ufunc.at` - reference implementations for the comparison, not backends of this package.
 - The conditions are meant to be the same for every participant: the same data, the same arguments, the same machine, and the threads of the machine are as much theirs as ours. What a participant has to build around the data before it can work on it is its own business, and it is small.
 - The `nunique` counts the distinct values of a group in a hash table, which needs no ordering of the values and so is linear in their number. The counts of the groups are cut into ranges for the threads, like the order statistics.
@@ -35,70 +35,70 @@ The result of a run on the machine of the numeric table (same conditions, `--run
 
 | function                |        numpy |        numba |
 | ----------------------- | -----------: | -----------: |
-| min datetime64          |        1.645 |        0.386 |
-| max datetime64          |        1.329 |        0.418 |
-| nanmin datetime64       |        4.980 |        0.443 |
-| nanmax datetime64       |        4.426 |        0.433 |
-| first datetime64        |        1.772 |        0.327 |
-| last datetime64         |        0.870 |        0.319 |
-| nanfirst datetime64     |        5.064 |        0.306 |
-| nanlast datetime64      |        4.308 |        0.313 |
-| argmin datetime64       |        4.900 |        0.478 |
-| argmax datetime64       |        2.883 |        0.480 |
-| nanargmin datetime64    |        8.364 |        0.579 |
-| nanargmax datetime64    |        6.381 |        0.598 |
-| len datetime64          |        0.813 |        0.255 |
-| nanlen datetime64       |        4.233 |        0.319 |
-| nunique datetime64      |       14.953 |        2.933 |
-| nannunique datetime64   |       16.319 |        2.441 |
-| all datetime64          |        1.875 |        0.856 |
-| any datetime64          |        2.836 |        0.803 |
-| allnan datetime64       |        2.250 |        0.361 |
-| anynan datetime64       |        1.019 |        0.337 |
-| mean datetime64         |        5.274 |        0.652 |
-| nanmean datetime64      |        7.810 |        0.719 |
-| quantile datetime64     |       42.244 |        2.769 |
-| nanquantile datetime64  |       37.977 |        2.961 |
-| mode datetime64         |       26.347 |        2.764 |
-| sort datetime64         |       53.316 |        5.668 |
-| array datetime64        |        7.372 |        7.970 |
-| topk datetime64         |       13.560 |        2.983 |
-| min timedelta64         |        1.657 |        0.398 |
-| max timedelta64         |        1.333 |        0.441 |
-| nanmin timedelta64      |        4.916 |        0.427 |
-| nanmax timedelta64      |        4.425 |        0.428 |
-| first timedelta64       |        1.748 |        0.325 |
-| last timedelta64        |        0.855 |        0.316 |
-| nanfirst timedelta64    |        4.990 |        0.335 |
-| nanlast timedelta64     |        4.295 |        0.329 |
-| argmin timedelta64      |        4.877 |        0.512 |
-| argmax timedelta64      |        2.874 |        0.498 |
-| nanargmin timedelta64   |        8.285 |        0.567 |
-| nanargmax timedelta64   |        6.224 |        0.575 |
-| len timedelta64         |        0.810 |        0.260 |
-| nanlen timedelta64      |        4.277 |        0.314 |
-| nunique timedelta64     |       14.708 |        2.521 |
-| nannunique timedelta64  |       16.179 |        2.757 |
-| all timedelta64         |        1.851 |        0.863 |
-| any timedelta64         |        2.825 |        0.760 |
-| allnan timedelta64      |        2.234 |        0.356 |
-| anynan timedelta64      |        1.009 |        0.320 |
-| mean timedelta64        |        5.067 |        0.629 |
-| nanmean timedelta64     |        7.547 |        0.755 |
-| quantile timedelta64    |       41.814 |        2.740 |
-| nanquantile timedelta64 |       37.621 |        2.643 |
-| mode timedelta64        |       25.741 |        2.916 |
-| sort timedelta64        |       53.386 |        6.311 |
-| array timedelta64       |        6.973 |        7.212 |
-| topk timedelta64        |       13.410 |        3.083 |
-| sum timedelta64         |        1.591 |        0.354 |
-| nansum timedelta64      |        4.722 |        0.343 |
-| cumsum timedelta64      |       13.283 |        0.774 |
-| nancumsum timedelta64   |       54.176 |        0.799 |
-| cummax timedelta64      |         ---- |        1.059 |
-| cummin timedelta64      |         ---- |        1.001 |
-| median timedelta64      |       41.160 |        2.759 |
-| nanmedian timedelta64   |       36.262 |        2.859 |
+| min datetime64          |        1.647 |        0.356 |
+| max datetime64          |        1.315 |        0.424 |
+| nanmin datetime64       |        4.922 |        0.473 |
+| nanmax datetime64       |        4.347 |        0.474 |
+| first datetime64        |        1.733 |        0.319 |
+| last datetime64         |        0.827 |        0.284 |
+| nanfirst datetime64     |        4.955 |        0.299 |
+| nanlast datetime64      |        4.299 |        0.292 |
+| argmin datetime64       |        4.871 |        0.450 |
+| argmax datetime64       |        2.854 |        0.414 |
+| nanargmin datetime64    |        8.278 |        0.593 |
+| nanargmax datetime64    |        6.294 |        0.577 |
+| len datetime64          |        0.799 |        0.247 |
+| nanlen datetime64       |        4.236 |        0.291 |
+| nunique datetime64      |       14.127 |        2.479 |
+| nannunique datetime64   |       15.917 |        2.266 |
+| all datetime64          |        1.801 |        0.766 |
+| any datetime64          |        2.781 |        0.747 |
+| allnan datetime64       |        2.217 |        0.330 |
+| anynan datetime64       |        1.018 |        0.323 |
+| mean datetime64         |        5.193 |        0.645 |
+| nanmean datetime64      |        7.663 |        0.712 |
+| quantile datetime64     |       41.348 |        2.583 |
+| nanquantile datetime64  |       37.515 |        2.497 |
+| mode datetime64         |       25.193 |        2.685 |
+| sort datetime64         |       52.879 |        5.500 |
+| array datetime64        |        6.930 |        7.125 |
+| topk datetime64         |       12.982 |        2.850 |
+| min timedelta64         |        1.636 |        0.340 |
+| max timedelta64         |        1.312 |        0.382 |
+| nanmin timedelta64      |        4.911 |        0.393 |
+| nanmax timedelta64      |        4.399 |        0.444 |
+| first timedelta64       |        1.733 |        0.337 |
+| last timedelta64        |        0.836 |        0.301 |
+| nanfirst timedelta64    |        4.916 |        0.293 |
+| nanlast timedelta64     |        4.251 |        0.306 |
+| argmin timedelta64      |        4.831 |        0.465 |
+| argmax timedelta64      |        2.849 |        0.458 |
+| nanargmin timedelta64   |        8.179 |        0.585 |
+| nanargmax timedelta64   |        6.215 |        0.559 |
+| len timedelta64         |        0.787 |        0.248 |
+| nanlen timedelta64      |        4.186 |        0.287 |
+| nunique timedelta64     |       13.884 |        2.550 |
+| nannunique timedelta64  |       15.792 |        2.421 |
+| all timedelta64         |        1.791 |        0.790 |
+| any timedelta64         |        2.738 |        0.763 |
+| allnan timedelta64      |        2.211 |        0.304 |
+| anynan timedelta64      |        1.009 |        0.285 |
+| mean timedelta64        |        5.061 |        0.611 |
+| nanmean timedelta64     |        7.421 |        0.685 |
+| quantile timedelta64    |       41.664 |        2.590 |
+| nanquantile timedelta64 |       37.053 |        3.220 |
+| mode timedelta64        |       24.819 |        2.827 |
+| sort timedelta64        |       52.183 |        5.440 |
+| array timedelta64       |        6.960 |        7.131 |
+| topk timedelta64        |       12.509 |        2.865 |
+| sum timedelta64         |        1.623 |        0.324 |
+| nansum timedelta64      |        4.580 |        0.312 |
+| cumsum timedelta64      |       12.711 |        0.785 |
+| nancumsum timedelta64   |       53.773 |        0.784 |
+| cummax timedelta64      |         ---- |        1.046 |
+| cummin timedelta64      |         ---- |        0.995 |
+| median timedelta64      |       40.171 |        2.715 |
+| nanmedian timedelta64   |       35.740 |        2.495 |
 
 The kernels of the temporal rows are the ones of the numeric table working on the values or their ticks: the selection of the extrema, the positions, the counts and the truth of the values orders them and finds their `NaT` as it finds a nan, the sums and the accumulations of the durations add in the compiled code, the mean and the median of the ticks answer in exact int64 arithmetic, the topk of the ticks selects the wanted ones out of the ticks of every group, and the quantile of the ticks interpolates the way numpy interpolates it - the difference of the two ticks it falls between is a duration, its product with the fraction is truncated towards zero, and the answer is a tick again. The numba backend compiles all of it: the quantile of the ticks runs in a kernel of its own, with the same counting sort and the same selection the median uses, and all five methods of numpy are in it. The numpy backend is the reference implementation and computes the quantile of the ticks in python - that is why its quantile takes ten times the time of the median. The nan variants sit at the level of their float counterparts: the check of the NaT costs what the check of the nan costs.
 
@@ -145,56 +145,58 @@ python -m numpy_groupies.benchmarks.mt --scaling
 
 | function     |        numpy |        numba |      numbagg |       polars |       pandas |        ufunc |
 | ------------ | -----------: | -----------: | -----------: | -----------: | -----------: | -----------: |
-| sum          |        0.914 |        0.246 |        0.468 |        2.545 |        6.692 |        0.898 |
-| prod         |        0.895 |        0.242 |        0.437 |        6.668 |        5.820 |        0.880 |
-| min          |        1.678 |        0.248 |        0.838 |        3.114 |        6.296 |        1.692 |
-| max          |        1.683 |        0.288 |        0.862 |        3.401 |        6.214 |        1.700 |
-| len          |        0.786 |        0.163 |        0.482 |        2.720 |        5.069 |        0.938 |
-| nunique      |       15.468 |        2.938 |         ---- |       12.259 |       56.783 |         ---- |
-| all          |        1.808 |        0.292 |        1.606 |        2.934 |        6.678 |       32.671 |
-| any          |        2.521 |        0.229 |        1.586 |        2.527 |        6.770 |       30.584 |
-| anynan       |        0.892 |        0.229 |        2.695 |        2.497 |        6.757 |        5.228 |
-| allnan       |        2.062 |        0.270 |        3.287 |        2.742 |        6.665 |        7.579 |
-| mean         |        1.510 |        0.255 |        0.537 |        2.444 |        7.296 |         ---- |
-| median       |       12.875 |        2.876 |         ---- |        3.983 |       15.850 |         ---- |
-| quantile     |       14.847 |        2.903 |         ---- |        4.236 |       23.216 |         ---- |
-| mode         |       26.215 |        2.776 |         ---- |         ---- |         ---- |         ---- |
-| trapezoid    |        3.788 |        0.598 |         ---- |         ---- |         ---- |         ---- |
-| std          |        3.165 |        0.470 |        0.683 |        2.674 |        7.647 |         ---- |
-| var          |        3.155 |        0.452 |        0.687 |        2.643 |        7.650 |         ---- |
-| skew         |        7.950 |        0.964 |         ---- |        3.563 |        9.371 |         ---- |
-| kurt         |        8.027 |        0.942 |         ---- |        4.009 |       10.439 |         ---- |
-| first        |        1.770 |        0.219 |        0.308 |        2.332 |        5.972 |         ---- |
-| last         |        0.837 |        0.206 |        0.422 |        2.389 |        6.555 |         ---- |
-| argmax       |        2.617 |        0.371 |        0.906 |        7.579 |        7.066 |         ---- |
-| argmin       |        4.947 |        0.312 |        0.827 |        7.672 |        6.995 |         ---- |
-| sort         |       71.451 |        6.354 |         ---- |         ---- |         ---- |         ---- |
-| topk         |       14.210 |        2.876 |         ---- |         ---- |         ---- |         ---- |
-| array        |        7.061 |        1.973 |         ---- |         ---- |         ---- |         ---- |
-| nansum       |        4.161 |        0.234 |        1.783 |        6.229 |        8.397 |         ---- |
-| nanprod      |        4.191 |        0.223 |        1.766 |        9.500 |        7.513 |         ---- |
-| nanmin       |        4.903 |        0.320 |        1.980 |        6.266 |        8.198 |         ---- |
-| nanmax       |        4.902 |        0.393 |        2.042 |        6.055 |        8.039 |         ---- |
-| nanlen       |        2.488 |        0.220 |        1.734 |        6.022 |        7.028 |         ---- |
-| nannunique   |       16.387 |        2.825 |         ---- |       14.048 |       29.168 |         ---- |
-| nanall       |        4.893 |        0.302 |        3.297 |        6.428 |        8.149 |         ---- |
-| nanany       |        5.767 |        0.247 |        2.689 |        6.273 |        8.178 |         ---- |
-| nanmean      |        4.632 |        0.412 |        1.772 |        5.998 |        8.356 |         ---- |
-| nanmedian    |       14.356 |        3.062 |         ---- |        6.814 |       14.766 |         ---- |
-| nanquantile  |       17.105 |        2.929 |         ---- |        6.839 |       20.680 |         ---- |
-| nantrapezoid |        6.512 |        1.849 |         ---- |         ---- |         ---- |         ---- |
-| nanvar       |        6.144 |        0.655 |        1.933 |        6.373 |        8.681 |         ---- |
-| nanstd       |        6.012 |        0.622 |        1.953 |        6.102 |        8.978 |         ---- |
-| nanskew      |       10.241 |        1.049 |         ---- |        6.890 |        9.393 |         ---- |
-| nankurt      |       10.270 |        1.067 |         ---- |        6.846 |       10.364 |         ---- |
-| nanfirst     |        4.912 |        0.206 |        0.313 |        6.082 |        7.832 |         ---- |
-| nanlast      |        4.202 |        0.216 |        1.613 |        5.998 |        8.224 |         ---- |
-| nanargmin    |        6.197 |        0.473 |        1.959 |        7.755 |        8.364 |         ---- |
-| nanargmax    |        3.846 |        0.570 |        2.000 |        7.316 |        8.353 |         ---- |
-| cumsum       |       15.778 |        0.553 |         ---- |        9.164 |        7.056 |         ---- |
-| cumprod      |         ---- |        0.588 |         ---- |        8.356 |        7.086 |         ---- |
-| cummax       |         ---- |        0.750 |         ---- |        9.294 |        6.328 |         ---- |
-| cummin       |         ---- |        0.761 |         ---- |        9.220 |        6.298 |         ---- |
-| arbitrary    |      111.997 |        2.355 |         ---- |       80.605 |       93.727 |         ---- |
+| sum          |        0.953 |        0.223 |        0.477 |        2.407 |        6.468 |        0.903 |
+| prod         |        0.884 |        0.247 |        0.422 |        5.419 |        5.533 |        0.863 |
+| sumofsquares |        1.059 |        0.217 |        0.449 |         ---- |         ---- |         ---- |
+| min          |        1.674 |        0.237 |        0.814 |        3.222 |        6.041 |        1.645 |
+| max          |        1.661 |        0.262 |        0.852 |        3.263 |        6.012 |        1.662 |
+| len          |        0.790 |        0.145 |        0.449 |        2.443 |        4.901 |        0.904 |
+| nunique      |       15.340 |        2.660 |         ---- |       10.575 |       55.036 |         ---- |
+| all          |        1.765 |        0.246 |        1.575 |        2.439 |        6.368 |       32.608 |
+| any          |        2.480 |        0.258 |        1.583 |        2.502 |        6.308 |       30.589 |
+| anynan       |        0.877 |        0.214 |        2.679 |        2.357 |        6.313 |        5.253 |
+| allnan       |        2.085 |        0.247 |        3.278 |        2.526 |        6.487 |        7.539 |
+| mean         |        1.492 |        0.230 |        0.527 |        2.181 |        6.841 |         ---- |
+| median       |       12.133 |        2.844 |         ---- |        4.129 |       15.278 |         ---- |
+| quantile     |       15.702 |        2.989 |         ---- |        3.821 |       22.842 |         ---- |
+| mode         |       26.024 |        2.561 |         ---- |         ---- |         ---- |         ---- |
+| trapezoid    |        3.792 |        0.683 |         ---- |         ---- |         ---- |         ---- |
+| std          |        3.107 |        0.430 |        0.669 |        2.575 |        7.126 |         ---- |
+| var          |        3.089 |        0.388 |        0.666 |        2.644 |        7.204 |         ---- |
+| skew         |        7.841 |        0.980 |         ---- |        3.176 |        9.115 |         ---- |
+| kurt         |        7.789 |        0.957 |         ---- |        3.789 |       10.056 |         ---- |
+| first        |        1.727 |        0.208 |        0.293 |        2.506 |        5.756 |         ---- |
+| last         |        0.845 |        0.227 |        0.427 |        2.560 |        6.080 |         ---- |
+| argmax       |        2.556 |        0.337 |        0.886 |        6.752 |        6.693 |         ---- |
+| argmin       |        4.812 |        0.289 |        0.824 |        6.585 |        6.615 |         ---- |
+| sort         |       70.517 |        5.936 |         ---- |         ---- |         ---- |         ---- |
+| topk         |       13.797 |        2.685 |         ---- |         ---- |         ---- |         ---- |
+| array        |        6.716 |        1.927 |         ---- |         ---- |         ---- |         ---- |
+| nansum       |        4.140 |        0.203 |        1.757 |        6.045 |        8.109 |         ---- |
+| nanprod      |        4.114 |        0.214 |        1.756 |        8.167 |        7.266 |         ---- |
+| nansumofsquares |     4.257 |        0.178 |        1.750 |         ---- |         ---- |         ---- |
+| nanmin       |        4.796 |        0.275 |        1.941 |        6.135 |        7.701 |         ---- |
+| nanmax       |        4.756 |        0.323 |        2.033 |        6.005 |        7.716 |         ---- |
+| nanlen       |        2.413 |        0.209 |        1.702 |        5.794 |        6.824 |         ---- |
+| nannunique   |       16.172 |        2.613 |         ---- |       12.945 |       28.645 |         ---- |
+| nanall       |        4.837 |        0.252 |        3.288 |        5.836 |        8.215 |         ---- |
+| nanany       |        5.618 |        0.226 |        2.668 |        6.028 |        8.136 |         ---- |
+| nanmean      |        4.576 |        0.402 |        1.755 |        6.146 |        8.440 |         ---- |
+| nanmedian    |       14.741 |        2.976 |         ---- |        7.278 |       14.460 |         ---- |
+| nanquantile  |       16.882 |        2.937 |         ---- |        7.305 |       20.543 |         ---- |
+| nantrapezoid |        6.497 |        1.861 |         ---- |         ---- |         ---- |         ---- |
+| nanvar       |        6.019 |        0.655 |        1.908 |        6.003 |        8.632 |         ---- |
+| nanstd       |        6.129 |        0.562 |        1.929 |        6.140 |        8.641 |         ---- |
+| nanskew      |       10.272 |        1.050 |         ---- |        6.275 |        9.326 |         ---- |
+| nankurt      |       10.028 |        0.983 |         ---- |        6.880 |       10.002 |         ---- |
+| nanfirst     |        4.834 |        0.197 |        0.304 |        5.654 |        7.532 |         ---- |
+| nanlast      |        4.159 |        0.204 |        1.596 |        5.813 |        7.650 |         ---- |
+| nanargmin    |        6.154 |        0.463 |        1.900 |        5.788 |        7.866 |         ---- |
+| nanargmax    |        3.836 |        0.517 |        1.997 |        6.416 |        7.992 |         ---- |
+| cumsum       |       15.499 |        0.550 |         ---- |        8.693 |        6.780 |         ---- |
+| cumprod      |         ---- |        0.540 |         ---- |        7.677 |        6.488 |         ---- |
+| cummax       |         ---- |        0.763 |         ---- |        8.346 |        5.900 |         ---- |
+| cummin       |         ---- |        0.761 |         ---- |        8.107 |        5.721 |         ---- |
+| arbitrary    |      111.338 |        2.520 |         ---- |       78.176 |       92.887 |         ---- |
 
 *Linux(x86_64), Python 3.14.7, Numpy 2.5.4, Numba 0.68.0, numbagg 0.9.6, Pandas 3.0.6, Polars 2.0.0 (6 threads max)*

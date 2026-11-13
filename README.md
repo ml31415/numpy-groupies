@@ -272,27 +272,28 @@ All implementations share the calling syntax and produce the same results up to 
 
 ## Performance
 
-Best of ten passes, every cell measured in one block of five runs, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
+Best of ten passes, every cell measured five times and the fastest of the five counts, in milliseconds, for 500,000 values in 1,000 groups (lower is better):
 
 | function        | numpy  |  numba  | numbagg | polars | pandas |
 | --------------- | -----: | ------: | ------: | -----: | ------: |
-| `sum`           |  0.914 |   0.246 |   0.468 |  2.545 |  6.692 |
-| `min`           |  1.678 |   0.248 |   0.838 |  3.114 |  6.296 |
-| `max`           |  1.683 |   0.288 |   0.862 |  3.401 |  6.214 |
-| `nunique`       | 15.468 |   2.938 |    ---- | 12.259 | 56.783 |
-| `mean`          |  1.510 |   0.255 |   0.537 |  2.444 |  7.296 |
-| `median`        | 12.875 |   2.876 |    ---- |  3.983 | 15.850 |
-| `quantile`      | 14.847 |   2.903 |    ---- |  4.236 | 23.216 |
-| `mode`          | 26.215 |   2.776 |    ---- |   ---- |   ---- |
-| `std`           |  3.165 |   0.470 |   0.683 |  2.674 |  7.647 |
-| `skew`          |  7.950 |   0.964 |    ---- |  3.563 |  9.371 |
-| `kurt`          |  8.027 |   0.942 |    ---- |  4.009 | 10.439 |
-| `sort`          | 71.451 |   6.354 |    ---- |   ---- |   ---- |
-| `topk`          | 14.210 |   2.876 |    ---- |   ---- |   ---- |
-| `array`         |  7.061 |   1.973 |    ---- |   ---- |   ---- |
-| `nansum`        |  4.161 |   0.234 |   1.783 |  6.229 |  8.397 |
-| `cumsum`        | 15.778 |   0.553 |    ---- |  9.164 |  7.056 |
-| custom callable | 111.997 |   2.355 |    ---- | 80.605 | 93.727 |
+| `sum`           |  0.953 |   0.223 |   0.477 |  2.407 |  6.468 |
+| `sumofsquares`  |  1.059 |   0.217 |   0.449 |    ---- |    ---- |
+| `min`           |  1.674 |   0.237 |   0.814 |  3.222 |  6.041 |
+| `max`           |  1.661 |   0.262 |   0.852 |  3.263 |  6.012 |
+| `nunique`       | 15.340 |   2.660 |    ---- | 10.575 | 55.036 |
+| `mean`          |  1.492 |   0.230 |   0.527 |  2.181 |  6.841 |
+| `median`        | 12.133 |   2.844 |    ---- |  4.129 | 15.278 |
+| `quantile`      | 15.702 |   2.989 |    ---- |  3.821 | 22.842 |
+| `mode`          | 26.024 |   2.561 |    ---- |    ---- |    ---- |
+| `std`           |  3.107 |   0.430 |   0.669 |  2.575 |  7.126 |
+| `skew`          |  7.841 |   0.980 |    ---- |  3.176 |  9.115 |
+| `kurt`          |  7.789 |   0.957 |    ---- |  3.789 | 10.056 |
+| `sort`          | 70.517 |   5.936 |    ---- |    ---- |    ---- |
+| `topk`          | 13.797 |   2.685 |    ---- |    ---- |    ---- |
+| `array`         |  6.716 |   1.927 |    ---- |    ---- |    ---- |
+| `nansum`        |  4.140 |   0.203 |   1.757 |  6.045 |  8.109 |
+| `cumsum`        | 15.499 |   0.550 |    ---- |  8.693 |  6.780 |
+| custom callable | 111.338 |   2.520 |    ---- | 78.176 | 92.887 |
 
 The `numba` column is the backend of this package, optimized as far as we could get it: it uses the threads of the machine where that pays for itself. The operations that can be reduced in chunks - the sums, the products, the counts, the extremes, the mean, the moments (the skewness and the kurtosis), the first and the last value of a group and the index of its best value (the argmax and the argmin) - split their data into chunks that are reduced separately and folded afterwards. The operations that cannot - the order statistics (the median, the quantile, the sort, the topk, the mode, the number of the distinct values) and the callables of the caller - cut their *groups* into ranges instead and let the threads work on the ranges one after another; every group belongs to one range, so nothing is folded afterwards and the result is the one of the sequential kernel bit for bit. The chunks and the ranges are more than the threads, so that a core that is busy with something else does not hold up the whole call - the threads that are done take the pieces that are left. The operations that give an output per value (the cumulatives) stay single-threaded.
 
