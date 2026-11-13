@@ -17,6 +17,7 @@ import numbagg
 funcs = {
     "sum": numbagg.group_nansum,
     "prod": numbagg.group_nanprod,
+    "sumofsquares": numbagg.group_nansum_of_squares,
     "len": numbagg.group_nancount,
     "all": numbagg.group_nanall,
     "any": numbagg.group_nanany,
@@ -33,6 +34,7 @@ funcs = {
     "allnan": numbagg.group_nanall,
     "nansum": numbagg.group_nansum,
     "nanprod": numbagg.group_nanprod,
+    "nansumofsquares": numbagg.group_nansum_of_squares,
     "nanlen": numbagg.group_nancount,
     "nanall": numbagg.group_nanall,
     "nanany": numbagg.group_nanany,
