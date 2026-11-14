@@ -162,7 +162,7 @@ def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
             """The chunk states, folded in index order: the better value
             wins, a tie the earlier chunk; a nan says the group is poisoned -
             the fill value it wrote stands, nothing wins it any more."""
-            acc_out: npt.NDArray[np.int64] = outs[0]
+            acc_out: npt.NDArray[np.intp] = outs[0]
             acc_run = runs[0]
             acc_pend = pends[0]
             for c in range(1, outs.shape[0]):

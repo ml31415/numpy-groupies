@@ -98,22 +98,27 @@ def scalar_dtype(a: Any) -> np.dtype:
     return np.dtype(type(a)) if dtype is None else np.dtype(dtype)
 
 
+# a count and a position are as wide as a pointer (np.intp), the width the
+# index of pandas and of numpy's own arg reductions carry: on a 32 bit
+# platform that is int32, and the answer must not be wider there
+_count_dtype = np.intp
+
 _forced_types = {
     "array": object,
     "all": bool,
     "any": bool,
     "nanall": bool,
     "nanany": bool,
-    "len": np.int64,
-    "nunique": np.int64,
-    "nanlen": np.int64,
-    "nannunique": np.int64,
+    "len": _count_dtype,
+    "nunique": _count_dtype,
+    "nanlen": _count_dtype,
+    "nannunique": _count_dtype,
     "allnan": bool,
     "anynan": bool,
-    "argmax": np.int64,
-    "argmin": np.int64,
-    "nanargmin": np.int64,
-    "nanargmax": np.int64,
+    "argmax": _count_dtype,
+    "argmin": _count_dtype,
+    "nanargmin": _count_dtype,
+    "nanargmax": _count_dtype,
 }
 
 _forced_same_type = {
