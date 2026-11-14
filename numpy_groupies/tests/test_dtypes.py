@@ -538,3 +538,16 @@ def test_narrow_running_sums_are_never_wrapped_in_their_own_dtype(impl, dtype):
     wanted = 2 * maximum + maximum // 2
     got = np.asarray(impl.aggregate(group_idx, values, func="cumsum", size=1))
     np.testing.assert_array_equal(got[-1], wanted, err_msg=f"cumsum over {dtype} wrapped")
+
+
+@pytest.mark.parametrize(
+    "func", ["len", "nanlen", "nunique", "nannunique", "argmax", "argmin", "nanargmin", "nanargmax"]
+)
+def test_counts_and_positions_are_of_the_platform_width(func):
+    """A count and a position are as wide as a pointer, on every platform.
+
+    The width of the index pandas answers with, and of numpy's own arg
+    reductions: on a 32 bit platform int32, never the int64 of a machine word
+    that does not exist there.
+    """
+    assert resolve_output_dtype(None, func, np.dtype(np.float64), 4) == np.dtype(np.intp)

@@ -706,7 +706,7 @@ def _kernel_result(ctx: _Context, computed: npt.NDArray[Any] | None, value_resul
     if value_result:
         fill_tick = _temporal_fill_tick(ctx.fill_value, ctx.a_dtype, policy.fill_is_nat)
         return ctx.call(policy.op, ctx.ticks, fill_tick, dtype=np.dtype(np.int64), **ctx.kwargs)
-    out_dtype = ctx.user_dtype if ctx.user_dtype is not None else np.dtype(np.int64)
+    out_dtype = ctx.user_dtype if ctx.user_dtype is not None else np.dtype(np.intp)
     if policy.flag in ("allnan", "anynan"):
         out_dtype = np.dtype(np.bool_)
     return ctx.call(

@@ -83,10 +83,12 @@ def _len(
     fill_value: AScalar,
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.int64]:
-    # _sum folds a scalar column of ones into its ndim-0 branch
+    # _sum folds a scalar column of ones into its ndim-0 branch; the count of
+    # them is as wide as a pointer, not as wide as the ones summed here (whose
+    # own dtype would be the C long of the python integer 1)
     return cast(
         "npt.NDArray[np.int64]",
-        _sum(group_idx, cast("npt.NDArray[np.number]", 1), size, fill_value, dtype=int),
+        _sum(group_idx, cast("npt.NDArray[np.number]", 1), size, fill_value, dtype=dtype or np.intp),
     )
 
 

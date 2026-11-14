@@ -243,13 +243,13 @@ def _nunique(
     the plain function counts them, the nan variant never sees them.
     """
     if group_idx.size == 0:
-        return np.full(size, fill_value, dtype=dtype or np.int64)
+        return np.full(size, fill_value, dtype=dtype or np.intp)
     if a.dtype.kind in "fc":
         nans = np.isnan(a)
     else:
         nans = np.zeros(a.size, dtype=bool)
     good = ~nans
-    ret = np.full(size, fill_value, dtype=dtype or np.int64)
+    ret = np.full(size, fill_value, dtype=dtype or np.intp)
     if good.any():
         # the values of every group in one row, the nans left out
         order = group_order(group_idx, a, good)
