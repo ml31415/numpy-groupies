@@ -247,7 +247,7 @@ Small tools around `aggregate`, all exported from the package root. They need Nu
 | `relabel_groups_unique(group_idx)`           | Closes gaps in sparse labels while keeping their order. |
 | `relabel_groups_masked(group_idx, keep_group)` | Drops the groups where `keep_group` is false and shifts the remaining ones down; the dropped items end up in group 0. |
 | `default_fill_value(func, dtype=None)`       | The `fill_value` `aggregate` would use for empty groups, see [Fill values](#fill-values). `func` may be a name, an alias or a callable; pass the `dtype` of your real output to get the value that would actually be used. |
-| `purge_cache()`                               | Removes the cached compiles of the Numba backend — the directory `$NUMBA_CACHE_DIR` (or `~/.cache/numba/numpy_groupies`) and the leftovers of the versions that cached next to their source. Returns the number of the files removed. Needs no NumPy. |
+| `purge_cache()`                               | Removes the cached compiles of the Numba backend — the directory `$NUMBA_CACHE_DIR` (or `~/.cache/numba/numpy_groupies`) and the leftovers of the versions that cached next to their source. Returns the number of the files removed. Needs no NumPy. Pass `cache_dir` and `source_tree` to sweep other directories than the ones of the package. |
 
 `uaggregate` is the only one worth reaching for daily — it is `aggregate(...)[group_idx]` in one call, and a typical use is demeaning within groups:
 

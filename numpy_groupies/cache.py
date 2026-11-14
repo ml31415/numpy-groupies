@@ -52,20 +52,26 @@ def package_dir() -> Path:
     return Path(__file__).parent
 
 
-def purge_cache() -> int:
+def purge_cache(cache_dir: Path | None = None, source_tree: Path | None = None) -> int:
     """Remove the cached compiles of this package - the package cache directory
     and the ``.nbi``/``.nbc`` leftovers in the source tree - leaving ``.pyc``
     files and other packages' caches alone. Returns the number of files
     removed.
+
+    The two directories are the ones of the package by default.  Both can be
+    named by the caller: the sweep is what a test of it asks for, and a test
+    that swept the real directories would take the compiles of a run in flight
+    away - the cache directory is the one every worker of that run writes into.
     """
     removed = 0
-    cache = numba_cache_dir()
+    cache = numba_cache_dir() if cache_dir is None else Path(cache_dir)
     if cache.is_dir():
         before = _count_files(cache)
         shutil.rmtree(cache, ignore_errors=True)
         # count only the files that are really gone
         removed += before - _count_files(cache)
-    for path in package_dir().rglob("*"):
+    tree = package_dir() if source_tree is None else Path(source_tree)
+    for path in tree.rglob("*"):
         if not path.name.endswith((".nbi", ".nbc", ".nbi.lock")):
             continue
         try:

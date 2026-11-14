@@ -13,11 +13,21 @@ cached next to their source.
 The module of the cache imports nothing but the standard library, and the root
 imports it on the module level: the sweep also answers where the backend whose
 files it cleans up after is gone - which is when it is asked for most.
+
+Every test that asks the sweep to remove something asks it of directories of
+its own under ``tmp_path``, which :func:`numpy_groupies.cache.purge_cache` takes
+as arguments: a sweep of the real ones would take the compiles of a run in
+flight away from under it - the cache directory is the one every worker of a
+parallel run writes into, and the tree of the package holds the files of that
+run.
 """
 
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
+from inspect import signature
+from pathlib import Path
 
 from numba.core.caching import NullCache
 
@@ -27,6 +37,21 @@ from numpy_groupies.tests.test_numba import _walk_dispatchers
 from numpy_groupies.tests.test_purepy import _BLOCKER
 
 PACKAGE = package_dir()
+
+
+def _source_tree(root: Path, leftovers: Sequence[str] = ()) -> Path:
+    """A package tree of a test, with leftovers of the versions that cached
+    next to their source in its ``__pycache__``.
+
+    The tree a sweep is asked of through the ``source_tree`` argument - the tree
+    of the package under test holds the files of the run itself.
+    """
+    tree = root / "numpy_groupies"
+    cache = tree / "__pycache__"
+    cache.mkdir(parents=True)
+    for name in leftovers:
+        (cache / name).write_text("leftover")
+    return tree
 
 
 def test_cache_directory_from_environment(monkeypatch, tmp_path):
@@ -42,68 +67,74 @@ def test_cache_directory_is_user_wide_without_environment(monkeypatch):
     assert path.is_absolute()
 
 
-def test_purge_cache_removes_cache_and_leftovers_in_source_tree(monkeypatch, tmp_path):
-    # both parts in one test: they touch the same files, and two tests
-    # that do so get in each other's way under xdist
-    monkeypatch.setenv("NUMBA_CACHE_DIR", str(tmp_path))
+def test_purge_cache_removes_cache_and_leftovers_in_source_tree(tmp_path):
+    """The sweep removes the cache directory and the leftovers of a tree.
+
+    Both parts in one test: they are the one call of the sweep.  Neither of the
+    two directories it removes is one of the package - the cache directory is
+    the one the workers of a run write their compiles into, and the tree of the
+    package holds the files of that run - so the call is asked of two
+    directories under ``tmp_path``.
+    """
     # the cache of the package
-    cache = numba_cache_dir()
+    cache = tmp_path / "caches" / "numpy_groupies"
     cache.mkdir(parents=True)
     (cache / "a.nbi").write_text("index")
     (cache / "a.1.nbc").write_text("code")
-    # a __pycache__ directory of the package, as the versions that
-    # cached next to their source left it
-    tree = PACKAGE / "__pycache__"
-    tree.mkdir(exist_ok=True)
-    (tree / "old.nbi").write_text("index")
+    # a __pycache__ directory of the tree, as the versions that cached next to
+    # their source left it
+    tree = _source_tree(tmp_path / "tree")
+    leftovers = tree / "__pycache__"
+    (leftovers / "old.nbi").write_text("index")
     # the data files carry the number before the extension
-    (tree / "old.1.nbc").write_text("code")
-    (tree / "old.nbi.lock").write_text("lock")
+    (leftovers / "old.1.nbc").write_text("code")
+    (leftovers / "old.nbi.lock").write_text("lock")
     # the byte code of the package is left alone
-    bytecode = tree / "keep.pyc"
-    bytecode.write_bytes(b"\x00")
-    # and one in a subpackage: the leftovers are in the whole tree, not
-    # only next to the modules of the top level
-    sub = PACKAGE / "npg_numpy" / "__pycache__"
-    assert sub.is_dir(), "the subpackage of the backends is not imported"
+    (leftovers / "keep.pyc").write_bytes(b"\x00")
+    # and one in a subpackage: the leftovers are in the whole tree, not only
+    # next to the modules of the top level
+    sub = tree / "npg_numpy" / "__pycache__"
+    sub.mkdir(parents=True)
     (sub / "old.nbi").write_text("index")
-    try:
-        removed = purge_cache()
-        assert removed >= 6
-        assert not cache.exists()
-        assert not (tree / "old.nbi").exists()
-        assert not (tree / "old.1.nbc").exists()
-        assert not (tree / "old.nbi.lock").exists()
-        assert bytecode.exists()
-        assert not (sub / "old.nbi").exists()
-    finally:
-        bytecode.unlink(missing_ok=True)
-        for name in ("old.nbi", "old.1.nbc", "old.nbi.lock"):
-            (tree / name).unlink(missing_ok=True)
-        (sub / "old.nbi").unlink(missing_ok=True)
+
+    assert purge_cache(cache_dir=cache, source_tree=tree) == 6
+    assert not cache.exists()
+    assert not (leftovers / "old.nbi").exists()
+    assert not (leftovers / "old.1.nbc").exists()
+    assert not (leftovers / "old.nbi.lock").exists()
+    assert not (sub / "old.nbi").exists()
+    assert (leftovers / "keep.pyc").read_bytes() == b"\x00"
 
 
 def test_package_hands_out_purge_cache():
     assert numpy_groupies.purge_cache is purge_cache
+    # the two directories the sweep removes are the ones of the package, unless
+    # the caller names others
+    parameters = signature(purge_cache).parameters
+    assert parameters["cache_dir"].default is None
+    assert parameters["source_tree"].default is None
 
 
 def test_sweep_answers_where_backend_is_gone(tmp_path):
     """The sweep works without the backend whose files it sweeps.
 
     A caller may just have uninstalled numba - its cache and the leftovers of
-    the versions that cached next to their source are still there.  The
-    module of the cache needs nothing but the standard library, so the sweep
-    runs and removes them even then: blocked numpy brings no numba with it,
-    and the backend of the package is gone - the cache is not.
+    the versions that cached next to their source are still there.  The module
+    of the cache needs nothing but the standard library, so the sweep runs and
+    removes them even then: blocked numpy brings no numba with it, and the
+    backend of the package is gone - the cache is not.  Both directories the
+    child removes are of this test, which it names in the call itself.
     """
     (tmp_path / "sitecustomize.py").write_text(_BLOCKER)
     cache = tmp_path / "caches" / "numpy_groupies"
     cache.mkdir(parents=True)
     (cache / "a.nbi").write_text("index")
+    tree = _source_tree(tmp_path / "tree", ("old.nbi",))
     script = (
+        "from pathlib import Path\n"
         "import numpy_groupies as npg\n"
         "assert npg.npg_numba is None, 'the backend should not be there'\n"
-        "assert npg.purge_cache() == 1\n"
+        f"assert npg.purge_cache(cache_dir=Path({str(cache)!r}), source_tree=Path({str(tree)!r})) == 2\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", script],
