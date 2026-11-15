@@ -619,9 +619,9 @@ def select_temporal_funcs(names: str | None) -> dict[str, tuple[Any, ...]]:
     }
 
 
-def benchmark(implementations, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1, funcs=None):
+def benchmark(implementations, repeat=5, size=5e5, seed=100, groups=1000, raise_errors=False, runs=1, funcs=None):
     _warm_up_allocator()
-    a, nana, group_idx = benchmark_data(size=size, seed=seed)
+    a, nana, group_idx = benchmark_data(size=size, seed=seed, groups=groups)
     # the data as it is now: the participants must not write into it, and the
     # snapshot is the one they are compared against after every function
     snapshot = _byte_snapshot(group_idx, a, nana)
@@ -708,7 +708,9 @@ def sort_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_error
         print(_versions_line(implementations))
 
 
-def temporal_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_errors=False, runs=1, funcs=None):
+def temporal_benchmark(
+    implementations, *, repeat=5, size=5e5, seed=100, groups=1000, raise_errors=False, runs=1, funcs=None
+):
     """Measure the temporal functions of ``TEMPORAL_TABLE``, one block of rows
     per dtype: the datetime64 questions on the ticks of the year 2020, the
     timedelta64 ones on the durations below a millisecond - ``funcs`` narrows
@@ -732,7 +734,7 @@ def temporal_benchmark(implementations, *, repeat=5, size=5e5, seed=100, raise_e
 
     rows = []
     for dtype, kind, kind_funcs in selections:
-        a, nana, group_idx = temporal_benchmark_data(size=size, seed=seed, kind=kind)
+        a, nana, group_idx = temporal_benchmark_data(size=size, seed=seed, groups=groups, kind=kind)
         snapshot = _byte_snapshot(group_idx, a, nana)
         tables = []
         for run in range(runs):
@@ -868,6 +870,12 @@ nothing, the whole array being the core of the kernel.""",
     )
     parser.add_argument("--size", type=float, default=5e5, help="number of values in the benchmark data (default: 5e5)")
     parser.add_argument(
+        "--groups",
+        type=float,
+        default=1000,
+        help="number of groups in the benchmark data (default: 1000) - the sort benchmark sweeps its own group counts",
+    )
+    parser.add_argument(
         "--threads",
         type=int,
         default=0,
@@ -904,6 +912,7 @@ nothing, the whole array being the core of the kernel.""",
             _build_implementations(args),
             repeat=args.repeat,
             size=args.size,
+            groups=args.groups,
             raise_errors=args.raise_errors,
             runs=max(1, args.runs),
             funcs=args.funcs,
@@ -913,6 +922,7 @@ nothing, the whole array being the core of the kernel.""",
         _build_implementations(args),
         repeat=args.repeat,
         size=args.size,
+        groups=args.groups,
         raise_errors=args.raise_errors,
         runs=max(1, args.runs),
         funcs=select_funcs(args.funcs),
