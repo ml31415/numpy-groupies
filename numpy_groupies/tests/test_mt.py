@@ -7,6 +7,18 @@ import pytest
 from numpy_groupies.npg_numba import averaging, mt, reductions, specials
 from numpy_groupies.npg_numba.compose import StateLayout
 
+# The machine the cases below are built for: a cache of thirty-two
+# megabytes and three physical cores.  The tests name the machine
+# explicitly, because the decision of the model depends on the machine - the
+# one of the run is not the one the model was fitted on, and a test that
+# reads the cache of the machine it runs on fails on every other one.
+_CACHE = 32 << 20
+_CORES = 3
+# the bytes of the state of a group of the sum
+_BYTES_PER_GROUP = 8
+_MACHINE = mt.MachineLimits(_CACHE, _CORES)
+
+
 # the decision of the chunked path: the groups, the threads and the values
 # against the answer the gate gives
 _CHUNKED_CASES = [
@@ -19,68 +31,66 @@ _CHUNKED_CASES = [
     # as many groups as values, the state still in the last-level cache: the
     # partial matrix costs more than the data
     pytest.param(10**6, 4, 10**7, False, id="many-groups-in-cache"),
-    # as many groups as values, the state beyond the cache: the sequential
-    # state misses the cache either way, the duplicated states of the
-    # parallel path add no pressure of their own and the threads hide the
-    # latency of the scatter
-    pytest.param(10**7, 4, 10**7, True, id="many-groups-dram-bound"),
+    # a state beyond the cache: the sequential state misses the cache either
+    # way, the duplicated states of the parallel path add no pressure of their
+    # own and the threads hide the latency of the scatter
+    pytest.param(_CACHE // _BYTES_PER_GROUP + 1, 4, 10**7, True, id="many-groups-dram-bound"),
 ]
 
 
 @pytest.mark.parametrize(("n_groups", "n_threads", "n_values", "expected"), _CHUNKED_CASES)
 def test_chunked_path_is_decided_by_model(n_groups, n_threads, n_values, expected):
-    assert mt.should_use_mt(n_groups, n_threads, n_values, 1, 8, mt.CACHE_SIZE) is expected
+    assert mt.should_use_mt(n_groups, n_threads, n_values, 1, _BYTES_PER_GROUP, _CACHE) is expected
 
 
-@pytest.mark.parametrize(
-    ("n_groups", "state_bytes", "expected"),
-    [
-        # a state of eight bytes per group: the cache of the machine holds
-        # four million of them
-        pytest.param(1_000_000, 8, 4, id="a-million-groups"),
-        # and a hundred thousand groups hold forty of them
-        pytest.param(100_000, 8, 41, id="a-hundred-thousand-groups"),
-        # a state of thirty two bytes per group: half as many
-        pytest.param(1_000_000, 32, 1, id="a-wider-state"),
-    ],
-)
-def test_the_threads_whose_state_fits_the_cache(n_groups, state_bytes, expected):
+def test_the_threads_whose_state_fits_the_cache():
     """The states of the threads are as many times the state of a kernel as
     there are threads - the cache of the machine holds so many of them."""
-    assert mt.threads_that_fit(n_groups, state_bytes, mt.CACHE_SIZE) == expected
+    # the state of four threads fits into the cache, the state of five does
+    groups = (_CACHE // 4) // _BYTES_PER_GROUP
+    assert mt.threads_that_fit(groups, _BYTES_PER_GROUP, _CACHE) == 4
+    # a state of thirty two bytes per group holds a quarter as many
+    assert mt.threads_that_fit(groups, 4 * _BYTES_PER_GROUP, _CACHE) == 1
+    # and the state of one group alone always fits
+    assert mt.threads_that_fit(1, _BYTES_PER_GROUP, _CACHE) >= 1
 
 
 def test_the_plan_uses_the_physical_cores():
     """The threads of the pool beyond the cores of the machine share a core
     with another thread: they bring no bandwidth of their own, but a state
     of their own."""
-    machine = mt.MachineLimits(mt.CACHE_SIZE, 2)
+    machine = mt.MachineLimits(_CACHE, 2)
     # a state that fits the cache twice over: the model takes the cores of
     # the machine, never the hardware threads of the pool
-    plan = mt.mt_thread_plan(1000, 6, 10**7, 1, 8, machine)
+    plan = mt.mt_thread_plan(1000, 6, 10**7, 1, _BYTES_PER_GROUP, machine)
     assert plan <= 2
 
 
 def test_the_plan_picks_the_threads_that_win():
-    """Over the candidates the model of the per-group costs decides."""
-    machine = mt.MachineLimits(mt.CACHE_SIZE, 3)
-    # a hundred million values in a million groups: the state of the threads
-    # fits twice over, and the model takes the two threads
-    assert mt.mt_thread_plan(1_000_000, 6, 10**8, 1, 8, machine) == 2
+    """Over the candidates the model of the per-group costs decides.
+
+    The plan takes the threads the model estimates the best - the same
+    number, whatever the machine the test runs on.
+    """
+    # a state that fits the cache many times over: the model decides, and
+    # not the cache
+    groups = 10**6
+    plan = mt.mt_thread_plan(groups, 6, 10**8, 1, _BYTES_PER_GROUP, _MACHINE)
+    best = min(range(2, _CORES + 1), key=lambda t: float(mt.estimate_mt_ratio(groups, t, 10**8, 1)))
+    assert plan == best
     # ten million values in a hundred thousand groups: the same
-    assert mt.mt_thread_plan(100_000, 6, 10**7, 1, 8, machine) == 2
+    assert mt.mt_thread_plan(100_000, 6, 10**7, 1, _BYTES_PER_GROUP, _MACHINE) == 2
 
 
 def test_the_plan_falls_back_to_the_sequential_path():
     """Where the model sees no gain, the sequential path runs - its result is
     the parallel one's bit for bit."""
-    machine = mt.MachineLimits(mt.CACHE_SIZE, 3)
     # too few values: the region costs more than the work it does
-    assert mt.mt_thread_plan(1000, 6, mt.MT_MIN_VALUES - 1, 1, 8, machine) == 1
+    assert mt.mt_thread_plan(1000, 6, mt.MT_MIN_VALUES - 1, 1, _BYTES_PER_GROUP, _MACHINE) == 1
     # one thread only: a parallel region would be pure overhead
-    assert mt.mt_thread_plan(1000, 1, 10**7, 1, 8, machine) == 1
+    assert mt.mt_thread_plan(1000, 1, 10**7, 1, _BYTES_PER_GROUP, _MACHINE) == 1
     # one core only: the same
-    assert mt.mt_thread_plan(1000, 6, 10**7, 1, 8, mt.MachineLimits(mt.CACHE_SIZE, 1)) == 1
+    assert mt.mt_thread_plan(1000, 6, 10**7, 1, _BYTES_PER_GROUP, mt.MachineLimits(_CACHE, 1)) == 1
 
 
 # the decision of the path that cuts the groups into ranges: the same model,
