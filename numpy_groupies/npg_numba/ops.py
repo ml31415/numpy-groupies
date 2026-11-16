@@ -36,6 +36,7 @@ from numpy_groupies.inputs import (
 from numpy_groupies.npg_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.npg_numba.compose import KernelHandle, _round_float16
 from numpy_groupies.npg_numba.mt import (
+    CACHE_SIZE,
     GROUP_MT_MIN_VALUES,
     group_chunk_count,
     mt_thread_count,
@@ -164,6 +165,16 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     driver = handle.driver
     mt_driver = handle.mt_driver
     min_values = handle.mt_min_values
+    # the size of the last-level cache of the machine, read once: the cost
+    # model measures the state of a kernel against it, and the value goes
+    # into the call - a value of the machine must not be baked into the
+    # compiled artifact, whose cache is the user-wide one
+    cache_limit = CACHE_SIZE
+    # the bytes the state of the operation holds per group, measured from the
+    # state itself: the count of its arrays would say nothing about the size
+    # of it, and the cost model measures the state against the cache
+    measure_state = handle.state_bytes_per_group_of
+    assert measure_state is not None  # every kernel carries the measurement
 
     if handle.variant == "none":
 
@@ -184,7 +195,19 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
                 if n_threads > 1:
                     # without a second thread the parallel region is pure
                     # overhead
-                    return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
+                    state_bytes = measure_state(out_dtype, aux_dtype, a.dtype, fill_value, 0.0)
+                    return mt_driver(
+                        n_threads,
+                        group_idx,
+                        a,
+                        size_arg,
+                        out_dtype,
+                        aux_dtype,
+                        fill_value,
+                        0,
+                        cache_limit,
+                        state_bytes,
+                    )
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
 
         return call_nothing
@@ -206,7 +229,19 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             if mt_driver is not None and group_idx.size >= min_values:
                 n_threads = mt_thread_count()
                 if n_threads > 1:
-                    return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, (q, method))
+                    state_bytes = measure_state(out_dtype, aux_dtype, a.dtype, fill_value, 0.0)
+                    return mt_driver(
+                        n_threads,
+                        group_idx,
+                        a,
+                        size_arg,
+                        out_dtype,
+                        aux_dtype,
+                        fill_value,
+                        (q, method),
+                        cache_limit,
+                        state_bytes,
+                    )
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q, method)
 
         return call_q_method
@@ -228,7 +263,19 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             if mt_driver is not None and group_idx.size >= min_values:
                 n_threads = mt_thread_count()
                 if n_threads > 1:
-                    return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, (ddof, q))
+                    state_bytes = measure_state(out_dtype, aux_dtype, a.dtype, fill_value, 0.0)
+                    return mt_driver(
+                        n_threads,
+                        group_idx,
+                        a,
+                        size_arg,
+                        out_dtype,
+                        aux_dtype,
+                        fill_value,
+                        (ddof, q),
+                        cache_limit,
+                        state_bytes,
+                    )
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, (ddof, q))
 
         return call_topk
@@ -249,7 +296,19 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
         if mt_driver is not None and group_idx.size >= min_values:
             n_threads = mt_thread_count()
             if n_threads > 1:
-                return mt_driver(n_threads, group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
+                state_bytes = measure_state(out_dtype, aux_dtype, a.dtype, fill_value, 0.0)
+                return mt_driver(
+                    n_threads,
+                    group_idx,
+                    a,
+                    size_arg,
+                    out_dtype,
+                    aux_dtype,
+                    fill_value,
+                    ddof,
+                    cache_limit,
+                    state_bytes,
+                )
         return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
 
     return call_ddof

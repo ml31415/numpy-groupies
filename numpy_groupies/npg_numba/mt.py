@@ -20,6 +20,7 @@ group count enters the decision at all.  Nothing is measured at run time.
 """
 
 import os
+from pathlib import Path
 
 import numba as nb
 
@@ -217,19 +218,121 @@ def estimate_mt_ratio(n_groups: int, n_threads: int, n_values: int, state_size: 
     return estimate_mt_time_us(n_groups, n_threads, n_values, state_size) / estimate_seq_time_us(n_groups, n_values)
 
 
+# the size of the last-level cache of a machine that does not name its
+# caches: 32 MiB, the size of the machine the model was fitted on - a state
+# that fits into it is treated as resident, so the parallel path is refused
+# where the machine might have the room for it
+DEFAULT_CACHE_SIZE = 32 << 20
+
+
+def cache_size_bytes() -> int:
+    """The size of the last-level cache of the machine, in bytes.
+
+    Read from the sysfs of the processor - the cache levels are named there,
+    and the last-level one is the cache the state of a kernel lives in.  The
+    limit of the model depends on it, so it is read from the machine rather
+    than assumed: the number the model was fitted with belongs to the machine
+    of the fit, while the state of a kernel is measured against the cache of
+    the machine it runs on - a machine with a large cache holds the state
+    where another one does not.
+    """
+    try:
+        base = Path("/sys/devices/system/cpu/cpu0/cache")
+        largest = 0
+        for index in sorted(base.glob("index*")):
+            try:
+                level = int((index / "level").read_text().strip())
+                size = (index / "size").read_text().strip()
+            except (OSError, ValueError):
+                continue
+            if level != 3:
+                continue
+            # the size is named in kilobytes, or in megabytes on the bigger
+            # ones ("32768K", "128M")
+            unit = size[-1].upper()
+            value = int(size[:-1]) if len(size) > 1 and unit in "KM" else int(size)
+            if unit == "M":
+                value *= 1024 * 1024
+            elif unit == "K":
+                value *= 1024
+            largest = max(largest, value)
+        if largest:
+            return largest
+    except OSError:
+        pass
+    return DEFAULT_CACHE_SIZE
+
+
+# the size of the last-level cache of the machine the process runs on - the
+# model measures the state of a kernel against it
+CACHE_SIZE = cache_size_bytes()
+
+
 @njit_stable
-def should_use_mt(n_groups: int, n_threads: int, n_values: int, state_size: int = 1) -> bool:
+def is_dram_bound(n_groups: int, n_threads: int, n_values: int, state_bytes: int, cache_limit: int) -> bool:
+    """Whether the sequential state of a kernel misses the last-level cache
+    itself, so the cache-residency argument against the parallel path is
+    gone.  The count is the sequential state, not the duplicated one of the
+    parallel path - the two regimes meet where the state outgrows the cache
+    for one thread already.
+
+    Past the cache the duplicated states of the parallel path add no cache
+    pressure of their own, the fold is a streaming pass, and the threads hide
+    the latency of the scatter the sequential loop waits on alone (measured
+    on the sum, a hundred million values in ten million groups: the parallel
+    path one and a half times the sequential speed - while at a tenth of the
+    groups, where the sequential state still fits the cache, the parallel
+    path measured half again slower).  Below the limit the ratio decides,
+    above it the cache no longer does.
+
+    ``state_bytes`` is the bytes the state of the kernel holds per group,
+    measured from the state itself: the count of the arrays of the state
+    would say nothing about the size of it - a float32 state is half the
+    size of a float64 one, a complex one twice, and the row of four numbers
+    of the dispersion four times the array of its own.
+
+    ``cache_limit`` is the size of the last-level cache of the machine, in
+    bytes, handed in by the caller: it is a property of the machine, and a
+    value that differs from one machine to the next must not be baked into
+    the compiled artifact - the cache of the compiles is the user-wide one,
+    and a home shared between machines would serve the artifacts of the
+    other."""
+    if n_threads < 2:
+        return False
+    if n_values < MT_MIN_VALUES:
+        return False
+    return n_groups * state_bytes > cache_limit
+
+
+@njit_stable
+def should_use_mt(
+    n_groups: int,
+    n_threads: int,
+    n_values: int,
+    state_size: int = 1,
+    state_bytes: int = 8,
+    cache_limit: int = DEFAULT_CACHE_SIZE,
+) -> bool:
     """Whether the multithreaded variant of a kernel is worth using.
 
     ``n_values`` is the input length, not the ``size`` argument of ``aggregate``
     (that one is the number of groups); ``state_size`` counts the state arrays
     against the two of the sum kernel.  False whenever the parallel path could
     be slower - too few values, or no clear gain promised.
+
+    ``state_bytes`` is the bytes the state of the kernel holds per group,
+    ``cache_limit`` the size of the last-level cache of the machine - see
+    ``is_dram_bound``.
     """
     if n_threads < 2:
         return False
     if n_values < MT_MIN_VALUES:
         return False
+    if is_dram_bound(n_groups, n_threads, n_values, state_bytes, cache_limit):
+        # the state of even the sequential path sits in the DRAM: the cache
+        # economics the ratio below is built on do not apply, and the
+        # duplicated states cost the streaming fold alone
+        return True
     return estimate_mt_ratio(n_groups, n_threads, n_values, state_size) <= MT_MAX_RATIO
 
 

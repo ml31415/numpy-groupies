@@ -40,6 +40,8 @@ def _gather_1d_mt(
     group_idx: npt.NDArray[np.integer],
     out: npt.NDArray[np.generic],
     n_threads: int,
+    cache_limit: int = 0,
+    state_bytes: int = 8,
 ) -> npt.NDArray[np.generic]:
     """The gather across the values, in the chunks of the threads.
 
