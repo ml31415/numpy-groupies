@@ -73,8 +73,7 @@ from numpy_groupies.npg_numba.jit import njit_stable, register_overload
 from numpy_groupies.npg_numba.mt import (
     GROUP_MT_MIN_VALUES,
     MT_MIN_VALUES,
-    chunk_count,
-    should_use_mt,
+    mt_thread_plan,
 )
 from numpy_groupies.temporal import NAT_TICK
 from numpy_groupies.typing import AResult, AScalar
@@ -1237,11 +1236,11 @@ def build_driver(
             aux_dtype: np.dtype,
             fill_value: float,
             extra: Any = 0,
-            cache_limit: int = 0,
+            machine: Any = None,
             state_bytes: int = 8,
         ) -> AResult | list[AResult]:
             result: AResult | list[AResult] = passes(
-                group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra, n_threads, cache_limit, state_bytes
+                group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra, n_threads, machine, state_bytes
             )
             return result
 
@@ -1636,7 +1635,7 @@ def build_kernel(
                 fill_value: float,
                 extra: Any,
                 n_threads: int,
-                cache_limit: int,
+                machine: Any,
                 state_bytes: int,
             ) -> AResult | list[AResult]:
                 size = np.max(group_idx) + 1
@@ -1645,27 +1644,20 @@ def build_kernel(
                         _raise_too_large_for_size(size_arg)
                     size = size_arg
                 n_values = len(group_idx)
-                if not should_use_mt(size, n_threads, n_values, state_size, state_bytes, cache_limit):
+                threads = mt_thread_plan(size, n_threads, n_values, state_size, state_bytes, machine)
+                if threads < 2:
                     # not worth it, or only one thread: the sequential path,
                     # with its result bit for bit
                     return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
-                n_chunks = chunk_count(n_threads, n_values)
+                # one chunk and one state per thread the plan asks for: the
+                # state of a chunk is the state of the chunk, so no two
+                # threads ever write into the same one - no lock, and the
+                # fold runs in the order of the chunks, the same bits every
+                # time.  The threads of the pool beyond the plan idle.
+                n_chunks = threads
                 chunk = (n_values + n_chunks - 1) // n_chunks
                 faults = np.zeros(n_chunks, np.int64)
-                # states one per chunk or one per thread, the memory decides: a
-                # state is group-sized, so chunk states cost twice the thread
-                # states - with few groups per chunk wins (the fold runs in
-                # chunk order, the same bits every time, not the order the pool
-                # happened to hand the chunks out in), with many groups the
-                # memory counts.
-                #
-                # The extra states may not be more than a tenth of the data
-                # itself: a state is group-sized, the data value-sized.
-                per_chunk = n_threads * size * state_size * 10 <= n_values
-                n_states = n_chunks if per_chunk else n_threads
-                # one state per thread, written by that thread alone - no lock;
-                # a busy thread delays its chunk and not the whole call, the
-                # threads that are done take the chunks that are left.
+                n_states = n_chunks
                 states = [
                     init_c(size, n_values, out_dtype, aux_dtype, a.dtype, fill_value, forced_fill)
                     for _ in range(n_states)
@@ -1674,8 +1666,7 @@ def build_kernel(
                     start = c * chunk
                     stop = min(start + chunk, n_values)
                     if stop > start:
-                        # the state of the chunk, or of the thread that takes it
-                        state = states[c] if per_chunk else states[nb.get_thread_id()]
+                        state = states[c]
                         seed_c(state, a[start:stop])
                         faults[c] = kernel(group_idx[start:stop], a[start:stop], state, fill_value, extra, size)
                 # the states, folded in the order of their index

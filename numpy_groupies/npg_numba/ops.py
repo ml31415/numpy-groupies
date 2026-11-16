@@ -36,8 +36,8 @@ from numpy_groupies.inputs import (
 from numpy_groupies.npg_numba import argreductions, averaging, collect, cumulative, reductions, specials
 from numpy_groupies.npg_numba.compose import KernelHandle, StateLayout, _round_float16
 from numpy_groupies.npg_numba.mt import (
-    CACHE_SIZE,
     GROUP_MT_MIN_VALUES,
+    MACHINE,
     group_chunk_count,
     mt_thread_count,
     should_use_group_mt,
@@ -169,7 +169,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     # model measures the state of a kernel against it, and the value goes
     # into the call - a value of the machine must not be baked into the
     # compiled artifact, whose cache is the user-wide one
-    cache_limit = CACHE_SIZE
+    machine = MACHINE
     # the bytes the state of the operation holds per group, declared beside
     # the state itself: the cost model measures the state against the cache
     # of the machine, and it needs the size of it in bytes
@@ -209,7 +209,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
                         aux_dtype,
                         fill_value,
                         0,
-                        cache_limit,
+                        machine,
                         state_bytes,
                     )
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
@@ -243,7 +243,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
                         aux_dtype,
                         fill_value,
                         (q, method),
-                        cache_limit,
+                        machine,
                         state_bytes,
                     )
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, q, method)
@@ -277,7 +277,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
                         aux_dtype,
                         fill_value,
                         (ddof, q),
-                        cache_limit,
+                        machine,
                         state_bytes,
                     )
             return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, (ddof, q))
@@ -310,7 +310,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
                     aux_dtype,
                     fill_value,
                     ddof,
-                    cache_limit,
+                    machine,
                     state_bytes,
                 )
         return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, ddof)
