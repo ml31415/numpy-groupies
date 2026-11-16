@@ -49,6 +49,7 @@ from numpy_groupies.npg_numba import argreductions, averaging, collect, cumulati
 from numpy_groupies.npg_numba.fallback import FALLBACK
 from numpy_groupies.npg_numba.gather import unpack, unpack_into
 from numpy_groupies.npg_numba.ops import _dispatch
+from numpy_groupies.npg_numba.ops import state_bytes_per_group as state_bytes_per_group
 from numpy_groupies.npg_numba.steps import step_count, step_indices
 
 # the numpy implementation answers the three calls numba cannot: the median
