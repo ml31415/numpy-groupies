@@ -23,7 +23,7 @@ from numpy_groupies.npg_numba.compose import (
     rule_widen_int,
 )
 from numpy_groupies.npg_numba.jit import njit_stable
-from numpy_groupies.npg_numba.mt import chunk_count, should_use_mt
+from numpy_groupies.npg_numba.mt import mt_thread_plan
 from numpy_groupies.validation import NEGATIVE_INDICES
 
 
@@ -521,16 +521,20 @@ def _ordered_mt_factory(last: bool) -> Callable[[bool, Callable[..., Any]], Any]
             fill_value: float,
             extra: Any,
             n_threads: int,
-            cache_limit: int = 0,
+            machine: Any = None,
             state_bytes: int = 8,
         ) -> npt.NDArray[np.number]:
             size = output_size(group_idx, size_arg)
             n_values = group_idx.shape[0]
-            if not should_use_mt(size, n_threads, n_values, _MT_STATE_SIZE):
+            threads = mt_thread_plan(size, n_threads, n_values, _MT_STATE_SIZE, state_bytes, machine)
+            if threads < 2:
                 # not worth it, or one thread only: the sequential driver,
                 # with its result bit for bit
                 return driver(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value)
-            n_chunks = chunk_count(n_threads, n_values)
+            # one chunk per thread the plan asks for: the states of the chunks
+            # are the rows of the arrays below, and the threads of the pool
+            # beyond the plan idle
+            n_chunks = threads
             chunk = (n_values + n_chunks - 1) // n_chunks
             # the chunk states are the rows of two arrays, not a list of
             # arrays - a list inside the parallel region costs more than the

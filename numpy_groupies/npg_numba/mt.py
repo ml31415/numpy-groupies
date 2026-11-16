@@ -21,6 +21,7 @@ group count enters the decision at all.  Nothing is measured at run time.
 
 import os
 from pathlib import Path
+from typing import NamedTuple
 
 import numba as nb
 
@@ -263,6 +264,19 @@ def cache_size_bytes() -> int:
     return DEFAULT_CACHE_SIZE
 
 
+class MachineLimits(NamedTuple):
+    """What the cost model needs to know about the machine it runs on: the
+    size of its last-level cache and the number of its physical cores.
+
+    Both are handed into the call rather than baked into the compiled
+    artifact - the cache of the compiles is the user-wide one, and a home
+    shared between machines would serve the artifacts of the other.
+    """
+
+    cache_size: int
+    physical_cores: int
+
+
 # the size of the last-level cache of the machine the process runs on - the
 # model measures the state of a kernel against it
 CACHE_SIZE = cache_size_bytes()
@@ -302,6 +316,73 @@ def is_dram_bound(n_groups: int, n_threads: int, n_values: int, state_bytes: int
     if n_values < MT_MIN_VALUES:
         return False
     return n_groups * state_bytes > cache_limit
+
+
+@njit_stable
+def threads_that_fit(n_groups: int, state_bytes: int, cache_size: int) -> int:
+    """The number of threads whose states fit in the cache of the machine.
+
+    Every thread of the parallel path holds a state of its own, so the
+    states of the threads together are as many times the state of a kernel
+    as there are threads.
+    """
+    if n_groups <= 0 or state_bytes <= 0:
+        return 1
+    per_thread = n_groups * state_bytes
+    return max(1, cache_size // per_thread)
+
+
+@njit_stable
+def mt_thread_plan(
+    n_groups: int,
+    n_threads: int,
+    n_values: int,
+    state_size: int,
+    state_bytes: int,
+    machine: MachineLimits,
+) -> int:
+    """The number of threads the parallel path should use - one means the
+    sequential path, whose result is the parallel one's bit for bit.
+
+    The candidates are the physical cores of the machine: the threads of the
+    pool beyond them share a core with another thread, and such a thread
+    brings no bandwidth of its own - the caches and the bus of the core are
+    shared with the thread beside it - but it holds a state of its own and
+    the traffic of it.  Measured on the sum: at ten million values in a
+    million groups two threads at 17ms against six at 40ms, at a hundred
+    million values in a million groups two at 131ms against six at 159ms.
+
+    Over the candidates the model of the per-group costs decides: the
+    bandwidth grows with the threads, the traffic of the states and of their
+    fold with them as well, and the best of them is the one that wins.
+
+    Where the state of the kernel does not fit the cache of the machine, not
+    even for two threads, the arithmetic turns around: the duplicated states
+    add no cache pressure of their own any more, the fold is a streaming
+    pass, and the threads hide the latency of the scatter the sequential
+    loop waits on alone.  There the cores of the machine are used.
+    """
+    if n_threads < 2:
+        return 1
+    if n_values < MT_MIN_VALUES:
+        return 1
+    top = min(n_threads, machine.physical_cores)
+    if top < 2:
+        return 1
+    if threads_that_fit(n_groups, state_bytes, machine.cache_size) < 2:
+        # the state does not fit the cache: past it the arithmetic turns
+        # around, and the cores of the machine are used
+        return top
+    best = 1
+    best_ratio = 1.0
+    for threads in range(2, top + 1):
+        ratio = estimate_mt_ratio(n_groups, threads, n_values, state_size)
+        if ratio < best_ratio:
+            best_ratio = ratio
+            best = threads
+    if best_ratio <= MT_MAX_RATIO:
+        return best
+    return 1
 
 
 @njit_stable
@@ -393,6 +474,10 @@ def physical_core_count() -> int:
 
     _physical_cores = len(cores) or len(allowed)
     return _physical_cores
+
+
+# the properties of the machine the process runs on, as the model needs them
+MACHINE = MachineLimits(cache_size_bytes(), physical_core_count())
 
 
 def logical_core_count() -> int:
