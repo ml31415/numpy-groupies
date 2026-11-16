@@ -127,7 +127,19 @@ def block(request):
     kinds = [complex(np.nan, 1.0), complex(1.0, np.nan), complex(np.nan, np.nan)]
     eight = np.flatnonzero(group_idx == 5)  # the three kinds side by side ...
     a_complex[eight[:6]] = kinds * 2
-    a_complex[eight[6:]] = (1 + 1j) * a[eight[6:]]  # ... and plain values among them
+    a_complex[eight[6:]] = (1 + 1j) * a[eight[6:]]
+
+    # The complex values are scaled down, so that the product of the values
+    # of the biggest group stays finite: the sweep repeats the block until
+    # the data is as big as it asks for, and a group of the big data holds
+    # thousands of values.  A product that overflows is no comparison - the
+    # complex multiplication of an infinity with an infinity is a nan in one
+    # backend and an infinity in another, and which of the two it is depends
+    # on the order of the multiplications.  The integer values are small for
+    # the same reason; the real ones need no scaling, their overflow is an
+    # infinity that stays one.
+    scale = 0.99 / np.max(np.abs(a_complex[~np.isnan(a_complex)]))
+    a_complex = a_complex * scale  # ... and plain values among them
 
     # the integer values: small ones, so the products of the biggest group fit
     # the wide integer whatever the dtype they are carried in - the sums and
