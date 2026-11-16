@@ -1,0 +1,32 @@
+name: CI retry
+# The runners of the hosted service are stopped from time to time - the job
+# of a version that is still compiling or testing then dies with a shutdown
+# signal, and the run stands red for the rest of the hour until somebody
+# presses the button.  The retry of the failed jobs brings the run back to
+# green by itself: the shutdown of a runner is an event of the service, not
+# of the code, and the next runner is very likely to live.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  retry:
+    # only a run that failed, and only its first attempt: the retry of a
+    # failed run must not trigger another retry
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Retry the failed jobs
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.actions.re-runFailedJobs({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id,
+            })
