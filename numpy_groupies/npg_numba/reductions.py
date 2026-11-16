@@ -497,6 +497,8 @@ def _ordered_mt_factory(last: bool) -> Callable[[bool, Callable[..., Any]], Any]
             fill_value: float,
             extra: Any,
             n_threads: int,
+            cache_limit: int = 0,
+            state_bytes: int = 8,
         ) -> npt.NDArray[np.number]:
             size = output_size(group_idx, size_arg)
             n_values = group_idx.shape[0]

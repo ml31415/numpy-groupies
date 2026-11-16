@@ -211,6 +211,8 @@ def _arg_mt_factory(greater: bool) -> Callable[[bool, Callable[..., Any]], Any]:
             fill_value: float,
             extra: Any,
             n_threads: int,
+            cache_limit: int = 0,
+            state_bytes: int = 8,
         ) -> npt.NDArray[np.int64]:
             size = output_size(group_idx, size_arg)
             n_values = group_idx.shape[0]

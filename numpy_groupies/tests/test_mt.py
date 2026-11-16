@@ -4,7 +4,7 @@ import numba as nb
 import numpy as np
 import pytest
 
-from numpy_groupies.npg_numba import mt, specials
+from numpy_groupies.npg_numba import averaging, mt, reductions, specials
 
 # the decision of the chunked path: the groups, the threads and the values
 # against the answer the gate gives
@@ -15,14 +15,20 @@ _CHUNKED_CASES = [
     pytest.param(1000, 4, mt.MT_MIN_VALUES - 1, False, id="too-few-values"),
     # many values and few groups: the work pays for the region
     pytest.param(1000, 4, 10**7, True, id="many-values-few-groups"),
-    # as many groups as values: the partial matrix costs more than the data
-    pytest.param(10**7, 4, 10**7, False, id="many-groups"),
+    # as many groups as values, the state still in the last-level cache: the
+    # partial matrix costs more than the data
+    pytest.param(10**6, 4, 10**7, False, id="many-groups-in-cache"),
+    # as many groups as values, the state beyond the cache: the sequential
+    # state misses the cache either way, the duplicated states of the
+    # parallel path add no pressure of their own and the threads hide the
+    # latency of the scatter
+    pytest.param(10**7, 4, 10**7, True, id="many-groups-dram-bound"),
 ]
 
 
 @pytest.mark.parametrize(("n_groups", "n_threads", "n_values", "expected"), _CHUNKED_CASES)
 def test_chunked_path_is_decided_by_model(n_groups, n_threads, n_values, expected):
-    assert mt.should_use_mt(n_groups, n_threads, n_values) is expected
+    assert mt.should_use_mt(n_groups, n_threads, n_values, 1, 8, mt.CACHE_SIZE) is expected
 
 
 # the decision of the path that cuts the groups into ranges: the same model,
@@ -44,10 +50,71 @@ def test_group_path_is_decided_by_model(n_groups, n_threads, n_values, expected)
     assert mt.should_use_group_mt(n_groups, n_threads, n_values, 18.0) is expected
 
 
+@pytest.mark.parametrize(
+    ("cache_limit", "expected"),
+    [
+        # a state of ten million groups is 80 MB: it misses a small cache and
+        # fits a big one
+        pytest.param(8 << 20, True, id="small-cache"),
+        pytest.param(256 << 20, False, id="big-cache"),
+    ],
+)
+def test_the_cache_of_the_machine_decides_the_regime(cache_limit, expected):
+    """The state of the kernel is measured against the cache of the machine.
+
+    The limit is handed into the call, so that the size of the cache of the
+    machine is not baked into the compiled artifact - the cache of the
+    compiles is the user-wide one, and a home shared between machines would
+    serve the artifacts of the other.
+    """
+    assert mt.is_dram_bound(10**7, 4, 10**8, 8, cache_limit) is expected
+
+
+def test_state_bytes_are_measured_not_guessed():
+    """The bytes the state holds per group are measured from the state.
+
+    A guess of eight bytes per number would be wrong by a factor of two for
+    the float32 and the complex input - and in the direction that lets the
+    parallel path into a state that does not fit the cache.
+    """
+    f64 = np.dtype("float64")
+    f32 = np.dtype("float32")
+    c128 = np.dtype("complex128")
+
+    sum_handle = reductions.sum.plain if hasattr(reductions.sum, "plain") else reductions.sum
+    mean_handle = averaging.mean.plain if hasattr(averaging.mean, "plain") else averaging.mean
+
+    sum_f64 = sum_handle.state_bytes_per_group_of(f64, f64, f64, 0.0, 0.0)
+    sum_f32 = sum_handle.state_bytes_per_group_of(f32, f32, f32, 0.0, 0.0)
+    mean_f64 = mean_handle.state_bytes_per_group_of(f64, f64, f64, 0.0, 0.0)
+    mean_f32 = mean_handle.state_bytes_per_group_of(f32, f64, f32, 0.0, 0.0)
+
+    # the sum holds the answer of every group: eight bytes for a float64,
+    # four for a float32
+    assert sum_f64 == 8
+    assert sum_f32 == 4
+    # the mean holds the sum and the count of the values: the answer in the
+    # output dtype, the count always in an int64
+    assert mean_f64 == 16
+    assert mean_f32 == 12
+    # the complex input: the answer of sixteen bytes beside the count
+    assert sum_handle.state_bytes_per_group_of(c128, c128, c128, 0.0, 0.0) == 16
+    assert mean_handle.state_bytes_per_group_of(c128, c128, c128, 0.0, 0.0) == 24
+    # a fill value of its own turns on the bookkeeping of the groups without
+    # a value: a byte per group beside the answer
+    assert sum_handle.state_bytes_per_group_of(f64, f64, f64, np.nan, 0.0) == 9
+
+
+def test_cache_size_is_read_from_the_machine():
+    """The size of the last-level cache, as the machine names it."""
+    assert mt.cache_size_bytes() > 0
+    assert mt.CACHE_SIZE == mt.cache_size_bytes()
+
+
 def test_decision_does_not_depend_on_machine():
     # nothing is measured at run time - the answer is the same every time
-    first = mt.should_use_mt(1000, 4, 10**6)
-    second = mt.should_use_mt(1000, 4, 10**6)
+    first = mt.should_use_mt(1000, 4, 10**6, 1, 8, mt.CACHE_SIZE)
+    second = mt.should_use_mt(1000, 4, 10**6, 1, 8, mt.CACHE_SIZE)
     assert first == second
 
 
@@ -112,7 +179,7 @@ def test_group_path_needs_fewer_values_than_chunked_one():
     # magnitude more per value than the sum: the fixed cost of a parallel
     # region is a far smaller share of their time, so they parallelize where
     # the reductions still run single threaded
-    assert not mt.should_use_mt(1000, 4, mt.GROUP_MT_MIN_VALUES)
+    assert not mt.should_use_mt(1000, 4, mt.GROUP_MT_MIN_VALUES, 1, 8, mt.CACHE_SIZE)
     assert mt.should_use_group_mt(1000, 4, mt.GROUP_MT_MIN_VALUES, 18.0)
 
 

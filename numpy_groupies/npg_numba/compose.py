@@ -1182,6 +1182,51 @@ def _make_stub(
 # it on as the ``extra`` of the pass structure.
 
 
+def state_bytes_per_group(
+    init: Callable[..., Any],
+    out_dtype: np.dtype,
+    aux_dtype: np.dtype,
+    in_dtype: np.dtype,
+    fill_value: float,
+    forced_fill: float,
+) -> int:
+    """The bytes the state of an operation holds per group.
+
+    Measured, not declared: the state differs from operation to operation -
+    its arrays, their dtypes, whether a row of several numbers or an array of
+    its own - and a declaration beside it would be a second truth to keep in
+    step with the first.  The state is built once with two groups: the arrays
+    of two elements are the ones per group, the arrays of one element the
+    constants beside them, and the difference of their sizes is the bytes of
+    a group.
+
+    The cost model measures the state of a kernel against the cache of the
+    machine; a guess of eight bytes per number would be wrong by a factor of
+    two for the float32 and the complex input, and in the direction that lets
+    the parallel path into a state that does not fit.
+
+    The state is built by its own python function, which is where the arrays
+    come from - the compiled one cannot be asked for the size of its fields
+    (numba cannot iterate a tuple of mixed types).
+    """
+    # two states of the call, one with two groups and one with a single one:
+    # the arrays per group grow with the number of the groups, the constants
+    # beside them do not, and the difference of the two sizes is the bytes of
+    # a group
+    bigger = init(2, 2, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill)
+    smaller = init(1, 1, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill)
+    return _state_bytes(bigger) - _state_bytes(smaller)
+
+
+def _state_bytes(state: Any) -> int:
+    """The bytes the arrays of a state hold together."""
+    total = 0
+    for field in state:
+        if isinstance(field, np.ndarray):
+            total += field.nbytes
+    return total
+
+
 def build_driver(
     name: str, passes: Any, suffix: str, multi_threading: bool = False
 ) -> Callable[..., AResult | list[AResult]]:
@@ -1206,9 +1251,11 @@ def build_driver(
             aux_dtype: np.dtype,
             fill_value: float,
             extra: Any = 0,
+            cache_limit: int = 0,
+            state_bytes: int = 8,
         ) -> AResult | list[AResult]:
             result: AResult | list[AResult] = passes(
-                group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra, n_threads
+                group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra, n_threads, cache_limit, state_bytes
             )
             return result
 
@@ -1264,6 +1311,9 @@ class KernelHandle(NamedTuple):
     ``mt_min_values`` the values from which the parallel path is worth a look
                     - the cost model's floor; the pool size is a runtime call
                     a too-small call should not pay for
+    ``state_bytes_per_group_of`` the bytes the state of the operation holds
+                    per group, measured from the state itself: the cost model
+                    measures the state against the cache of the machine
     """
 
     name: str
@@ -1283,6 +1333,7 @@ class KernelHandle(NamedTuple):
     assembles: bool = False
     mt_driver: Callable[..., AResult | list[AResult]] | None = None
     mt_min_values: int = 0
+    state_bytes_per_group_of: Callable[..., int] | None = None
 
 
 def make_tick_call(name: str, handle: KernelHandle) -> Callable[..., Any]:
@@ -1384,6 +1435,24 @@ def build_kernel(
     know.
     """
     init_c = njit_stable(init)
+
+    @functools.lru_cache(maxsize=64)
+    def state_bytes_per_group_of(
+        out_dtype: np.dtype, aux_dtype: np.dtype, in_dtype: np.dtype, fill_value: float, forced_fill: float | None
+    ) -> int:
+        """The bytes the state of this operation holds per group.
+
+        Measured once per set of dtypes and fill value - the state is the
+        same for every call with them, and the measurement builds a state of
+        its own.
+        """
+        # a fill value of None means the default of the operation - the state
+        # is the same either way, the bookkeeping of the untouched groups
+        # runs with the default of the operation and not with None
+        return state_bytes_per_group(
+            init, out_dtype, aux_dtype, in_dtype, fill_value, 0.0 if forced_fill is None else forced_fill
+        )
+
     update_c = njit_stable(update)
     update_nan_c = njit_stable(update_nan) if update_nan is not None else None
 
@@ -1586,6 +1655,8 @@ def build_kernel(
                 fill_value: float,
                 extra: Any,
                 n_threads: int,
+                cache_limit: int,
+                state_bytes: int,
             ) -> AResult | list[AResult]:
                 size = np.max(group_idx) + 1
                 if size_arg >= 0:
@@ -1593,7 +1664,7 @@ def build_kernel(
                         _raise_too_large_for_size(size_arg)
                     size = size_arg
                 n_values = len(group_idx)
-                if not should_use_mt(size, n_threads, n_values, state_size):
+                if not should_use_mt(size, n_threads, n_values, state_size, state_bytes, cache_limit):
                     # not worth it, or only one thread: the sequential path,
                     # with its result bit for bit
                     return passes(group_idx, a, size_arg, out_dtype, aux_dtype, fill_value, extra)
@@ -1664,6 +1735,7 @@ def build_kernel(
             assembles=assembles,
             mt_driver=mt_driver,
             mt_min_values=MT_MIN_VALUES if mt_driver is not None else 0,
+            state_bytes_per_group_of=state_bytes_per_group_of,
         )
 
     plain = build(False)
@@ -1745,6 +1817,9 @@ def build_custom_kernel(
             nton=nton,
             fallback=fallback,
             refusal=refusal,
+            # the state of these operations is the answer itself: one number
+            # per group, in the output dtype
+            state_bytes_per_group_of=lambda out_dtype, aux_dtype, in_dtype, fill_value, forced_fill: out_dtype.itemsize,
             placeable=placeable,
             post=post,
             assembles=assembles,
