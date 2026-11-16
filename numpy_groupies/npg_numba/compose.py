@@ -1182,49 +1182,35 @@ def _make_stub(
 # it on as the ``extra`` of the pass structure.
 
 
-def state_bytes_per_group(
-    init: Callable[..., Any],
-    out_dtype: np.dtype,
-    aux_dtype: np.dtype,
-    in_dtype: np.dtype,
-    fill_value: float,
-    forced_fill: float,
-) -> int:
-    """The bytes the state of an operation holds per group.
+class StateLayout(NamedTuple):
+    """What the size of the state of an operation depends on: the dtypes of
+    the call.
 
-    Measured, not declared: the state differs from operation to operation -
-    its arrays, their dtypes, whether a row of several numbers or an array of
-    its own - and a declaration beside it would be a second truth to keep in
-    step with the first.  The state is built once with two groups: the arrays
-    of two elements are the ones per group, the arrays of one element the
-    constants beside them, and the difference of their sizes is the bytes of
-    a group.
-
-    The cost model measures the state of a kernel against the cache of the
-    machine; a guess of eight bytes per number would be wrong by a factor of
-    two for the float32 and the complex input, and in the direction that lets
-    the parallel path into a state that does not fit.
-
-    The state is built by its own python function, which is where the arrays
-    come from - the compiled one cannot be asked for the size of its fields
-    (numba cannot iterate a tuple of mixed types).
+    The bytes of the state are a function of them - the dtype of the answer
+    says how wide it is, the auxiliary dtype how wide the deviations are, the
+    dtype of the input how wide the anchor is.  The operations take what they
+    need of it.
     """
-    # two states of the call, one with two groups and one with a single one:
-    # the arrays per group grow with the number of the groups, the constants
-    # beside them do not, and the difference of the two sizes is the bytes of
-    # a group
-    bigger = init(2, 2, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill)
-    smaller = init(1, 1, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill)
-    return _state_bytes(bigger) - _state_bytes(smaller)
+
+    out_dtype: np.dtype
+    aux_dtype: np.dtype
+    in_dtype: np.dtype
 
 
-def _state_bytes(state: Any) -> int:
-    """The bytes the arrays of a state hold together."""
-    total = 0
-    for field in state:
-        if isinstance(field, np.ndarray):
-            total += field.nbytes
-    return total
+def _proxy_state_bytes(state_size: int) -> Callable[..., int]:
+    """The bytes the state holds per group, guessed from its arrays.
+
+    The guess of the model: the number of the arrays of the state times the
+    width of a float64.  Every operation declares its own - the guess is
+    wrong by a factor of two for the float32 and the complex input, and in
+    the direction that lets the parallel path into a state that does not fit
+    the cache.
+    """
+
+    def state_bytes(layout: StateLayout) -> int:
+        return state_size * 8
+
+    return state_bytes
 
 
 def build_driver(
@@ -1333,7 +1319,7 @@ class KernelHandle(NamedTuple):
     assembles: bool = False
     mt_driver: Callable[..., AResult | list[AResult]] | None = None
     mt_min_values: int = 0
-    state_bytes_per_group_of: Callable[..., int] | None = None
+    state_bytes_per_group_of: Callable[[StateLayout], int] | None = None
 
 
 def make_tick_call(name: str, handle: KernelHandle) -> Callable[..., Any]:
@@ -1405,6 +1391,12 @@ def build_kernel(
     combine: Callable[..., None] | None = None,
     combine_nan: Callable[..., None] | None = None,
     state_size: int = 1,
+    # the bytes the state of the operation holds per group, as a function of
+    # the dtypes of the call and of the fill value: the cost model measures
+    # the state against the cache of the machine, and it needs the size of it
+    # in bytes.  The declaration belongs beside the state, where the arrays
+    # of it are named.
+    state_bytes: Callable[[StateLayout], int] | None = None,
     nans: bool = True,
     variant: ComposedVariant = "none",
     aux_widen: bool = False,
@@ -1436,22 +1428,11 @@ def build_kernel(
     """
     init_c = njit_stable(init)
 
-    @functools.lru_cache(maxsize=64)
-    def state_bytes_per_group_of(
-        out_dtype: np.dtype, aux_dtype: np.dtype, in_dtype: np.dtype, fill_value: float, forced_fill: float | None
-    ) -> int:
-        """The bytes the state of this operation holds per group.
-
-        Measured once per set of dtypes and fill value - the state is the
-        same for every call with them, and the measurement builds a state of
-        its own.
-        """
-        # a fill value of None means the default of the operation - the state
-        # is the same either way, the bookkeeping of the untouched groups
-        # runs with the default of the operation and not with None
-        return state_bytes_per_group(
-            init, out_dtype, aux_dtype, in_dtype, fill_value, 0.0 if forced_fill is None else forced_fill
-        )
+    # the bytes the state of this operation holds per group - declared
+    # beside the state, where the arrays of it are named, and handed to the
+    # cost model with every call: the state is measured against the cache of
+    # the machine, and the model needs its size in bytes
+    state_bytes_per_group_of = state_bytes if state_bytes is not None else _proxy_state_bytes(state_size)
 
     update_c = njit_stable(update)
     update_nan_c = njit_stable(update_nan) if update_nan is not None else None
@@ -1819,7 +1800,7 @@ def build_custom_kernel(
             refusal=refusal,
             # the state of these operations is the answer itself: one number
             # per group, in the output dtype
-            state_bytes_per_group_of=lambda out_dtype, aux_dtype, in_dtype, fill_value, forced_fill: out_dtype.itemsize,
+            state_bytes_per_group_of=lambda layout: layout.out_dtype.itemsize,
             placeable=placeable,
             post=post,
             assembles=assembles,

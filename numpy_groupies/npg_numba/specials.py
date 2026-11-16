@@ -25,6 +25,7 @@ import numpy.typing as npt
 
 from numpy_groupies.functions import nan
 from numpy_groupies.npg_numba.compose import (
+    StateLayout,
     TickKernel,
     _fill_differs,
     build_custom_kernel,
@@ -1712,6 +1713,13 @@ mode = build_custom_kernel(
 )
 
 
+def _trapezoid_state_bytes(layout: StateLayout) -> int:
+    """The bytes the state of the trapezoid holds per group: the sum in the
+    output dtype, the last value in the dtype of the input and the two flags
+    beside them."""
+    return layout.out_dtype.itemsize + layout.in_dtype.itemsize + 1 + 1
+
+
 class TrapezoidState(NamedTuple):
     """``out`` accumulates the integral and doubles as the result, ``prev``
     keeps the previous sample of each group, ``pending`` marks the groups
@@ -1772,4 +1780,5 @@ trapezoid = build_kernel(
     # the trapezoid kernel a few percent slower
     variant="dx",
     doc="Trapezoidal integration of the samples of every group",
+    state_bytes=_trapezoid_state_bytes,
 )

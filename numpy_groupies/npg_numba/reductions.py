@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.npg_numba.compose import (
+    StateLayout,
     _fill_differs,
     build_custom_kernel,
     build_kernel,
@@ -48,6 +49,24 @@ class SelectionState(NamedTuple):
 
 # jitted building blocks: numba ignores these annotations, the type checker
 # needs them
+def _reduction_state_bytes(layout: StateLayout) -> int:
+    """The bytes the state of a reduction holds per group: the answer in the
+    output dtype, and the bookkeeping of the groups without a value - a byte
+    per group.
+
+    The bookkeeping is counted whether it runs or not: a fill value of its
+    own turns it on, and that is the usual case - the byte is of no weight
+    beside the answer, and the state is measured against the cache of the
+    machine, where the safe side is the bigger one."""
+    return layout.out_dtype.itemsize + 1
+
+
+def _selection_state_bytes(layout: StateLayout) -> int:
+    """The bytes the state of the selection holds per group: the answer in the
+    output dtype and the flag of the groups still waiting for a value."""
+    return layout.out_dtype.itemsize + 1
+
+
 def _sum_init(
     size: int,
     n_input: int,
@@ -122,6 +141,7 @@ sum = build_kernel(
     fill_default=0,
     rule=rule_sum,
     doc="Sum of the values of every group",
+    state_bytes=_reduction_state_bytes,
 )
 
 
@@ -178,6 +198,7 @@ prod = build_kernel(
     fill_default=1,
     rule=rule_widen_int,
     doc="Product of the values of every group",
+    state_bytes=_reduction_state_bytes,
 )
 
 
@@ -230,6 +251,7 @@ len = build_kernel(
     fill_default=0,
     rule=rule_int64,
     doc="Amount of values of every group",
+    state_bytes=_reduction_state_bytes,
 )
 
 
@@ -282,6 +304,7 @@ all = build_kernel(
     fill_default=False,
     rule=rule_bool,
     doc="Whether all values of every group are truthy",
+    state_bytes=_reduction_state_bytes,
 )
 
 
@@ -335,6 +358,7 @@ any = build_kernel(
     fill_default=False,
     rule=rule_bool,
     doc="Whether any value of every group is truthy",
+    state_bytes=_reduction_state_bytes,
 )
 
 
@@ -593,6 +617,7 @@ allnan = build_kernel(
     rule=rule_bool,
     nans=False,
     doc="Whether all values of every group are nan",
+    state_bytes=_reduction_state_bytes,
 )
 
 
@@ -639,6 +664,7 @@ anynan = build_kernel(
     rule=rule_bool,
     nans=False,
     doc="Whether any value of every group is nan",
+    state_bytes=_reduction_state_bytes,
 )
 
 
@@ -767,6 +793,7 @@ max = build_kernel(
     rule=rule_same,
     fill_default=np.nan,
     doc="Maximum value of every group",
+    state_bytes=_reduction_state_bytes,
 )
 
 
@@ -816,6 +843,7 @@ min = build_kernel(
     rule=rule_same,
     fill_default=np.nan,
     doc="Minimum value of every group",
+    state_bytes=_reduction_state_bytes,
 )
 
 
@@ -880,4 +908,5 @@ sumofsquares = build_kernel(
     fill_default=0,
     rule=rule_sumofsquares,
     doc="Sum of the squared magnitudes of the values of every group",
+    state_bytes=_reduction_state_bytes,
 )

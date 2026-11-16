@@ -16,6 +16,7 @@ import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.npg_numba.compose import (
+    StateLayout,
     TickKernel,
     build_kernel,
     complex_less,
@@ -199,6 +200,12 @@ def _mean_init(
     )
 
 
+def _mean_state_bytes(layout: StateLayout) -> int:
+    """The bytes the state of the mean holds per group: the sum of the values
+    in the output dtype, the count of them always in an int64."""
+    return layout.out_dtype.itemsize + 8
+
+
 def _mean_seed(st: MeanState, a: npt.NDArray[np.number]) -> None:
     # seed the global extrema scratch with the first value
     if len(a) > 0:
@@ -280,6 +287,13 @@ def _tick_mean_init(
         np.full(size, INT64_MIN, np.int64),
         np.zeros(size, np.bool_),
     )
+
+
+def _tick_mean_state_bytes(layout: StateLayout) -> int:
+    """The bytes the state of the mean of the ticks holds per group: the sum
+    of the deviations, the count and the origin in an int64, and the flag of
+    the poisoned groups as a byte."""
+    return 8 + 8 + 8 + 1
 
 
 def _make_tick_mean_update(nan: bool) -> Callable[..., None]:
@@ -384,6 +398,7 @@ tick_mean = build_kernel(
     fill_default=0,
     forced_fill=0,
     doc="Mean of the ticks of every group, rounded half to even - the tick of a NaT poisons its group, and the nan form leaves it out",
+    state_bytes=_tick_mean_state_bytes,
 )
 
 
@@ -408,6 +423,7 @@ mean = build_kernel(
         plain=make_tick_call("tick_mean_call", tick_mean.plain),
         nan=make_tick_call("nantick_mean_call", tick_mean.nan),
     ),
+    state_bytes=_mean_state_bytes,
 )
 
 
@@ -446,6 +462,13 @@ def _moment_init(
         np.empty(1, in_dtype),
         np.empty(1, in_dtype),
     )
+
+
+def _moment_state_bytes(layout: StateLayout) -> int:
+    """The bytes the state of the moments holds per group: the running mean
+    and the four powers of the deviations in the output dtype, the count of
+    the values always in an int64."""
+    return 5 * layout.out_dtype.itemsize + 8
 
 
 def _moment_seed(st: MomentState, a: npt.NDArray[np.number]) -> None:
@@ -617,6 +640,7 @@ skew = build_kernel(
     # exception cannot leave
     refusal=MOMENTS_NOT_FOR_COMPLEX,
     doc="Skewness of the values of every group",
+    state_bytes=_moment_state_bytes,
 )
 
 
@@ -640,6 +664,7 @@ kurt = build_kernel(
     # the refusal stands ahead of the kernel, like the skewness's
     refusal=MOMENTS_NOT_FOR_COMPLEX,
     doc="Excess kurtosis of the values of every group",
+    state_bytes=_moment_state_bytes,
 )
 
 
@@ -715,6 +740,14 @@ def _std_init(
         np.empty(1, in_dtype),
         np.empty(1, in_dtype),
     )
+
+
+def _std_state_bytes(layout: StateLayout) -> int:
+    """The bytes the state of the dispersion holds per group: the sum of the
+    squares in the output dtype, the count of the values always in an int64,
+    the deviations in the auxiliary dtype and the anchor in the dtype of the
+    input."""
+    return layout.out_dtype.itemsize + 8 + layout.aux_dtype.itemsize + layout.in_dtype.itemsize
 
 
 def _std_seed(st: StdState, a: npt.NDArray[np.number]) -> None:
@@ -880,6 +913,7 @@ std = build_kernel(
     aux_widen=True,
     variant="ddof",
     doc="Standard deviation of the values of every group",
+    state_bytes=_std_state_bytes,
 )
 
 
@@ -923,4 +957,5 @@ var = build_kernel(
     aux_widen=True,
     variant="ddof",
     doc="Variance of the values of every group",
+    state_bytes=_std_state_bytes,
 )

@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from numpy_groupies.npg_numba import averaging, mt, reductions, specials
+from numpy_groupies.npg_numba.compose import StateLayout
 
 # the decision of the chunked path: the groups, the threads and the values
 # against the answer the gate gives
@@ -70,39 +71,55 @@ def test_the_cache_of_the_machine_decides_the_regime(cache_limit, expected):
     assert mt.is_dram_bound(10**7, 4, 10**8, 8, cache_limit) is expected
 
 
-def test_state_bytes_are_measured_not_guessed():
-    """The bytes the state holds per group are measured from the state.
+def _measured_state_bytes(init, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill):
+    """The bytes the state of an operation holds per group, measured.
 
-    A guess of eight bytes per number would be wrong by a factor of two for
-    the float32 and the complex input - and in the direction that lets the
-    parallel path into a state that does not fit the cache.
+    Two states of the call, one with two groups and one with a single one:
+    the arrays per group grow with the number of the groups, the constants
+    beside them do not, and the difference of the two sizes is the bytes of
+    a group.
     """
+    bigger = init(2, 2, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill)
+    smaller = init(1, 1, out_dtype, aux_dtype, in_dtype, fill_value, forced_fill)
+
+    def total(state):
+        return sum(field.nbytes for field in state if isinstance(field, np.ndarray))
+
+    return total(bigger) - total(smaller)
+
+
+@pytest.mark.parametrize(
+    ("operation", "init", "expected_f64", "expected_f32"),
+    [
+        (reductions.sum, reductions._sum_init, 9, 5),
+        (averaging.mean, averaging._mean_init, 16, 12),
+        (averaging.var, averaging._std_init, 32, 20),
+        (averaging.skew, averaging._moment_init, 48, 28),
+    ],
+)
+def test_the_declared_state_bytes_match_the_state(operation, init, expected_f64, expected_f32):
+    """The bytes an operation declares are the bytes its state holds.
+
+    The declaration is what the cost model measures the state against the
+    cache of the machine with - a guess of eight bytes per number would be
+    wrong by a factor of two for the float32 and the complex input, and in
+    the direction that lets the parallel path into a state that does not fit.
+    """
+    handle = operation.plain if hasattr(operation, "plain") else operation
+    declared = handle.state_bytes_per_group_of
+    assert declared is not None
     f64 = np.dtype("float64")
     f32 = np.dtype("float32")
-    c128 = np.dtype("complex128")
 
-    sum_handle = reductions.sum.plain if hasattr(reductions.sum, "plain") else reductions.sum
-    mean_handle = averaging.mean.plain if hasattr(averaging.mean, "plain") else averaging.mean
-
-    sum_f64 = sum_handle.state_bytes_per_group_of(f64, f64, f64, 0.0, 0.0)
-    sum_f32 = sum_handle.state_bytes_per_group_of(f32, f32, f32, 0.0, 0.0)
-    mean_f64 = mean_handle.state_bytes_per_group_of(f64, f64, f64, 0.0, 0.0)
-    mean_f32 = mean_handle.state_bytes_per_group_of(f32, f64, f32, 0.0, 0.0)
-
-    # the sum holds the answer of every group: eight bytes for a float64,
-    # four for a float32
-    assert sum_f64 == 8
-    assert sum_f32 == 4
-    # the mean holds the sum and the count of the values: the answer in the
-    # output dtype, the count always in an int64
-    assert mean_f64 == 16
-    assert mean_f32 == 12
-    # the complex input: the answer of sixteen bytes beside the count
-    assert sum_handle.state_bytes_per_group_of(c128, c128, c128, 0.0, 0.0) == 16
-    assert mean_handle.state_bytes_per_group_of(c128, c128, c128, 0.0, 0.0) == 24
-    # a fill value of its own turns on the bookkeeping of the groups without
-    # a value: a byte per group beside the answer
-    assert sum_handle.state_bytes_per_group_of(f64, f64, f64, np.nan, 0.0) == 9
+    f64_layout = StateLayout(f64, f64, f64)
+    f32_layout = StateLayout(f32, f32, f32)
+    assert declared(f64_layout) == expected_f64
+    assert declared(f32_layout) == expected_f32
+    # and the declaration says what the state holds - measured with a fill
+    # value of its own, which is the case the bookkeeping of the groups
+    # without a value runs in
+    assert declared(f64_layout) == _measured_state_bytes(init, f64, f64, f64, np.nan, 0.0)
+    assert declared(f32_layout) == _measured_state_bytes(init, f32, f32, f32, np.nan, 0.0)
 
 
 def test_cache_size_is_read_from_the_machine():
