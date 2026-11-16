@@ -34,7 +34,7 @@ from numpy_groupies.inputs import (
     input_validation,
 )
 from numpy_groupies.npg_numba import argreductions, averaging, collect, cumulative, reductions, specials
-from numpy_groupies.npg_numba.compose import KernelHandle, _round_float16
+from numpy_groupies.npg_numba.compose import KernelHandle, StateLayout, _round_float16
 from numpy_groupies.npg_numba.mt import (
     CACHE_SIZE,
     GROUP_MT_MIN_VALUES,
@@ -170,11 +170,15 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     # into the call - a value of the machine must not be baked into the
     # compiled artifact, whose cache is the user-wide one
     cache_limit = CACHE_SIZE
-    # the bytes the state of the operation holds per group, measured from the
-    # state itself: the count of its arrays would say nothing about the size
-    # of it, and the cost model measures the state against the cache
+    # the bytes the state of the operation holds per group, declared beside
+    # the state itself: the cost model measures the state against the cache
+    # of the machine, and it needs the size of it in bytes
     measure_state = handle.state_bytes_per_group_of
-    assert measure_state is not None  # every kernel carries the measurement
+    assert measure_state is not None  # every kernel carries the declaration
+
+    def state_bytes_of(out_dtype: np.dtype, aux_dtype: np.dtype, in_dtype: np.dtype) -> int:
+        """The bytes the state of the operation holds per group."""
+        return measure_state(StateLayout(out_dtype, aux_dtype, in_dtype))
 
     if handle.variant == "none":
 
@@ -195,7 +199,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
                 if n_threads > 1:
                     # without a second thread the parallel region is pure
                     # overhead
-                    state_bytes = measure_state(out_dtype, aux_dtype, a.dtype, fill_value, 0.0)
+                    state_bytes = state_bytes_of(out_dtype, aux_dtype, a.dtype)
                     return mt_driver(
                         n_threads,
                         group_idx,
@@ -229,7 +233,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             if mt_driver is not None and group_idx.size >= min_values:
                 n_threads = mt_thread_count()
                 if n_threads > 1:
-                    state_bytes = measure_state(out_dtype, aux_dtype, a.dtype, fill_value, 0.0)
+                    state_bytes = state_bytes_of(out_dtype, aux_dtype, a.dtype)
                     return mt_driver(
                         n_threads,
                         group_idx,
@@ -263,7 +267,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
             if mt_driver is not None and group_idx.size >= min_values:
                 n_threads = mt_thread_count()
                 if n_threads > 1:
-                    state_bytes = measure_state(out_dtype, aux_dtype, a.dtype, fill_value, 0.0)
+                    state_bytes = state_bytes_of(out_dtype, aux_dtype, a.dtype)
                     return mt_driver(
                         n_threads,
                         group_idx,
@@ -296,7 +300,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
         if mt_driver is not None and group_idx.size >= min_values:
             n_threads = mt_thread_count()
             if n_threads > 1:
-                state_bytes = measure_state(out_dtype, aux_dtype, a.dtype, fill_value, 0.0)
+                state_bytes = state_bytes_of(out_dtype, aux_dtype, a.dtype)
                 return mt_driver(
                     n_threads,
                     group_idx,
