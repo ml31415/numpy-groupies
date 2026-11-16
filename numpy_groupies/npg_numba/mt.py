@@ -19,9 +19,10 @@ pays twice for the groups (the partial matrix and its fold), which is why the
 group count enters the decision at all.  Nothing is measured at run time.
 """
 
+import contextlib
 import os
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import numba as nb
 
@@ -275,6 +276,9 @@ class MachineLimits(NamedTuple):
 
     cache_size: int
     physical_cores: int
+    # the number of threads the parallel path uses, when it is not the model
+    # that decides - zero leaves the decision to the model
+    forced_threads: int = 0
 
 
 # the size of the last-level cache of the machine the process runs on - the
@@ -366,6 +370,11 @@ def mt_thread_plan(
         return 1
     if n_values < MT_MIN_VALUES:
         return 1
+    if machine.forced_threads >= 2:
+        # the caller asks for exactly so many threads - the benchmark of the
+        # thread counts measures what a count does, and not what the model
+        # decides about it
+        return min(machine.forced_threads, n_threads)
     top = min(n_threads, machine.physical_cores)
     if top < 2:
         return 1
@@ -477,7 +486,25 @@ def physical_core_count() -> int:
 
 
 # the properties of the machine the process runs on, as the model needs them
-MACHINE = MachineLimits(cache_size_bytes(), physical_core_count())
+MACHINE = MachineLimits(cache_size_bytes(), physical_core_count(), 0)
+
+
+@contextlib.contextmanager
+def forced_threads(threads: int) -> Any:
+    """Make the parallel path use exactly so many threads, and not what the
+    model decides about it.
+
+    The benchmark of the thread counts measures what a number of threads does
+    - and not the number the model would pick for the case at hand.  The
+    decision of the model is the subject of another table.
+    """
+    global MACHINE
+    before = MACHINE
+    MACHINE = before._replace(forced_threads=threads)
+    try:
+        yield
+    finally:
+        MACHINE = before
 
 
 def logical_core_count() -> int:

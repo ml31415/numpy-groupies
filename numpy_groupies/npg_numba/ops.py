@@ -34,10 +34,10 @@ from numpy_groupies.inputs import (
     input_validation,
 )
 from numpy_groupies.npg_numba import argreductions, averaging, collect, cumulative, reductions, specials
+from numpy_groupies.npg_numba import mt as npg_mt
 from numpy_groupies.npg_numba.compose import KernelHandle, StateLayout, _round_float16
 from numpy_groupies.npg_numba.mt import (
     GROUP_MT_MIN_VALUES,
-    MACHINE,
     group_chunk_count,
     mt_thread_count,
     should_use_group_mt,
@@ -169,7 +169,7 @@ def _driver_call(handle: KernelHandle) -> Callable[..., Any]:
     # model measures the state of a kernel against it, and the value goes
     # into the call - a value of the machine must not be baked into the
     # compiled artifact, whose cache is the user-wide one
-    machine = MACHINE
+    machine = npg_mt.MACHINE
     # the bytes the state of the operation holds per group, declared beside
     # the state itself: the cost model measures the state against the cache
     # of the machine, and it needs the size of it in bytes
@@ -824,6 +824,21 @@ _ARGUMENT_WRAPPERS: dict[str, Callable[[Callable[..., AResult]], Callable[..., A
     "percentile": partial(_quantile_arguments, default=50.0, limit=100.0),
     "nanpercentile": partial(_quantile_arguments, default=50.0, limit=100.0),
 }
+
+
+def state_bytes_per_group(func: str, dtype: np.dtype = np.dtype("float64")) -> int:
+    """The bytes the state of the operation holds per group.
+
+    The state of the parallel path is what the cost model measures against
+    the cache of the machine; the benchmark table of the thread counts
+    reports it beside the times.
+    """
+    pair = dict(_TABLE)[func]
+    handle = pair.plain
+    measure = handle.state_bytes_per_group_of
+    assert measure is not None  # every kernel carries the declaration
+    layout = StateLayout(dtype, dtype, dtype)
+    return measure(layout)
 
 
 def get_ops() -> dict[str, Callable[..., AResult]]:
