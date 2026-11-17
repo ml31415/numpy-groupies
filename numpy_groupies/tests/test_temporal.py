@@ -26,6 +26,14 @@ pytestmark = pytest.mark.usefixtures("skip_purepy")
 # are the ones float64 cannot represent exactly
 DTYPES = ["M8[s]", "M8[ns]", "m8[s]", "m8[ns]"]
 
+# the functions whose answer is a value of the input for both kinds: the
+# package refuses the sum and the median of dates on the words of numpy, and
+# answers the mean of dates on the ticks although numpy itself refuses it
+NAT_FILL_FUNCS = ["min", "max", "first", "last", "mean"]
+# the sum of durations answers a value of the input as well, where the sum of
+# dates names nothing
+DURATION_FILL_FUNCS = [*NAT_FILL_FUNCS, "sum", "nansum"]
+
 
 def is_datetime(a):
     return np.asarray(a).dtype.kind == "M"
@@ -467,14 +475,14 @@ def test_user_fill_value_int_is_tick(impl):
 # np.timedelta64 is a subclass of np.integer: taken as a number it answers
 # int(), which reads its value while ignoring its unit - and refuses outright
 # for NaT and for every unit coarser than the nanoseconds (#205)
-@pytest.mark.parametrize("func", ["min", "max", "first", "last", "sum", "mean"])
+@pytest.mark.parametrize("func", DURATION_FILL_FUNCS)
 def test_duration_fill_value_is_read_in_its_own_unit(impl, func):
     group_idx = np.array([0, 0])
     a = np.array([10, 20], dtype=np.int64).view("m8[s]")
     # the seconds of the fill value stay seconds where the values count seconds
     res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.timedelta64(5, "s"))
     assert res[1] == np.timedelta64(5, "s")
-    # a finer unit is converted to the unit of the values, and truncates
+    # a finer unit is read in the unit of the values, where np.astype truncates
     res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.timedelta64(5, "ns"))
     assert res[1] == np.timedelta64(0, "s")
     # and the unit of the input is the unit of the answer
@@ -482,9 +490,18 @@ def test_duration_fill_value_is_read_in_its_own_unit(impl, func):
     assert res[1] == np.timedelta64(5_000_000_000, "ns")
 
 
-# the functions whose answer numpy refuses for a datetime64 stay out of the
-# NaT fill cases: the refusal comes first and is the point of another test
-NAT_FILL_FUNCS = ["min", "max", "first", "last", "mean"]
+@pytest.mark.parametrize("func", NAT_FILL_FUNCS)
+def test_date_fill_value_is_read_in_its_own_unit(impl, func):
+    group_idx = np.array([0, 0])
+    a = np.asarray(["2011-01-01", "2011-01-02"], dtype="M8[s]")
+    fine = np.datetime64("2012-01-01T00:00:00.000000005", "ns")
+    # the nanoseconds of the fill are read in the unit of the values, and the
+    # ones that do not fit a second are gone (np.astype truncates, it does not
+    # round) - the same conversion the answer of the group itself goes through
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=fine)
+    assert res[1] == np.datetime64("2012-01-01T00:00:00", "s")
+    res = impl.aggregate(group_idx, a.astype("M8[ns]"), func=func, size=2, fill_value=fine)
+    assert res[1] == fine
 
 
 @pytest.mark.parametrize("dtype", ["m8[s]", "M8[s]", "m8[ns]"])
@@ -499,6 +516,50 @@ def test_nat_fill_value_is_the_missing_tick_of_its_kind(impl, func, dtype):
     assert res.dtype == a.dtype
     assert not np.isnat(res[0])
     assert np.isnat(res[1])
+
+
+@pytest.mark.parametrize("func", ["sum", "nansum"])
+def test_nat_fill_of_a_duration_sum_is_the_missing_tick(impl, func):
+    # the sum of durations fills an empty group with the zero of the unit by
+    # default, so the NaT of the caller has to arrive as the tick of NaT and
+    # not as the number of a tick
+    group_idx = np.array([0, 0])
+    a = np.array([10, 20], dtype=np.int64).view("m8[s]")
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.timedelta64("NaT", "s"))
+    assert np.isnat(res[1])  # a NaT compares unequal to everything, itself included
+
+
+@pytest.mark.parametrize("func", DURATION_FILL_FUNCS)
+def test_fill_value_of_a_duration_reaches_only_the_empty_groups(impl, func):
+    group_idx = np.array([0, 0, 2])  # the group 1 holds no value at all
+    a = np.array([10, 20, 30], dtype=np.int64).view("m8[s]")
+    res = impl.aggregate(group_idx, a, func=func, size=3, fill_value=np.timedelta64(5, "s"))
+    plain = impl.aggregate(group_idx, a, func=func, size=3)
+    # the groups holding values answer what their values answer
+    np.testing.assert_array_equal(res[[0, 2]], plain[[0, 2]])
+    # and only the empty one answers the fill
+    assert res[1] == np.timedelta64(5, "s")
+
+
+def test_nan_forms_of_a_group_holding_nothing_but_nat_answer_the_fill(impl):
+    # a group of nothing but NaT is empty to the nan forms and keeps the fill
+    # value of the caller, where the plain forms answer the NaT they found
+    group_idx = np.array([0, 0, 1, 2])
+    a = np.asarray(["2011-01-01", "NaT", "NaT", "2011-01-04"], dtype="M8[ns]")
+    fill = np.datetime64("2012-01-01T00:00:00.000000005", "ns")
+    for func in ("nanmin", "nanmax", "nanfirst", "nanlast", "nanmean"):
+        res = impl.aggregate(group_idx, a, func=func, size=3, fill_value=fill)
+        assert res[0] == np.datetime64("2011-01-01", "ns")  # the NaT is left out
+        assert res[1] == fill  # the group 1 holds nothing the nan form can use
+        assert not np.isnat(res[2])
+    for func in ("min", "max", "mean"):
+        res = impl.aggregate(group_idx, a, func=func, size=3, fill_value=fill)
+        assert np.isnat(res[0])  # a NaT poisons the plain form of its group
+        assert np.isnat(res[1])  # and a group of nothing but NaT is no choice
+        assert not np.isnat(res[2])
+    res = impl.aggregate(group_idx, a, func="first", size=3, fill_value=fill)
+    assert res[0] == np.datetime64("2011-01-01", "ns")  # the first form names a value
+    assert np.isnat(res[1])  # and the only value of the group 1 is a NaT
 
 
 def test_int64_dtype_answers_ticks(impl):

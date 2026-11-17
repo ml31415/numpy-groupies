@@ -151,23 +151,24 @@ def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:
 
 
 def _temporal_fill_tick(fill_value: Any, a_dtype: np.dtype, default_is_nat: bool) -> int:
-    """The tick of the fill value: NaT where the default is nan, zero where
-    it fills with zero, unless the caller asks for a date.
+    """The tick of the fill value: NaT where the function fills with NaT, the
+    zero of the unit where it fills with zero - unless the caller names a date
+    or a duration of its own, which is read in the unit of the input.
 
-    A temporal value is asked for before a number: numpy counts timedelta64
-    among the integers, and ``int()`` of it ignores its unit (and refuses
-    NaT and every unit coarser than the nanoseconds).
+    The duration of a caller is a number to numpy (``np.timedelta64`` is a
+    subclass of ``np.integer``), and ``int()`` of it reads its value while it
+    ignores its unit - and refuses NaT and every unit coarser than the
+    nanoseconds.  So the numbers are picked out before the conversion, and
+    everything that is left is read as a date or a duration.
     """
     if fill_value is None or fill_value is DEFAULT_FILL_VALUE:
         return NAT_TICK if default_is_nat else 0
     if isinstance(fill_value, float) and fill_value != fill_value:
         return NAT_TICK if default_is_nat else 0
-    if is_temporal_scalar(fill_value):
-        # the date or duration of the caller, read in the unit of the input
-        return int(np.asarray(fill_value, dtype=a_dtype).view(np.int64))
-    if isinstance(fill_value, (int, np.integer)):
+    if isinstance(fill_value, (int, np.integer)) and not is_temporal_scalar(fill_value):
+        # a plain number names the tick itself, whatever the unit of the input
         return int(fill_value)
-    # anything else numpy reads as a date or a duration
+    # a datetime64/timedelta64, or anything else numpy reads as one
     return int(np.asarray(fill_value, dtype=a_dtype).view(np.int64))
 
 
@@ -807,11 +808,14 @@ def _temporal_aggregation(
         ret = ctx.call(policy.op, cast("AValue", np.int64(values.view(np.int64))), fill_value, **kwargs)
         return ret, fill_value
 
-    # a plain number names a tick, so the ticks answer it; a timedelta64 joins
-    # the numbers by numpy's own reckoning (it is a subclass of np.integer)
-    # and stays with them: the ticks apply any duration to the empty groups,
-    # where the kernels that take temporal values as they are recognise only
-    # NaT and the zero of the unit as a fill of their own (_fill_differs)
+    # a plain number names a tick, so the ticks answer it; a timedelta64
+    # joins the numbers by numpy's own reckoning (it is a subclass of
+    # np.integer) and is answered on the ticks with them.  A datetime64 goes
+    # the other way, to the native kernels, and the two paths do not answer a
+    # caller's fill alike: _fill_differs lets only a NaT through, so a native
+    # kernel leaves a group it never touched at the start of its accumulation
+    # where the ticks give it the fill.  A duration fill - the fill of the
+    # sums of durations - therefore stays on the ticks until that is settled.
     plain_fill = isinstance(fill_value, (bool, np.bool_, int, np.integer))
     if policy.is_native and ctx.user_dtype is None and not plain_fill:
         # the kernel takes temporal values as they are: it finds NaT, its
