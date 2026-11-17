@@ -18,7 +18,7 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.dtypes import TEMPORAL_KINDS
+from numpy_groupies.dtypes import TEMPORAL_KINDS, is_temporal_scalar
 from numpy_groupies.fills import (
     DEFAULT_FILL_VALUE,
     resolve_fill_value,
@@ -135,7 +135,7 @@ def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:
     with it) or the zero of the unit; a plain number is a tick; a temporal
     value passes through in the unit of the input.
     """
-    if isinstance(fill_value, (np.datetime64, np.timedelta64)):
+    if is_temporal_scalar(fill_value):
         return np.asarray(fill_value).astype(a_dtype)[()]
     if isinstance(fill_value, (float, np.floating)) and fill_value == fill_value:
         # a caller's own real number - no tick, no missing value
@@ -152,14 +152,22 @@ def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:
 
 def _temporal_fill_tick(fill_value: Any, a_dtype: np.dtype, default_is_nat: bool) -> int:
     """The tick of the fill value: NaT where the default is nan, zero where
-    it fills with zero, unless the caller asks for a date."""
+    it fills with zero, unless the caller asks for a date.
+
+    A temporal value is asked for before a number: numpy counts timedelta64
+    among the integers, and ``int()`` of it ignores its unit (and refuses
+    NaT and every unit coarser than the nanoseconds).
+    """
     if fill_value is None or fill_value is DEFAULT_FILL_VALUE:
         return NAT_TICK if default_is_nat else 0
     if isinstance(fill_value, float) and fill_value != fill_value:
         return NAT_TICK if default_is_nat else 0
+    if is_temporal_scalar(fill_value):
+        # the date or duration of the caller, read in the unit of the input
+        return int(np.asarray(fill_value, dtype=a_dtype).view(np.int64))
     if isinstance(fill_value, (int, np.integer)):
         return int(fill_value)
-    # a datetime64/timedelta64, or anything numpy reads as one
+    # anything else numpy reads as a date or a duration
     return int(np.asarray(fill_value, dtype=a_dtype).view(np.int64))
 
 
@@ -799,6 +807,11 @@ def _temporal_aggregation(
         ret = ctx.call(policy.op, cast("AValue", np.int64(values.view(np.int64))), fill_value, **kwargs)
         return ret, fill_value
 
+    # a plain number names a tick, so the ticks answer it; a timedelta64 joins
+    # the numbers by numpy's own reckoning (it is a subclass of np.integer)
+    # and stays with them: the ticks apply any duration to the empty groups,
+    # where the kernels that take temporal values as they are recognise only
+    # NaT and the zero of the unit as a fill of their own (_fill_differs)
     plain_fill = isinstance(fill_value, (bool, np.bool_, int, np.integer))
     if policy.is_native and ctx.user_dtype is None and not plain_fill:
         # the kernel takes temporal values as they are: it finds NaT, its

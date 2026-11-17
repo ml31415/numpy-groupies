@@ -35,6 +35,10 @@ _next_float_dtype = {
 
 TEMPORAL_KINDS = "Mm"
 
+# the scalar types of the temporal dtypes: a fill value of one of these names
+# a date or a duration, never a tick
+TEMPORAL_SCALARS: tuple[type, ...] = (np.datetime64, np.timedelta64)
+
 
 def is_temporal_input(a: Any) -> bool:
     """Whether the input carries datetime64 or timedelta64 values.
@@ -43,6 +47,18 @@ def is_temporal_input(a: Any) -> bool:
     """
     kind = getattr(getattr(a, "dtype", None), "kind", None)
     return kind is not None and kind in TEMPORAL_KINDS
+
+
+def is_temporal_scalar(value: Any) -> bool:
+    """Whether the value is a datetime64 or timedelta64 scalar.
+
+    numpy makes ``np.timedelta64`` a subclass of ``np.integer``, so a check
+    for the integers alone catches it first: ``int()`` of it reads the number
+    of the value while ignoring its unit, and fails outright for NaT and for
+    every unit coarser than the nanoseconds.  Ask for the temporal scalars
+    before asking for the integers.
+    """
+    return isinstance(value, TEMPORAL_SCALARS)
 
 
 def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:

@@ -464,6 +464,43 @@ def test_user_fill_value_int_is_tick(impl):
     assert res[1] == np.datetime64("1970-01-01", "s")
 
 
+# np.timedelta64 is a subclass of np.integer: taken as a number it answers
+# int(), which reads its value while ignoring its unit - and refuses outright
+# for NaT and for every unit coarser than the nanoseconds (#205)
+@pytest.mark.parametrize("func", ["min", "max", "first", "last", "sum", "mean"])
+def test_duration_fill_value_is_read_in_its_own_unit(impl, func):
+    group_idx = np.array([0, 0])
+    a = np.array([10, 20], dtype=np.int64).view("m8[s]")
+    # the seconds of the fill value stay seconds where the values count seconds
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.timedelta64(5, "s"))
+    assert res[1] == np.timedelta64(5, "s")
+    # a finer unit is converted to the unit of the values, and truncates
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.timedelta64(5, "ns"))
+    assert res[1] == np.timedelta64(0, "s")
+    # and the unit of the input is the unit of the answer
+    res = impl.aggregate(group_idx, a.astype("m8[ns]"), func=func, size=2, fill_value=np.timedelta64(5, "s"))
+    assert res[1] == np.timedelta64(5_000_000_000, "ns")
+
+
+# the functions whose answer numpy refuses for a datetime64 stay out of the
+# NaT fill cases: the refusal comes first and is the point of another test
+NAT_FILL_FUNCS = ["min", "max", "first", "last", "mean"]
+
+
+@pytest.mark.parametrize("dtype", ["m8[s]", "M8[s]", "m8[ns]"])
+@pytest.mark.parametrize("func", NAT_FILL_FUNCS)
+def test_nat_fill_value_is_the_missing_tick_of_its_kind(impl, func, dtype):
+    group_idx = np.array([0, 0])
+    if dtype.startswith("M"):
+        a = np.asarray(["2011-01-01", "2011-01-02"], dtype=dtype)
+    else:
+        a = np.array([10, 20], dtype=np.int64).view(dtype)
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.asarray("NaT", dtype=dtype)[()])
+    assert res.dtype == a.dtype
+    assert not np.isnat(res[0])
+    assert np.isnat(res[1])
+
+
 def test_int64_dtype_answers_ticks(impl):
     group_idx = np.array([0, 0, 1])
     a = np.array(["2011-01-01", "2011-03-01", "2011-02-01"], dtype="M8[s]")
