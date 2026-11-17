@@ -44,9 +44,12 @@ from numpy_groupies.validation import (
     NEGATIVE_INDICES,
     NON_INTEGER_GROUP_IDX,
     OUTPUT_SIZE_NOT_SCALAR,
+    TEMPORAL_KINDS,
+    TEMPORAL_VALUES_NOT_SUPPORTED,
     TOO_LARGE_FOR_SIZE,
     TOPK_NEEDS_FLAT_GROUP_IDX,
     check_complex_dtype,
+    check_fill_kind,
     check_fixed_fill_value,
     check_integer_variance_span_overflow,
     check_topk_k,
@@ -81,6 +84,20 @@ def _a_dtype(a: Sequence[Any]) -> type:
         if isinstance(v, float) or kind == "f":
             dtype = float
     return dtype
+
+
+def _values_dtype(a: Sequence[Any]) -> Any:
+    """The dtype of the values, as far as it can be told without numpy: the
+    dtype of the sequence itself, or the one its first value carries.
+    """
+    dtype = getattr(a, "dtype", None)
+    if dtype is not None:
+        return dtype
+    for value in a:
+        dtype = getattr(value, "dtype", None)
+        if dtype is not None:
+            return dtype
+    return None
 
 
 def _check_integer_precision(a: Sequence[Any], func: Callable[..., AScalar]) -> None:
@@ -221,6 +238,16 @@ def aggregate(
     elif len(idx) != len(vals):
         raise ValueError(LENGTH_MISMATCH)
 
+    # dates and durations are no values this implementation computes with: it
+    # reads its values as python objects and has no numpy to reach their ticks
+    values_dtype = _values_dtype(vals)
+    kind = getattr(values_dtype, "kind", None)
+    if isinstance(kind, str) and kind in TEMPORAL_KINDS:
+        raise NotImplementedError(TEMPORAL_VALUES_NOT_SUPPORTED)
+    # the kind rule of the package, of the values and before the fill is
+    # resolved: no number is a date and no number a duration
+    check_fill_kind(fill_value, values_dtype if values_dtype is not None else _a_dtype(vals))
+
     # nan is only a sensible default where the output datatype can hold it;
     # the averaging functions answer floats, the squared sums stay exact
     result_dtype = _a_dtype(vals)
@@ -262,8 +289,9 @@ aggregate.__doc__ = (
     Using the numpy version is highly recommended.
 
     It computes with python numbers and needs no numpy.  Every function of
-    the package is there except the temporal arithmetic and the
-    multidimensional output: axis and a sequence of sizes are refused.
+    the package is there except the temporal values, the temporal fill
+    values of the other kind and the multidimensional output: axis, a
+    sequence of sizes, datetime64 and timedelta64 are refused.
     """
     + aggregate_common_doc
 )

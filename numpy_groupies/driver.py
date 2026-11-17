@@ -28,6 +28,7 @@ from numpy_groupies.registry import (
 )
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
 from numpy_groupies.validation import (
+    check_fill_kind,
     check_fill_value,
     check_topk_input,
     check_topk_k,
@@ -188,6 +189,9 @@ def _aggregate_wrap(
         # the overflow guess needs the (nan-filtered) input length;
         # flat_size counts output groups and can be much smaller
         dtype = check_dtype(dtype, funcname, a, len(group_idx))
+        # the kind of a fill value is asked of the values and not of the
+        # answer: no count, no position and no tick of another kind is a date
+        check_fill_kind(fill_value, getattr(a, "dtype", None))
         fill_value = resolve_fill_value(funcname, fill_value, dtype)
         check_fill_value(fill_value, dtype, func=funcname)
         ret = op(group_idx, a, flat_size, fill_value=fill_value, dtype=dtype, **kwargs)
