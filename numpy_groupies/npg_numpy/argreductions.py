@@ -32,10 +32,12 @@ def _object_arg_extreme(
     variants point at the extreme of the other values of the group.
     """
     nans = object_nan_mask(a)
-    values, groups = a, group_idx
+    groups = group_idx
+    values = a
     if skip_nans:
         keep = ~nans
-        values, groups = a[keep], group_idx[keep]
+        groups = group_idx[keep]
+        values = a[keep]
     extreme = _object_extreme(groups, values, size, nan, is_min=not is_max)
     is_extreme = (a == extreme[group_idx]) & ~nans
     ret = np.full(size, fill_value, dtype=dtype)

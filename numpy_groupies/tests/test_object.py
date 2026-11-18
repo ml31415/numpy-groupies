@@ -69,6 +69,15 @@ def test_nan_wins_in_object_group(impl, skip_numba):
     assert res[1] == 3.0
 
 
+def test_nan_wins_over_text(impl, skip_numba):
+    # the nan is not compared with the other values: numpy's object loop
+    # would raise for a text and a nan
+    a = _object(["a", np.nan, "c"])
+    res = impl.aggregate(GROUP_IDX, a, func="min", size=SIZE)
+    assert np.isnan(res[0])
+    assert res[1] == "c"
+
+
 def test_nan_variants_skip_the_nan(impl, skip_numba):
     a = _object([1.0, np.nan, 3.0])
     _assert_same(impl.aggregate(GROUP_IDX, a, func="nanmin", size=SIZE), [1.0, 3.0, np.nan])

@@ -740,8 +740,9 @@ def _typing_prologue(
         a_dtype = _numpy_dtype(getattr(a, "dtype", None))
         if a_dtype is not None and a_dtype.kind == "O":
             # the compiled driver has no dtype for the values of an object
-            # column - the complaint is the one of the package and not the
-            # TypingError of the compiler behind it
+            # column - the complaint is the one of the package.  A call from
+            # compiled code never reaches it: numba refuses the values of an
+            # object array itself, before the typing of the call is asked for
             raise TypeError(OBJECT_COLUMN_NOT_FOR_NUMBA)
         temporal = a_dtype is not None and a_dtype.kind in TEMPORAL_KINDS
         if not temporal and not is_numeric_dtype(a_dtype):

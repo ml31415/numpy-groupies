@@ -170,18 +170,21 @@ def _object_extreme(
 
     The values of an object column are ordered the way python orders them,
     and a nan of the group wins over its other values, like numpy's min and
-    max do.  The object loop of numpy loses that nan - it compares the values
-    and takes the other one - so the nan is placed over the group afterwards.
+    max do.  The nan is not compared with the other values - numpy's object
+    loop raises for a text and a nan - it is placed over the group instead.
     """
     ret = np.full(size, fill_value, dtype=object)
-    if a.size:
+    nans = object_nan_mask(a)
+    keep = ~nans
+    groups = group_idx[keep]
+    values = a[keep]
+    if values.size:
         # the first value of every group is the seed, the others are folded in
-        ret[group_idx[::-1]] = a[::-1]
+        ret[groups[::-1]] = values[::-1]
         op = np.minimum if is_min else np.maximum
-        op.at(ret, group_idx, a)
-        nans = object_nan_mask(a)
-        if nans.any():
-            ret[np.unique(group_idx[nans])] = nan
+        op.at(ret, groups, values)
+    if nans.any():
+        ret[np.unique(group_idx[nans])] = nan
     return ret
 
 

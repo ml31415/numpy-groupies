@@ -254,14 +254,14 @@ Complex input is supported wherever the result is well defined, following NumPy'
 An `object` column holds whatever it is given: the numbers of a mixed column, the strings of a text column, the `nan` of a float column wrapped in objects. Its dtype says nothing about the values, so the package asks the values themselves.
 
 - **The order statistics** `min`, `max`, `argmin`, `argmax` and their `nan` counterparts order the values the way Python orders them, in the NumPy and in the pure Python implementation alike.
-- **A `nan` of a group wins** over its other values, as in NumPy: `min` and `max` answer it, and the `nan` variants skip it. A group that holds a `nan` has no extreme to point at, so `argmin` and `argmax` answer the fill value (`-1`) for it - the `nan` variants name an index, unless all of the items of the group are `nan`.
+- **A `nan` of a group wins** over its other values, as in NumPy: `min` and `max` answer it, and the `nan` variants skip it. The `nan` is not compared with the other values, so a group of a text and a `nan` answers the `nan` and not a complaint of NumPy. A group that holds a `nan` has no extreme to point at, so `argmin` and `argmax` answer the fill value (`-1`) for it - the `nan` variants name an index, unless all of the items of the group are `nan`.
 - **A group without items** takes a `nan`: an object column holds one.
-- **The Numba implementation refuses** an object column with a `TypeError` - it compiles with the dtype of the values, and it has none for an object column. The collecting function `array` is the one call it hands to the NumPy implementation.
+- **The Numba implementation refuses** an object column with a `TypeError` - it compiles with the dtype of the values, and it has none for an object column. A call from compiled code never reaches that complaint: Numba has no object arrays at all and refuses the values itself. The collecting function `array` is the one call it hands to the NumPy implementation.
 - **The sums and the averages** need a dtype NumPy can cast to: the NumPy implementation refuses them, the pure Python one computes them.
 
 ```python
-npg.aggregate(gi, np.array([3, 1, 2], dtype=object), func="min")   # 1 - the values are ordered like python orders them
-npg.aggregate(gi, np.array([3, 1, 2], dtype=object), func="argmin") # 1 - the position of the smallest value
+npg.aggregate_np(gi, np.array([3, 1, 2], dtype=object), func="min")   # 1 - the values are ordered like python orders them
+npg.aggregate_np(gi, np.array([3, 1, 2], dtype=object), func="argmin") # 1 - the position of the smallest value
 ```
 
 ## Helper functions
