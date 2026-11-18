@@ -1,15 +1,50 @@
 """The arg-reductions of the numpy implementation: the index of the largest and
 of the smallest value of every group."""
 
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
 
 from numpy_groupies.dtypes import (
     maxval,
     minval,
+    object_nan_mask,
 )
-from numpy_groupies.npg_numpy.reductions import _max, _min
+from numpy_groupies.functions import nan
+from numpy_groupies.npg_numpy.reductions import _max, _min, _object_extreme
 from numpy_groupies.typing import AScalar
+
+
+def _object_arg_extreme(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[Any],
+    size: int,
+    fill_value: AScalar,
+    dtype: npt.DTypeLike | None,
+    is_max: bool,
+    skip_nans: bool,
+) -> npt.NDArray[np.int64]:
+    """The position of the extreme of every group of an object column.
+
+    The first value of the group that is the extreme wins, and a group that
+    holds a nan has no extreme to point at: it keeps the fill value.  The nan
+    variants point at the extreme of the other values of the group.
+    """
+    nans = object_nan_mask(a)
+    groups = group_idx
+    values = a
+    if skip_nans:
+        keep = ~nans
+        groups = group_idx[keep]
+        values = a[keep]
+    extreme = _object_extreme(groups, values, size, nan, is_min=not is_max)
+    is_extreme = (a == extreme[group_idx]) & ~nans
+    ret = np.full(size, fill_value, dtype=dtype)
+    group_idx_extreme = group_idx[is_extreme]
+    (positions,) = is_extreme.nonzero()
+    ret[group_idx_extreme[::-1]] = positions[::-1]  # reverse to ensure first value for each group wins
+    return ret
 
 
 def _argmax(
@@ -20,6 +55,10 @@ def _argmax(
     dtype: npt.DTypeLike | None = int,
     _nansqueeze: bool = False,
 ) -> npt.NDArray[np.int64]:
+    if a.dtype.kind == "O":
+        # the values of an object column have no dtype of their own: the seed
+        # of the reduction would be a finfo of a dtype that is not there
+        return _object_arg_extreme(group_idx, a, size, fill_value, dtype, is_max=True, skip_nans=_nansqueeze)
     # the mask value is the smallest value of numpy's order, -inf-infj for a
     # complex dtype (see minval/maxval); integer input has no nans, and
     # replacing there could promote uint64 to float64
@@ -42,6 +81,10 @@ def _argmin(
     dtype: npt.DTypeLike | None = int,
     _nansqueeze: bool = False,
 ) -> npt.NDArray[np.int64]:
+    if a.dtype.kind == "O":
+        # the values of an object column have no dtype of their own: the seed
+        # of the reduction would be a finfo of a dtype that is not there
+        return _object_arg_extreme(group_idx, a, size, fill_value, dtype, is_max=False, skip_nans=_nansqueeze)
     # the mask value is the largest value of numpy's order, inf+infj for a
     # complex dtype (see minval/maxval); integer input has no nans, and
     # replacing there could promote uint64 to float64

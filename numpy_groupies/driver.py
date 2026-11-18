@@ -13,7 +13,7 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.dtypes import check_dtype, is_temporal_input
+from numpy_groupies.dtypes import check_dtype, is_temporal_input, object_nan_mask
 from numpy_groupies.fills import (
     DEFAULT_FILL_VALUE,
     resolve_fill_value,
@@ -103,7 +103,12 @@ def _drop_nans(
         return a, group_idx
     if "cum" in funcname:
         return a, group_idx
-    good = ~np.isnan(a)
+    if getattr(getattr(a, "dtype", None), "kind", None) == "O":
+        # numpy's isnan knows no object dtype: the question is asked of every
+        # value of the column
+        good = ~object_nan_mask(cast("npt.NDArray[np.object_]", a))
+    else:
+        good = ~np.isnan(a)
     if "len" not in funcname or len_counts_values:
         # a scalar a raised a branch above, only columns remain
         a = cast("npt.NDArray[np.generic]", a)[good]

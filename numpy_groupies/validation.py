@@ -79,6 +79,12 @@ FILL_NONE_NOT_HELD = (
     "fill_value=None fills an object result, which is what func='array' returns and no other function does "
     "(the default of a function is asked for with DEFAULT_FILL_VALUE)"
 )
+# the values of an object column: the compiled code of the numba backend has
+# no dtype for them
+OBJECT_COLUMN_NOT_FOR_NUMBA = (
+    "the values are an object column - the numba implementation compiles with the dtype of the values "
+    "and has none for an object column, the numpy implementation takes it"
+)
 
 # the dtypes a call may have: the labels are integers, the values are numbers
 INTEGER_KINDS = "iu"
@@ -154,6 +160,13 @@ def is_inexact_dtype(dtype: Any) -> bool:
     if isinstance(dtype, str):
         return dtype.startswith(("float", "complex"))
     return isinstance(dtype, type) and issubclass(dtype, (float, complex))
+
+
+def holds_nan(dtype: Any) -> bool:
+    """Whether a dtype can hold a nan: the inexact ones, and the object one,
+    which holds anything at all."""
+    kind = _dtype_kind(dtype)
+    return kind == "O" or is_inexact_dtype(dtype)
 
 
 def is_complex_dtype(dtype: Any) -> bool:

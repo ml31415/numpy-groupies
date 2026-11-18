@@ -1,7 +1,7 @@
 """The streaming reductions of the numpy implementation: one number per group,
 without the values in any particular order."""
 
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -12,7 +12,9 @@ from numpy_groupies.dtypes import (
     minimum_dtype,
     minimum_dtype_scalar,
     minval,
+    object_nan_mask,
 )
+from numpy_groupies.functions import nan
 from numpy_groupies.groups import fill_untouched
 from numpy_groupies.typing import AScalar
 from numpy_groupies.validation import check_boolean, is_scalar_input
@@ -157,6 +159,35 @@ def _any(
     return ret
 
 
+def _object_extreme(
+    group_idx: npt.NDArray[np.integer],
+    a: npt.NDArray[Any],
+    size: int,
+    fill_value: AScalar,
+    is_min: bool,
+) -> npt.NDArray[Any]:
+    """The extreme of every group of an object column.
+
+    The values of an object column are ordered the way python orders them,
+    and a nan of the group wins over its other values, like numpy's min and
+    max do.  The nan is not compared with the other values - numpy's object
+    loop raises for a text and a nan - it is placed over the group instead.
+    """
+    ret = np.full(size, fill_value, dtype=object)
+    nans = object_nan_mask(a)
+    keep = ~nans
+    groups = group_idx[keep]
+    values = a[keep]
+    if values.size:
+        # the first value of every group is the seed, the others are folded in
+        ret[groups[::-1]] = values[::-1]
+        op = np.minimum if is_min else np.maximum
+        op.at(ret, groups, values)
+    if nans.any():
+        ret[np.unique(group_idx[nans])] = nan
+    return ret
+
+
 def _min(
     group_idx: npt.NDArray[np.integer],
     a: npt.NDArray[np.number],
@@ -165,6 +196,11 @@ def _min(
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
+    if a.dtype.kind == "O":
+        # the values of an object column have no dtype of their own: the seed
+        # of the reduction would be a finfo of a dtype that is not there
+        ret = _object_extreme(group_idx, a, size, fill_value, is_min=True)
+        return cast("npt.NDArray[np.number]", ret if dtype.kind == "O" else ret.astype(dtype))
     dmax = maxval(fill_value, dtype)
     with np.errstate(invalid="ignore"):
         ret = np.full(size, fill_value, dtype=dtype)
@@ -183,6 +219,11 @@ def _max(
     dtype: npt.DTypeLike | None = None,
 ) -> npt.NDArray[np.number]:
     dtype = minimum_dtype(fill_value, dtype or a.dtype)
+    if a.dtype.kind == "O":
+        # the values of an object column have no dtype of their own: the seed
+        # of the reduction would be a finfo of a dtype that is not there
+        ret = _object_extreme(group_idx, a, size, fill_value, is_min=False)
+        return cast("npt.NDArray[np.number]", ret if dtype.kind == "O" else ret.astype(dtype))
     dmin = minval(fill_value, dtype)
     with np.errstate(invalid="ignore"):
         ret = np.full(size, fill_value, dtype=dtype)

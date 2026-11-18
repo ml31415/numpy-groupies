@@ -261,7 +261,11 @@ def aggregate(
     if result_dtype is int and not isinstance(funcname, str) and dtype is None:
         # a callable of the caller: assume a floating result without a dtype
         result_dtype = float
-    fill_value = resolve_fill_value(funcname, fill_value, result_dtype)
+    # the values of an object column keep the dtype of the column: it holds a
+    # nan, and the fill of a group without values is one - the guess of the
+    # element types would say otherwise
+    fill_dtype = values_dtype if getattr(values_dtype, "kind", None) == "O" else result_dtype
+    fill_value = resolve_fill_value(funcname, fill_value, fill_dtype)
     check_fixed_fill_value(funcname, fill_value)
     if dtype is not None and isinstance(funcname, str):
         # the one place where this implementation has to reject a non-complex dtype

@@ -85,6 +85,7 @@ from numpy_groupies.validation import (
     LENGTH_MISMATCH,
     NEGATIVE_INDICES,
     NON_INTEGER_GROUP_IDX,
+    OBJECT_COLUMN_NOT_FOR_NUMBA,
     TOO_LARGE,
     TOO_LARGE_SIZE_PREFIX,
     check_fill_kind,
@@ -349,6 +350,11 @@ def _kernel_inputs(group_idx: Any, a: Any) -> tuple[Any, Any]:
     if not is_integer_dtype(group_idx.dtype):
         # the same complaint the python-level call makes about the labels
         raise TypeError(NON_INTEGER_GROUP_IDX)
+    if a.dtype.kind == "O":
+        # the compiled driver has no dtype for the values of an object column
+        # - the complaint is the one of the package and not the TypingError
+        # of the compiler behind it
+        raise TypeError(OBJECT_COLUMN_NOT_FOR_NUMBA)
     if not is_numeric_dtype(a.dtype) and a.dtype.kind not in TEMPORAL_KINDS:
         raise ValueError(f"{_NUMERIC_VALUES}, not {a.dtype}")
     return group_idx, a
@@ -732,6 +738,12 @@ def _typing_prologue(
         if not is_integer_dtype(_numpy_dtype(getattr(group_idx, "dtype", None))):
             raise nb.TypingError(NON_INTEGER_GROUP_IDX)
         a_dtype = _numpy_dtype(getattr(a, "dtype", None))
+        if a_dtype is not None and a_dtype.kind == "O":
+            # the compiled driver has no dtype for the values of an object
+            # column - the complaint is the one of the package.  A call from
+            # compiled code never reaches it: numba refuses the values of an
+            # object array itself, before the typing of the call is asked for
+            raise TypeError(OBJECT_COLUMN_NOT_FOR_NUMBA)
         temporal = a_dtype is not None and a_dtype.kind in TEMPORAL_KINDS
         if not temporal and not is_numeric_dtype(a_dtype):
             raise nb.TypingError(_NUMERIC_VALUES)
