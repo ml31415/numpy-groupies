@@ -41,8 +41,11 @@ except ImportError:  # pragma: no cover - windows
 # the index payload (embedding the compiled-over types) BEFORE checking the
 # source stamp, so renaming a class in a signature crashes the cache read on the
 # dangling global - bumping the revision renames every cache file, orphaning the
-# stale indexes (numba never reads them again).
-_cache_revision = "10"
+# stale indexes (numba never reads them again).  The body of a module level
+# helper is no part of its caller's key either: a change of _fill_differs
+# alone would keep serving the callers that inlined the old one, so the change
+# of that comparison goes with a bump of this revision.
+_cache_revision = "12"
 
 
 @contextlib.contextmanager

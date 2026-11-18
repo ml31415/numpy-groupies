@@ -229,3 +229,43 @@ def test_bare_kernels_and_aggregate_entry_agree():
         bare = kernel(group_idx, a, 3)
         called = npg_numba.aggregate(group_idx, a, func=func, size=3)
         np.testing.assert_array_equal(bare, called)
+
+
+# ---------------------------------------------------------------------------
+# fill value of another kind
+
+
+@pytest.mark.parametrize("func", ["sum", "min", "max", "mean", "median", "nunique", "argmin"])
+@pytest.mark.parametrize("fill", [np.datetime64("2000-01-01", "s"), np.timedelta64(5, "s")])
+def test_bare_kernel_refuses_temporal_fill(func, fill):
+    # no number is a date and no number a duration: kernels answered compiler
+    # TypingError, which is neither the class of the complaint nor its message
+    group_idx = np.array([0, 0, 2])
+    a = np.array([1, 2, 3])
+    kernel = getattr(npg_numba, func)
+    with pytest.raises(TypeError, match="is no number"):
+        kernel(group_idx, a, 3, fill)
+
+
+@pytest.mark.parametrize("func", ["min", "max", "sum", "mean", "median", "argmin", "nunique"])
+def test_bare_kernel_refuses_fill_of_other_kind(func):
+    # five seconds are no date, date no duration: one read as ticks of other
+    group_idx = np.array([0, 0, 2])
+    a = np.array([10, 20, 30], dtype=np.int64).view("m8[s]")
+    kernel = getattr(npg_numba, func)
+    with pytest.raises(TypeError, match="is a date, the values are durations"):
+        kernel(group_idx, a, 3, np.datetime64("2000-01-01", "s"))
+
+
+@pytest.mark.parametrize("func", ["sum", "mean", "min"])
+def test_bare_kernel_reads_unit_of_fill(func):
+    # fill of column kind read in unit of column - int() reads value, forgets unit
+    group_idx = np.array([0, 0, 2])
+    seconds = np.array([10, 20, 30], dtype=np.int64).view("m8[s]")
+    days = np.array([1, 2, 3], dtype=np.int64).view("m8[D]")
+    kernel = getattr(npg_numba, func)
+    np.testing.assert_array_equal(kernel(group_idx, seconds, 3, np.timedelta64(5, "D"))[1], np.timedelta64(432000, "s"))
+    np.testing.assert_array_equal(kernel(group_idx, days, 3, np.timedelta64(5, "s"))[1], np.timedelta64(0, "D"))
+    np.testing.assert_array_equal(kernel(group_idx, seconds, 3, np.timedelta64(5, "s"))[1], np.timedelta64(5, "s"))
+    # plain number names tick of that unit, as for aggregate()
+    np.testing.assert_array_equal(kernel(group_idx, seconds, 3, 7)[1], np.timedelta64(7, "s"))

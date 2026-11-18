@@ -590,6 +590,23 @@ def test_pure_python_path_refuses_non_sequence_values(values):
         npg_purepy.aggregate(np.array([0, 1]), values, func="sum", size=2)
 
 
+@pytest.mark.parametrize("dtype", ["M8[s]", "m8[s]"])
+def test_pure_python_path_refuses_temporal_values(dtype):
+    # it computes with python objects and has no numpy to reach their ticks
+    group_idx = np.array([0, 0, 1])
+    a = np.array([10, 20, 30], dtype=np.int64).view(dtype)
+    with pytest.raises(NotImplementedError, match="doesn't accept datetime64"):
+        npg_purepy.aggregate(group_idx, a, func="min", size=2)
+
+
+@pytest.mark.parametrize("fill", [np.datetime64("2000-01-01", "s"), np.timedelta64(5, "s")])
+def test_pure_python_path_refuses_temporal_fill_of_numbers(fill):
+    # same kind rule as the other two paths, in the same words
+    group_idx = np.array([0, 0, 1])
+    with pytest.raises(TypeError, match="is no number"):
+        npg_purepy.aggregate(group_idx, [1, 2, 3], func="sum", size=2, fill_value=fill)
+
+
 def test_out_argument_is_of_numba_backend(impl):
     """``out=`` is the numba business, and the others say so.
 

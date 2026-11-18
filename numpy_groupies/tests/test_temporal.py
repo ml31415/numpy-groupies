@@ -6,8 +6,9 @@ The tests pin the semantics that emerge - the NaT propagation of the plain
 reductions, the skipping of the nan variants, the order statistics of the
 durations, the unit of the answer, and the refusals numpy shares - and they
 run them over the aggregate entry points of both numpy based backends.  The
-pure python backend knows no temporal types: without numpy there are none, so
-its parameterizations are skipped here.
+pure python backend knows no temporal types: without numpy there are none, and
+it refuses the values of the dtypes by name, so its parameterizations are
+skipped here.
 
 The exact arithmetic of the ticks has a module of its own
 (:mod:`.test_temporal_ticks`), and the bare kernels of the numba backend
@@ -17,6 +18,7 @@ another (:mod:`.test_temporal_kernels`).
 import numpy as np
 import pytest
 
+from numpy_groupies.temporal import _temporal_fill_tick, _temporal_fill_value
 from numpy_groupies.tests.helpers import impl_name
 from numpy_groupies.tests.reference import aggregate_ref
 
@@ -25,6 +27,14 @@ pytestmark = pytest.mark.usefixtures("skip_purepy")
 # the datetime64 cases run on a coarse unit and on nanoseconds - the ns ticks
 # are the ones float64 cannot represent exactly
 DTYPES = ["M8[s]", "M8[ns]", "m8[s]", "m8[ns]"]
+
+# the functions whose answer is a value of the input for both kinds: the
+# package refuses the sum and the median of dates on the words of numpy, and
+# answers the mean of dates on the ticks although numpy itself refuses it
+NAT_FILL_FUNCS = ["min", "max", "first", "last", "mean"]
+# the sum of durations answers a value of the input as well, where the sum of
+# dates names nothing
+DURATION_FILL_FUNCS = [*NAT_FILL_FUNCS, "sum", "nansum"]
 
 
 def is_datetime(a):
@@ -462,6 +472,169 @@ def test_user_fill_value_int_is_tick(impl):
     a = np.array(["2011-01-01", "2011-02-01"], dtype="M8[s]")
     res = impl.aggregate(group_idx, a, func="min", size=2, fill_value=0)
     assert res[1] == np.datetime64("1970-01-01", "s")
+
+
+# np.timedelta64 subclasses np.integer: as a number it reaches int(), which
+# drops its unit and refuses NaT and units coarser than nanoseconds (#205)
+@pytest.mark.parametrize("func", DURATION_FILL_FUNCS)
+def test_duration_fill_reads_own_unit(impl, func):
+    group_idx = np.array([0, 0])
+    a = np.array([10, 20], dtype=np.int64).view("m8[s]")
+    # seconds of the fill stay seconds where values count seconds
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.timedelta64(5, "s"))
+    assert res[1] == np.timedelta64(5, "s")
+    # finer unit read in unit of values, np.astype truncates
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.timedelta64(5, "ns"))
+    assert res[1] == np.timedelta64(0, "s")
+    # unit of input is unit of answer
+    res = impl.aggregate(group_idx, a.astype("m8[ns]"), func=func, size=2, fill_value=np.timedelta64(5, "s"))
+    assert res[1] == np.timedelta64(5_000_000_000, "ns")
+
+
+@pytest.mark.parametrize("func", NAT_FILL_FUNCS)
+def test_date_fill_reads_own_unit(impl, func):
+    group_idx = np.array([0, 0])
+    a = np.asarray(["2011-01-01", "2011-01-02"], dtype="M8[s]")
+    fine = np.datetime64("2012-01-01T00:00:00.000000005", "ns")
+    # nanoseconds of the fill read in unit of values; what does not fit into
+    # one second is gone (np.astype truncates, it does not round) - same
+    # conversion as the answer of the group itself
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=fine)
+    assert res[1] == np.datetime64("2012-01-01T00:00:00", "s")
+    res = impl.aggregate(group_idx, a.astype("M8[ns]"), func=func, size=2, fill_value=fine)
+    assert res[1] == fine
+
+
+@pytest.mark.parametrize("dtype", ["m8[s]", "M8[s]", "m8[ns]"])
+@pytest.mark.parametrize("func", NAT_FILL_FUNCS)
+def test_nat_fill_is_missing_tick(impl, func, dtype):
+    group_idx = np.array([0, 0])
+    if dtype.startswith("M"):
+        a = np.asarray(["2011-01-01", "2011-01-02"], dtype=dtype)
+    else:
+        a = np.array([10, 20], dtype=np.int64).view(dtype)
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.asarray("NaT", dtype=dtype)[()])
+    assert res.dtype == a.dtype
+    assert not np.isnat(res[0])
+    assert np.isnat(res[1])
+
+
+@pytest.mark.parametrize("func", ["sum", "nansum"])
+def test_nat_fill_of_duration_sum(impl, func):
+    # sums fill empty group with zero of unit by default, so caller NaT has to
+    # arrive as NaT tick and not as tick number
+    group_idx = np.array([0, 0])
+    a = np.array([10, 20], dtype=np.int64).view("m8[s]")
+    res = impl.aggregate(group_idx, a, func=func, size=2, fill_value=np.timedelta64("NaT", "s"))
+    assert np.isnat(res[1])  # NaT compares unequal to everything, itself included
+
+
+@pytest.mark.parametrize("func", DURATION_FILL_FUNCS)
+def test_duration_fill_reaches_empty_groups_only(impl, func):
+    group_idx = np.array([0, 0, 2])  # group 1 holds no value at all
+    a = np.array([10, 20, 30], dtype=np.int64).view("m8[s]")
+    res = impl.aggregate(group_idx, a, func=func, size=3, fill_value=np.timedelta64(5, "s"))
+    plain = impl.aggregate(group_idx, a, func=func, size=3)
+    # groups holding values answer what their values answer
+    np.testing.assert_array_equal(res[[0, 2]], plain[[0, 2]])
+    # only empty group answers the fill
+    assert res[1] == np.timedelta64(5, "s")
+
+
+def test_nan_forms_of_all_nat_group_answer_fill(impl):
+    # group of nothing but NaT is empty to nan forms and keeps caller fill,
+    # where plain forms answer the NaT they found
+    group_idx = np.array([0, 0, 1, 2])
+    a = np.asarray(["2011-01-01", "NaT", "NaT", "2011-01-04"], dtype="M8[ns]")
+    fill = np.datetime64("2012-01-01T00:00:00.000000005", "ns")
+    for func in ("nanmin", "nanmax", "nanfirst", "nanlast", "nanmean"):
+        res = impl.aggregate(group_idx, a, func=func, size=3, fill_value=fill)
+        assert res[0] == np.datetime64("2011-01-01", "ns")  # NaT left out
+        assert res[1] == fill  # group 1 holds nothing nan forms can use
+        assert not np.isnat(res[2])
+    for func in ("min", "max", "mean"):
+        res = impl.aggregate(group_idx, a, func=func, size=3, fill_value=fill)
+        assert np.isnat(res[0])  # NaT poisons plain form of its group
+        assert np.isnat(res[1])  # group of nothing but NaT is no choice
+        assert not np.isnat(res[2])
+    res = impl.aggregate(group_idx, a, func="first", size=3, fill_value=fill)
+    assert res[0] == np.datetime64("2011-01-01", "ns")  # first form answers real value
+    assert np.isnat(res[1])  # group 1 holds nothing but NaT
+
+
+@pytest.mark.parametrize("func", ["min", "max", "mean", "median", "sum", "nansum", "first", "last"])
+def test_nan_fill_equals_default_fill(impl, func):
+    # nan fill means "answer without fill": NaT for the NaT-fill functions,
+    # zero of the unit for the rest - same answer on ticks and on values, where
+    # the numba kernel used to refuse what numpy read as a default
+    group_idx = np.array([0, 0, 2])
+    a = np.array([10, 20, 30], dtype=np.int64).view("m8[s]")
+    named = impl.aggregate(group_idx, a, func=func, size=3, fill_value=float("nan"))
+    unnamed = impl.aggregate(group_idx, a, func=func, size=3)
+    np.testing.assert_array_equal(named, unnamed)
+
+
+@pytest.mark.parametrize("func", ["sum", "nansum"])
+def test_duration_fill_of_sum_reaches_empty_group(impl, func):
+    # sums start accumulation at zero of the unit and place their fill behind
+    # the loop - group without values keeps caller fill, not start of accumulation
+    group_idx = np.array([0, 0, 2])
+    a = np.array([10, 20, 30], dtype=np.int64).view("m8[s]")
+    res = impl.aggregate(group_idx, a, func=func, size=3, fill_value=np.timedelta64(5, "s"))
+    np.testing.assert_array_equal(res, np.array([30, 5, 30], dtype="m8[s]"))
+
+
+@pytest.mark.parametrize(
+    ("dtype", "fill", "other"),
+    [
+        ("m8[s]", np.datetime64("2012-01-01", "s"), "a date"),
+        ("M8[s]", np.timedelta64(5, "s"), "a duration"),
+    ],
+)
+@pytest.mark.parametrize("func", NAT_FILL_FUNCS)
+def test_fill_of_other_temporal_kind_is_refused(impl, func, dtype, fill, other):
+    # astype across kinds re-reads ticks - five seconds become 1970-01-05 -
+    # which fills nothing, so both backends refuse before either of the two
+    group_idx = np.array([0, 0])
+    a = np.array([10, 20], dtype=np.int64).view(dtype)
+    with pytest.raises(TypeError, match=f"is {other}"):
+        impl.aggregate(group_idx, a, func=func, size=2, fill_value=fill)
+
+
+@pytest.mark.parametrize("func", ["argmin", "argmax", "nanargmin", "nanargmax", "len", "nunique"])
+def test_position_or_count_refuses_temporal_fill(impl, func):
+    # duration names no position and no count - writing its tick into int64
+    # answer, or bending answer into dtype of fill, would swallow explicit fill
+    group_idx = np.array([0, 0, 2])
+    a = np.array([10, 20, 30], dtype=np.int64).view("m8[s]")
+    with pytest.raises(TypeError, match="names no"):
+        impl.aggregate(group_idx, a, func=func, size=3, fill_value=np.timedelta64(5, "s"))
+    # plain numbers these answers do take still name ticks
+    assert impl.aggregate(group_idx, a, func=func, size=3, fill_value=7)[1] == 7
+
+
+@pytest.mark.parametrize("func", ["min", "max", "sum", "mean", "len", "nunique", "argmin"])
+@pytest.mark.parametrize("dtype", [np.int64, np.float64])
+@pytest.mark.parametrize("fill", [np.datetime64("2000-01-01", "s"), np.timedelta64(5, "s")])
+def test_temporal_fill_of_numbers_is_refused(impl, func, dtype, fill):
+    # answer of functions over numbers holds no date and no duration: numpy
+    # casts one into the other (five seconds into 5, date into seconds since
+    # the epoch), numba refused with TypingError - which is no TypeError
+    group_idx = np.array([0, 0, 2])
+    a = np.array([1, 2, 3], dtype=dtype)
+    with pytest.raises(TypeError, match="is no number"):
+        impl.aggregate(group_idx, a, func=func, size=3, fill_value=fill)
+
+
+@pytest.mark.parametrize("fill", [0, 1, 7, True])
+@pytest.mark.parametrize("base", ["sum", "min"])
+def test_both_paths_read_plain_number_as_tick(fill, base):
+    # native path is reached with temporal fill only, but the number question
+    # it may be asked has the one answer of the tick path
+    dtype = np.dtype("m8[s]")
+    value = _temporal_fill_value(fill, dtype, base)
+    tick = _temporal_fill_tick(fill, dtype, base == "min")
+    assert int(np.asarray(value).view(np.int64)) == tick == int(fill)
 
 
 def test_int64_dtype_answers_ticks(impl):

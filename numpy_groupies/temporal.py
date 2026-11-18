@@ -18,7 +18,7 @@ from typing import Any, cast
 import numpy as np
 import numpy.typing as npt
 
-from numpy_groupies.dtypes import TEMPORAL_KINDS
+from numpy_groupies.dtypes import TEMPORAL_KINDS, is_temporal_scalar, is_tick_number
 from numpy_groupies.fills import (
     DEFAULT_FILL_VALUE,
     resolve_fill_value,
@@ -26,6 +26,7 @@ from numpy_groupies.fills import (
 from numpy_groupies.groups import exact_integer_group_mean
 from numpy_groupies.registry import missing_impl_error
 from numpy_groupies.typing import AFillValue, AResult, AValue, RavelOrder
+from numpy_groupies.validation import fill_kind_refusal
 
 # ---------------------------------------------------------------------------
 # datetime64 and timedelta64 support
@@ -127,39 +128,83 @@ TEMPORAL_NAT_FILL = frozenset(
     {"min", "max", "mean", "median", "quantile", "percentile", "first", "last", "topk", "mode"}
 )
 
+# the functions that answer a position in the group - a date and a duration
+# names none of them
+TEMPORAL_POSITION_FUNCS = frozenset({"argmin", "argmax", "nanargmin", "nanargmax"})
+# the functions that answer a count of the group - the same answer no date and
+# no duration names
+TEMPORAL_COUNT_FUNCS = frozenset({"len", "nanlen", "nunique", "nannunique"})
+
+
+def _refuse_other_kind(fill_value: Any, a_dtype: np.dtype) -> TypeError:
+    """The complaint about a fill of the other temporal kind.
+
+    A conversion across the kinds re-reads the ticks: five seconds become the
+    fifth of January 1970.  That neither fills a group nor converts a value, so
+    the mix is refused before either of the two is attempted - the kernels of
+    the numba backend refuse it the same way (_temporal_fill_scalar).
+    """
+    return fill_kind_refusal(f"fill_value {fill_value!r}", fill_value.dtype.kind, a_dtype)
+
+
+def _is_missing_answer(fill_value: Any) -> bool:
+    """Whether the caller asked for the answer this function gives when it has
+    none: the missing value it was built to fill with, left unnamed or spelled
+    as a nan.
+    """
+    return (
+        fill_value is None
+        or fill_value is DEFAULT_FILL_VALUE
+        or isinstance(fill_value, (float, np.floating))
+        and fill_value != fill_value
+    )
+
+
+def _check_fill_kind(fill_value: Any, a_dtype: np.dtype) -> None:
+    """Refuse a fill of the other temporal kind before it is read as anything."""
+    if is_temporal_scalar(fill_value) and fill_value.dtype.kind != a_dtype.kind:
+        raise _refuse_other_kind(fill_value, a_dtype)
+
 
 def _temporal_fill_value(fill_value: Any, a_dtype: np.dtype, base: str) -> Any:
     """The fill value of a temporal result, as the value of its dtype.
 
-    A nan and the missing default answer NaT (for the functions that fill
-    with it) or the zero of the unit; a plain number is a tick; a temporal
-    value passes through in the unit of the input.
+    The missing answer - unnamed, or a nan - is the NaT of the unit for the
+    functions that fill with it, the zero of the unit for the others; a
+    temporal value of the same kind passes through in the unit of the input,
+    and a plain number names the tick of that unit, as it does on the tick
+    path.  A real float stays what it is and the kernel says what it makes
+    of it.
     """
-    if isinstance(fill_value, (np.datetime64, np.timedelta64)):
+    _check_fill_kind(fill_value, a_dtype)
+    if is_temporal_scalar(fill_value):
         return np.asarray(fill_value).astype(a_dtype)[()]
     if isinstance(fill_value, (float, np.floating)) and fill_value == fill_value:
-        # a caller's own real number - no tick, no missing value
         return fill_value
-    if (
-        fill_value is None
-        or fill_value is DEFAULT_FILL_VALUE
-        or isinstance(fill_value, (bool, np.bool_, int, np.integer))
-    ):
+    if _is_missing_answer(fill_value):
         tick = NAT_TICK if base in TEMPORAL_NAT_FILL else 0
         return np.asarray(tick, dtype=np.int64).view(a_dtype)[()]
+    if is_tick_number(fill_value):
+        # the tick the number names, and not the default of the function:
+        # the same reading as _temporal_fill_tick, _tick_fill and
+        # _temporal_fill_scalar give it
+        return np.asarray(int(fill_value), dtype=np.int64).view(a_dtype)[()]
     return fill_value
 
 
 def _temporal_fill_tick(fill_value: Any, a_dtype: np.dtype, default_is_nat: bool) -> int:
-    """The tick of the fill value: NaT where the default is nan, zero where
-    it fills with zero, unless the caller asks for a date."""
-    if fill_value is None or fill_value is DEFAULT_FILL_VALUE:
+    """The tick of the fill value, on the same questions as the value helper:
+    the missing answer is NaT where the function fills with NaT and the zero of
+    the unit where it fills with zero, a plain number is a tick of the unit of
+    the input, and a date or a duration of the caller is read in that unit.
+    """
+    _check_fill_kind(fill_value, a_dtype)
+    if _is_missing_answer(fill_value):
         return NAT_TICK if default_is_nat else 0
-    if isinstance(fill_value, float) and fill_value != fill_value:
-        return NAT_TICK if default_is_nat else 0
-    if isinstance(fill_value, (int, np.integer)):
+    if is_tick_number(fill_value):
         return int(fill_value)
-    # a datetime64/timedelta64, or anything numpy reads as one
+    # a date or a duration of the same kind, or anything else numpy reads as
+    # one: the unit of the input is the unit of the fill value
     return int(np.asarray(fill_value, dtype=a_dtype).view(np.int64))
 
 
@@ -475,12 +520,44 @@ def _reject_unsupported(ctx: _Context) -> None:
         )
 
 
+def _answers_no_temporal_value(policy: _Policy) -> str | None:
+    """``position`` or ``count`` for the functions that answer where or how
+    many - an answer no date and no duration can name.  ``None`` for the
+    functions whose answer is a value of the input.  The flags are not named
+    here: a fill of them has to be a boolean and says so itself.
+    """
+    if policy.base in TEMPORAL_POSITION_FUNCS:
+        return "position"
+    if policy.base in TEMPORAL_COUNT_FUNCS:
+        return "count"
+    return None
+
+
+def _refuse_temporal_fill(policy: _Policy, fill_value: Any, answer: str) -> TypeError:
+    """The complaint about a temporal fill of a position or a count.
+
+    Such an answer is int64 and holds no temporal value, so the fill fits
+    neither into it nor as its dtype.  Of the two answers that are left - write
+    the tick of the duration into the number, or bend the answer into the dtype
+    of the fill - silently swallowing a fill the caller has named by hand is
+    the worse one.
+    """
+    what = "date" if fill_value.dtype.kind == "M" else "duration"
+    return TypeError(
+        f"aggregate {policy.funcname!r} answers the {answer} of every group, not a temporal value - "
+        f"fill_value {fill_value!r} is a {what}, which names no {answer}"
+    )
+
+
 def _native_fill_value(ctx: _Context) -> Any:
     """The fill value of a native kernel: a number/bool/object for positions,
     counts, flags and collected values, NaT-or-zero of the unit otherwise."""
     policy = ctx.policy
     base = policy.base
-    if base in ("len", "nanlen", "nunique", "nannunique", "argmin", "argmax", "nanargmin", "nanargmax"):
+    answer = _answers_no_temporal_value(policy)
+    if answer is not None and is_temporal_scalar(ctx.fill_value):
+        raise _refuse_temporal_fill(policy, ctx.fill_value, answer)
+    if base in TEMPORAL_COUNT_FUNCS | TEMPORAL_POSITION_FUNCS:
         return resolve_fill_value(policy.funcname, ctx.fill_value, np.dtype(np.int64))
     if base in ("allnan", "anynan"):
         return resolve_fill_value(policy.funcname, ctx.fill_value, np.dtype(np.bool_))
@@ -706,6 +783,9 @@ def _kernel_result(ctx: _Context, computed: npt.NDArray[Any] | None, value_resul
     if value_result:
         fill_tick = _temporal_fill_tick(ctx.fill_value, ctx.a_dtype, policy.fill_is_nat)
         return ctx.call(policy.op, ctx.ticks, fill_tick, dtype=np.dtype(np.int64), **ctx.kwargs)
+    answer = _answers_no_temporal_value(policy)
+    if answer is not None and is_temporal_scalar(ctx.fill_value):
+        raise _refuse_temporal_fill(policy, ctx.fill_value, answer)
     out_dtype = ctx.user_dtype if ctx.user_dtype is not None else np.dtype(np.intp)
     if policy.flag in ("allnan", "anynan"):
         out_dtype = np.dtype(np.bool_)
@@ -799,7 +879,13 @@ def _temporal_aggregation(
         ret = ctx.call(policy.op, cast("AValue", np.int64(values.view(np.int64))), fill_value, **kwargs)
         return ret, fill_value
 
-    plain_fill = isinstance(fill_value, (bool, np.bool_, int, np.integer))
+    # a plain number names a tick, so the ticks answer it; a date or a
+    # duration is answered by the kernel that takes temporal values as they
+    # are (numpy counts a timedelta64 among the integers, so ask for the
+    # temporal scalars first).  Both paths owe the caller the fill of the
+    # groups they never touched - the numba kernels by _fill_differs, which
+    # compares a temporal fill by its tick.
+    plain_fill = is_tick_number(fill_value)
     if policy.is_native and ctx.user_dtype is None and not plain_fill:
         # the kernel takes temporal values as they are: it finds NaT, its
         # position and the empty groups on its own, in one pass

@@ -37,11 +37,37 @@ TOO_LARGE_SIZE_PREFIX = f"{TOO_LARGE} for size "
 LENGTH_MISMATCH = "group_idx and a must be of the same length"
 LENGTH_MISMATCH_OR_SCALAR = f"{LENGTH_MISMATCH}, or a can be scalar"
 
+# the kinds of the values a fill value can be one of - told without numpy,
+# so the temporal kinds are named here and not read over numpy's shoulder
+TEMPORAL_KINDS = "Mm"
+# the dtypes whose kind the dtype itself tells - what an object column
+# holds, its dtype does not say, and the rule below says nothing about it
+KNOWN_KINDS = "biufMm"
+KIND_WORDS = {
+    "M": "date",
+    "m": "duration",
+    # the values, not the answer: a sum over flags counts them, but the
+    # fill of that sum is a number and not one of the two flags again
+    "b": "number",
+    "i": "number",
+    "u": "number",
+    "f": "number",
+    "c": "number",
+    "O": "object",
+    "U": "text",
+    "S": "text",
+}
+
 # the fill value of a call
 FILL_NOT_BOOLEAN = "Value not boolean"
 FILL_NOT_CONVERTIBLE = "fill_value must be convertible into {dtype}"
 MOMENTS_NOT_FOR_COMPLEX = "the skewness and the kurtosis are not defined for complex values"
 FILL_NOT_INTEGER = "fill_value must be convertible into an integer"
+# a date and a duration are values of a kind of their own: no number, flag,
+# position or count is one, and the one kind is no value of the other
+FILL_NOT_A_VALUE_OF_THESE = (
+    "{fill} is a {fill_kind}, the values are {value_word}s ({dtype}) - a {fill_kind} is no {value_word}"
+)
 # a size that is no number of groups; only topk's flat rule refuses it otherwise
 OUTPUT_SIZE_NOT_SCALAR = "output size must be scalar or None"
 # topk answers a matrix with a row per group
@@ -174,6 +200,72 @@ def check_filling_with_none(key: str) -> None:
     """
     if key not in NONE_RESULT_FUNCTIONS:
         raise TypeError(FILL_NONE_NOT_HELD)
+
+
+# the pure python implementation computes with python objects and has no
+# numpy to reach the ticks of a date or a duration
+TEMPORAL_VALUES_NOT_SUPPORTED = "pure python implementation doesn't accept datetime64 and timedelta64 values."
+
+
+def temporal_kind(value: Any) -> str | None:
+    """The temporal kind of a value, or None - told without numpy: a scalar
+    of one of the two temporal dtypes carries its kind on its own dtype.
+    """
+    kind = getattr(getattr(value, "dtype", None), "kind", None)
+    if isinstance(kind, str) and kind in TEMPORAL_KINDS:
+        return kind
+    return None
+
+
+def fill_kind_refusal(fill: str, fill_kind: str, a_dtype: Any, a_kind: str | None = None) -> TypeError:
+    """The complaint about a fill of one kind among values of another.
+
+    ``fill`` is the subject of the sentence, as far as the caller reaches the
+    value: the python call names it, the typing function of a kernel knows its
+    type only and says "the fill value".  ``a_kind`` is the kind of the values
+    where the caller had to look it up itself - of a python type, say, which
+    carries no dtype of its own.
+    """
+    fill_word = KIND_WORDS[fill_kind]
+    kind = a_kind if a_kind is not None else getattr(a_dtype, "kind", None)
+    value_word = KIND_WORDS.get(kind if isinstance(kind, str) else "?", "value")
+    return TypeError(
+        FILL_NOT_A_VALUE_OF_THESE.format(
+            fill=fill,
+            fill_kind=fill_word,
+            value_word=value_word,
+            dtype=getattr(a_dtype, "name", None) or getattr(a_dtype, "__name__", None) or "no dtype",
+        )
+    )
+
+
+# what a plain python sequence of numbers is made of, as a kind of the
+# table above: the sequence has no dtype, its values tell what it holds
+PYTHON_KINDS = {bool: "b", int: "i", float: "f", complex: "c"}
+
+
+def check_fill_kind(fill_value: AFillValue, a_dtype: Any) -> None:
+    """Refuse a date and a duration as the fill of values that hold neither.
+
+    Asked of the dtype of the *values* and not of the answer: the answer of a
+    function is often no temporal value (a count, a position, the ticks of a
+    duration) and takes a number, while the fill of a temporal column is a
+    value of that column's kind and unit.  NumPy casts the one into the other
+    anyway - five seconds into the number five, a date into its seconds since
+    the epoch - which fills no group with what the caller named.
+    """
+    fill_kind = temporal_kind(fill_value)
+    kind = getattr(a_dtype, "kind", None)
+    if not isinstance(kind, str):
+        # no dtype: the python type of the values, where one exists
+        a_type = a_dtype if isinstance(a_dtype, type) else None
+        kind = PYTHON_KINDS.get(a_type, "") if a_type is not None else ""
+    if fill_kind is None or not isinstance(kind, str):
+        # neither the fill a date and a duration, nor the dtype a kind
+        return
+    if kind not in KNOWN_KINDS or kind == fill_kind:
+        return
+    raise fill_kind_refusal(f"fill_value {fill_value!r}", fill_kind, a_dtype, kind)
 
 
 def check_fill_value_for_type(fill_value: AFillValue, target: type) -> None:

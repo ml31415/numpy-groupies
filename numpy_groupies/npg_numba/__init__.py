@@ -61,7 +61,7 @@ from numpy_groupies.registry import (
     missing_impl_error,
 )
 from numpy_groupies.typing import AFillValue, AResult, AScalar, AValue, RavelOrder
-from numpy_groupies.validation import EMPTY_GROUP_IDX
+from numpy_groupies.validation import EMPTY_GROUP_IDX, check_fill_kind
 
 FALLBACK.set_implementation(_numpy_aggregate)
 
@@ -106,6 +106,11 @@ def aggregate(
     # takes them apart, refuses what numpy refuses and answers a temporal
     # value - only the functions of the package go through it, and their
     # numpy aliases are the same functions, so np.mean gets its answer
+    # the kind of a fill value is asked of the values and not of the answer:
+    # no count, no position and no tick of another kind is a date, and the
+    # kernels behind this call would answer the compiler's TypingError instead
+    check_fill_kind(fill_value, getattr(a, "dtype", None))
+
     if temporal_op is not None and is_temporal_input(a):
         if size is None:
             if not group_idx.size:

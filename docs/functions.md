@@ -222,6 +222,24 @@ npg.default_fill_value("min", int)       # 0
 npg.default_fill_value("argmin")         # -1
 ```
 
+## Temporal values
+
+`datetime64` and `timedelta64` input answers in the unit of the input, and its missing value is `NaT`.
+
+- **A fill value of the same kind** is read in the unit of the input: `np.timedelta64(5, "s")` fills five seconds where the values count seconds, and the same five seconds where they count days.
+- **A plain number** names the tick of that unit rather than a value of it: `0` fills the epoch instant or the zero duration, `1` the second tick.
+- **A `nan` and the unnamed default** answer the same value: `NaT` for the functions that fill with the missing value, the zero of the unit for the others.
+- **A fill of the other kind** raises a `TypeError` — a date is no duration and the other way round. NumPy would re-read the ticks of the one as the other, which fills nothing.
+- **A temporal fill of values that hold neither** — of numbers, of flags, of strings — raises a `TypeError` too: no number is a date. The rule is the same in the NumPy and the Numba implementation and on the bare kernels of the latter, which refuse with the `TypeError` of this package and not the `TypingError` of the compiler.
+- **The pure Python implementation** refuses `datetime64` and `timedelta64` values — it computes with Python objects and has no NumPy to reach their ticks.
+- **A fill for a position or a count** raises a `TypeError` as well: `argmin`, `argmax` and their `nan` counterparts answer an index, `len`, `nunique` and their `nan` counterparts a count, and a date names neither. Use a plain number for those.
+
+```python
+npg.aggregate(gi, td, func="sum", fill_value=np.timedelta64(5, "s"))   # five seconds for the empty group
+npg.aggregate(gi, dt, func="min", fill_value=0)                        # 1970-01-01T00:00:00 - the tick zero
+npg.aggregate(gi, td, func="len", fill_value=np.timedelta64(5, "s"))   # TypeError
+```
+
 ## Complex values
 
 Complex input is supported wherever the result is well defined, following NumPy's conventions.

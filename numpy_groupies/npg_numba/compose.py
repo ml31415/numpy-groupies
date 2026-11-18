@@ -67,6 +67,7 @@ import numpy.typing as npt
 from numpy_groupies.dtypes import (
     TEMPORAL_KINDS,
     is_temporal_input,
+    is_temporal_scalar,
 )
 from numpy_groupies.functions import func_argument_default, nan
 from numpy_groupies.npg_numba.jit import njit_stable, register_overload
@@ -86,7 +87,9 @@ from numpy_groupies.validation import (
     NON_INTEGER_GROUP_IDX,
     TOO_LARGE,
     TOO_LARGE_SIZE_PREFIX,
+    check_fill_kind,
     check_fill_value_for_dtype,
+    fill_kind_refusal,
     is_integer_dtype,
     is_numeric_dtype,
 )
@@ -351,6 +354,24 @@ def _kernel_inputs(group_idx: Any, a: Any) -> tuple[Any, Any]:
     return group_idx, a
 
 
+def _tick_fill(fill_value: Any, a_dtype: np.dtype) -> int:
+    """The tick of the fill value of a temporal column, for its tick kernel.
+
+    Nothing given and a nan are the NaT of the unit, a plain number is a tick
+    of that unit, and a date or a duration of the column's own kind is read in
+    that unit: ``np.int64()`` of it reads its value and forgets its unit, and of
+    a date even answers its seconds since the epoch.  The kind of the fill is
+    asked here too - the tick stub answers a temporal column without ever
+    reaching the python prologue that asks it for the other kernels.
+    """
+    check_fill_kind(fill_value, a_dtype)
+    if fill_value is None or (isinstance(fill_value, float) and fill_value != fill_value):
+        return NAT_TICK
+    if is_temporal_scalar(fill_value):
+        return int(np.asarray(fill_value, dtype=a_dtype).view(np.int64))
+    return int(fill_value)
+
+
 def _temporal_fill_scalar(fill_value: Any, out_dtype: np.dtype) -> AScalar:
     """The fill value of a temporal output, as the scalar of its dtype: a nan
     (and the averaging functions' default) is the unit's NaT, an integer the
@@ -362,8 +383,10 @@ def _temporal_fill_scalar(fill_value: Any, out_dtype: np.dtype) -> AScalar:
             return cast("AScalar", np.asarray(fill_value).astype(out_dtype)[()])
         raise ValueError(FILL_NOT_CONVERTIBLE.format(dtype=out_dtype.type.__name__))
     if isinstance(fill_value, (bool, np.bool_, int, np.integer)):
-        # the tick of the value - NaT is the tick -2**63
-        return cast("AScalar", np.asarray(NAT_TICK + int(fill_value)).view(out_dtype)[()])
+        # a plain number names the tick of the unit, as it does for
+        # aggregate() - the value plus the ticks since the NaT would make
+        # the zero of the unit the end of time and answer it with a NaT
+        return cast("AScalar", np.asarray(int(fill_value), dtype=np.int64).view(out_dtype)[()])
     raise ValueError(FILL_NOT_CONVERTIBLE.format(dtype=out_dtype.type.__name__))
 
 
@@ -436,15 +459,19 @@ def _fill_fits_overload(fill_value: Any, low: Any, high: Any, high_exclusive: An
 def _fill_differs(fill_value: Any, forced_fill: float) -> bool:
     """Whether the fill value is the caller's own rather than the forced default.
 
-    A temporal fill is compared within its own unit - a nan differs, the zero
-    of the unit does not - because numba knows no comparison of a temporal
-    scalar with the integer default.  The isinstance is dead code for the
-    numeric dtypes.
+    A temporal fill is compared by its tick, since numba knows no comparison of
+    a temporal scalar with a number.  The comparison asks no unit question: the
+    zero this decision is given is the zero of the unit as well as the number
+    zero, and a default that is no whole number - the nan of the operations
+    that fill with nan - is no tick at all, so no date and no duration is ever
+    equal to it.  What differs, the NaT included, is the caller's own and
+    belongs into the groups the loop never touched.  The isinstance is dead
+    code for the numeric dtypes.
     """
     if isinstance(fill_value, (np.datetime64, np.timedelta64)):
-        # a temporal fill differs from the forced default when it is a NaT -
-        # the unit's zero is the default of the fill-with-zero operations
-        return bool(fill_value != fill_value)
+        if forced_fill != forced_fill or forced_fill != int(forced_fill):
+            return True
+        return bool(np.int64(fill_value) != np.int64(int(forced_fill)))
     return bool(fill_value != forced_fill)
 
 
@@ -574,6 +601,18 @@ _TypingPrologue = Callable[[Any, Any, Any], _TypingCall]
 _Kernel = tuple[Callable[..., Any], Callable[..., Any]]
 
 
+# the two temporal types of numba, by the kind letter they answer with
+_TEMPORAL_FILL_KINDS: dict[type, str] = {nb.types.NPDatetime: "M", nb.types.NPTimedelta: "m"}
+
+
+def _temporal_fill_kind(fill_type: Any) -> str | None:
+    """The kind of a temporal fill value, of its numba type alone."""
+    for temporal_type, kind in _TEMPORAL_FILL_KINDS.items():
+        if isinstance(fill_type, temporal_type):
+            return kind
+    return None
+
+
 def _no_fill_value(fill_type: Any) -> bool:
     """Whether the argument of the signature asks for the default fill value -
     the None of the default arrives as the default itself, as the numba type
@@ -621,6 +660,11 @@ def _python_prologue(
         group_idx, a = _kernel_inputs(group_idx, a)
         if a.dtype.kind in TEMPORAL_KINDS and tick is None:
             _temporal_gate(stub_name, a.dtype)
+        # the kind question of the python half, the twin of the one the typing
+        # function asks: no number of the values is a date and no duration,
+        # and neither is a value of the other kind - asked before any
+        # conversion, which reads the one as the ticks of the other
+        check_fill_kind(fill_value, a.dtype)
         if reject_fill and fill_value is not None:
             # this driver cannot place a fill value - saying so beats ignoring
             # the argument silently
@@ -702,6 +746,14 @@ def _typing_prologue(
                 out_dtype, aux_dtype = rule_same(a)
                 return _temporal_typing_call(out_dtype, aux_dtype)
         out_dtype, aux_dtype = rule(a)
+        # the kind question before the fit question: a date and a duration
+        # reach this function as a type and not as a value, which is enough
+        # to say that no number of the values is one of them - and a complaint
+        # raised here is the TypeError of the package and not the TypingError
+        # of the compiler behind it
+        fill_kind = _temporal_fill_kind(fill_value)
+        if fill_kind is not None and (a_dtype is None or a_dtype.kind != fill_kind):
+            raise fill_kind_refusal("the fill value", fill_kind, a_dtype)
         if reject_fill:
             if not _no_fill_value(fill_value):
                 raise nb.TypingError(_REFUSAL.format(name=stub_name))
@@ -803,7 +855,7 @@ def _kernel_none(
         if tick is not None and is_temporal_input(a):
             group_idx, a = _kernel_checks(group_idx, a)
             ticks = a.view(np.int64)
-            fill = NAT_TICK if fill_value is None else np.int64(fill_value)
+            fill = _tick_fill(fill_value, a.dtype)
             # the answer of the tick kernel, viewed back into the unit
             answer: AResult = tick(group_idx, ticks, size, fill).view(a.dtype)
             return answer
@@ -994,7 +1046,7 @@ def _kernel_q_method(
         if tick is not None and is_temporal_input(a):
             group_idx, a = _kernel_checks(group_idx, a)
             ticks = a.view(np.int64)
-            fill = NAT_TICK if fill_value is None else np.int64(fill_value)
+            fill = _tick_fill(fill_value, a.dtype)
             # the answer of the tick kernel, viewed back into the unit
             answer: AResult = tick(group_idx, ticks, q, method, size, fill).view(a.dtype)
             return answer

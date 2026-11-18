@@ -12,7 +12,7 @@ import numpy.typing as npt
 
 from numpy_groupies.functions import forced_float_types, forced_real_float_types
 from numpy_groupies.typing import AFillValue, AScalar, AValue
-from numpy_groupies.validation import check_complex_dtype, is_scalar_input
+from numpy_groupies.validation import TEMPORAL_KINDS, check_complex_dtype, is_scalar_input
 
 _next_int_dtype = {
     # the sign of the input stays (numpy sums into int64/uint64 likewise); no
@@ -33,7 +33,9 @@ _next_float_dtype = {
     "complex64": np.complex128,
 }
 
-TEMPORAL_KINDS = "Mm"
+# the scalar types of the temporal dtypes: a fill value of one of these names
+# a date or a duration, never a tick
+TEMPORAL_SCALARS: tuple[type, ...] = (np.datetime64, np.timedelta64)
 
 
 def is_temporal_input(a: Any) -> bool:
@@ -43,6 +45,29 @@ def is_temporal_input(a: Any) -> bool:
     """
     kind = getattr(getattr(a, "dtype", None), "kind", None)
     return kind is not None and kind in TEMPORAL_KINDS
+
+
+def is_temporal_scalar(value: Any) -> bool:
+    """Whether the value is a datetime64 or timedelta64 scalar.
+
+    numpy makes ``np.timedelta64`` a subclass of ``np.integer``, so a check
+    for the integers alone catches it first: ``int()`` of it reads the number
+    of the value while ignoring its unit, and fails outright for NaT and for
+    every unit coarser than the nanoseconds.  :func:`is_tick_number` asks the
+    question the other way round, with the temporal scalars out of the way.
+    """
+    return isinstance(value, TEMPORAL_SCALARS)
+
+
+def is_tick_number(value: Any) -> bool:
+    """Whether the value is a plain bool or integer and no date and no
+    duration - a number that names a tick of a temporal column.
+
+    ``np.timedelta64`` is a subclass of ``np.integer``, so the plain integer
+    test alone lets a duration through and ``int()`` of it reads the number of
+    a date or a duration while ignoring its unit.
+    """
+    return isinstance(value, (bool, np.bool_, int, np.integer)) and not is_temporal_scalar(value)
 
 
 def minimum_dtype(x: AFillValue, dtype: npt.DTypeLike | None = np.bool_) -> np.dtype:
