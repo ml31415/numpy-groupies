@@ -69,7 +69,7 @@ jobs:
                 status,
                 per_page: 50,
               })
-              runs.push(...data)
+              runs.push(...data.workflow_runs)
             }
             for (const run of runs) {
               const started = new Date(run.run_started_at || run.created_at)
