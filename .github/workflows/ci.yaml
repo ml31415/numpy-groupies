@@ -17,11 +17,7 @@ jobs:
   build:
     name: Build (${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # The suite takes a quarter of an hour on a runner with two cores.  The
-    # bound is three times that: a job that runs longer has lost its runner
-    # to the shutdown of the service, and waiting for the six hours of the
-    # default tells nobody anything.
-    timeout-minutes: 45
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
