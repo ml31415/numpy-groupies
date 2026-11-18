@@ -59,6 +59,16 @@ def is_temporal_scalar(value: Any) -> bool:
     return isinstance(value, TEMPORAL_SCALARS)
 
 
+def object_nan_mask(a: npt.NDArray[np.object_]) -> npt.NDArray[np.bool_]:
+    """The nan values of an object column.
+
+    Numpy's ``isnan`` knows no object dtype, and the values of an object
+    column are of no known type - so the question is asked of every value: a
+    value that is not equal to itself is a nan.
+    """
+    return np.array([not bool(value == value) for value in a], dtype=bool)
+
+
 def is_tick_number(value: Any) -> bool:
     """Whether the value is a plain bool or integer and no date and no
     duration - a number that names a tick of a temporal column.

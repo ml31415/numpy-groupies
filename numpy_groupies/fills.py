@@ -20,8 +20,8 @@ from numpy_groupies.functions import (
 from numpy_groupies.registry import FuncName
 from numpy_groupies.validation import (
     check_filling_with_none,
+    holds_nan,
     is_complex_dtype,
-    is_inexact_dtype,
     is_integer_dtype,
 )
 
@@ -75,9 +75,10 @@ def resolve_fill_value(
         return fill_value
     key = fill_value_key(func)
     # nan only fits where the output can hold it - an explicitly requested
-    # integer output holds no nan, whatever the default is
+    # integer output holds no nan, whatever the default is, and an object
+    # output holds everything
     fits = not is_integer_dtype(dtype) and (
-        dtype is None or key in forced_float_types or key in forced_real_float_types or is_inexact_dtype(dtype)
+        dtype is None or key in forced_float_types or key in forced_real_float_types or holds_nan(dtype)
     )
     value = default_fill_values.get(key)
     if value is None:

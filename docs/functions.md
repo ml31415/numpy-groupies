@@ -204,12 +204,12 @@ Groups without any item are filled with `fill_value`. By default this matches wh
 | `all`, `any`, `allnan`, `anynan`                       | `False`            |
 | `mean`, `median`, `var`, `std`, `skew`, `kurt` (and `nan`-forms) | `nan`    |
 | `quantile`, `percentile` (and `nan`-forms)             | `nan`              |
-| `min`, `max`, `first`, `last` (and `nan`-forms)        | `nan` for floating input, `0` where the output is an integer type, which cannot hold `nan` |
+| `min`, `max`, `first`, `last` (and `nan`-forms)        | `nan` for floating or object input, `0` where the output is an integer type, which cannot hold `nan` |
 | `argmax`, `argmin` (and `nan`-forms)                   | `-1` — for a group without items, and for a group whose items include a NaN (an index cannot be a NaN, so there is nothing to name); `nanargmax` / `nanargmin` name an index for such a group, unless all of its items are NaN |
 | `trapezoid`, `nantrapezoid`                            | `0`, as for a single sample |
 | `array`, `sort`                                        | an empty sequence  |
-| `topk`                                                 | `nan` for floating input, `0` where the output is an integer type, which cannot hold `nan` |
-| `mode`                                                 | `nan` for floating input, `0` where the output is an integer type, which cannot hold `nan` |
+| `topk`                                                 | `nan` for floating or object input, `0` where the output is an integer type, which cannot hold `nan` |
+| `mode`                                                 | `nan` for floating or object input, `0` where the output is an integer type, which cannot hold `nan` |
 | a custom `func`                                        | `nan` for floating input, `0` otherwise |
 
 The cumulative functions and `sort` return one value per input item, so no group is ever empty in their output and `fill_value` has no effect.
@@ -248,6 +248,21 @@ Complex input is supported wherever the result is well defined, following NumPy'
 - **Return a real dtype:** `var`, `std` and `sumofsquares` measure squared magnitudes, like `np.var` on complex input.
 - **Not supported:** `skew` and `kurt` raise a `TypeError` on a complex input — the third and the fourth moment of the deviations from the mean have no meaning for a complex value.
 - **Order statistics** `min`, `max`, `argmin`, `argmax` and their `nan` counterparts follow the same lexicographic ordering everywhere — the real part decides, the imaginary part only breaks ties — including the Numba implementation, which compares the two parts itself since neither Python nor Numba orders complex numbers. As in NumPy, a value with a NaN in either part compares neither smaller nor greater.
+
+## Object columns
+
+An `object` column holds whatever it is given: the numbers of a mixed column, the strings of a text column, the `nan` of a float column wrapped in objects. Its dtype says nothing about the values, so the package asks the values themselves.
+
+- **The order statistics** `min`, `max`, `argmin`, `argmax` and their `nan` counterparts order the values the way Python orders them, in the NumPy and in the pure Python implementation alike.
+- **A `nan` of a group wins** over its other values, as in NumPy: `min` and `max` answer it, and the `nan` variants skip it. A group that holds a `nan` has no extreme to point at, so `argmin` and `argmax` answer the fill value (`-1`) for it - the `nan` variants name an index, unless all of the items of the group are `nan`.
+- **A group without items** takes a `nan`: an object column holds one.
+- **The Numba implementation refuses** an object column with a `TypeError` - it compiles with the dtype of the values, and it has none for an object column. The collecting function `array` is the one call it hands to the NumPy implementation.
+- **The sums and the averages** need a dtype NumPy can cast to: the NumPy implementation refuses them, the pure Python one computes them.
+
+```python
+npg.aggregate(gi, np.array([3, 1, 2], dtype=object), func="min")   # 1 - the values are ordered like python orders them
+npg.aggregate(gi, np.array([3, 1, 2], dtype=object), func="argmin") # 1 - the position of the smallest value
+```
 
 ## Helper functions
 
